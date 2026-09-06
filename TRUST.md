@@ -103,11 +103,14 @@ We will report against this list publicly, including when a number stays at zero
 If you want to try it, the honest framing is: this is a good design that has not
 met production. Reasonable ways to engage, roughly in order of exposure:
 
-- **Read the schema.** `schema.sql` states eight security properties and enforces
-  them at the data layer. If you take nothing else, take the composite foreign
-  key that makes a cross-tenant grant unrepresentable rather than merely filtered
-  out, and the rule that a signed URL is re-validated on every request instead of
-  being a bearer token you cannot recall. Apache-2.0 — copy it.
+- **Read the schema.** `schema.sql` states eight security properties. Some are
+  write-side integrity constraints that bind every writer — take the composite
+  foreign key that makes a cross-tenant grant row impossible to insert, even
+  from `psql`. Others, including all read authorization, are enforced in
+  `authz.ts` and therefore only for calls made through the library: there is no
+  RLS policy in `schema.sql`, and a direct `SELECT` is not filtered. Take also
+  the rule that a signed URL is re-validated on every request instead of being a
+  bearer token you cannot recall. Apache-2.0 — copy it.
 - **Run it against a non-critical workload** and tell us what broke.
 - **Depend on it in production** only if you have read `authz.ts` yourself, or you
   are comfortable being the first.

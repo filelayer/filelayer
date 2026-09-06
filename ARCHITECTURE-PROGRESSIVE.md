@@ -2,12 +2,12 @@
 
 **Does the Filelayer primitive scale DOWN as well as up?**
 
-Current as of `@filelayer/core` **0.3.0**. Everything below is measured against
+Current as of `@filelayer/core` **0.4.4**. Everything below is measured against
 code in this repository, from the repository root. Reproduce with:
 
 ```bash
 npm run bootstrap                  # npm ci in packages/core
-npm test                           # 313 tests, 0 failures
+npm test                           # 324 tests, 0 failures
 npm run dev:fracture               # the four §2 experiments
 npm run loc:tiers                  # LOC per tier (§4.2)
 node benchmark/count-loc.mjs       # LOC for the full-vault implementations
@@ -15,14 +15,14 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **313 / 313 passing** across 68 suites:
+**Test status.** `npm test` is **324 / 324 passing** across 74 suites:
 
 | Suite | Tests |
 |---|---|
 | `test/tiers.test.ts` — the tiered API, and §3 below | 27 |
 | `test/group-subjects.test.ts` — `org` and `role` grant subjects | 49 |
-| everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 237 |
-| **total** | **313** |
+| everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 248 |
+| **total** | **324** |
 
 Reproduce a single suite with
 `node --test --experimental-strip-types packages/core/test/tiers.test.ts`.
@@ -113,8 +113,8 @@ distinction is the whole fracture assessment.
 
 This is the load-bearing finding.
 
-P3 ("tenant isolation is structural, not conditional") rests on one composite
-foreign key:
+P3 ("cross-tenant grants are structurally impossible to write") rests on one
+composite foreign key:
 
 ```sql
 FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id)
@@ -368,6 +368,26 @@ medians fall to 2.4× and 5.3×. Two of the four comparison implementations have
 never been executed, so their counts are probably undercounts — an asymmetry
 that flatters nobody here and is left in place rather than corrected away.
 
+> **This is not a security-superiority claim, and the row above it makes that
+> easy to misread.** The number counts *how many places a developer has to get
+> something right*. It says nothing about how strong the enforcement is once
+> they have. **Fewer decisions and stronger enforcement are different axes, and
+> Postgres RLS wins the second one.** RLS is evaluated inside the database, so
+> it binds every client — including code paths that never touch the
+> application. Filelayer is middleware: it decides for calls made through it,
+> and `schema.sql` ships no RLS policy, so a direct `SELECT` is not filtered by
+> anything.
+>
+> Our own measurement of the Supabase implementation says exactly this, and it
+> is published rather than buried — see
+> [`benchmark/baseline-supabase/REPORT.md`](https://github.com/filelayer/filelayer/blob/main/benchmark/baseline-supabase/REPORT.md),
+> which concludes that authorization living next to the data it protects
+> "cannot be bypassed by a new code path" and is "a structurally stronger
+> position than middleware." We agree with our own report. **Nothing in this
+> table is a claim that Filelayer is safer than RLS**; the honest trade is that
+> Filelayer removes decisions and records every access including the refusals,
+> and RLS enforces at a layer we do not reach. The two compose.
+
 At tiers 1–3 there is no comparable implementation to count, so these are
 enumerated by hand under the same convention:
 
@@ -386,7 +406,7 @@ the developer to decide who may read a file, at any tier.
 
 Written by the people who built it. This section is meant to be quoted against
 Filelayer, and it is kept current on purpose: every item below was re-checked
-against `0.3.0`.
+against `0.4.4`.
 
 1. **Public, high-volume, cacheable media — avatars, marketing images, product
    photos, anything a CDN should serve.** The default byte path proxies every

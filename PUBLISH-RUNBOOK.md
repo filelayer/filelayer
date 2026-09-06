@@ -1,7 +1,13 @@
 # PUBLISH-RUNBOOK.md
 
 The exact commands to make this repository public and to publish
-`@filelayer/core@0.3.0` to npm.
+`@filelayer/core` to npm.
+
+> **This runbook was written for the first public release, `0.3.0`.** The
+> repository is public and the current published version is `0.4.3`. Version
+> strings in the worked examples below are from that first run and are kept as
+> the record of what was actually done; substitute the version you are
+> publishing. Everything else — the gate, the checks, the rollback — is current.
 
 **Audience:** one human, at a terminal, already logged in to GitHub in a
 browser. You will need to run `npm login` at the terminal in step 3.
@@ -25,7 +31,7 @@ can take back cleanly.
 git status
 git branch --show-current          # -> main
 
-# The whole gate: typecheck, 313 tests, build, language, links, OpenAPI,
+# The whole gate: typecheck, 324 tests, build, language, links, OpenAPI,
 # doc samples, adversarial suite. Must exit 0.
 npm run verify
 echo "verify exit: $?"
@@ -54,11 +60,13 @@ Confirm the version you are about to publish, and that nobody else already
 owns the name:
 
 ```bash
-node -p "require('./packages/core/package.json').version"     # -> 0.3.0
+node -p "require('./packages/core/package.json').version"     # -> the version you are publishing
 node -p "require('./packages/core/package.json').name"        # -> @filelayer/core
 
 npm view @filelayer/core version 2>&1 | head -3
-# Expected: an E404. Anything else means the name is taken -- stop.
+# Expected: the version currently on the registry (0.4.3 at the time of writing).
+# On the very first publish this was an E404; it will not be one again.
+# Anything else unexpected -- stop.
 ```
 
 Check the artifact one more time, by hand:
@@ -361,7 +369,7 @@ Open each and look at it, rather than assuming:
 
 | URL | What to check |
 |---|---|
-| <https://www.npmjs.com/package/@filelayer/core> | The README renders. The alpha warning is the first thing visible. The tables are tables. The "Apache-2.0" and "v0.3.0" chips are right. The version selector shows `0.3.0` under the `alpha` tag and **no** `latest`. |
+| <https://www.npmjs.com/package/@filelayer/core> | The README renders. The alpha warning is the first thing visible. The tables are tables. The "Apache-2.0" and version chips match the version you just published. The version selector shows it under both `latest` and `alpha` — since 0.4.2 `latest` points at the alpha; see §"the dist-tag" below. |
 | <https://github.com/filelayer/filelayer> | The README renders. The four badges at the top all resolve — see below. |
 | <https://github.com/filelayer/filelayer/blob/main/ARCHITECTURE-PROGRESSIVE.md> | Renders; §4 tables and §5 list are intact. |
 | <https://github.com/filelayer/filelayer/blob/main/architecture/TIER5-DESIGN-NOTE.md> | Renders. |

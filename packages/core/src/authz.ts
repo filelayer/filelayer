@@ -22,9 +22,13 @@
  * developer must make". In a hand-rolled integration built directly on Supabase,
  * Convex or Vercel, that number scales with the number of *places* the
  * developer touches files:
- * every route, every RLS policy, every presign call is an independent chance
- * to leak. Here the developer makes none of them, because there is exactly one
- * place a decision can be made and it is not in the application.
+ * every route, every policy, every presign call is an independent chance to
+ * leak. For file access that goes through this library the developer makes none
+ * of those choices, because the decision is made here. That is a middleware
+ * guarantee, not a data-layer one: a caller that reaches Postgres without
+ * passing through this module is not subject to any of it, and this schema
+ * ships no RLS policy. The two layers compose; this one does not replace the
+ * other.
  *
  * INVARIANTS (mirrored from schema.sql, enforced here in code):
  *   P1 deny by default          - DENY unless a rule fires, at the file

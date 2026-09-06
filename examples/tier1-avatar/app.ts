@@ -30,9 +30,10 @@ export async function tier1(avatar: Uint8Array) {
  * The serving half.
  *
  * `principal: () => ({ actorId: null })` is the whole configuration: every
- * request to this route is an anonymous caller, so a file is reachable only if
- * it carries a live anonymous grant. There is no other rule to write, and no
- * way to write one wrong.
+ * request to this route is an anonymous caller, so a file is reachable through
+ * this route only if it carries a live anonymous grant. There is no other access
+ * rule for you to write here. The one thing still on you is outside this file:
+ * the object bucket must be private.
  */
 export function tier1Server(fl: Filelayer) {
   const route = fileDownloadRoute(fl, {

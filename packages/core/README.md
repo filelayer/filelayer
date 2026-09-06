@@ -55,10 +55,22 @@
 one authorization model behind both.
 
 You tell Filelayer who the caller is. Filelayer decides what they may do with a
-file, serves the bytes with the right headers, and writes the audit event. You
-do not write authorization rules, RLS policies, bucket ACLs, ownership checks in
-route handlers, or presigned-URL expiry logic — because there is exactly one
-place a decision is made, and it is not in your application.
+file, serves the bytes with the right headers, and writes the audit event. For
+file access that goes through Filelayer, that decision is made in one place —
+`packages/core/src/authz.ts` — so you write no ownership checks in route
+handlers, no presigned-URL expiry logic, and no per-route access rules of your
+own.
+
+**Filelayer is authorization middleware, not row-level security.** It runs in
+your application process, in front of Postgres and your bucket. Code that
+queries these tables directly does not go through it. The schema does enforce a
+set of invariants against *every* writer — cross-tenant grants, cross-project
+identities, and delegation that amplifies authority or subject breadth are
+refused by constraints and triggers, so a migration or a `psql` session cannot
+write them. But there is no RLS policy in `schema.sql`, and a direct `SELECT` is
+not filtered by anything. If you need enforcement that survives arbitrary
+database clients, use database-level enforcement; Filelayer is the layer above
+it, and the two compose.
 
 <!-- doccheck-setup
 import { Filelayer } from '@filelayer/core';
@@ -148,9 +160,9 @@ engine, not by convention, and each has tests named after it.
 
 | | Property | What it means in practice |
 |---|---|---|
-| **P1** | Deny by default | There is no `public` boolean anywhere in the schema. Public delivery is an explicit, revocable, auditable grant row. "The bucket was public" is not expressible. |
+| **P1** | Deny by default | There is no `public` boolean anywhere in the schema. Public delivery is an explicit, revocable, auditable grant row — there is no flag to leave on by accident. **This is a property of the schema, not of your object store: Filelayer cannot make your bucket private, and a public bucket bypasses everything on this page.** That is the one configuration step it cannot do for you — [QUICKSTART §7](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md). |
 | **P2** | No ambient authority | Knowing an object key, a URL or a file id grants nothing. Storage location is never an input to a decision. |
-| **P3** | Structural tenant isolation | A grant's `org_id` must equal its file's `org_id`, enforced by a composite foreign key. Cross-tenant access is unrepresentable, not merely prevented by a `WHERE` clause. |
+| **P3** | Cross-tenant grants are structurally impossible to write | A grant's `org_id` must equal its file's `org_id`, enforced by the composite foreign key `FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id)`. No writer — including a migration or a `psql` session — can create a grant pointing at another tenant's file. This is a write-side integrity constraint, not a read filter: it makes the *row* unrepresentable. Reads are scoped by the engine, not by the database. |
 | **P4** | A URL never outlives its permission | Every signed URL embeds a grant id and is re-validated on **every** request, transitively through the whole delegation chain. Revocation beats a live URL. |
 | **P5** | Every decision is audited, including denials | Hash-chained per tenant. Probes that cannot be attributed to a tenant go to a system chain rather than being dropped. The log answers in *your* identifiers — `marco`, `contract.pdf`, `acme` — alongside the internal ones, so "who accessed this?" needs no SQL of yours. |
 
@@ -213,9 +225,10 @@ const { url: avatarUrl } = await fl2.files.put(bytes, { public: true });
 ```
 
 `quickstart()` is **ephemeral** — everything is lost when the process exits.
-Production is three configuration steps and is not hidden:
+Production is three configuration steps and is not hidden — the third is
+confirming your bucket is private:
 [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md)
-§6.
+§7.
 
 ### Running the suite
 
@@ -334,7 +347,7 @@ README says is the most valuable thing you can send us.
 ## Limitations
 
 Restated here so they are not only in an appendix. Each one is current as of
-`0.4.3`; where a limitation has been lifted since an earlier release, the
+`0.4.4`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **No `Range` responses from the shipped HTTP routes.** `fileDownloadRoute()`

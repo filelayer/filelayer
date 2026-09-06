@@ -64,8 +64,8 @@
     {
       "id": "comparison-implementation",
       "pattern": "\\bbaselines?\\b",
-      "reason": "The comparison implementations built alongside this library. Name the actual technology instead ('a hand-rolled S3 integration').",
-      "allowIfLineMatches": null
+      "reason": "The comparison implementations built alongside this library. Name the actual technology instead ('a hand-rolled S3 integration'). EXEMPTION, added 2026-09-06: the directories `benchmark/baseline-convex/`, `benchmark/baseline-raw-s3/`, `benchmark/baseline-supabase/` and `benchmark/baseline-vercel-blob/` are published on purpose, and their reports are the evidence we cite AGAINST ourselves -- ARCHITECTURE-PROGRESSIVE.md §4.3 links baseline-supabase/REPORT.md to concede that RLS enforces at a layer this library does not reach. A published file cannot be cited without naming its path. The exemption therefore allows a line ONLY where every occurrence of the word is immediately preceded by the literal `benchmark/`, which is the same shape as the `benchmark` rule's own path exemption and covers exactly one surface: a link or path reference. Every other use is framing and still fails, including hyphenated ones -- 'the baseline', 'our baselines', 'a baseline metric', 'baseline-driven', and even 'the baseline-supabase numbers' without the directory prefix. A first draft of this exemption allowed any `baseline-*`, which was a hole; the lookbehind closes it. If you widen this pattern, re-run these cases: PASS `benchmark/baseline-supabase/REPORT.md`; FAIL `the baselines showed a difference`, `our baseline`, `a baseline metric`, `our baseline-driven evaluation metric`, `the baseline-supabase numbers say`, and any line mixing a valid path with a bare use.",
+      "allowIfLineMatches": "^(?:(?!(?<!benchmark/)baseline).)*$"
     },
     {
       "id": "ambiguous-auditor",

@@ -787,7 +787,8 @@ describe('external_id is scoped to the project, not global', () => {
       )
     ).rows[0]!.id;
 
-    // P3, one level up: not "prevented by a WHERE clause" -- unrepresentable.
+    // P3, one level up: the ROW cannot be inserted at all. A write-side
+    // constraint, not a read filter -- this says nothing about who may SELECT.
     await dbRejects(
       db,
       `INSERT INTO membership (org_id, actor_id, role) VALUES ($1,$2,'admin')`,

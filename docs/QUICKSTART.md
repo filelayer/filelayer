@@ -159,9 +159,16 @@ await fl.files.get(id);                                    // throws 404
 `owner` and `as` are **your own user ids**. Filelayer does not have a user
 table you must sync into; the id is registered on first use.
 
-Files are **private by default**. `user_123` can read it. Nobody else can — not
-another user, not an anonymous caller who has the file id, not anyone who learns
-the storage key. You wrote no rule to make that true.
+Files are **private by default**. Through Filelayer, `user_123` can read it and
+no other user can — not an anonymous caller holding the file id, and not someone
+who learns the storage key, because the key is not an input to the decision. You
+wrote no rule to make that true.
+
+Two caveats, stated here rather than in an appendix. **Org admins and owners can
+read `private` files** — deliberate, because retention and legal hold are their
+responsibility; see the Limitations list in the README. And this describes access
+**through Filelayer**: code that queries the `file` table directly is not
+filtered by anything, because there is no RLS policy in the schema.
 
 ### Four things to know before you build on this
 

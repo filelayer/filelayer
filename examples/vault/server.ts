@@ -6,9 +6,8 @@
  * screen, share links with expiry + password + download cap, revocation, and a
  * tamper-evident audit trail.
  *
- * Note what is absent, because that absence is the product:
+ * Note what is absent from THIS FILE, because that absence is the product:
  *   - no authorization rules
- *   - no RLS policies
  *   - no ownership checks in route handlers
  *   - no presigned-URL TTL to choose
  *   - no bucket ACL to get right
@@ -16,6 +15,12 @@
  *   - no "which files may this user see" query           <- new, see GET /files
  *   - no decision about which errors leak existence
  *   - no response headers to remember                    <- new, see delivery.ts
+ *
+ * What that absence is NOT: it is not a claim that database-level enforcement is
+ * unnecessary. Filelayer is authorization middleware. Every access below goes
+ * through authorize(); a direct SQL client would go through nothing. If your
+ * threat model includes callers that reach Postgres without passing through this
+ * file, you want RLS underneath, and the two compose fine.
  *
  * REVISION 3. Four things changed and all four were defects an independent
  * security review found in this file, not cosmetics:

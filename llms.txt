@@ -1,8 +1,10 @@
 # Filelayer
 
-> A Node library that puts one authorization decision point in front of file storage for multi-tenant applications. Public files and private files share one model. Files live in S3/R2 (or memory); all metadata, grants and audit events live in your own Postgres. Not a hosted service, not a CDN, not an image pipeline.
+> A Node library that puts a single authorization decision point in front of file storage for multi-tenant applications. Public files and private files share one model. Files live in S3/R2 (or memory); all metadata, grants and audit events live in your own Postgres. Not a hosted service, not a CDN, not an image pipeline.
 
-Status: alpha / developer preview, version 0.4.3, Apache-2.0. Never deployed in production; the S3/R2 adapter has never run against live AWS or Cloudflare credentials. The schema may change in any 0.x release. Requires Node >= 22.18. Install: `npm install @filelayer/core`.
+> **It is authorization middleware, not row-level security.** It decides for calls made through it, in your application process. The schema additionally refuses cross-tenant grants, cross-project identities and delegation amplification from *any* writer, including a `psql` session — those are constraints and triggers. But there is no RLS policy in `schema.sql`, and a direct `SELECT` against these tables is not filtered by anything: `SELECT * FROM file` returns every tenant's rows. If you write SQL against this schema instead of calling the library, no authorization runs and no audit event is written. Filelayer composes with database-level enforcement; it does not replace it.
+
+Status: alpha / developer preview, version 0.4.4, Apache-2.0. Never deployed in production; the S3/R2 adapter has never run against live AWS or Cloudflare credentials. The schema may change in any 0.x release. Requires Node >= 22.18. Install: `npm install @filelayer/core`.
 
 This file is for an agent writing an integration. It is ordered by what you need to get right, not by what is interesting.
 

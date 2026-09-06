@@ -1,7 +1,7 @@
 {
   "name": "@filelayer/core",
-  "version": "0.4.3",
-  "description": "Multi-tenant file authorization and lifecycle for Postgres: one decision point for public and private files, revocable URLs, delegated share links and a hash-chained audit trail.",
+  "version": "0.4.4",
+  "description": "Multi-tenant file authorization middleware and lifecycle for Postgres: a single decision point for public and private files, revocable URLs, delegated share links and a hash-chained audit trail.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

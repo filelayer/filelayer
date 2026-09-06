@@ -2,7 +2,7 @@
 
 **Large files, streaming, range requests, CDN delivery, processing hooks.**
 
-Current as of `@filelayer/core` **0.3.0**. This is a design note, not a
+Current as of `@filelayer/core` **0.4.4**. This is a design note, not a
 changelog: most of what it describes is still **not built**. Its purpose is to
 establish whether the tier 1–4 design precludes any of it, and to name exactly
 what breaks so that a future implementer is not surprised.

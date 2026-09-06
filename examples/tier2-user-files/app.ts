@@ -5,10 +5,13 @@
  * nothing from tiers 3-5 has to be understood.
  *
  * The property this buys, and it is the one people get wrong by hand: a file
- * uploaded with `{ owner: 'alice' }` is readable by alice and by nobody else.
- * Not by bob, not by an anonymous caller holding the id, not by anyone who
- * learns the storage key. There is no `WHERE user_id = ?` in this file, because
- * there is no query in this file.
+ * uploaded with `{ owner: 'alice' }` is readable through Filelayer by alice, by
+ * her org's admins and owners, and by nobody else. Not by bob, not by an
+ * anonymous caller holding the id, and not by someone who learns the storage key
+ * -- the key is not an input to the decision, given a private bucket. There is
+ * no `WHERE user_id = ?` in this file, because there is no query in this file.
+ * There is also no RLS policy underneath it: a client that queries the `file`
+ * table directly bypasses all of the above.
  *
  * Run: npm --prefix packages/core run example:tier2
  */

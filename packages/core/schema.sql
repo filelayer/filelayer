@@ -23,11 +23,14 @@
 --     never an input to an access decision. Knowing an object key, a URL, or a
 --     file id grants nothing.
 --
--- P3. TENANT ISOLATION IS STRUCTURAL, NOT CONDITIONAL. Every access-bearing
---     table carries org_id, and every uniqueness/foreign-key constraint is
---     org-scoped. Cross-tenant access is not "prevented by a WHERE clause" --
---     it is unrepresentable, because a grant's org_id must equal its file's
---     org_id (enforced by composite FK, see `grant` table).
+-- P3. CROSS-TENANT GRANTS ARE STRUCTURALLY IMPOSSIBLE TO WRITE. Every
+--     access-bearing table carries org_id, and every uniqueness/foreign-key
+--     constraint is org-scoped, so a grant's org_id must equal its file's
+--     org_id (composite FK, see `grant` table). No writer -- including a
+--     migration or a psql session -- can create such a row. This is a
+--     write-side integrity constraint, not a read filter: there is no RLS
+--     policy in this file, and reads are scoped by authz.ts, which only sees
+--     calls made through the library.
 --
 -- P4. A SIGNED URL MAY NEVER OUTLIVE THE PERMISSION THAT CREATED IT.
 --     This is the defect in Convex ("the only way to revoke a file URL is by

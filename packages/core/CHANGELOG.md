@@ -25,6 +25,107 @@ Nothing yet.
 
 ---
 
+## [0.4.4] — 2026-09-06
+
+Documentation only. **No API change, no schema change, no behaviour change.**
+The `schema.sql` and `authz.ts` edits are comments; the SQL and the decision
+logic are byte-for-byte the behaviour of `0.4.3`.
+
+### Corrected — security claims that overstated what is enforced, and where
+
+We described Filelayer in a way that implied it supersedes database-level
+enforcement. It does not, and the repository contradicted itself about it: the
+README disparaged predicate-based enforcement while our own published Supabase
+comparison concluded that authorization living next to the data "is a
+structurally stronger position than middleware." The second one is right.
+
+The corrected framing, now consistent across every public surface:
+**Filelayer is authorization middleware, not row-level security. It decides for
+calls made through it. Some invariants — cross-tenant grants, cross-project
+identities, and delegation that amplifies authority or subject breadth — are
+refused by constraints and triggers and therefore bind every writer, including
+a `psql` session. All read authorization is in `authz.ts`. There is no RLS
+policy in `schema.sql`, and a direct `SELECT` is not filtered. The two layers
+compose; this one does not replace the other.**
+
+- **`README.md`** — removed "there is exactly one place a decision is made, and
+  it is not in your application", which was false for any caller that bypasses
+  the library. Added the middleware/RLS paragraph.
+- **`README.md`, P3** — was "Cross-tenant *access* is unrepresentable, not
+  merely prevented by a `WHERE` clause." Two faults: *access* is a read and the
+  composite foreign key constrains writes, and the comparison disparaged the
+  mechanism RLS is built on. Now "cross-tenant grants are structurally
+  impossible to write", scoped to the row.
+- **`packages/core/schema.sql`** — the P3 header comment carried the same two
+  faults verbatim. Corrected. This is the file both `README.md` and `TRUST.md`
+  send a sceptical reviewer to first.
+- **`packages/core/src/authz.ts`** — the module header made the same
+  exclusivity claim and listed "every RLS policy" as a source of leaks.
+- **`TRUST.md`** — "enforces them at the data layer" was false for the read
+  half of P1 and P3, and for P2 and P5. Now says which properties bind every
+  writer and which bind only library callers.
+- **`llms.txt`** — added the middleware/RLS distinction to the opening, because
+  an agent that assumes data-layer enforcement will write an unsafe direct
+  query.
+- **`docs/QUICKSTART.md`** — "Nobody else can" now states the two caveats it
+  omitted: org admins and owners can read `private` files, and a direct query
+  against the `file` table is not filtered.
+- **`examples/`** — removed "no RLS policies" from the vault's list of absences
+  and said explicitly that the absence is not a claim that database-level
+  enforcement is unnecessary; removed "no way to write one wrong" (the bucket
+  is a way); qualified tier 2's "readable by alice and by nobody else".
+- **`packages/core/package.json`** — description now reads "authorization
+  middleware" and "a single decision point".
+- **`openapi.yaml` / `openapi.json`** — "Authorization … is **entirely ours**"
+  is gone. It was the strongest exclusivity claim we made, on the surface an
+  integrating agent is most likely to read *instead of* the README. It is now
+  scoped to requests that reach the two routes, and carries both the
+  middleware/RLS distinction and the precondition the document cannot enforce:
+  **your object bucket must be private.** Storage keys are `orgId/fileId` and
+  are deliberately not secrets (P2), so a world-readable bucket makes the rest
+  of the document inapplicable — and nothing in it had said so. Edited in
+  `tools/openapi.mjs`, which generates both files.
+- **`ARCHITECTURE-PROGRESSIVE.md` §4.3** — the "6.7× fewer places to get right"
+  figure sits directly under a row reading "Supabase + RLS", which invites
+  exactly one misreading. The measurement stays, unaltered; what is added is
+  the sentence that makes it honest: **reduction in decisions and strength of
+  enforcement are different axes, and RLS wins the second.** It now cites our
+  own published comparison, which concludes that authorization living next to
+  the data "cannot be bypassed by a new code path" and is "a structurally
+  stronger position than middleware."
+
+### Fixed — stale version and test counts on public surfaces
+
+`SECURITY.md` said `0.3.0` and listed `0.3.x` as the supported line, so the
+security policy declared the current release unsupported.
+`ARCHITECTURE-PROGRESSIVE.md` and `architecture/TIER5-DESIGN-NOTE.md` said
+"current as of 0.3.0", and the former claimed 313 tests across 68 suites. It is
+**324 across 74**. `PUBLISH-RUNBOOK.md` still instructed the publisher to expect
+an `E404` from the registry, which would abort every release after the first.
+
+### Added — a gate so the version drift cannot happen again
+
+`npm run check:versions` (`tools/check-version-claims.mjs`, wired into
+`npm run verify`) fails the build when a public surface states a version that
+disagrees with `packages/core/package.json`, when the supported-versions table
+in `SECURITY.md` does not list the current minor, or when two surfaces disagree
+about the test or suite count. Historical mentions — "Fixed in `0.3.0`", the
+ranges in `MIGRATIONS.md` — are not claims and are not checked; the gate matches
+specific current-state phrasings instead. It carries a negative control, and it
+was validated by reintroducing the exact drift described above and confirming it
+is caught.
+
+One policy file changed to support this work. `.internal-language.json` now
+exempts the comparison-implementation term when every occurrence on the line is
+part of a published `benchmark/baseline-supabase/`-style path — mirroring the
+exemption its neighbouring rule already carried, for the same reason: a file
+reference is not the framing the rule exists to ban, and the reports in those
+directories are evidence we cite against ourselves. Bare uses remain violations,
+verified with a negative control. The gate then caught this very changelog entry
+on its first draft, which is the behaviour we wanted.
+
+---
+
 ## [0.4.3] — 2026-09-06
 
 Distribution only. No product change, no API change, no schema change, no
