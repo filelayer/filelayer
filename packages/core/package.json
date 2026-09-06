@@ -1,6 +1,6 @@
 {
   "name": "@filelayer/core",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Multi-tenant file authorization and lifecycle for Postgres: one decision point for public and private files, revocable URLs, delegated share links and a hash-chained audit trail.",
   "license": "Apache-2.0",
   "type": "module",

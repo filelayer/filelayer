@@ -167,6 +167,34 @@ change with an additive API whose migration is `MIGRATIONS.md` Entry 2.
 
 ---
 
+## [0.4.0] — 2026-09-06
+
+### Changed
+
+- **`@electric-sql/pglite` is no longer a runtime dependency.** It is now a
+  dev dependency and an *optional* peer. The published package declares zero
+  runtime dependencies. A library whose premise is "run it against your own
+  Postgres" should not install an embedded WASM Postgres into every production
+  deployment; it did, and that was wrong.
+  `createTestDb()` and `Filelayer.quickstart()` still need it, and now say so
+  with an actionable message instead of a module-resolution error. If you use
+  either in tests, add `npm install --save-dev @electric-sql/pglite`. Nothing
+  else changes; production code paths never imported it.
+
+### Added
+
+- A CI job that exercises the S3/R2 storage adapter against live object storage
+  when credentials are configured, and states plainly in the build summary when
+  they are not. See `docs/LIVE-S3-TESTS.md`.
+- `TRUST.md` — the current state of this project in numbers, including the ones
+  that are zero, and what would change them.
+
+### Fixed
+
+- `FILELAYER_TEST_S3_PREFIX` used `??` rather than `||`, so the empty string CI
+  supplies for an unset variable became a real value and rooted test objects at
+  the bucket root instead of under the prefix cleanup deletes.
+
 ## [0.3.0] — 2026-09-05
 
 The release that makes the package installable, and the one that closes the
