@@ -1,0 +1,21 @@
+{
+  "_comment": [
+    "Cron is the only lifecycle mechanism available: Vercel Blob has no",
+    "expiry rules, no storage-class transitions and no automatic cleanup.",
+    "Hobby allows one cron per day; this schedule requires Pro."
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/sweep",
+      "schedule": "0 * * * *"
+    }
+  ],
+  "functions": {
+    "app/api/orgs/[orgId]/documents/[docId]/content/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/s/[token]/download/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}

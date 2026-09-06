@@ -1,0 +1,17 @@
+{
+  "_comment": [
+    "Required for browser-direct presigned PUT uploads. Without this the",
+    "browser blocks the upload with an opaque CORS error and the server sees",
+    "nothing at all. AllowedOrigins must be an exact list — a wildcard here",
+    "lets any site on the internet drive uploads with a URL it has stolen."
+  ],
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["https://app.vault.example"],
+      "AllowedMethods": ["PUT"],
+      "AllowedHeaders": ["content-type"],
+      "ExposeHeaders": ["ETag"],
+      "MaxAgeSeconds": 3000
+    }
+  ]
+}

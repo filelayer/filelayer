@@ -1,0 +1,19 @@
+{
+  "name": "vault-baseline-convex",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vault scenario implemented on Convex + the Cloudflare R2 component. WRITTEN TO SPEC, NOT EXECUTED.",
+  "scripts": {
+    "loc": "node tools/loc.js",
+    "dev": "echo 'Not runnable in this benchmark: requires a Convex deployment and a Cloudflare R2 bucket. See README.md.' && exit 1"
+  },
+  "dependencies": {
+    "convex": "^1.17.0",
+    "@convex-dev/r2": "^0.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0"
+}

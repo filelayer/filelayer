@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "What it takes to make an S3 bucket serve public avatars. Counted as infra.",
+    "",
+    "This policy is only half of it. The other half is not a file and therefore",
+    "is not counted here, which flatters S3 in the LOC table:",
+    "  1. Turn OFF BlockPublicAcls, IgnorePublicAcls, BlockPublicPolicy and",
+    "     RestrictPublicBuckets, at BOTH the account and the bucket level.",
+    "  2. Acknowledge the console warning that the bucket will be public.",
+    "  3. Optionally front it with CloudFront + OAC, at which point you write an",
+    "     origin access policy instead of this one and the bucket goes private",
+    "     again.",
+    "",
+    "Step 1 is the one that produced the Fiverr/Cloudinary class of incident. It",
+    "is a decision with two options, one of which discloses data, and it produces",
+    "no error, no failing test and no observable difference in normal operation."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadForAvatars",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-app-avatars/avatars/*"
+    },
+    {
+      "Sid": "DenyInsecureTransport",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::my-app-avatars", "arn:aws:s3:::my-app-avatars/*"],
+      "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+    }
+  ]
+}

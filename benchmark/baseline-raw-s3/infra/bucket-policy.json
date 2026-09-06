@@ -1,0 +1,55 @@
+{
+  "_comment": [
+    "Bucket policy for the Vault bucket. Every statement here is a decision the",
+    "developer must make and get right; none of them are defaults.",
+    "",
+    "Sid DenyStalePresignedSignatures is the single most valuable control in this",
+    "whole baseline: it makes S3 itself reject any presigned request whose",
+    "signature is older than 300s, so an application bug that asks for a 7-day",
+    "expiry cannot produce a 7-day-live URL. It is one of the few guardrails in",
+    "this architecture that fails CLOSED.",
+    "See https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html",
+    "#PresignedUrlUploadObject-LimitCapabilities"
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyInsecureTransport",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::vault-prod", "arn:aws:s3:::vault-prod/*"],
+      "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+    },
+    {
+      "Sid": "DenyStalePresignedSignatures",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": "arn:aws:s3:::vault-prod/*",
+      "Condition": { "NumericGreaterThan": { "s3:signatureAge": "300000" } }
+    },
+    {
+      "Sid": "DenyUnencryptedUploads",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::vault-prod/*",
+      "Condition": {
+        "StringNotEquals": { "s3:x-amz-server-side-encryption": "aws:kms" }
+      }
+    },
+    {
+      "Sid": "AllowOnlyTheVaultApplicationRole",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::vault-prod", "arn:aws:s3:::vault-prod/*"],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::ACCOUNT_ID:role/vault-app"
+        }
+      }
+    }
+  ]
+}

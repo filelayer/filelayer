@@ -1,0 +1,93 @@
+# =============================================================================
+# WHAT THIS REPOSITORY IS
+# =============================================================================
+# The top level is deny-by-default: nothing at the root is tracked unless it is
+# named below. This is an allow-list rather than a list of exclusions on
+# purpose. An exclusion only covers the files somebody predicted, and it has to
+# describe them to exclude them; an allow-list covers everything nobody thought
+# of, says only what this repository contains, and travels with a clone.
+#
+# Adding a top-level file or directory to the project means adding one line
+# here, in the same commit. That is the intended friction.
+
+/*
+
+!/.github/
+!/.gitignore
+!/.internal-language.json
+!/ARCHITECTURE-PROGRESSIVE.md
+!/CODE_OF_CONDUCT.md
+!/CONTRIBUTING.md
+!/LICENSE
+!/NOTICE
+!/PUBLISH-RUNBOOK.md
+!/README.md
+!/SECURITY.md
+!/architecture/
+!/benchmark/
+!/docs/
+
+!/examples/
+!/llms.txt
+!/openapi.json
+!/openapi.yaml
+!/package.json
+!/packages/
+!/tools/
+
+# The same shape one level down, for the two directories that hold work in
+# progress alongside what is published. Same reasoning: name what is here.
+
+/architecture/*
+!/architecture/TIER5-DESIGN-NOTE.md
+
+/benchmark/*
+!/benchmark/adversarial/
+!/benchmark/baseline-convex/
+!/benchmark/baseline-raw-s3/
+!/benchmark/baseline-supabase/
+!/benchmark/baseline-vercel-blob/
+!/benchmark/tier1-avatar/
+!/benchmark/count-decisions.mjs
+!/benchmark/count-loc.mjs
+!/benchmark/count-tiers.mjs
+!/benchmark/decisions.json
+!/benchmark/loc.manifest.json
+
+# --- dependencies ------------------------------------------------------------
+node_modules/
+
+# --- build output ------------------------------------------------------------
+dist/
+build/
+*.tgz
+
+# --- files prepack copies in from the repository root ------------------------
+# These are generated at pack time from the canonical copies at the root.
+# Committing them would let the two drift.
+packages/core/README.md
+packages/core/LICENSE
+packages/core/NOTICE
+
+# --- scratch, working directories and tool output ----------------------------
+scratch/
+outputs/
+tmp/
+.doccheck/
+*.log
+
+# --- local environment -------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- editors and operating systems -------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- python tooling that has wandered in --------------------------------------
+__pycache__/
+*.pyc

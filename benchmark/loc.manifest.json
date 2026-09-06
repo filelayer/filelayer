@@ -1,0 +1,79 @@
+{
+  "$comment": [
+    "What counts as application code, per implementation, in one auditable place.",
+    "Every exclusion carries a reason. Disagree with a line here and you can re-run",
+    "the number yourself: `node count-loc.mjs`.",
+    "",
+    "Rule order is: excluded, platform, tooling, test, infra, app. A file matching",
+    "no rule is reported as UNCLASSIFIED and fails the run, so a whole directory",
+    "can never again contribute a silent zero, which an earlier version of the",
+    "counter allowed.",
+    "",
+    "The reasons array is documentation, not logic; `glob` is the matched pattern."
+  ],
+  "implementations": {
+    "filelayer": {
+      "root": "../examples/vault",
+      "note": "the whole integration; the library itself is vendor code and is not counted",
+      "app": [{ "glob": "server.ts", "why": "the entire application" }],
+      "excluded": []
+    },
+
+    "baseline-supabase": {
+      "root": "./baseline-supabase",
+      "note": "Supabase Storage + Postgres RLS; executed against PGlite",
+      "app": [
+        { "glob": "sql/10_app_schema.sql", "why": "schema the developer owns" },
+        { "glob": "sql/20_rls_policies.sql", "why": "the authorization kernel + 19 policies" },
+        { "glob": "sql/25_config_b_lockdown.sql", "why": "Config B lockdown, 8 net lines" },
+        { "glob": "sql/30_audit.sql", "why": "tamper-evident audit chain" },
+        { "glob": "src/app/**", "why": "application logic" }
+      ],
+      "platform": [
+        { "glob": "sql/00_platform_emulation.sql", "why": "auth+storage schema Supabase provides" },
+        { "glob": "src/platform/**", "why": "Storage API + signed URLs Supabase provides" }
+      ],
+      "excluded": [
+        {
+          "glob": "sql/90_rbac_jwt_variant.sql",
+          "why": "measurement artefact: the JWT-claim RBAC variant, quarantined by the baseline's own author and never loaded by the production config"
+        }
+      ],
+      "tooling": [{ "glob": "tools/**", "why": "the baseline's own LOC script" }],
+      "test": [{ "glob": "test/**", "why": "tests are excluded for every implementation" }]
+    },
+
+    "baseline-raw-s3": {
+      "root": "./baseline-raw-s3",
+      "note": "raw S3/R2 presigned URLs + Postgres; executed against a SigV4-verifying local store",
+      "app": [{ "glob": "src/**", "why": "application logic" }],
+      "infra": [{ "glob": "infra/*.json", "why": "bucket policy, CORS, IAM -- authored by the developer" }],
+      "excluded": [{ "glob": "infra/*.md", "why": "prose, not config" }],
+      "test": [{ "glob": "test/**", "why": "includes the local-S3 harness" }]
+    },
+
+    "baseline-vercel-blob": {
+      "root": "./baseline-vercel-blob",
+      "note": "Vercel Blob (private store) + Postgres; NEVER EXECUTED",
+      "app": [
+        { "glob": "app/**", "why": "Next.js route handlers" },
+        { "glob": "lib/**", "why": "authz, audit, shares, blob, db" }
+      ],
+      "infra": [{ "glob": "infra/*.json", "why": "vercel.json cron config" }],
+      "excluded": [{ "glob": "infra/*.md", "why": "prose, not config" }]
+    },
+
+    "baseline-convex": {
+      "root": "./baseline-convex",
+      "note": "Convex + the Cloudflare R2 component; NEVER EXECUTED",
+      "app": [{ "glob": "convex/**", "why": "the whole implementation lives here" }],
+      "excluded": [
+        {
+          "glob": "convex/variantA_convexFileStorage.ts",
+          "why": "a pure-Convex-File-Storage comparison artefact written for the report, not part of the implementation"
+        }
+      ],
+      "tooling": [{ "glob": "tools/**", "why": "the baseline's own LOC script" }]
+    }
+  }
+}

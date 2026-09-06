@@ -1,0 +1,50 @@
+{
+  "_comment": [
+    "Least-privilege policy for the role that SIGNS presigned URLs.",
+    "",
+    "AWS Prescriptive Guidance: 'A presigned URL cannot provide access to",
+    "resources that weren't granted to the principal that generated the",
+    "signature.' The scope of this policy is therefore the true blast radius of",
+    "every presigned URL the application ever issues.",
+    "",
+    "NOTE THE LIMIT: this is as narrow as it goes. There is no way to express",
+    "'this principal may read objects belonging to org X only', because org",
+    "membership lives in Postgres and IAM cannot see it. Every presigned URL",
+    "this role can sign for org A, it can equally sign for org B. Cross-org",
+    "isolation is 100% application logic with zero infrastructure backstop.",
+    "",
+    "s3:DeleteObject is deliberately NOT granted to the request-path role; the",
+    "orphan reaper uses a separate role so a bug in a request handler cannot",
+    "destroy customer data."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadWriteVaultObjects",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload"],
+      "Resource": "arn:aws:s3:::vault-prod/orgs/*"
+    },
+    {
+      "Sid": "HeadObjectForUploadConfirmation",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::vault-prod/orgs/*"
+    },
+    {
+      "Sid": "UseTheBucketKey",
+      "Effect": "Allow",
+      "Action": ["kms:Decrypt", "kms:GenerateDataKey"],
+      "Resource": "arn:aws:kms:REGION:ACCOUNT_ID:key/KEY_ID",
+      "Condition": {
+        "StringEquals": { "kms:ViaService": "s3.REGION.amazonaws.com" }
+      }
+    },
+    {
+      "Sid": "NeverListTheBucket",
+      "Effect": "Deny",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::vault-prod"
+    }
+  ]
+}

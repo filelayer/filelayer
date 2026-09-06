@@ -1,0 +1,156 @@
+{
+  "$convention": {
+    "definition": "A security-sensitive decision is a point where (a) at least two implementations are available to the developer, (b) at least one results in unauthorized access, data loss or disclosure, and (c) the wrong choice produces no error, no failing test, no warning and no observable difference during normal operation. The test is SILENCE, not severity.",
+    "types": "A distinct KIND of decision. Repeats of the same decision collapse to one. This is the number a reviewer must hold in their head, and it is the more robust of the two.",
+    "sites": "The number of PLACES the decision must be made correctly. This is the maintenance-burden number and the one that scales. It is more contestable than the type count, because how finely you slice a codebase is a judgement; every multiplier > 1 below therefore carries an `evidence` field naming how it was measured.",
+    "whyBoth": "An earlier 27-vs-33 comparison was meaningless because the Supabase report collapsed repeats and the Convex report expanded them. Neither number was wrong; they answered different questions. Reporting both, under one rule, for all five, is the fix.",
+    "scopeNote": "Infrastructure/configuration decisions are INCLUDED, because all four baseline reports included them. Authentication ('how the caller's identity is established') is included for ALL FIVE, which none of the baseline reports did -- it is a real silent decision and excluding it only for the baselines would flatter Filelayer.",
+    "unexecutedNote": "convex and vercel-blob have never been executed. Their decisions are recounted from their own enumerated lists only. The shared adversarial suite found decisions that the two EXECUTED baselines had missed (filename sanitisation, denial auditing) and those were added to them. No equivalent discovery is possible for the unexecuted two, so their counts are probably UNDERCOUNTS. That asymmetry works against Filelayer and is left in place."
+  },
+
+  "filelayer": {
+    "artifact": "examples/vault/server.ts (post-rebuild)",
+    "decisions": [
+      { "id": 1, "d": "How the caller's identity is established", "sites": 1, "where": "currentActor(), server.ts" },
+      { "id": 2, "d": "Where the one-time share secret is delivered", "sites": 1, "where": "the POST /files/:id/shares response" },
+      { "id": 3, "d": "err.code vs err.reason in the error body", "sites": 1, "where": "the single catch" },
+      { "id": 4, "d": "The object store must be private", "sites": 1, "where": "deployment; not exercised (MemoryStorage)" },
+      { "id": 5, "d": "Routing byte delivery through the library rather than hand-writing the response. `delivery.body` is public, so a developer who ignores fileDownloadRoute/sendNodeResponse and writes their own writeHead re-opens the stored-XSS and cache-replay defects. Weaker than the pre-rebuild version -- the safe path is now the short one -- but still a silent choice.", "sites": 1, "where": "the two route constructions in server.ts" },
+      { "id": 6, "d": "The scope of the object-store credential Filelayer is handed. It is the blast radius of everything the library ever reads or writes. Equivalent to raw-S3 #20 and Convex #32; NOT previously counted for Filelayer.", "sites": 1, "where": "S3Storage config" },
+      { "id": 7, "d": "Object-store versioning off, or a retention story for versions. `storage.delete()` writes a delete marker on a versioned bucket and the bytes remain, so 'delete my document' becomes a lie. Equivalent to raw-S3 #19; NOT previously counted for Filelayer.", "sites": 1, "where": "bucket config" },
+      { "id": 8, "d": "Multi-writer audit-chain serialisation. Self-reported: the chain is SELECT-then-INSERT and forks silently under a second writer unless the deployment adds pg_advisory_xact_lock. Equivalent to Vercel #21; NOT previously counted for Filelayer.", "sites": 1, "where": "deployment topology" }
+    ],
+    "arguable": [
+      { "d": "Choosing visibility:'org' when you meant 'private'", "why_excluded": "the effect is observable in normal operation: it is a column, it is on every FileRecord, it is in the file.create audit event, and since the rebuild it is visible in the listing screen itself. Excluded under clause (c). It was the closest call in this review, and it stays close. Count it and Filelayer is 9." },
+      { "d": "Relying on maxDownloads for an ACTOR grant", "why_excluded": "Self-reported: the counter is charged only on redeem(), so an actor grant with maxDownloads:1 permits unlimited direct reads. This is a library defect rather than a developer choice, but a developer who uses the field is silently wrong. Count it and Filelayer is 9 (or 10 with the row above)." }
+    ],
+    "removedByTheRebuild": [
+      "upload() taking a bare actorId -- the signature now requires a Principal; there is no second identity argument to confuse with a request field",
+      "nosniff / Content-Disposition on the read path -- computed by the library, no option to disable",
+      "Cache-Control: no-store on the share path -- same",
+      "the share password in the query string -- refused with 400 before any work; a silent decision converted into a loud one",
+      "the org filter, the visibility/owner/admin predicate and the grant union for listing (three normalisation additions from review) -- all three are listFiles(), proven equivalent to authorize() by test/listing.test.ts"
+    ]
+  },
+
+  "supabase": {
+    "artifact": "sql/ + src/app/, Config A",
+    "decisions": [
+      { "id": 1, "d": "Bucket created with public:false", "sites": 1 },
+      { "id": 2, "d": "bucket_id = 'vault' must appear in each storage policy", "sites": 4, "evidence": "4 policies on storage.objects" },
+      { "id": 3, "d": "vault_read: path-only authorization vs joining public.documents", "sites": 1 },
+      { "id": 4, "d": "vault_read: the allow_any_operation list", "sites": 1 },
+      { "id": 5, "d": "vault_insert: path segment indices ([1]=org, [2]=doc)", "sites": 1 },
+      { "id": 6, "d": "vault_insert: owner_id = auth.uid()", "sites": 1 },
+      { "id": 7, "d": "vault_insert: can_write_org vs is_org_member (viewers uploading)", "sites": 1 },
+      { "id": 8, "d": "vault_delete: can_manage_object vs can_read_object", "sites": 1 },
+      { "id": 9, "d": "Every policy authored FOR the right command (FOR ALL where you meant FOR SELECT opens writes, silently)", "sites": 20, "evidence": "grep -ci 'create policy' over counted SQL: 19 in 20_rls_policies.sql + 1 in 25_config_b_lockdown.sql" },
+      { "id": 10, "d": "SECURITY DEFINER on the helper kernel -- each one bypasses RLS on what it reads", "sites": 14, "evidence": "grep -ci 'security definer': 11 in 20_rls_policies.sql + 3 in 30_audit.sql" },
+      { "id": 11, "d": "set search_path = '' on every SECURITY DEFINER function", "sites": 12, "evidence": "grep -ci 'set search_path': 9 + 3" },
+      { "id": 12, "d": "REVOKE EXECUTE from anon/public on the object-resolution helpers", "sites": 2 },
+      { "id": 13, "d": "documents.storage_path must be UNIQUE", "sites": 1 },
+      { "id": 14, "d": "documents_insert: uploader_id = auth.uid()", "sites": 1 },
+      { "id": 15, "d": "documents_update WITH CHECK (re-parenting into another org)", "sites": 1 },
+      { "id": 16, "d": "The owner-escalation guard on the member policies (write/update/delete)", "sites": 3 },
+      { "id": 17, "d": "share_insert: document_id must be checked to belong to org_id", "sites": 1 },
+      { "id": 18, "d": "Column-level GRANT UPDATE (revoked_at) on share_links", "sites": 1 },
+      { "id": 19, "d": "audit_log: no INSERT policy AND REVOKE EXECUTE on audit_append", "sites": 2 },
+      { "id": 20, "d": "The gateway holds the BYPASSRLS service key", "sites": 1 },
+      { "id": 21, "d": "The gateway resolves storage_path server-side from the token", "sites": 1 },
+      { "id": 22, "d": "Download-count increment is one atomic conditional UPDATE", "sites": 1 },
+      { "id": 23, "d": "Constant-time password comparison", "sites": 1 },
+      { "id": 24, "d": "A failed password attempt must not consume a download", "sites": 1 },
+      { "id": 25, "d": "Share-token entropy", "sites": 1 },
+      { "id": 26, "d": "Filename sanitisation (object names feed storage.foldername())", "sites": 1 },
+      { "id": 27, "d": "Table-lookup RBAC over the docs' JWT-claim RBAC", "sites": 1 },
+      { "id": 28, "d": "How the caller's identity is established", "sites": 1, "addedBy": "uniform rule, applied to all five" },
+      { "id": 29, "d": "Whether denied accesses are audited at all", "sites": 1, "addedBy": "the shared adversarial suite: attacks C4 and E1 are BREACH -- 8 probes at unknown document ids and a cross-tenant read attempt produced 0 audit events" }
+    ]
+  },
+
+  "raw-s3": {
+    "artifact": "src/ + infra/",
+    "decisions": [
+      { "id": 1, "d": "Presigned URL TTL (download and upload)", "sites": 2, "note": "review collapsed report #1 and #2 into one type; adopted" },
+      { "id": 2, "d": "Share links must not be presigned URLs", "sites": 1 },
+      { "id": 3, "d": "Every tenant-scoped row read must filter on org_id", "sites": 5, "evidence": "loadDoc, the list query, the shares select, loadShareByToken, sweepOrphans" },
+      { "id": 4, "d": "The object key contains the org id but does not enforce it", "sites": 1 },
+      { "id": 5, "d": "404 vs 403 for non-members", "sites": 2, "evidence": "loadDoc + the express error middleware" },
+      { "id": 6, "d": "Share tokens stored as SHA-256, never plaintext", "sites": 1 },
+      { "id": 7, "d": "Share-token entropy", "sites": 1 },
+      { "id": 8, "d": "scrypt for the password, not the SHA-256 used for tokens", "sites": 1 },
+      { "id": 9, "d": "timingSafeEqual for password comparison", "sites": 1 },
+      { "id": 10, "d": "A failed password attempt must not consume a download", "sites": 1, "addedBy": "uniform rule; the baseline gets this right" },
+      { "id": 11, "d": "Download-cap consumption is one atomic UPDATE", "sites": 1 },
+      { "id": 12, "d": "Content-Disposition: attachment + nosniff", "sites": 2, "evidence": "the proxy path, and the presign response overrides" },
+      { "id": 13, "d": "Cache-Control: private, no-store on share downloads", "sites": 1 },
+      { "id": 14, "d": "Can viewers create share links? (spec ambiguity)", "sites": 1 },
+      { "id": 15, "d": "Admins may not create or demote owners; the last owner cannot be demoted", "sites": 2 },
+      { "id": 16, "d": "Audit appends must be serialised per org (row lock on orgs)", "sites": 10, "evidence": "grep -c 'inOrgTx(' src/app.mjs" },
+      { "id": 17, "d": "Deleting a document must cascade-revoke its outstanding shares", "sites": 1 },
+      { "id": 18, "d": "S3 Block Public Access, all four toggles", "sites": 4 },
+      { "id": 19, "d": "Bucket versioning off, or a retention story for versions", "sites": 1 },
+      { "id": 20, "d": "iam-policy-app.json scope = the blast radius of every URL issued", "sites": 1 },
+      { "id": 21, "d": "CORS AllowedOrigins must be an exact list", "sites": 1 },
+      { "id": 22, "d": "A separate, more privileged role for the reaper", "sites": 1 },
+      { "id": 23, "d": "CloudTrail data events / S3 access logging destination", "sites": 1 },
+      { "id": 24, "d": "How the caller's identity is established", "sites": 1, "addedBy": "uniform rule, applied to all five" },
+      { "id": 25, "d": "Filename sanitisation before it reaches Content-Disposition", "sites": 1, "addedBy": "the shared adversarial suite: attack F2 is PARTIAL -- the filename is interpolated unescaped, and a CR/LF in it makes every share download of that document return 500" },
+      { "id": 26, "d": "Whether denied accesses are audited at all", "sites": 1, "addedBy": "the shared adversarial suite: attacks C4 and E1 are BREACH" }
+    ]
+  },
+
+  "vercel-blob": {
+    "artifact": "app/ + lib/ + infra/. NEVER EXECUTED -- code-reading only, probably an undercount.",
+    "decisions": [
+      { "id": 1, "d": "issueSignedToken() must always be passed a pathname (it defaults to a whole-store wildcard)", "sites": 2 },
+      { "id": 2, "d": "The browser chooses the upload pathname", "sites": 1 },
+      { "id": 3, "d": "Auth must be in the route handler, never in Next.js middleware", "sites": 15, "evidence": "find app -name route.ts | wc -l" },
+      { "id": 4, "d": "Never s-maxage a private blob response", "sites": 2 },
+      { "id": 5, "d": "Cache-Control must be set explicitly (the default is `public`)", "sites": 2 },
+      { "id": 6, "d": "One store for all tenants vs one store per tenant", "sites": 1 },
+      { "id": 7, "d": "access:'private' must be passed on every get()", "sites": 2 },
+      { "id": 8, "d": "BLOB_READ_WRITE_TOKEN must not shadow OIDC", "sites": 1 },
+      { "id": 9, "d": "CRON_SECRET must be checked in the cron route", "sites": 1 },
+      { "id": 10, "d": "Every tenant-scoped query must filter on org_id", "sites": 10, "evidence": "conservative subset of the 28 query call sites in app/ + lib/" },
+      { "id": 11, "d": "The object pathname is not a boundary", "sites": 1 },
+      { "id": 12, "d": "404 vs 403 for non-members", "sites": 1 },
+      { "id": 13, "d": "Share tokens hashed, not stored", "sites": 1 },
+      { "id": 14, "d": "Share-token entropy", "sites": 1 },
+      { "id": 15, "d": "scrypt for the password, not the token hash function", "sites": 1 },
+      { "id": 16, "d": "timingSafeEqual", "sites": 1 },
+      { "id": 17, "d": "Atomic download-cap consumption", "sites": 1 },
+      { "id": 18, "d": "Content-Disposition: attachment + nosniff", "sites": 2 },
+      { "id": 19, "d": "Can viewers create share links? (spec ambiguity)", "sites": 1 },
+      { "id": 20, "d": "Last-owner protection", "sites": 1 },
+      { "id": 21, "d": "Audit-chain serialisation under serverless concurrency (the retry loop is load-bearing and trivially omitted)", "sites": 12, "evidence": "conservative subset of the 26 audit-append references in app/ + lib/" },
+      { "id": 22, "d": "How the caller's identity is established", "sites": 1, "addedBy": "uniform rule, applied to all five" }
+    ]
+  },
+
+  "convex": {
+    "artifact": "convex/. NEVER EXECUTED -- code-reading only, probably an undercount.",
+    "decisions": [
+      { "id": 1, "d": "Every exported function must call requireUser (and usually requireRole / loadReadableDocument) as its first act. A public query with no identity check is world-readable to unauthenticated callers.", "sites": 17, "evidence": "15 public query/mutation across convex/*.ts excluding the comparison artefact, + 2 HTTP routes" },
+      { "id": 2, "d": "/download: getUserIdentity() returns null rather than throwing, so the null branch is load-bearing", "sites": 1 },
+      { "id": 3, "d": "/s/<token> is deliberately unauthenticated, so every guard in it is load-bearing with no backstop", "sites": 1 },
+      { "id": 4, "d": "ctx.db.get(documentId) returns any document from any org: every call site must re-derive the org", "sites": 8, "evidence": "grep -o 'ctx.db.get(' | wc -l" },
+      { "id": 5, "d": "shares.revoke must check roleInOrg", "sites": 1 },
+      { "id": 6, "d": "r2.finishUpload must verify doc.uploaderId === user._id", "sites": 1 },
+      { "id": 7, "d": "r2Key must not be returned to clients", "sites": 1 },
+      { "id": 8, "d": "shares.create must take orgId from the document, never from an argument", "sites": 1 },
+      { "id": 9, "d": "shares.listForDocument must not return raw tokens", "sites": 1 },
+      { "id": 10, "d": "Constant-time password comparison", "sites": 1 },
+      { "id": 11, "d": "A failed password attempt must not consume a download", "sites": 1 },
+      { "id": 12, "d": "Share-token entropy", "sites": 1 },
+      { "id": 13, "d": "appendAudit must be reachable only from server code", "sites": 1 },
+      { "id": 14, "d": "Audit read must check admin, not member", "sites": 1 },
+      { "id": 15, "d": "Audit before the redirect, not after", "sites": 1 },
+      { "id": 16, "d": "The R2 bucket must not be public and must not have an r2.dev URL", "sites": 1 },
+      { "id": 17, "d": "Bucket CORS must not be '*'", "sites": 1 },
+      { "id": 18, "d": "The R2 API token must be scoped to one bucket", "sites": 1 },
+      { "id": 19, "d": "PRESIGNED_TTL_SEC -- this number IS the revocation SLA", "sites": 1 },
+      { "id": 20, "d": "How the caller's identity is established", "sites": 1, "addedBy": "uniform rule, applied to all five" }
+    ]
+  }
+}

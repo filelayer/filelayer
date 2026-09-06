@@ -1,0 +1,18 @@
+{
+  "name": "vault-baseline-supabase",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vault scenario implemented on Supabase Storage + Postgres RLS. Executable against PGlite (real Postgres, real RLS).",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "loc": "node tools/loc.js"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.8"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0"
+}

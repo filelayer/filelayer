@@ -1,0 +1,14 @@
+{
+  "name": "baseline-vercel-blob",
+  "private": true,
+  "description": "Benchmark baseline 2: Vercel Blob private store (WRITTEN TO SPEC, NOT EXECUTED)",
+  "scripts": {
+    "loc": "node ../count-loc.mjs ."
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.3.0",
+    "@neondatabase/serverless": "^1.0.0",
+    "next": "^15.0.0"
+  },
+  "license": "Apache-2.0"
+}

@@ -1,0 +1,69 @@
+# Filelayer
+
+> A Node library that puts one authorization decision point in front of file storage for multi-tenant applications. Public files and private files share one model. Files live in S3/R2 (or memory); all metadata, grants and audit events live in your own Postgres. Not a hosted service, not a CDN, not an image pipeline.
+
+Status: alpha / developer preview, version 0.3.0, Apache-2.0. Never deployed in production; the S3/R2 adapter has never run against live AWS or Cloudflare credentials. The schema may change in any 0.x release. Requires Node >= 22.18. Install: `npm install @filelayer/core`.
+
+This file is for an agent writing an integration. It is ordered by what you need to get right, not by what is interesting.
+
+## Start here
+
+- [README](https://github.com/filelayer/filelayer/blob/main/README.md): what it is, the alpha banner, the five security properties, and the Limitations list. Read Limitations before you design around a capability.
+- [QUICKSTART](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md): install to first file, then each tier, then the three configuration steps for a real deployment.
+- [SEMANTICS](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): the exact behaviour of every edge — liveness, delegation and attenuation, deletion, the audit chain, redirect delivery. This is the reference to consult when a test surprises you.
+
+## The API you will actually call
+
+Everything is an in-process method call. There is no REST API to call over the network.
+
+- Entry point: `import { Filelayer } from '@filelayer/core'`. Throwaway instance: `await Filelayer.quickstart({ baseUrl })` (PGlite + in-memory bytes, everything lost on exit). Real instance: `new Filelayer(pgPool, new S3Storage({...}), { baseUrl })`.
+- Tiered facade, keyed on your own identifiers: `fl.files` (`put`, `get`, `stat`, `delete`, `publish`, `unpublish`, `publicUrl`), `fl.orgs` (`create`, `setRole`, `removeMember`, `audit`, `verifyAudit`), `fl.shares` (`create`, `revoke`, `list`, `redeem`).
+- Full surface, keyed on internal ids and an explicit `Principal`: `fl.upload`, `fl.read`, `fl.readStream`, `fl.stat`, `fl.share`, `fl.revoke`, `fl.listGrants`, `fl.redeem`, `fl.redeemStream`, `fl.auditLog`, `fl.verifyAuditChain`, `fl.addMember`, `fl.removeMember`, `fl.delete`, `fl.collectStorageOrphans`.
+- [simple.ts](https://github.com/filelayer/filelayer/blob/main/packages/core/src/simple.ts): the facade, with the option types. No authorization logic lives here.
+- [filelayer.ts](https://github.com/filelayer/filelayer/blob/main/packages/core/src/filelayer.ts): the full surface and every signature.
+- [index.ts](https://github.com/filelayer/filelayer/blob/main/packages/core/src/index.ts): the complete export list. If it is not exported there, it is not public API.
+
+## Things that will bite you if you assume otherwise
+
+- **There is no `public` boolean.** `put(bytes, { public: true })` creates an anonymous *grant row*, identical to `share({ subject: { type: 'anonymous' } })`. `unpublish()` revokes it. Do not look for a column; there is not one and there will not be one.
+- **A public URL is served by your own process, not by a CDN.** `publicUrl(id)` returns `<baseUrl>/f/<id>`, which is re-authorized on every request. That is why revocation is immediate, and it is also why the default path proxies every byte. The two facts are the same fact.
+- **`as:` naming an unknown identity is a 404, not an anonymous read.** There is no silent downgrade. A typo in a user id denies; it does not quietly become a public read.
+- **Denials are 404, not 403,** for anything that would confirm a file exists — including revoked, expired and exhausted grants. The true reason is in the audit log, not in the response. Do not branch on 403 to detect "exists but forbidden"; 403 is reserved for attenuation and membership refusals where the caller already has standing.
+- **Reads never auto-provision identities. Writes do.** `put({ owner })` auto-registers that user as a `member`; `get({ as })` does not.
+- **Identifiers are unique per project, not per org.** `actor.external_id` and `org.external_id` are scoped to a project. Two orgs in one project cannot both have a user called `alice` *meaning different people* — the id resolves to one actor for the whole project. One actor being a member of many orgs is fine and normal (`membership` is keyed on `(org_id, actor_id)`); two different humans sharing an id is what is impossible.
+- **A share secret is returned exactly once.** Only its SHA-256 is stored. If you do not persist or deliver it at creation time, it is unrecoverable.
+- **Delegated shares are attenuated, and the clamp is silent-but-visible.** `share()` returns the *effective* `expiresAt` and `maxDownloads`, which may be tighter than what you asked for. Read the returned values; do not assume you got what you requested.
+- **Org admins and owners can read `private` files.** Deliberate. If you must exclude the operator you need envelope encryption, which does not exist here.
+- **`collectStorageOrphans()` is a job you must schedule.** Bytes are written before metadata commits, so a crash in between leaves an unreferenced object. Nothing calls it for you.
+- **The shipped HTTP routes do not answer `Range` requests** and never return 206. Do not use them for video or audio seeking. Building your own is supported and safe: pass `range` to `readStream()`/`redeemStream()` and `sendNodeStream()`/`toStreamResponse()` set 206 and `Content-Range` for you. The status is derived, not a parameter — a partial body can never go out as a 200.
+- **`fl.files.put()` takes a `Uint8Array`** and is therefore fully resident in memory. Use `fl.upload()` with a `ReadableStream` above a few tens of megabytes.
+
+## Serving bytes over HTTP
+
+- [openapi.yaml](https://github.com/filelayer/filelayer/blob/main/openapi.yaml) / [openapi.json](https://github.com/filelayer/filelayer/blob/main/openapi.json): the complete HTTP surface. It is two routes: `GET /f/{fileId}` and `GET|POST /d/{secret}`. There are no others, and no upload, share or admin endpoints exist over HTTP.
+- [delivery.ts](https://github.com/filelayer/filelayer/blob/main/packages/core/src/delivery.ts): `deliveryHandler(fl)` is both routes plus a 404, as one `node:http` listener. `toResponse` / `toStreamResponse` for WHATWG `Response` runtimes; `sendNodeResponse` / `sendNodeStream` for `node:http`.
+- **Use the writers.** `read()` and `redeem()` return bytes *plus* the exact headers required to serve them safely. Writing `res.writeHead(200, { 'content-type': f.contentType })` re-opens stored XSS in your own origin; `res.writeHead(200, f.headers)` does not. The headers cannot be disabled.
+- **Never put a password in a query string.** `/d/{secret}` refuses with 400 `credential_in_query` if `password`, `pw`, `pass`, `passwd`, `token`, `secret` or `key` appears there. A password-protected link answers 401 with `WWW-Authenticate: FilelayerShare`; retry as POST with the password in the body.
+
+## Data model and operations
+
+- [schema.sql](https://github.com/filelayer/filelayer/blob/main/packages/core/schema.sql): the data model. Every security property is commented at the constraint that enforces it. Resolvable from an install at `node_modules/@filelayer/core/schema.sql`, or via the exported `SCHEMA_PATH` and `loadSchemaSql()`.
+- [authz.ts](https://github.com/filelayer/filelayer/blob/main/packages/core/src/authz.ts): the decision engine. Two functions, one core. `toPublicError()` is the deny-reason to HTTP-status mapping.
+- [MIGRATIONS](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md): how schema changes are delivered, with the SQL for each break.
+- [CHANGELOG](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md): the real history, including security defects found internally.
+
+## Runnable references
+
+- [tier1-avatar](https://github.com/filelayer/filelayer/blob/main/examples/tier1-avatar/app.ts): a public avatar.
+- [tier2-user-files](https://github.com/filelayer/filelayer/blob/main/examples/tier2-user-files/app.ts): private, user-owned files.
+- [tier3-org-roles](https://github.com/filelayer/filelayer/blob/main/examples/tier3-org-roles/app.ts): multi-tenant with roles.
+- [vault](https://github.com/filelayer/filelayer/blob/main/examples/vault/server.ts): a full B2B document workspace over HTTP.
+- [test/](https://github.com/filelayer/filelayer/tree/main/packages/core/test): the property suite. It ships inside the npm tarball, so the behaviour claimed above is checkable from what you installed. It cannot be executed from inside `node_modules` — Node will not strip types there — so clone the repository to run it.
+
+## Optional
+
+- [ARCHITECTURE-PROGRESSIVE](https://github.com/filelayer/filelayer/blob/main/ARCHITECTURE-PROGRESSIVE.md): the tier model; section 4 compares Filelayer against Supabase, Convex, Vercel Blob and a hand-rolled S3 integration on lines of code and on security-sensitive decisions, and section 5 lists the cases where Filelayer is the wrong choice.
+- [TIER5-DESIGN-NOTE](https://github.com/filelayer/filelayer/blob/main/architecture/TIER5-DESIGN-NOTE.md): large files, streaming, range requests, CDN — design notes, not shipped behaviour.
+- [SECURITY](https://github.com/filelayer/filelayer/blob/main/SECURITY.md): report vulnerabilities privately; disclosure policy and scope.
+- [CONTRIBUTING](https://github.com/filelayer/filelayer/blob/main/CONTRIBUTING.md) and [CODE_OF_CONDUCT](https://github.com/filelayer/filelayer/blob/main/CODE_OF_CONDUCT.md).
+- [LICENSE](https://github.com/filelayer/filelayer/blob/main/LICENSE) (Apache-2.0) and [NOTICE](https://github.com/filelayer/filelayer/blob/main/NOTICE).

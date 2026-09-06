@@ -1,0 +1,831 @@
+# Filelayer — the HTTP surface the library actually serves.
+#
+# GENERATED FILE. Do not edit: run `npm run openapi` (tools/openapi.mjs), which
+# is the single source for both openapi.yaml and openapi.json. CI fails if
+# either is stale.
+#
+# Scope: two routes, from packages/core/src/delivery.ts. Everything else in
+# Filelayer is an in-process library call with no HTTP binding that we ship.
+openapi: "3.1.0"
+info:
+  title: "Filelayer byte-delivery routes"
+  version: "0.3.0"
+  summary: "The two HTTP routes the Filelayer library serves. There are no others."
+  description: "Filelayer is a Node library, not a hosted service. It ships exactly two HTTP route\nhandlers, both in `packages/core/src/delivery.ts`, and this document describes those\ntwo and nothing else.\n\nEverything else in the product — uploading bytes, creating and revoking shares,\nmanaging membership, reading the audit trail — is an in-process method call\n(`fl.files.put()`, `fl.shares.create()`, `fl.orgs.audit()`, …) with no HTTP binding\nthat we ship. You mount those in your own framework, under your own paths, behind\nyour own authentication. If you are looking for `POST /files` in this document, it is\nabsent because it does not exist.\n\nThe two routes below exist as routes rather than as response helpers because both\ncarry a security decision that belongs to the library:\n\n- the response headers are computed from the file record and cannot be turned off, so\n  a developer cannot serve user-uploaded HTML inline from their own origin;\n- the share route reads the password from the request body and refuses, with 400,\n  if any credential appears in the query string — a routing decision, not a response\n  decision, and the reason this is a route.\n\nMount them with `deliveryHandler(fl)`, which is both routes plus a 404 for anything\nelse, and is a complete `node:http` request listener."
+  license:
+    name: "Apache-2.0"
+    identifier: "Apache-2.0"
+    url: "https://github.com/filelayer/filelayer/blob/main/LICENSE"
+  contact:
+    name: "Filelayer issues"
+    url: "https://github.com/filelayer/filelayer/issues"
+  x-status: "Alpha / developer preview. Pre-1.0: these paths, status codes and headers may change in any 0.x → 0.(x+1) release. See https://github.com/filelayer/filelayer#readme."
+  x-authentication: "This document declares `security: []` — no security scheme — and that is accurate\nrather than an omission. Neither route authenticates the way OpenAPI can describe.\n\nGET /f/{fileId}: the caller identity comes from YOUR `principal(req)` callback, which\nruns before the handler. The mechanism is entirely your choice — session cookie,\nbearer token, mTLS, a header from your gateway — and Filelayer never guesses it. There\nis therefore no scheme for us to declare; declaring one would describe your\napplication, not this library. Returning `{ actorId: null }` is an anonymous caller,\nwhich can reach only files carrying an explicit `anonymous` grant.\n\nGET|POST /d/{secret}: the credential IS the path segment, plus an optional password in\nthe request body. OpenAPI `apiKey` schemes may only sit in a query parameter, a header\nor a cookie, so a secret in the path is not expressible as a security scheme at all.\nIt is documented on the `secret` path parameter instead.\n\nAuthorization — as distinct from authentication — is entirely ours, happens on every\nrequest, and is described by the response codes."
+security: []
+externalDocs:
+  description: "README, quickstart and the exact semantics of every edge"
+  url: "https://github.com/filelayer/filelayer#readme"
+servers:
+  - url: "{baseUrl}"
+    description: "Your own server. Filelayer does not host anything. `baseUrl` is the value passed to the Filelayer constructor, and it must match where you actually mounted the handler — `fl.files.publicUrl()` builds public URLs from it."
+    variables:
+      baseUrl:
+        default: "http://localhost:3000"
+        description: "The origin your application serves the delivery handler from."
+tags:
+  - name: "files"
+    description: "The authenticated read path. Your application supplies the caller identity; Filelayer makes the decision, writes the audit event, and owns every response header."
+  - name: "shares"
+    description: "The share-link path. The secret in the URL is the entire credential — there is no session and no identity to supply."
+paths:
+  "/f/{fileId}":
+    description: "Mounted by `deliveryHandler(fl, { principal })`, whose `filePrefix` option defaults to `/f`. If you mount `fileDownloadRoute(fl, { principal })` directly, its own `prefix` option defaults to `/files`, not `/f` -- pass `prefix: '/f'` to serve the path documented here. Whichever you choose, `publicUrl()` always builds on `/f`, so keep `baseUrl` and the mounted prefix consistent with it."
+    get:
+      tags:
+        - "files"
+      operationId: "readFile"
+      summary: "Read a file, if the caller is allowed to."
+      description: "Re-authorizes on **every** request. That is the whole design: revocation beats a\nlive URL because there is a decision at each request to revoke against.\n\nIdentity is whatever your `principal(req)` callback returns — Filelayer never\nguesses it from a cookie or a header. If you mount the handler without a\n`principal` callback every request is anonymous, which is safe but not a \"public\nmode\": an anonymous caller can only reach a file carrying an explicit `anonymous`\ngrant. There is no public mode and no `public` column.\n\nThis is also the URL returned by `fl.files.put(bytes, { public: true })` and\n`fl.files.publish()`. Calling `fl.files.unpublish()` makes it start returning 404\non the very next request, with no deletion, no key rotation and no cache purge."
+      parameters:
+        - name: "fileId"
+          in: "path"
+          required: true
+          description: "The opaque file id returned by `put()`. Knowing it grants nothing (P2): it is not an input to any decision."
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "The bytes, streamed, with the full header set. Nothing is buffered in the serving process."
+          headers:
+            Content-Type:
+              description: "The stored content type, after neutralisation. A type that is not a plausible media type, or that contains CR/LF/NUL, is replaced with application/octet-stream. An active type (html, xml, svg, script, xsl, ecmascript) requested inline is also replaced."
+              schema:
+                type: "string"
+            Content-Disposition:
+              description: "RFC 6266, with the filename encoded rather than interpolated. `attachment` by default; forced back to `attachment` for an active content type even when `inline` was configured."
+              schema:
+                type: "string"
+            Content-Length:
+              description: "Present when the store reported a length for this response. Recomputed from the response rather than trusted from the metadata row."
+              schema:
+                type: "integer"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`. This is what makes immediate revocation true at the browser and at intermediaries, not only at the origin."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`. The HTTP/1.0 spelling, because corporate proxies are real."
+              schema:
+                type: "string"
+            Expires:
+              description: "Always `0`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`. A share link secret is in the URL, so any outbound link inside a delivered document would otherwise leak it in the Referer header."
+              schema:
+                type: "string"
+            Content-Security-Policy:
+              description: "Always `default-src 'none'; sandbox`."
+              schema:
+                type: "string"
+            X-Frame-Options:
+              description: "Always `DENY`."
+              schema:
+                type: "string"
+            X-Filelayer-Delivery:
+              description: "Which delivery mode answered this request: `proxy` or `redirect`."
+              schema:
+                type: "string"
+                enum:
+                  - "proxy"
+                  - "redirect"
+          content:
+            "application/octet-stream":
+              schema:
+                type: "string"
+                format: "binary"
+        "302":
+          description: "Redirect delivery. Only emitted when the instance was configured with `redirectDelivery` AND the verbatim acknowledgement string was supplied; by default only anonymous (published) grants are eligible. Revocation is immediate at decision time plus up to `ttlSeconds` of in-flight window, and `ttlSeconds` is clamped to 300."
+          headers:
+            Location:
+              description: "A short-lived presigned URL at the object store."
+              schema:
+                type: "string"
+                format: "uri"
+            Cache-Control:
+              description: "For a delivery authorized by an ANONYMOUS grant: `public, max-age=<half the presigned TTL>`. Half, so a cached 302 never hands a client a URL with milliseconds of life left. For every other grant type: `private, no-store, ...`. Nothing that was not already public becomes cacheable by a shared cache."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`. The presigned URL is a credential and it is in `Location`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+            X-Filelayer-Delivery:
+              description: "Always `redirect`."
+              schema:
+                type: "string"
+                enum:
+                  - "redirect"
+        "404":
+          description: "Not found — and deliberately indistinguishable from \"denied\". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, and an `as:` naming an identity the project has never seen."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "not_found"
+          x-codes:
+            - "not_found"
+        "410":
+          description: "The file itself has passed its `expiresAt`. Distinct from a dead grant, which is a 404: the file lifecycle gate runs before the grant decision, and a caller who reaches this has already been authorized."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "gone"
+          x-codes:
+            - "gone"
+        "500":
+          description: "An unexpected failure. Never a decision — every authorization outcome is one of the statuses above."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "internal"
+          x-codes:
+            - "internal"
+  "/d/{secret}":
+    description: "Mounted by `shareDownloadRoute(fl)`, or by `deliveryHandler(fl)`. The `/d` prefix is the default and is configurable via `sharePrefix`."
+    parameters:
+      - name: "secret"
+        in: "path"
+        required: true
+        description: "The share secret returned exactly once by `fl.shares.create()`. Only its SHA-256 is stored, so it cannot be recovered from the database. It is the entire credential: possession is authorization, attenuated by the grant it was minted from."
+        schema:
+          type: "string"
+    get:
+      tags:
+        - "shares"
+      operationId: "redeemShare"
+      summary: "Redeem a share link that has no password."
+      description: "Consumes one download against the grant cap, atomically, and only when bytes\nactually leave — a metadata lookup does not spend one.\n\nIf the link is password protected this returns **401** with\n`WWW-Authenticate: FilelayerShare`. Re-issue the identical request as a POST with\nthe password in the body. There is no supported way to put a password in the URL,\nand attempting it is a 400 rather than a silent success."
+      responses:
+        "200":
+          description: "The bytes, streamed, with the full header set."
+          headers:
+            Content-Type:
+              description: "The stored content type, after neutralisation. A type that is not a plausible media type, or that contains CR/LF/NUL, is replaced with application/octet-stream. An active type (html, xml, svg, script, xsl, ecmascript) requested inline is also replaced."
+              schema:
+                type: "string"
+            Content-Disposition:
+              description: "RFC 6266, with the filename encoded rather than interpolated. `attachment` by default; forced back to `attachment` for an active content type even when `inline` was configured."
+              schema:
+                type: "string"
+            Content-Length:
+              description: "Present when the store reported a length for this response. Recomputed from the response rather than trusted from the metadata row."
+              schema:
+                type: "integer"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`. This is what makes immediate revocation true at the browser and at intermediaries, not only at the origin."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`. The HTTP/1.0 spelling, because corporate proxies are real."
+              schema:
+                type: "string"
+            Expires:
+              description: "Always `0`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`. A share link secret is in the URL, so any outbound link inside a delivered document would otherwise leak it in the Referer header."
+              schema:
+                type: "string"
+            Content-Security-Policy:
+              description: "Always `default-src 'none'; sandbox`."
+              schema:
+                type: "string"
+            X-Frame-Options:
+              description: "Always `DENY`."
+              schema:
+                type: "string"
+            X-Filelayer-Delivery:
+              description: "Which delivery mode answered this request: `proxy` or `redirect`."
+              schema:
+                type: "string"
+                enum:
+                  - "proxy"
+                  - "redirect"
+            X-Downloads-Remaining:
+              description: "Downloads left on this grant after this one, or empty when the grant is uncapped. Safe to expose: the recipient already holds the credential it counts against."
+              schema:
+                type: "string"
+          content:
+            "application/octet-stream":
+              schema:
+                type: "string"
+                format: "binary"
+        "302":
+          description: "Redirect delivery. See the note on `GET /f/{fileId}`. Not eligible by default for a link grant — the default scope is anonymous grants only."
+          headers:
+            Location:
+              description: "A short-lived presigned URL at the object store."
+              schema:
+                type: "string"
+                format: "uri"
+            Cache-Control:
+              description: "For a delivery authorized by an ANONYMOUS grant: `public, max-age=<half the presigned TTL>`. Half, so a cached 302 never hands a client a URL with milliseconds of life left. For every other grant type: `private, no-store, ...`. Nothing that was not already public becomes cacheable by a shared cache."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`. The presigned URL is a credential and it is in `Location`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+            X-Filelayer-Delivery:
+              description: "Always `redirect`."
+              schema:
+                type: "string"
+                enum:
+                  - "redirect"
+        "400":
+          description: "A credential was present in the query string. Refused before any work is done and without consuming a download. The refused keys are `password`, `pw`, `pass`, `passwd`, `token`, `secret` and `key`. (`secret` as the path segment is fine — that is the design; it is the query string that ends up in access logs, proxy logs and browser history.)"
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "credential_in_query"
+          x-codes:
+            - "credential_in_query"
+        "401":
+          description: "This link is password protected. Retry as `POST` with the password in the request body."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+            WWW-Authenticate:
+              description: "Always `FilelayerShare`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "password_required"
+                retry:
+                  method: "POST"
+                  field: "password"
+          x-codes:
+            - "password_required"
+        "404":
+          description: "Not found — and deliberately indistinguishable from \"denied\". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, and an `as:` naming an identity the project has never seen."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "not_found"
+          x-codes:
+            - "not_found"
+        "410":
+          description: "The file itself has passed its `expiresAt`. Distinct from a dead grant, which is a 404: the file lifecycle gate runs before the grant decision, and a caller who reaches this has already been authorized."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "gone"
+          x-codes:
+            - "gone"
+        "500":
+          description: "An unexpected failure. Never a decision — every authorization outcome is one of the statuses above."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "internal"
+          x-codes:
+            - "internal"
+    post:
+      tags:
+        - "shares"
+      operationId: "redeemShareWithPassword"
+      summary: "Redeem a share link, supplying the password in the body."
+      description: "Identical to the GET in every respect except that the password is read from the request body. The body is capped at 64 KiB. An unparseable JSON body is a 400. A request with no password against a password-protected link is a 401, exactly as the GET is."
+      requestBody:
+        required: false
+        description: "Omit entirely for a link with no password. Either encoding is accepted; the password never goes in the query string."
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                password:
+                  type: "string"
+                  description: "The password the link was created with."
+              additionalProperties: true
+            example:
+              password: "hunter2"
+          "application/x-www-form-urlencoded":
+            schema:
+              type: "object"
+              properties:
+                password:
+                  type: "string"
+      responses:
+        "200":
+          description: "The bytes, streamed, with the full header set."
+          headers:
+            Content-Type:
+              description: "The stored content type, after neutralisation. A type that is not a plausible media type, or that contains CR/LF/NUL, is replaced with application/octet-stream. An active type (html, xml, svg, script, xsl, ecmascript) requested inline is also replaced."
+              schema:
+                type: "string"
+            Content-Disposition:
+              description: "RFC 6266, with the filename encoded rather than interpolated. `attachment` by default; forced back to `attachment` for an active content type even when `inline` was configured."
+              schema:
+                type: "string"
+            Content-Length:
+              description: "Present when the store reported a length for this response. Recomputed from the response rather than trusted from the metadata row."
+              schema:
+                type: "integer"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`. This is what makes immediate revocation true at the browser and at intermediaries, not only at the origin."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`. The HTTP/1.0 spelling, because corporate proxies are real."
+              schema:
+                type: "string"
+            Expires:
+              description: "Always `0`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`. A share link secret is in the URL, so any outbound link inside a delivered document would otherwise leak it in the Referer header."
+              schema:
+                type: "string"
+            Content-Security-Policy:
+              description: "Always `default-src 'none'; sandbox`."
+              schema:
+                type: "string"
+            X-Frame-Options:
+              description: "Always `DENY`."
+              schema:
+                type: "string"
+            X-Filelayer-Delivery:
+              description: "Which delivery mode answered this request: `proxy` or `redirect`."
+              schema:
+                type: "string"
+                enum:
+                  - "proxy"
+                  - "redirect"
+            X-Downloads-Remaining:
+              description: "See the GET."
+              schema:
+                type: "string"
+          content:
+            "application/octet-stream":
+              schema:
+                type: "string"
+                format: "binary"
+        "302":
+          description: "Redirect delivery. See the note on `GET /f/{fileId}`."
+          headers:
+            Location:
+              description: "A short-lived presigned URL at the object store."
+              schema:
+                type: "string"
+                format: "uri"
+            Cache-Control:
+              description: "For a delivery authorized by an ANONYMOUS grant: `public, max-age=<half the presigned TTL>`. Half, so a cached 302 never hands a client a URL with milliseconds of life left. For every other grant type: `private, no-store, ...`. Nothing that was not already public becomes cacheable by a shared cache."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`. The presigned URL is a credential and it is in `Location`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+            X-Filelayer-Delivery:
+              description: "Always `redirect`."
+              schema:
+                type: "string"
+                enum:
+                  - "redirect"
+        "400":
+          description: "Either a credential appeared in the query string (`credential_in_query`) or the request body was not parseable (`bad_request`)."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "credential_in_query"
+          x-codes:
+            - "credential_in_query"
+            - "bad_request"
+        "401":
+          description: "Missing or wrong password."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+            WWW-Authenticate:
+              description: "Always `FilelayerShare`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "password_required"
+                retry:
+                  method: "POST"
+                  field: "password"
+          x-codes:
+            - "password_required"
+        "404":
+          description: "Not found — and deliberately indistinguishable from \"denied\". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, and an `as:` naming an identity the project has never seen."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "not_found"
+          x-codes:
+            - "not_found"
+        "410":
+          description: "The file itself has passed its `expiresAt`. Distinct from a dead grant, which is a 404: the file lifecycle gate runs before the grant decision, and a caller who reaches this has already been authorized."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "gone"
+          x-codes:
+            - "gone"
+        "413":
+          description: "The request body exceeded 64 KiB."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "payload_too_large"
+          x-codes:
+            - "payload_too_large"
+        "500":
+          description: "An unexpected failure. Never a decision — every authorization outcome is one of the statuses above."
+          headers:
+            Content-Type:
+              description: "Always `application/json`."
+              schema:
+                type: "string"
+            Cache-Control:
+              description: "Always `private, no-store, no-cache, must-revalidate, max-age=0`."
+              schema:
+                type: "string"
+            Pragma:
+              description: "Always `no-cache`."
+              schema:
+                type: "string"
+            Referrer-Policy:
+              description: "Always `no-referrer`."
+              schema:
+                type: "string"
+            X-Content-Type-Options:
+              description: "Always `nosniff`."
+              schema:
+                type: "string"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                error: "internal"
+          x-codes:
+            - "internal"
+components:
+  schemas:
+    Error:
+      type: "object"
+      required:
+        - "error"
+      description: "Every error on these routes has this shape. `error` is a stable machine-readable code. The internal reason for a denial is deliberately NOT included — it is written to the audit log, where the operator who needs it can see it, and withheld from the caller, who would otherwise be able to distinguish \"does not exist\" from \"you may not have it\"."
+      properties:
+        error:
+          type: "string"
+          description: "The stable error code."
+          enum:
+            - "not_found"
+            - "gone"
+            - "password_required"
+            - "credential_in_query"
+            - "bad_request"
+            - "payload_too_large"
+            - "internal"
+        retry:
+          type: "object"
+          description: "Present only on 401. How to re-issue the request successfully."
+          properties:
+            method:
+              type: "string"
+              enum:
+                - "POST"
+            field:
+              type: "string"
+              enum:
+                - "password"

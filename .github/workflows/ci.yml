@@ -1,0 +1,245 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The suite, on every Node we claim to support.
+  #
+  # `engines.node` is ">=22.18" because that is the first release whose type
+  # stripping the source relies on. 22.x is the floor; 24.x is current LTS. If
+  # a Node newer than the matrix breaks us, we want to find out from a user's
+  # bug report at the latest, so `node-version-file` is deliberately not used.
+  # ---------------------------------------------------------------------------
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.18', '24.x']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        working-directory: packages/core
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: packages/core
+        run: npm run typecheck
+
+      # `test/s3-live.test.ts` skips itself unless all five variables are set.
+      # Add them as repository secrets and it starts running with no other
+      # change; leave them unset and the step behaves exactly as it does today.
+      # A suite you have to opt into by name is a suite nobody runs.
+      - name: Test
+        working-directory: packages/core
+        run: npm test
+        env:
+          FILELAYER_TEST_S3_ENDPOINT: ${{ secrets.FILELAYER_TEST_S3_ENDPOINT }}
+          FILELAYER_TEST_S3_BUCKET: ${{ secrets.FILELAYER_TEST_S3_BUCKET }}
+          FILELAYER_TEST_S3_REGION: ${{ secrets.FILELAYER_TEST_S3_REGION }}
+          FILELAYER_TEST_S3_ACCESS_KEY_ID: ${{ secrets.FILELAYER_TEST_S3_ACCESS_KEY_ID }}
+          FILELAYER_TEST_S3_SECRET_ACCESS_KEY: ${{ secrets.FILELAYER_TEST_S3_SECRET_ACCESS_KEY }}
+
+      - name: Build
+        working-directory: packages/core
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # The adversarial suite, gated on OUR implementation only.
+  #
+  # `run.mjs` with no argument exits 1 whenever ANY implementation records a
+  # breach, and the comparison implementations are supposed to. Naming
+  # `filelayer` scopes the exit code to us, which is the only thing that should
+  # be able to turn this build red.
+  # ---------------------------------------------------------------------------
+  adversarial:
+    name: adversarial suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        working-directory: packages/core
+        run: npm ci
+
+      - name: Run the adversarial suite against Filelayer
+        run: node benchmark/adversarial/run.mjs filelayer
+
+      - name: Record the full matrix (informational, never fails the build)
+        if: always()
+        run: node benchmark/adversarial/run.mjs --md > adversarial-results.md || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: adversarial-results
+          path: adversarial-results.md
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # The shipped surface: no internal language, no dead links, and every code
+  # sample in the documentation actually runs.
+  # ---------------------------------------------------------------------------
+  shipped-surface:
+    name: docs and language
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        working-directory: packages/core
+        run: npm ci
+
+      - name: Publication boundary (no internal material, everything shipped is scanned)
+        run: npm run check:boundary
+
+      - name: No internal-process language on the shipped surface
+        run: npm run check:language
+
+      - name: Every link and script reference resolves
+        run: npm run check:links
+
+      # openapi.json and openapi.yaml are generated from tools/openapi.mjs.
+      # Two hand-maintained serialisations of one API description drift, and a
+      # drifted API description is worse than none because it is trusted.
+      - name: The OpenAPI documents match their source
+        run: npm run check:openapi
+
+      - name: Every documented code sample runs
+        run: npm run check:docs
+
+  # ---------------------------------------------------------------------------
+  # Pack the tarball and install it into a clean directory, from nothing.
+  #
+  # This is the check that would have caught the defect that made the package
+  # installable but not importable: `exports` pointed at TypeScript source, and
+  # Node refuses to strip types under node_modules. `npm test` in the source
+  # tree passes either way, so nothing else here can see it.
+  # ---------------------------------------------------------------------------
+  packaging:
+    name: clean install from the tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        working-directory: packages/core
+        run: npm ci
+
+      - name: Pack
+        working-directory: packages/core
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          echo "TARBALL=$(ls "$RUNNER_TEMP"/filelayer-core-*.tgz)" >> "$GITHUB_ENV"
+
+      - name: What is in the tarball
+        working-directory: packages/core
+        run: npm pack --dry-run
+
+      # The licence grant has to travel with the ARTIFACT, not just with the
+      # repository. Someone who only ever sees the tarball must find the terms
+      # they are being granted inside it.
+      - name: The licence ships in the tarball
+        run: |
+          tar -tzf "$TARBALL" > /tmp/tarball.txt
+          cat /tmp/tarball.txt
+          for f in LICENSE NOTICE; do
+            grep -qx "package/$f" /tmp/tarball.txt \
+              || { echo "::error::$f is missing from the published tarball"; exit 1; }
+          done
+          tar -xzOf "$TARBALL" package/LICENSE | grep -q "Apache License" \
+            || { echo "::error::LICENSE in the tarball is not the Apache licence"; exit 1; }
+          tar -xzOf "$TARBALL" package/package.json > /tmp/tarball-pkg.json
+          node -e 'const p=require("/tmp/tarball-pkg.json");
+                   if (p.license !== "Apache-2.0") {
+                     console.error("::error::tarball package.json says license=" + p.license);
+                     process.exit(1);
+                   }
+                   console.log("tarball declares license:", p.license);'
+
+      - name: Install it somewhere that has never seen this repository
+        run: |
+          mkdir -p "$RUNNER_TEMP/consumer"
+          cd "$RUNNER_TEMP/consumer"
+          npm init -y >/dev/null
+          npm pkg set type=module >/dev/null
+          npm install "$TARBALL"
+
+      - name: Import it and use it
+        run: node "$GITHUB_WORKSPACE/tools/verify-install.mjs" "$RUNNER_TEMP/consumer"
+
+  # ---------------------------------------------------------------------------
+  # The release gate: the full advertised lifecycle, from an empty directory.
+  #
+  # `packaging` above proves the tarball imports and that its declarations and
+  # schema.sql are where they claim to be. This proves the PRODUCT works for
+  # someone who has only ever run `npm install`:
+  #
+  #   install -> import -> configure -> create -> upload -> read
+  #         -> authorize (a denial must actually deny)
+  #         -> share -> revoke (the revoked link must actually die)
+  #         -> audit (the trail must read back, and verify)
+  #
+  # It packs and installs itself, in a temporary directory, with no path back
+  # into the checkout. A failure here is a failure a user would have had.
+  # ---------------------------------------------------------------------------
+  release-gate:
+    name: full lifecycle from an empty directory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        working-directory: packages/core
+        run: npm ci
+
+      - name: Pack, install into an empty directory, and run the whole lifecycle
+        run: npm run verify:release

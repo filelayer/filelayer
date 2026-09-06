@@ -1,0 +1,22 @@
+{
+  "name": "baseline-raw-s3",
+  "version": "1.0.0",
+  "description": "Benchmark baseline 1: raw S3/R2 presigned URLs + Postgres",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "start": "node src/server.mjs",
+    "loc": "node ../count-loc.mjs ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
+    "@electric-sql/pglite": "^0.5.8",
+    "express": "^5.2.1"
+  },
+  "type": "module",
+  "private": true
+}

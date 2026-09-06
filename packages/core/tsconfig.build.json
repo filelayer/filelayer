@@ -1,0 +1,29 @@
+// Build configuration for the published package.
+//
+// The dev/test configuration (`tsconfig.json`) is `noEmit` and type-checks the
+// examples too. This one exists for exactly one job: emit `dist/` — JavaScript
+// plus declaration files — from `src/`.
+//
+// WHY THERE IS A BUILD AT ALL, given that the source runs unmodified on Node
+// >= 22.18 via native type stripping: Node REFUSES to strip types from files
+// under `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`). A
+// package whose `exports` point at `.ts` is therefore installable but not
+// importable. `dist/` is what makes `npm install @filelayer/core` work.
+//
+// `rewriteRelativeImportExtensions` is what lets the source keep its `./x.ts`
+// specifiers (required by Node's loader when running from source) while the
+// emitted JavaScript gets `./x.js`.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "removeComments": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["test", "dev", "dist", "node_modules"]
+}

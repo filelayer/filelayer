@@ -1,0 +1,77 @@
+{
+  "note": [
+    "Words that must not appear on the surface this project publishes.",
+    "",
+    "This file is the policy; tools/check-internal-language.mjs is the mechanism.",
+    "CI fails on any match not covered by `allowIfLineMatches` or by `exceptions`.",
+    "Edit this file when the policy changes -- never the checker.",
+    "",
+    "The rule: shipped code and shipped documentation describe BEHAVIOUR. They do",
+    "not describe how the project is run, and they do not point a reader at",
+    "anything the reader cannot open.",
+    "",
+    "This is NOT a ban on comparing this library to other products. Factual,",
+    "verifiable statements about how Supabase, Convex, Vercel Blob, Cloudinary or",
+    "raw S3 behave are legitimate and stay. What goes is the framing that only",
+    "makes sense from the inside -- 'the benchmark we are running', 'the",
+    "baselines', 'the metric we care about'.",
+    "",
+    "Vocabulary that has nothing to do with the product at all is handled",
+    "one level up, by tools/check-publication-boundary.mjs, which reads every",
+    "tracked file rather than only the published surface."
+  ],
+  "include": [
+    "packages/core/src/**/*.ts",
+    "packages/core/schema.sql",
+    "packages/core/test/**/*.ts",
+    "packages/core/test/**/*.mts",
+    "packages/core/test/**/*.mjs",
+    "packages/core/SEMANTICS.md",
+    "packages/core/CHANGELOG.md",
+    "packages/core/MIGRATIONS.md",
+    "README.md",
+    "docs/**/*.md",
+    "examples/**/*.ts",
+    "NOTICE",
+    "llms.txt",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "ARCHITECTURE-PROGRESSIVE.md",
+    "PUBLISH-RUNBOOK.md",
+    "architecture/TIER5-DESIGN-NOTE.md"
+  ],
+  "includeNote": [
+    "`include` is the surface a stranger reads: everything in the npm tarball,",
+    "plus the repository files a stranger lands on from the README. It is not the",
+    "same set as `git ls-files`. benchmark/ and packages/core/dev/ are outside it",
+    "because they are measurement and diagnostic code rather than product surface,",
+    "and the vocabulary rules below are written for product prose. They are still",
+    "read end to end by the publication-boundary check, which has no exemptions.",
+    "",
+    "If a file is added to the `files` array in packages/core/package.json, add a",
+    "glob for it here in the same commit -- the two lists are the same list seen",
+    "from two directions, and check-publication-boundary.mjs fails if they drift."
+  ],
+  "terms": [
+    {
+      "id": "evaluation-framing",
+      "pattern": "\\bbenchmarks?\\b",
+      "reason": "Framing from a comparison exercise rather than a fact about the software. Factual comparisons stay; the framing goes. The directory `benchmark/` is published on purpose, so a line whose every occurrence of the word is the literal path `benchmark/` is a file reference and is allowed. 'the benchmark', 'our benchmark' and 'a benchmark' are not.",
+      "allowIfLineMatches": "^(?:(?!benchmarks?(?!/)).)*$"
+    },
+    {
+      "id": "comparison-implementation",
+      "pattern": "\\bbaselines?\\b",
+      "reason": "The comparison implementations built alongside this library. Name the actual technology instead ('a hand-rolled S3 integration').",
+      "allowIfLineMatches": null
+    },
+    {
+      "id": "ambiguous-auditor",
+      "pattern": "\\bauditors?\\b",
+      "reason": "Ambiguous on its own. In this product an auditor is someone reading the audit log, so spell it 'compliance auditor' and the sentence cannot be read any other way. 'auditor' as an example user id in a string literal is fine.",
+      "allowIfLineMatches": "compliance auditor|'auditor'|\"auditor\"|`auditor`"
+    }
+  ],
+  "exceptions": []
+}

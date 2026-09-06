@@ -1,0 +1,44 @@
+{
+  "name": "filelayer-repo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Repository-level task runner for Filelayer. The publishable package is packages/core.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/filelayer/filelayer.git"
+  },
+  "homepage": "https://github.com/filelayer/filelayer#readme",
+  "bugs": {
+    "url": "https://github.com/filelayer/filelayer/issues"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "bootstrap": "npm ci --prefix packages/core",
+    "typecheck": "npm run typecheck --prefix packages/core",
+    "test": "npm test --prefix packages/core",
+    "build": "npm run build --prefix packages/core",
+    "check:language": "node tools/check-internal-language.mjs",
+    "check:docs": "node tools/check-doc-samples.mjs",
+    "check:links": "node tools/check-doc-links.mjs",
+    "openapi": "node tools/openapi.mjs",
+    "check:openapi": "node tools/openapi.mjs --check",
+    "verify:release": "node tools/verify-release.mjs",
+    "adversarial": "node benchmark/adversarial/run.mjs filelayer",
+    "adversarial:all": "node benchmark/adversarial/run.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run check:boundary && npm run check:language && npm run check:links && npm run check:openapi && npm run check:docs && npm run adversarial",
+    "example:tier1": "node --experimental-strip-types examples/tier1-avatar/app.ts",
+    "example:tier2": "node --experimental-strip-types examples/tier2-user-files/app.ts",
+    "example:tier3": "node --experimental-strip-types examples/tier3-org-roles/app.ts",
+    "example:vault": "node --experimental-strip-types examples/vault/server.ts",
+    "dev:probe": "node packages/core/dev/probe.mjs",
+    "dev:findings": "node --experimental-strip-types packages/core/dev/diag.ts",
+    "dev:bench": "node --experimental-strip-types packages/core/dev/bench-authz.ts",
+    "dev:fracture": "node --experimental-strip-types packages/core/dev/fracture-probe.ts",
+    "loc:tiers": "node benchmark/count-tiers.mjs",
+    "check:boundary": "node tools/check-publication-boundary.mjs"
+  }
+}

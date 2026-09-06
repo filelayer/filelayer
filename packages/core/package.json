@@ -1,0 +1,77 @@
+{
+  "name": "@filelayer/core",
+  "version": "0.3.0",
+  "description": "Multi-tenant file authorization and lifecycle for Postgres: one decision point for public and private files, revocable URLs, delegated share links and a hash-chained audit trail.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./schema.sql": "./schema.sql",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "test",
+    "schema.sql",
+    "tsconfig.json",
+    "tsconfig.build.json",
+    "README.md",
+    "CHANGELOG.md",
+    "MIGRATIONS.md",
+    "SEMANTICS.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/filelayer/filelayer.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/filelayer/filelayer/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/filelayer/filelayer/issues"
+  },
+  "keywords": [
+    "authorization",
+    "access-control",
+    "multi-tenant",
+    "file-storage",
+    "s3",
+    "r2",
+    "postgres",
+    "audit-log",
+    "share-links",
+    "rbac",
+    "signed-urls",
+    "revocation"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node --eval \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prepack": "node --input-type=commonjs -e \"['README.md','LICENSE','NOTICE'].forEach(f=>require('node:fs').copyFileSync('../../'+f,f))\" && npm run build",
+    "test": "node --test --experimental-strip-types \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.11"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.10.0"
+  }
+}
