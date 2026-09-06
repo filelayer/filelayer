@@ -20,6 +20,17 @@
  *
  * This asserts all three, plus one end-to-end round trip through the real
  * authorization engine against real (in-process) Postgres.
+ *
+ * PREREQUISITE, and the reason the caller has to do something: the round trip
+ * uses `Filelayer.quickstart()`, which starts an in-process WASM Postgres and
+ * therefore needs `@electric-sql/pglite`. That package is an OPTIONAL PEER
+ * dependency of @filelayer/core, not a dependency -- a library whose premise is
+ * "point it at your own Postgres" should not put a second Postgres into every
+ * production `node_modules`. So whoever prepares the consumer directory must
+ * `npm install --save-dev @electric-sql/pglite` into it before running this.
+ * See the `packaging` job in .github/workflows/ci.yml, which does exactly that
+ * and says why. `tools/verify-release.mjs` proves the other half: that the
+ * package installs, imports and runs the whole lifecycle WITHOUT pglite.
  */
 
 import { createRequire } from 'node:module';
@@ -97,6 +108,21 @@ assert.ok(
 ok();
 
 // --- 6. it actually works ---------------------------------------------------
+// The test-only helper is present but its engine is not our problem to install.
+// Fail here with an instruction rather than three lines down with a resolver
+// error, so the person running this knows it is a setup step and not a defect.
+try {
+  require.resolve('@electric-sql/pglite');
+} catch {
+  console.error(
+    `\nverify-install: ${consumerDir} has no @electric-sql/pglite.\n\n` +
+      `  npm install --save-dev @electric-sql/pglite\n\n` +
+      `This script drives Filelayer.quickstart(), which runs on an embedded WASM\n` +
+      `Postgres. That package is an OPTIONAL PEER dependency of @filelayer/core on\n` +
+      `purpose: a production install of this library ships no database at all.\n`,
+  );
+  process.exit(2);
+}
 step('end-to-end: put, read, deny, publish, unpublish');
 const fl = await core.Filelayer.quickstart({ baseUrl: 'https://example.test' });
 const body = new TextEncoder().encode('installed-and-working');

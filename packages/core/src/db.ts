@@ -251,21 +251,85 @@ export async function loadSchemaSql(): Promise<string> {
 }
 
 /**
+ * The one package this library needs and deliberately does not depend on.
+ *
+ * PGlite is an embedded WASM build of PostgreSQL. It is what `createTestDb()`
+ * and `Filelayer.quickstart()` run on, and it is superb for that -- but a
+ * library whose premise is "point it at YOUR Postgres" has no business putting
+ * a second Postgres into every production `node_modules`. So it is declared as
+ * an OPTIONAL PEER DEPENDENCY: named, version-ranged and discoverable, but not
+ * installed for anyone who never calls the two helpers that use it.
+ *
+ * The cost of that choice is this constant and the `catch` below. Without them
+ * the failure mode for a consumer who calls `createTestDb()` is a raw
+ * ERR_MODULE_NOT_FOUND naming a package they never asked for, from a stack
+ * inside our `dist`, and no indication that installing one thing fixes it.
+ */
+const PGLITE = '@electric-sql/pglite';
+
+/** True when `err` is Node refusing to resolve `spec`, and not some other failure. */
+function isModuleNotFound(err: unknown, spec: string): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code !== 'ERR_MODULE_NOT_FOUND' && code !== 'MODULE_NOT_FOUND') return false;
+  // A resolution failure *inside* pglite itself is a broken install, not a
+  // missing one, and must not be reported as "run npm install".
+  return String((err as Error).message ?? '').includes(spec);
+}
+
+/**
  * Create an in-process Postgres (PGlite) with the Filelayer schema applied.
  *
  * PGlite is PostgreSQL 17 compiled to WASM: real planner, real constraints,
  * real enums, real arrays, real rules, real transactional semantics. The one
  * thing it is NOT is multi-process, which matters for exactly one test; see
  * test/security.test.ts, "atomic download cap", for what that weakens.
+ *
+ * REQUIRES the optional peer dependency `@electric-sql/pglite`. Production code
+ * does not need it: hand `new Filelayer(...)` your own `pg.Pool`, or anything
+ * else that satisfies `Queryable`, and this function is never reached.
  */
 export async function createTestDb(): Promise<{
   db: Queryable & { close(): Promise<void> };
   raw: unknown;
 }> {
-  const { PGlite } = await import('@electric-sql/pglite');
-  const { pgcrypto } = await import('@electric-sql/pglite/contrib/pgcrypto');
+  const { PGlite, pgcrypto } = await importPglite();
   const pg = await PGlite.create({ extensions: { pgcrypto } });
   const sql = await loadSchemaSql();
   await pg.exec(sql);
   return { db: pg as unknown as Queryable & { close(): Promise<void> }, raw: pg };
+}
+
+async function importPglite(): Promise<{
+  PGlite: typeof import('@electric-sql/pglite').PGlite;
+  pgcrypto: typeof import('@electric-sql/pglite/contrib/pgcrypto').pgcrypto;
+}> {
+  try {
+    const [mod, contrib] = await Promise.all([
+      import('@electric-sql/pglite'),
+      import('@electric-sql/pglite/contrib/pgcrypto'),
+    ]);
+    return { PGlite: mod.PGlite, pgcrypto: contrib.pgcrypto };
+  } catch (err) {
+    if (!isModuleNotFound(err, PGLITE)) throw err;
+    throw new Error(
+      `createTestDb() needs "${PGLITE}", which is not installed.\n` +
+        `\n` +
+        `  npm install --save-dev ${PGLITE}\n` +
+        `\n` +
+        `It is an OPTIONAL peer dependency of @filelayer/core, on purpose: it is an\n` +
+        `embedded WASM PostgreSQL used by createTestDb() and Filelayer.quickstart()\n` +
+        `for tests and local development, and shipping it to production installs of\n` +
+        `a library that talks to your own Postgres would be wrong.\n` +
+        `\n` +
+        `In production, do not call this. Pass your own database instead:\n` +
+        `\n` +
+        `  import { Pool } from 'pg';\n` +
+        `  new Filelayer(new Pool({ connectionString: process.env.DATABASE_URL }), storage, opts)\n` +
+        `\n` +
+        `and apply the schema once with:\n` +
+        `\n` +
+        `  psql "$DATABASE_URL" -f node_modules/@filelayer/core/schema.sql\n`,
+      { cause: err },
+    );
+  }
 }

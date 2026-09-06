@@ -29,6 +29,7 @@ const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..');
 const DOCS = [
   'README.md',
   'docs/QUICKSTART.md',
+  'docs/LIVE-S3-TESTS.md',
   'packages/core/SEMANTICS.md',
   'SECURITY.md',
   'CONTRIBUTING.md',

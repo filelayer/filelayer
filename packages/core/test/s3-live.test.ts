@@ -10,36 +10,21 @@
  * WHAT A MAINTAINER MUST SET
  * -----------------------------------------------------------------------------
  *
- * REQUIRED (all five, or the suite skips):
+ * The bucket, the token permissions and the exact secret names are specified in
+ * ONE place -- `docs/LIVE-S3-TESTS.md` -- and this file deliberately does not
+ * restate them. Two copies of a setup procedure drift, and the copy that drifts
+ * is the one nobody followed most recently.
  *
- *   FILELAYER_TEST_S3_ENDPOINT           https://<account>.r2.cloudflarestorage.com
- *                                        or https://s3.<region>.amazonaws.com
- *   FILELAYER_TEST_S3_BUCKET             a bucket that may be written to and
- *                                        emptied. USE A DEDICATED TEST BUCKET.
- *   FILELAYER_TEST_S3_REGION             'auto' for R2, the real region for AWS
- *   FILELAYER_TEST_S3_ACCESS_KEY_ID
- *   FILELAYER_TEST_S3_SECRET_ACCESS_KEY
+ * What this file reads, and nothing more:
  *
- * OPTIONAL:
+ *   REQUIRED, all five or the suite skips:
+ *     FILELAYER_TEST_S3_ENDPOINT, FILELAYER_TEST_S3_BUCKET,
+ *     FILELAYER_TEST_S3_REGION, FILELAYER_TEST_S3_ACCESS_KEY_ID,
+ *     FILELAYER_TEST_S3_SECRET_ACCESS_KEY
  *
- *   FILELAYER_TEST_S3_SESSION_TOKEN      for STS / temporary credentials
- *   FILELAYER_TEST_S3_PATH_STYLE         'false' to exercise virtual-hosted
- *                                        addressing (AWS default style).
- *                                        Defaults to path-style, which is what
- *                                        R2 requires.
- *   FILELAYER_TEST_S3_PREFIX             key prefix. Defaults to
- *                                        'filelayer-ci/'. Everything the suite
- *                                        writes lives under it and is deleted
- *                                        afterwards.
- *   FILELAYER_TEST_S3_MULTIPART          '1' to run the multipart test, which
- *                                        uploads ~11 MB. Off by default so the
- *                                        suite stays cheap on every push;
- *                                        turn it ON in the nightly job.
- *
- * IAM PERMISSIONS REQUIRED on the bucket:
- *   s3:PutObject, s3:GetObject, s3:DeleteObject, s3:ListBucket,
- *   s3:AbortMultipartUpload  (multipart cleanup),
- *   s3:ListBucketMultipartUploads (only if you enable the multipart test)
+ *   OPTIONAL:
+ *     FILELAYER_TEST_S3_SESSION_TOKEN, FILELAYER_TEST_S3_PATH_STYLE,
+ *     FILELAYER_TEST_S3_PREFIX, FILELAYER_TEST_S3_MULTIPART
  *
  * -----------------------------------------------------------------------------
  * WHY THIS FILE EXISTS EVEN THOUGH test/storage.test.ts PASSES
@@ -75,9 +60,12 @@ const missing = REQUIRED.filter((k) => !env[k]);
 const enabled = missing.length === 0;
 const skip = enabled
   ? false
-  : `live S3 credentials not present (missing: ${missing.join(', ')}); see the header of this file`;
+  : `live S3 credentials not present (missing: ${missing.join(', ')}); see docs/LIVE-S3-TESTS.md`;
 
-const PREFIX = (env['FILELAYER_TEST_S3_PREFIX'] ?? 'filelayer-ci/').replace(/\/*$/, '/');
+// `||`, not `??`: a workflow that forwards an unset repository variable hands
+// us the EMPTY STRING, and `'' ?? default` is `''` -- which would root every
+// test key at '/' instead of under the prefix that gets cleaned up.
+const PREFIX = (env['FILELAYER_TEST_S3_PREFIX'] || 'filelayer-ci/').replace(/\/*$/, '/');
 const RUN = `${PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}/`;
 const MULTIPART = env['FILELAYER_TEST_S3_MULTIPART'] === '1';
 

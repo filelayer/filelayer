@@ -24,6 +24,21 @@ npm run bootstrap        # npm ci in packages/core
 npm test                 # the security property suite
 ```
 
+PGlite is a **devDependency and an optional peer dependency** of
+`@filelayer/core`, never a dependency: a library you point at your own Postgres
+must not put an embedded WebAssembly Postgres into every production
+`node_modules`. `npm run bootstrap` installs it for you here, because the suite
+needs it. If you add a runtime dependency, the release gate below will fail —
+that is deliberate.
+
+### The live storage suite
+
+`packages/core/test/s3-live.test.ts` runs the S3 adapter against a real bucket
+and skips itself, loudly, when credentials are absent — so it does nothing on a
+clone and nothing on a fork's CI. If you are a maintainer and want it running,
+[`docs/LIVE-S3-TESTS.md`](docs/LIVE-S3-TESTS.md) is the whole setup: one bucket,
+one scoped token, five repository secrets, about five minutes.
+
 ## Before you open a pull request
 
 ```bash

@@ -21,9 +21,73 @@ embarrassing. A changelog that only records features is a marketing document.
 
 ---
 
-## [Unreleased] — group grant subjects (RFC-001)
+## [Unreleased]
 
-Breaking schema change, additive API. Migration: `MIGRATIONS.md` Entry 2.
+Two things: **packaging** — the published tarball now has no runtime
+dependencies at all — and **group grant subjects** (RFC-001), a breaking schema
+change with an additive API whose migration is `MIGRATIONS.md` Entry 2.
+
+### Changed — packaging
+
+- **`@electric-sql/pglite` is no longer a runtime dependency.** It was the only
+  one, and it should never have been one: it is an embedded WebAssembly
+  PostgreSQL, and a library whose entire premise is "run it against your own
+  Postgres" has no business putting a second Postgres into every production
+  `node_modules`. It is used by exactly two functions — `createTestDb()` and the
+  `Filelayer.quickstart()` built on it — and both are development helpers.
+  - It is now a **`devDependency`** (the suite needs it) *and* an **optional
+    peer dependency** (`peerDependenciesMeta.optional: true`). A consumer who
+    wants `createTestDb()` is told what to install and at which version range; a
+    consumer who does not gets no install warning and no WASM blob.
+  - **Installing `@filelayer/core` now installs one package.** Asserted from
+    inside the installed copy by the release gate and by the packaging job, so
+    a runtime dependency cannot be reintroduced without a red build.
+  - **Nothing about the public API changed.** `createTestDb`, `SCHEMA_PATH` and
+    `loadSchemaSql` are exported exactly as before, and production code — a
+    `pg.Pool` (or anything satisfying `Queryable`) passed to `new Filelayer()` —
+    never touches the removed dependency. If you use `quickstart()` or
+    `createTestDb()`, add `npm install --save-dev @electric-sql/pglite`.
+- **`createTestDb()` without PGlite installed now explains itself.** It used to
+  surface Node's raw `ERR_MODULE_NOT_FOUND` from inside `dist/`, naming a
+  package the caller never asked for. It now throws an error that names
+  `@electric-sql/pglite`, gives the exact install command, says why the package
+  is optional, and points at the production alternative (`pg.Pool` plus
+  `psql -f node_modules/@filelayer/core/schema.sql`). The original resolution
+  error is preserved as `cause`. A resolution failure *inside* PGlite — a broken
+  install rather than a missing one — is passed through untouched.
+- **The release gate now runs the whole lifecycle twice, in both shapes.** Once
+  in the shape a production consumer installs — the packed tarball and nothing
+  else, no embedded database on disk, driven against a real PostgreSQL server
+  through `pg` — and once through `Filelayer.quickstart()` after explicitly
+  installing the optional peer dependency. The assertions are written once and
+  run in both. It also asserts that a missing optional peer produces no install
+  warning, and that `createTestDb()`'s error names the package and the command.
+
+### Added — testing
+
+- **The live S3/R2 suite now runs in CI.** `test/s3-live.test.ts` has always
+  skipped itself without credentials; it now has a job that runs it when the
+  repository secrets are present. This is the code path every download goes
+  through, and a local harness that verifies signatures cannot speak for TLS,
+  real IAM evaluation, R2's divergences from S3, read-after-write visibility or
+  the error codes a real store returns.
+  - **A fork does not go red.** Secrets are unavailable to pull requests from
+    forks, so the job decides for itself whether it has credentials and skips
+    the work if not.
+  - **The skip is visible.** It is written to the job summary and raised as a
+    workflow notice, naming the missing secrets. A green tick that ran nothing
+    is worse than an honest "skipped: no credentials", because the two look
+    identical. The converse is checked too: credentials present and the suite
+    skipping itself anyway is a **failure**, not a pass.
+  - **`docs/LIVE-S3-TESTS.md`** is the single place the bucket, the minimal R2
+    token / IAM policy and the exact secret names are specified. The test file
+    header used to restate them and now points at it.
+  - The multipart test (~11 MB of uploads) runs on a nightly schedule and on
+    manual dispatch, rather than on every push.
+- Fixed while wiring the above: an *empty* `FILELAYER_TEST_S3_PREFIX` — what a
+  workflow hands you for an unset repository variable — was taken as a real
+  value by `??`, rooting every test key at `/` instead of under the prefix the
+  cleanup deletes.
 
 ### Fixed
 

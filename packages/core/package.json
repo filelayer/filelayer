@@ -67,10 +67,16 @@
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm test && npm run build"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@electric-sql/pglite": "^0.3.11"
   },
+  "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.11",
     "typescript": "^5.7.0",
     "@types/node": "^22.10.0"
   }

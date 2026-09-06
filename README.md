@@ -184,6 +184,17 @@ declarations in `dist/`; the TypeScript source and the full test suite are in
 the tarball as well, so every claim on this page is inspectable from what you
 installed.
 
+**That install has zero runtime dependencies.** Filelayer talks to *your*
+Postgres and *your* bucket, so it ships neither. The throwaway instance below is
+the one exception: `quickstart()` runs on an embedded WebAssembly Postgres,
+declared as an *optional peer dependency* so that it never lands in a production
+`node_modules`. Add it if you want the throwaway instance, and skip it
+otherwise — `createTestDb()` will tell you, by name, if you need it:
+
+```bash
+npm install --save-dev @electric-sql/pglite
+```
+
 ```ts
 import { Filelayer } from '@filelayer/core';
 
@@ -278,11 +289,13 @@ tarball, so the grant travels with the artifact rather than only with the
 repository. There are no per-file licence headers — the grant is carried by
 `LICENSE`, `NOTICE` and the `license` field of every `package.json`.
 
-**Dependencies.** Filelayer has exactly one runtime dependency,
-[`@electric-sql/pglite`](https://github.com/electric-sql/pglite), itself
-Apache-2.0. It is installed from the registry rather than vendored, ships no
-`NOTICE` file of its own, and is recorded in ours for convenience. No
-third-party code is copied or embedded anywhere in this repository.
+**Dependencies.** Filelayer has **no runtime dependencies**. Its one third-party
+package, [`@electric-sql/pglite`](https://github.com/electric-sql/pglite)
+(Apache-2.0), is a `devDependency` and an *optional peer dependency*: the test
+suite and `quickstart()` run on it, and a production install does not contain
+it. It is installed from the registry rather than vendored, ships no `NOTICE`
+file of its own, and is recorded in ours for convenience. No third-party code is
+copied or embedded anywhere in this repository.
 
 ## Contributing, security and conduct
 

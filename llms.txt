@@ -17,6 +17,7 @@ This file is for an agent writing an integration. It is ordered by what you need
 Everything is an in-process method call. There is no REST API to call over the network.
 
 - Entry point: `import { Filelayer } from '@filelayer/core'`. Throwaway instance: `await Filelayer.quickstart({ baseUrl })` (PGlite + in-memory bytes, everything lost on exit). Real instance: `new Filelayer(pgPool, new S3Storage({...}), { baseUrl })`.
+- **`npm install @filelayer/core` installs no runtime dependencies.** `quickstart()` and `createTestDb()` additionally need `@electric-sql/pglite`, an *optional peer dependency* — `npm install --save-dev @electric-sql/pglite`. Nothing else does; a production instance takes your own `pg.Pool`. If you call them without it, the thrown error names the package and the exact command.
 - Tiered facade, keyed on your own identifiers: `fl.files` (`put`, `get`, `stat`, `delete`, `publish`, `unpublish`, `publicUrl`), `fl.orgs` (`create`, `setRole`, `removeMember`, `audit`, `verifyAudit`), `fl.shares` (`create`, `revoke`, `list`, `redeem`).
 - Full surface, keyed on internal ids and an explicit `Principal`: `fl.upload`, `fl.read`, `fl.readStream`, `fl.stat`, `fl.share`, `fl.revoke`, `fl.listGrants`, `fl.redeem`, `fl.redeemStream`, `fl.auditLog`, `fl.verifyAuditChain`, `fl.addMember`, `fl.removeMember`, `fl.delete`, `fl.collectStorageOrphans`.
 - [simple.ts](https://github.com/filelayer/filelayer/blob/main/packages/core/src/simple.ts): the facade, with the option types. No authorization logic lives here.

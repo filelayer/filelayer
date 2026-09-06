@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Nightly. The only job that behaves differently on a schedule is `s3-live`,
+  # which turns on the multipart test: it uploads ~11 MB, which is too much to
+  # spend on every push and too important to never run. Everything else running
+  # once a day is a cheap canary for a dependency that changed underneath us.
+  schedule:
+    - cron: '17 4 * * *'
 
 permissions:
   contents: read
@@ -50,19 +56,14 @@ jobs:
         working-directory: packages/core
         run: npm run typecheck
 
-      # `test/s3-live.test.ts` skips itself unless all five variables are set.
-      # Add them as repository secrets and it starts running with no other
-      # change; leave them unset and the step behaves exactly as it does today.
-      # A suite you have to opt into by name is a suite nobody runs.
+      # No live-storage credentials here on purpose: `test/s3-live.test.ts`
+      # skips itself and says so. Running it once per Node version would bill
+      # three concurrent runs of the same thing against one bucket, so it has
+      # its own job (`s3-live`, below), which also fails if the credentials are
+      # present and the suite skips anyway.
       - name: Test
         working-directory: packages/core
         run: npm test
-        env:
-          FILELAYER_TEST_S3_ENDPOINT: ${{ secrets.FILELAYER_TEST_S3_ENDPOINT }}
-          FILELAYER_TEST_S3_BUCKET: ${{ secrets.FILELAYER_TEST_S3_BUCKET }}
-          FILELAYER_TEST_S3_REGION: ${{ secrets.FILELAYER_TEST_S3_REGION }}
-          FILELAYER_TEST_S3_ACCESS_KEY_ID: ${{ secrets.FILELAYER_TEST_S3_ACCESS_KEY_ID }}
-          FILELAYER_TEST_S3_SECRET_ACCESS_KEY: ${{ secrets.FILELAYER_TEST_S3_SECRET_ACCESS_KEY }}
 
       - name: Build
         working-directory: packages/core
@@ -199,6 +200,9 @@ jobs:
                    }
                    console.log("tarball declares license:", p.license);'
 
+      # A production consumer installs ONE thing and gets ONE thing. If this
+      # ever prints more than "added 1 package", the package has acquired a
+      # runtime dependency.
       - name: Install it somewhere that has never seen this repository
         run: |
           mkdir -p "$RUNNER_TEMP/consumer"
@@ -206,6 +210,30 @@ jobs:
           npm init -y >/dev/null
           npm pkg set type=module >/dev/null
           npm install "$TARBALL"
+          node -e 'const p=require("/tmp/tarball-pkg.json");
+                   const deps=Object.keys(p.dependencies||{});
+                   if (deps.length) {
+                     console.error("::error::the published package declares runtime dependencies: "+deps.join(", "));
+                     process.exit(1);
+                   }
+                   const meta=(p.peerDependenciesMeta||{})["@electric-sql/pglite"];
+                   if (!meta || meta.optional !== true) {
+                     console.error("::error::@electric-sql/pglite must be an OPTIONAL peer dependency");
+                     process.exit(1);
+                   }
+                   console.log("tarball declares 0 runtime dependencies; pglite is an optional peer");'
+
+      # `verify-install.mjs` drives `Filelayer.quickstart()`, which runs on an
+      # embedded WASM Postgres. That engine is `@electric-sql/pglite`, an
+      # OPTIONAL PEER dependency of @filelayer/core rather than a dependency:
+      # a library you point at your own Postgres must not push a second one
+      # into every production install. So the CONSUMER installs it here, as a
+      # dev dependency, exactly as our documentation tells a reader to before
+      # their first quickstart. The step above is what proves it was not
+      # already there.
+      - name: Install the optional peer the quickstart helper needs
+        working-directory: ${{ runner.temp }}/consumer
+        run: npm install --save-dev @electric-sql/pglite
 
       - name: Import it and use it
         run: node "$GITHUB_WORKSPACE/tools/verify-install.mjs" "$RUNNER_TEMP/consumer"
@@ -224,10 +252,34 @@ jobs:
   #
   # It packs and installs itself, in a temporary directory, with no path back
   # into the checkout. A failure here is a failure a user would have had.
+  #
+  # It runs that lifecycle TWICE. Once in the shape a production consumer
+  # installs -- the tarball and nothing else, no embedded database on disk,
+  # driven against the real PostgreSQL service below through `pg`. Then again
+  # through `Filelayer.quickstart()`, after explicitly installing the optional
+  # peer dependency that helper needs. See the header of tools/verify-release.mjs.
   # ---------------------------------------------------------------------------
   release-gate:
     name: full lifecycle from an empty directory
     runs-on: ubuntu-latest
+
+    # A real Postgres, so the production-shaped half of the gate is a real
+    # production path and not a second WASM database wearing a disguise.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: filelayer_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -243,3 +295,142 @@ jobs:
 
       - name: Pack, install into an empty directory, and run the whole lifecycle
         run: npm run verify:release
+        env:
+          # A SCRATCH database: the gate drops and recreates its `public` schema.
+          FILELAYER_VERIFY_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/filelayer_verify
+
+  # ---------------------------------------------------------------------------
+  # The storage adapter, against a REAL bucket.
+  #
+  # test/storage.test.ts proves the wire format against a local server that
+  # verifies every signature. It cannot prove anything about the counterparty:
+  # TLS, real IAM evaluation, R2's divergences from S3, AWS checksum rules,
+  # read-after-write visibility, or the error codes a real store returns. This
+  # is the code path every download goes through, so "wire-correct" is not the
+  # same claim as "proven".
+  #
+  # Two properties this job is built around:
+  #
+  #   1. A FORK MUST NOT GO RED. Secrets are not available to pull requests from
+  #      forks, and a contributor's build failing because they do not have our
+  #      bucket credentials is a broken project. So the job always runs, decides
+  #      for itself whether it has credentials, and skips the work if not.
+  #
+  #   2. A SKIP MUST BE VISIBLE. A green tick that ran nothing is worse than an
+  #      honest "skipped: no credentials", because it is indistinguishable from
+  #      a tick that ran everything. The skip is written to the job summary and
+  #      raised as a workflow notice, and the converse is checked too: if the
+  #      credentials ARE present and the suite skips itself anyway, this job
+  #      fails rather than passing quietly.
+  #
+  # The five secrets, and how to create the bucket and token they refer to, are
+  # documented in docs/LIVE-S3-TESTS.md. That document is the only place they
+  # are specified; everything here just reads them.
+  #
+  # `if:` cannot see the `secrets` context, which is why presence is computed in
+  # a step and published as an output rather than written as a job condition.
+  # ---------------------------------------------------------------------------
+  s3-live:
+    name: live S3/R2 integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Are the live-storage credentials configured?
+        id: creds
+        env:
+          FILELAYER_TEST_S3_ENDPOINT: ${{ secrets.FILELAYER_TEST_S3_ENDPOINT }}
+          FILELAYER_TEST_S3_BUCKET: ${{ secrets.FILELAYER_TEST_S3_BUCKET }}
+          FILELAYER_TEST_S3_REGION: ${{ secrets.FILELAYER_TEST_S3_REGION }}
+          FILELAYER_TEST_S3_ACCESS_KEY_ID: ${{ secrets.FILELAYER_TEST_S3_ACCESS_KEY_ID }}
+          FILELAYER_TEST_S3_SECRET_ACCESS_KEY: ${{ secrets.FILELAYER_TEST_S3_SECRET_ACCESS_KEY }}
+        run: |
+          required=(
+            FILELAYER_TEST_S3_ENDPOINT
+            FILELAYER_TEST_S3_BUCKET
+            FILELAYER_TEST_S3_REGION
+            FILELAYER_TEST_S3_ACCESS_KEY_ID
+            FILELAYER_TEST_S3_SECRET_ACCESS_KEY
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "have=true" >> "$GITHUB_OUTPUT"
+            echo "### Live S3/R2 suite: RUNNING" >> "$GITHUB_STEP_SUMMARY"
+            echo "All 5 credentials are configured. Bucket: \`${FILELAYER_TEST_S3_BUCKET}\`, region \`${FILELAYER_TEST_S3_REGION}\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "have=false" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Live S3/R2 suite SKIPPED::Not run. Missing repository secret(s): ${missing[*]}. See docs/LIVE-S3-TESTS.md. This is expected on forks."
+          {
+            echo "### Live S3/R2 suite: SKIPPED - no credentials"
+            echo
+            echo "The storage adapter was **not** exercised against a real bucket in this run."
+            echo "Everything else on this build is green on its own merits; this line exists so"
+            echo "that a green tick is not mistaken for one."
+            echo
+            echo "Missing repository secret(s):"
+            echo
+            for name in "${missing[@]}"; do echo "- \`$name\`"; done
+            echo
+            echo "A maintainer can fix this in about five minutes: follow \`docs/LIVE-S3-TESTS.md\`."
+            echo
+            echo "Secrets are unavailable to pull requests from forks. A skip on a fork PR is"
+            echo "correct and is not a failure."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        if: steps.creds.outputs.have == 'true'
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        if: steps.creds.outputs.have == 'true'
+        working-directory: packages/core
+        run: npm ci
+
+      # Run the live file ON ITS OWN. Two reasons: the rest of the suite is
+      # already covered by the `test` job on three Node versions, and running
+      # this file alone makes "did it actually run?" answerable below.
+      - name: Live S3/R2 suite
+        if: steps.creds.outputs.have == 'true'
+        working-directory: packages/core
+        env:
+          FILELAYER_TEST_S3_ENDPOINT: ${{ secrets.FILELAYER_TEST_S3_ENDPOINT }}
+          FILELAYER_TEST_S3_BUCKET: ${{ secrets.FILELAYER_TEST_S3_BUCKET }}
+          FILELAYER_TEST_S3_REGION: ${{ secrets.FILELAYER_TEST_S3_REGION }}
+          FILELAYER_TEST_S3_ACCESS_KEY_ID: ${{ secrets.FILELAYER_TEST_S3_ACCESS_KEY_ID }}
+          FILELAYER_TEST_S3_SECRET_ACCESS_KEY: ${{ secrets.FILELAYER_TEST_S3_SECRET_ACCESS_KEY }}
+          FILELAYER_TEST_S3_SESSION_TOKEN: ${{ secrets.FILELAYER_TEST_S3_SESSION_TOKEN }}
+          FILELAYER_TEST_S3_PATH_STYLE: ${{ vars.FILELAYER_TEST_S3_PATH_STYLE }}
+          FILELAYER_TEST_S3_PREFIX: ${{ vars.FILELAYER_TEST_S3_PREFIX }}
+          # ~11 MB of uploads. Too much for every push, too important never to
+          # run, so it runs on the nightly schedule and on a manual dispatch.
+          FILELAYER_TEST_S3_MULTIPART: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
+        run: |
+          set -o pipefail
+          node --test --experimental-strip-types test/s3-live.test.ts 2>&1 | tee "$RUNNER_TEMP/s3-live.log"
+
+      # Credentials present and the suite skipped itself is the failure mode
+      # this whole job exists to prevent: it looks exactly like success.
+      - name: The suite must actually have run
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          log="$RUNNER_TEMP/s3-live.log"
+          if grep -q '\[s3-live\] SKIPPED' "$log"; then
+            echo "::error title=Live suite skipped with credentials present::The five secrets were set and the suite still skipped itself. Something is wrong with how they are being passed."
+            exit 1
+          fi
+          passed=$(sed -n 's/^# pass \([0-9]*\)$/\1/p' "$log" | tail -n 1)
+          if [ -z "$passed" ] || [ "$passed" -lt 1 ]; then
+            echo "::error title=Live suite asserted nothing::the runner reported '# pass ${passed:-<none>}'"
+            exit 1
+          fi
+          echo "live S3/R2 suite: $passed assertion group(s) ran against a real bucket"
+          echo "Live S3/R2 suite ran: **$passed** test(s) passed against a real bucket." >> "$GITHUB_STEP_SUMMARY"

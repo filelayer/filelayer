@@ -36,6 +36,23 @@ development.
 npm install @filelayer/core
 ```
 
+That pulls in nothing else: the package has **no runtime dependencies**. It
+talks to your Postgres through whatever driver you already use (`pg.Pool` works
+directly) and to your bucket over HTTP.
+
+The throwaway instance in the next block is the exception. `quickstart()` runs on
+PGlite, an embedded WebAssembly Postgres, which is declared as an **optional peer
+dependency** — a library whose premise is "point it at your own Postgres" should
+not put a second Postgres into every production install. Install it too if you
+want `quickstart()` or `createTestDb()`:
+
+```bash
+npm install --save-dev @electric-sql/pglite
+```
+
+Forget it and nothing breaks silently: `createTestDb()` throws an error naming
+the package and that exact command. Production code never reaches it — see §7.
+
 To run the test suite, or the examples, clone the repository instead. The tests
 import the TypeScript source directly and Node will not strip types from files
 under `node_modules`, so they cannot be run from an install:
@@ -513,6 +530,11 @@ const production = new Filelayer(
 
 `pg.Pool` satisfies the `Queryable` interface directly; no adapter needed. It is
 used through `connect()` so that a transaction stays on one connection.
+
+Nothing on this path touches PGlite, and the release gate proves it: it installs
+the packed tarball into an empty directory with no `@electric-sql/pglite` on
+disk and drives this entire page's lifecycle against a real PostgreSQL server
+over `pg`.
 
 **3. Confirm the bucket is PRIVATE.**
 

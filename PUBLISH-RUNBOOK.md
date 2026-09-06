@@ -157,11 +157,19 @@ Then, in the browser:
 
 - Confirm the README renders at <https://github.com/filelayer/filelayer>.
 - **Actions** tab: the CI workflow should start on the push. Wait for it. It
-  runs the suite on Node 22.18 and 24.x, the adversarial suite, the docs and
-  language checks, the clean-install-from-tarball job and the release gate.
+  runs the suite on Node 22.18, 24.x and 26.x, the adversarial suite, the docs
+  and language checks, the clean-install-from-tarball job, the release gate and
+  the live storage job.
 - If CI is red, fix it and push again **before** publishing to npm. A green
   badge in a README next to a red build is the one thing this project cannot
   afford.
+- The **live S3/R2 job will report itself SKIPPED** on that first run, in the
+  job summary, because the credentials do not exist yet. That is honest, not
+  broken — but it means the storage adapter every download goes through has not
+  been exercised against a real bucket. Create the bucket and the five
+  repository secrets before you publish: `docs/LIVE-S3-TESTS.md` is the whole
+  procedure and takes about five minutes. Re-run the workflow and confirm the
+  summary flips to RUNNING.
 
 ---
 

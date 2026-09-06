@@ -26,6 +26,39 @@
  * test and throws ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING for every real
  * consumer.
  *
+ * -----------------------------------------------------------------------------
+ * WHY THIS SCRIPT INSTALLS PGLITE HALFWAY THROUGH
+ * -----------------------------------------------------------------------------
+ *
+ * `@electric-sql/pglite` -- an embedded WASM PostgreSQL -- is an OPTIONAL PEER
+ * dependency of this package, not a dependency. A production install therefore
+ * contains no database at all, which is the whole premise: you point Filelayer
+ * at YOUR Postgres. Only two functions need pglite, `createTestDb()` and the
+ * `Filelayer.quickstart()` built on it, and both are test/development helpers.
+ *
+ * So the gate runs the consumer directory in two shapes, in this order:
+ *
+ *   PHASE 1, PRODUCTION SHAPE. The tarball and nothing else. Assert the install
+ *     drags in zero production dependencies, that the package imports with no
+ *     database on disk, and that calling `createTestDb()` there fails with an
+ *     error that NAMES the package and the install command -- not a raw
+ *     ERR_MODULE_NOT_FOUND thrown from somewhere inside our `dist`.
+ *     Then, if FILELAYER_VERIFY_DATABASE_URL points at a scratch database, run
+ *     the ENTIRE advertised lifecycle in that same pglite-free directory, over
+ *     `pg` and real Postgres. That is the direct proof that a production
+ *     consumer is unaffected by the packaging. Without the variable the step is
+ *     skipped, loudly, on one line -- it is not silently dropped.
+ *
+ *   PHASE 2, HELPER SHAPE. `npm install --save-dev @electric-sql/pglite`, then
+ *     run the SAME lifecycle assertions through `Filelayer.quickstart()`. This
+ *     is the documented five-line quickstart, so it has to keep working, and it
+ *     is the only part of this file that needs pglite. The install is explicit
+ *     and belongs to the CONSUMER's dev dependencies, never to ours.
+ *
+ * The lifecycle assertions are written once, in `LIFECYCLE`, and run in both
+ * shapes. Two copies would drift, and the copy that drifts is always the one
+ * that is not the default.
+ *
  * Exit code 0 means the published artifact works. Anything else names the step
  * that broke.
  */
@@ -40,6 +73,12 @@ const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..');
 const CORE = join(ROOT, 'packages', 'core');
 const KEEP = process.argv.includes('--keep');
 
+/** The optional peer dependency. Named once so the two phases cannot disagree. */
+const PGLITE = '@electric-sql/pglite';
+
+/** A scratch Postgres for the production-shape lifecycle. Optional; see above. */
+const DB_URL = process.env.FILELAYER_VERIFY_DATABASE_URL ?? '';
+
 function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { encoding: 'utf8', ...opts });
   if (r.error) throw r.error;
@@ -53,66 +92,112 @@ function die(stage, detail) {
 }
 
 // -----------------------------------------------------------------------------
-// The consumer program. This string is written into the empty directory and is
-// the only thing that runs there. It imports by bare specifier and never
-// references a path into this repository.
+// The consumer programs. These strings are written into the empty directory and
+// are the only things that run there. They import by bare specifier and never
+// reference a path into this repository.
 // -----------------------------------------------------------------------------
-const FLOW = String.raw`
+
+/** Numbered-step output, shared by every consumer program below. */
+const REPORTING = String.raw`
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const t0 = Date.now();
-// Steps 0 (pack) and 1 (install) were performed by the orchestrator before this
-// program existed, so the consumer-side count continues from there.
-let n = 1;
-const started = [];
+let n = 0;
 function step(name) {
   n++;
-  started.push(name);
   process.stdout.write('  ' + String(n).padStart(2, ' ') + '. ' + name.padEnd(44, '.'));
 }
 function ok(note = '') {
   process.stdout.write(' ok' + (note ? '  (' + note + ')' : '') + '\n');
 }
+`;
 
-// ---------------------------------------------------------------- 2. import --
-step('import  @filelayer/core (bare specifier)');
-const entry = require.resolve('@filelayer/core');
-assert.match(entry, /node_modules/, 'must resolve the INSTALLED copy, not a source checkout');
-assert.match(entry, /\.js$/, 'entry must be compiled JavaScript, got ' + entry);
-const core = await import('@filelayer/core');
-const { Filelayer, FilelayerError } = core;
-assert.equal(typeof Filelayer, 'function');
-ok('dist/index.js');
-
-// legal metadata has to survive packing, or the licence grant is not in the artifact
-step('license files present in the install');
-const pkgPath = require.resolve('@filelayer/core/package.json');
-const pkgRoot = pkgPath.replace(/[/\\]package\.json$/, '');
-const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-assert.equal(pkg.license, 'Apache-2.0', 'package.json license must be Apache-2.0, got ' + pkg.license);
-for (const f of ['LICENSE', 'NOTICE']) {
-  assert.ok(existsSync(pkgRoot + '/' + f), f + ' is missing from the installed package');
+/**
+ * PHASE 1. What a production consumer's node_modules actually looks like.
+ *
+ * Everything here is asserted with pglite absent from the directory. If any of
+ * it starts needing pglite, the package has quietly acquired a runtime database
+ * again and this is where that is caught.
+ */
+const PROBE = REPORTING + String.raw`
+step('the install pulled in no database');
+let found = null;
+try {
+  found = require.resolve('@electric-sql/pglite');
+} catch {
+  /* expected: nothing depends on it */
 }
-const lic = readFileSync(pkgRoot + '/LICENSE', 'utf8');
-assert.ok(lic.includes('Apache License'), 'LICENSE is not the Apache licence');
-assert.ok(lic.includes('Version 2.0, January 2004'), 'LICENSE is not version 2.0');
-assert.ok(!/LICENSE NOT YET CHOSEN/.test(lic), 'LICENSE is still the placeholder');
-ok('LICENSE + NOTICE, Apache-2.0');
+assert.equal(
+  found,
+  null,
+  '@electric-sql/pglite resolved at ' + found + ' -- installing @filelayer/core must not ' +
+    'install an embedded Postgres. It is an OPTIONAL PEER dependency, not a dependency.',
+);
+ok('no @electric-sql/pglite on disk');
 
-// ------------------------------------------------------------- 3. configure --
-step('configure an instance');
-const fl = await Filelayer.quickstart({ baseUrl: 'https://files.example.test' });
-assert.equal(fl.baseUrl, 'https://files.example.test');
-// schema.sql must be resolvable from the installed layout or nobody can
-// provision a real database.
-assert.ok(existsSync(core.SCHEMA_PATH), 'SCHEMA_PATH does not exist: ' + core.SCHEMA_PATH);
-assert.ok(existsSync(pkgRoot + '/schema.sql'), 'schema.sql is not at the package root');
-assert.ok((await core.loadSchemaSql()).includes('CREATE TABLE'), 'schema.sql does not look like a schema');
-ok('PGlite + memory storage');
+step('it imports with no database installed');
+const core = await import('@filelayer/core');
+for (const name of [
+  'Filelayer', 'FilelayerError', 'MemoryStorage', 'S3Storage', 'PostgresStore',
+  'authorize', 'fileDownloadRoute', 'shareDownloadRoute', 'toResponse',
+  'createTestDb', 'loadSchemaSql', 'SCHEMA_PATH',
+]) {
+  assert.ok(name in core, 'missing export: ' + name);
+}
+assert.equal(typeof core.createTestDb, 'function', 'createTestDb is no longer exported');
+// The production constructors must be usable with nothing else installed.
+const storage = new core.MemoryStorage();
+assert.equal(typeof storage.put, 'function');
+new core.S3Storage({
+  endpoint: 'https://example.r2.cloudflarestorage.com',
+  bucket: 'b', region: 'auto', accessKeyId: 'k', secretAccessKey: 's',
+});
+ok('full public surface, no install warning');
 
+step('createTestDb() explains itself');
+const failure = await core.createTestDb().then(
+  () => null,
+  (e) => e,
+);
+assert.ok(failure, 'createTestDb() RESOLVED with no pglite installed');
+// The whole point. A consumer must not have to decode Node's resolver.
+assert.ok(
+  !/ERR_MODULE_NOT_FOUND|Cannot find package/.test(failure.message),
+  'a raw module-resolution error reached the caller:\n' + failure.message,
+);
+assert.match(failure.message, /@electric-sql\/pglite/, 'the error does not name the package');
+assert.match(
+  failure.message,
+  /npm install --save-dev @electric-sql\/pglite/,
+  'the error does not give the exact install command',
+);
+assert.match(failure.message, /DATABASE_URL/, 'the error does not point at the production path');
+assert.ok(failure.cause, 'the underlying resolution error was discarded rather than chained');
+ok('names the package and the command');
+
+console.log('');
+console.log('     the message a consumer actually sees:');
+console.log('     +' + '-'.repeat(72));
+for (const line of failure.message.replace(/\n+$/, '').split('\n')) {
+  console.log('     | ' + line);
+}
+console.log('     +' + '-'.repeat(72));
+console.log('');
+
+console.log('verify-release: production shape OK - ' + n + ' checks, ' +
+  ((Date.now() - t0) / 1000).toFixed(1) + 's');
+console.log('Installing @filelayer/core installs a library, not a database.\n');
+`;
+
+/**
+ * The advertised lifecycle. Runs twice: once against a real Postgres in the
+ * production-shaped directory, once against PGlite via `quickstart()`.
+ * `fl` is provided by the phase-specific preamble spliced in above it.
+ */
+const LIFECYCLE = String.raw`
 step('configure a tenant and its owner');
 const org = await fl.orgs.create('acme', { name: 'Acme Inc', owner: 'alice' });
 assert.ok(org.id, 'orgs.create returned no id');
@@ -221,9 +306,100 @@ ok(chain.checked + ' entries chained');
 step('audit: another tenant cannot read it');
 await mustDeny('reading another tenant audit log', () => fl.orgs.audit('acme', { as: 'carol' }));
 ok();
+`;
 
-console.log('\nverify-release: PASS - ' + n + ' steps, ' + ((Date.now() - t0) / 1000).toFixed(1) + 's');
-console.log('The published tarball installs from nothing and performs the full lifecycle.\n');
+/** Import, entry-point and licence assertions. Identical in both phases. */
+const IMPORT_AND_LICENCE = String.raw`
+step('import  @filelayer/core (bare specifier)');
+const entry = require.resolve('@filelayer/core');
+assert.match(entry, /node_modules/, 'must resolve the INSTALLED copy, not a source checkout');
+assert.match(entry, /\.js$/, 'entry must be compiled JavaScript, got ' + entry);
+const core = await import('@filelayer/core');
+const { Filelayer, FilelayerError } = core;
+assert.equal(typeof Filelayer, 'function');
+ok('dist/index.js');
+
+// legal metadata has to survive packing, or the licence grant is not in the artifact
+step('license files present in the install');
+const pkgPath = require.resolve('@filelayer/core/package.json');
+const pkgRoot = pkgPath.replace(/[/\\]package\.json$/, '');
+const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+assert.equal(pkg.license, 'Apache-2.0', 'package.json license must be Apache-2.0, got ' + pkg.license);
+for (const f of ['LICENSE', 'NOTICE']) {
+  assert.ok(existsSync(pkgRoot + '/' + f), f + ' is missing from the installed package');
+}
+const lic = readFileSync(pkgRoot + '/LICENSE', 'utf8');
+assert.ok(lic.includes('Apache License'), 'LICENSE is not the Apache licence');
+assert.ok(lic.includes('Version 2.0, January 2004'), 'LICENSE is not version 2.0');
+assert.ok(!/LICENSE NOT YET CHOSEN/.test(lic), 'LICENSE is still the placeholder');
+ok('LICENSE + NOTICE, Apache-2.0');
+
+// Packaging is a claim about what a consumer is made to install. Assert it from
+// inside the install rather than from our package.json, which is the copy that
+// could be right while the tarball is wrong.
+step('the package declares no runtime dependencies');
+assert.deepEqual(
+  Object.keys(pkg.dependencies ?? {}),
+  [],
+  'the published package declares dependencies: ' + JSON.stringify(pkg.dependencies),
+);
+assert.ok(
+  pkg.peerDependenciesMeta?.['@electric-sql/pglite']?.optional === true,
+  '@electric-sql/pglite must be declared an OPTIONAL peer dependency, so that a consumer ' +
+    'who wants createTestDb() is told what to install and a consumer who does not gets no ' +
+    'install warning',
+);
+ok('0 deps, pglite optional-peer');
+`;
+
+/** PHASE 1's optional lifecycle: real Postgres, over `pg`, with no pglite. */
+const CONSTRUCT_POSTGRES = String.raw`
+step('configure an instance: pg.Pool + real Postgres');
+const { Pool } = await import('pg');
+const pool = new Pool({ connectionString: process.env.FILELAYER_VERIFY_DATABASE_URL });
+// Provision exactly the documented way: apply the schema.sql that shipped in
+// the tarball. A scratch database is required and is reset first, because
+// schema.sql creates its tables unconditionally.
+assert.ok(existsSync(core.SCHEMA_PATH), 'SCHEMA_PATH does not exist: ' + core.SCHEMA_PATH);
+assert.ok(existsSync(pkgRoot + '/schema.sql'), 'schema.sql is not at the package root');
+const schemaSql = await core.loadSchemaSql();
+assert.ok(schemaSql.includes('CREATE TABLE'), 'schema.sql does not look like a schema');
+await pool.query('DROP SCHEMA IF EXISTS public CASCADE');
+await pool.query('CREATE SCHEMA public');
+await pool.query(schemaSql);
+const fl = new Filelayer(pool, new core.MemoryStorage(), { baseUrl: 'https://files.example.test' });
+assert.equal(fl.baseUrl, 'https://files.example.test');
+const { rows: ver } = await pool.query('SELECT version() AS v');
+ok(String(ver[0].v).split(' ').slice(0, 2).join(' '));
+`;
+
+const TEARDOWN_POSTGRES = String.raw`
+await pool.end();
+`;
+
+/** PHASE 2's lifecycle: the documented quickstart, which is PGlite-backed. */
+const CONSTRUCT_QUICKSTART = String.raw`
+step('configure an instance: Filelayer.quickstart()');
+const fl = await Filelayer.quickstart({ baseUrl: 'https://files.example.test' });
+assert.equal(fl.baseUrl, 'https://files.example.test');
+// schema.sql must be resolvable from the installed layout or nobody can
+// provision a real database.
+assert.ok(existsSync(core.SCHEMA_PATH), 'SCHEMA_PATH does not exist: ' + core.SCHEMA_PATH);
+assert.ok(existsSync(pkgRoot + '/schema.sql'), 'schema.sql is not at the package root');
+assert.ok((await core.loadSchemaSql()).includes('CREATE TABLE'), 'schema.sql does not look like a schema');
+ok('PGlite + memory storage');
+`;
+
+const flowSource = ({ construct, teardown = '', banner }) =>
+  REPORTING +
+  IMPORT_AND_LICENCE +
+  construct +
+  LIFECYCLE +
+  teardown +
+  String.raw`
+console.log('\nverify-release: ` +
+  banner +
+  String.raw` - ' + n + ' steps, ' + ((Date.now() - t0) / 1000).toFixed(1) + 's\n');
 `;
 
 // -----------------------------------------------------------------------------
@@ -232,8 +408,8 @@ console.log('The published tarball installs from nothing and performs the full l
 
 console.log('verify-release: the empty-directory test\n');
 
-// --- 1. pack -----------------------------------------------------------------
-process.stdout.write('   0. pack packages/core ...........................');
+// --- pack --------------------------------------------------------------------
+process.stdout.write('   pack packages/core .............................');
 const packDir = mkdtempSync(join(tmpdir(), 'filelayer-pack-'));
 const packed = run('npm', ['pack', '--pack-destination', packDir, '--silent'], { cwd: CORE });
 if (packed.status !== 0) die('pack', packed.stderr || packed.stdout);
@@ -242,8 +418,8 @@ if (!tarballName) die('pack', 'npm pack produced no tarball in ' + packDir);
 const tarball = join(packDir, tarballName);
 console.log(' ok  (' + tarballName + ')');
 
-// --- 2. an empty directory ---------------------------------------------------
-process.stdout.write('   1. npm install into an empty directory ..........');
+// --- an empty directory ------------------------------------------------------
+process.stdout.write('   npm install into an empty directory ............');
 const consumer = mkdtempSync(join(tmpdir(), 'filelayer-consumer-'));
 mkdirSync(consumer, { recursive: true });
 // A consumer has a package.json; they do not have our repository. Nothing here
@@ -253,31 +429,103 @@ writeFileSync(
   join(consumer, 'package.json'),
   JSON.stringify({ name: 'filelayer-consumer', private: true, version: '0.0.0', type: 'module' }, null, 2) + '\n',
 );
-const install = run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts', tarball], {
-  cwd: consumer,
-  env: { ...process.env, npm_config_update_notifier: 'false' },
-});
-if (install.status !== 0) die('npm install (from the packed tarball)', install.stderr || install.stdout);
+const npmEnv = { ...process.env, npm_config_update_notifier: 'false' };
+const npmInstall = (args, stage) => {
+  const r = run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts', ...args], {
+    cwd: consumer,
+    env: npmEnv,
+  });
+  if (r.status !== 0) die(stage, r.stderr || r.stdout);
+  return r;
+};
+const install = npmInstall([tarball], 'npm install (from the packed tarball)');
+// An optional peer dependency that is missing must not warn. A consumer who
+// never calls createTestDb() should see nothing at all about pglite.
+const installNoise = (install.stderr || '') + (install.stdout || '');
+if (/pglite/i.test(installNoise)) {
+  die(
+    'npm install (from the packed tarball)',
+    'the install mentioned pglite, so it is either being installed or being warned about:\n' +
+      installNoise,
+  );
+}
 console.log(' ok');
 
-// --- 3. run the consumer program ---------------------------------------------
-writeFileSync(join(consumer, 'flow.mjs'), FLOW);
-const flow = run(process.execPath, ['flow.mjs'], {
-  cwd: consumer,
-  stdio: 'inherit',
-  // Deliberately NOT inheriting NODE_PATH or NODE_OPTIONS: no path back here.
-  env: { ...process.env, NODE_PATH: '', NODE_OPTIONS: '' },
-});
+const runInConsumer = (file, source, stage) => {
+  writeFileSync(join(consumer, file), source);
+  const r = run(process.execPath, [file], {
+    cwd: consumer,
+    stdio: 'inherit',
+    // Deliberately NOT inheriting NODE_PATH or NODE_OPTIONS: no path back here.
+    env: { ...npmEnv, NODE_PATH: '', NODE_OPTIONS: '' },
+  });
+  if (r.status !== 0) cleanupAndExit(r.status ?? 1, stage);
+};
 
-if (!KEEP) {
+function cleanup() {
+  if (KEEP) {
+    console.log(`(kept: ${consumer}, ${tarball})`);
+    return;
+  }
   rmSync(packDir, { recursive: true, force: true });
   rmSync(consumer, { recursive: true, force: true });
-} else {
-  console.log(`(kept: ${consumer}, ${tarball})`);
 }
 
-if (flow.status !== 0) {
-  console.error(`\nverify-release: FAILED (consumer program exited ${flow.status})\n`);
-  process.exit(flow.status ?? 1);
+function cleanupAndExit(code, stage) {
+  cleanup();
+  console.error(`\nverify-release: FAILED (${stage} exited ${code})\n`);
+  process.exit(code);
 }
+
+// --- PHASE 1: the shape a production consumer installs -----------------------
+console.log('\nPHASE 1 - production shape: the tarball and nothing else\n');
+runInConsumer('probe.mjs', PROBE, 'the production-shape probe');
+
+if (DB_URL) {
+  process.stdout.write('   npm install pg (the consumer\'s driver) ........');
+  npmInstall(['pg'], 'npm install pg');
+  console.log(' ok');
+  console.log('\n   full lifecycle over real Postgres, still with no pglite installed:\n');
+  runInConsumer(
+    'flow-postgres.mjs',
+    flowSource({
+      construct: CONSTRUCT_POSTGRES,
+      teardown: TEARDOWN_POSTGRES,
+      banner: 'PASS (production shape, real Postgres, no pglite)',
+    }),
+    'the production-shape lifecycle',
+  );
+} else {
+  console.log(
+    '\n   SKIPPED: the production-shape lifecycle over real Postgres.\n' +
+      '   Set FILELAYER_VERIFY_DATABASE_URL to a SCRATCH database (its `public`\n' +
+      '   schema is dropped and recreated) to run the whole advertised lifecycle\n' +
+      '   with no pglite on disk. CI sets it from a service container.\n',
+  );
+}
+
+// --- PHASE 2: + the optional peer dependency, for the documented quickstart ---
+//
+// `Filelayer.quickstart()` starts an in-process WASM Postgres, so it needs
+// @electric-sql/pglite. That package is deliberately NOT a dependency of
+// @filelayer/core (see the header), which means the gate has to install it
+// here, explicitly, into the CONSUMER's dev dependencies -- exactly as the
+// documentation tells a reader to do before their first quickstart. If this
+// line is ever removed, phase 2 fails with the message asserted in phase 1.
+console.log('\nPHASE 2 - helper shape: + ' + PGLITE + ' (the consumer\'s devDependency)\n');
+process.stdout.write('   npm install --save-dev ' + PGLITE + ' ....');
+npmInstall(['--save-dev', PGLITE], 'npm install ' + PGLITE);
+console.log(' ok');
+console.log('');
+runInConsumer(
+  'flow-quickstart.mjs',
+  flowSource({
+    construct: CONSTRUCT_QUICKSTART,
+    banner: 'PASS (quickstart shape, PGlite)',
+  }),
+  'the quickstart lifecycle',
+);
+
+cleanup();
+console.log('The published tarball installs from nothing and performs the full lifecycle.\n');
 process.exit(0);
