@@ -114,6 +114,120 @@ export interface AuditRow {
   hash: string;
 }
 
+// -----------------------------------------------------------------------------
+// THE AUDIT LOG, IN THE CALLER'S OWN VOCABULARY
+// -----------------------------------------------------------------------------
+//
+// THE PROBLEM. `AuditRow` answers "who touched this?" in `actor_id`,
+// `file_id` and `org_id` -- internal uuids. They are the right thing to store
+// (they are stable, they survive a rename, and they are what the engine
+// decides over) and the wrong thing to *hand back*, because the caller never
+// supplied one. A developer who wrote `as: 'marco'` gets `97cf1649-dd8...`
+// back and has no supported way to turn it into `marco` again.
+//
+// THE SHAPE OF THE FIX. Resolution is additive and presentational: every
+// internal id below is still on the row, unchanged, in the field it has always
+// been in. What is added is a `.actor`, `.file` and `.org` view of the same
+// three ids carrying the identifier the caller supplied, plus a `.summary`
+// line that is printable without any further work. Nothing about the data
+// model, the chain digest or the authorization decision changes -- these
+// values are read through a LEFT JOIN in the SAME query that reads the events.
+//
+// WHAT IS NOT DONE HERE. The joins are scoped to the store's project, exactly
+// like every other read on this class. An audit event may legitimately name an
+// identifier from outside the project -- a probe at a uuid that belongs to
+// another application, or one that belongs to nothing at all -- and such an id
+// must resolve to NOTHING rather than to a foreign customer's vocabulary. That
+// is P8, and it is why these joins carry the project predicate even though the
+// caller has already been authorized for the org.
+
+/** How a `label` was arrived at. Never inferred by the caller. */
+export type AuditRefResolution =
+  /** The id resolved to an identifier the caller supplied. */
+  | 'resolved'
+  /** There is no actor: an anonymous or share-link request. Not "unknown". */
+  | 'anonymous'
+  /** There is no tenant: the system chain (`org_id IS NULL`). */
+  | 'system'
+  /** The event is not about a file. */
+  | 'none'
+  /** An id is recorded but names no row in this project. A probe, typically. */
+  | 'unresolved';
+
+interface AuditRefBase {
+  /** The internal id, exactly as the log stored it. `null` when none was recorded. */
+  id: string | null;
+  /**
+   * What to print. **Never null**, so a template literal can never render
+   * `null` or `undefined` into an operator's console.
+   */
+  label: string;
+  resolution: AuditRefResolution;
+}
+
+/** The principal named by an event. `resolution` is `anonymous` when there is none. */
+export interface AuditActorRef extends AuditRefBase {
+  /** The id the caller supplied (`as: 'marco'`). `null` when nothing resolved. */
+  externalId: string | null;
+}
+
+/** The tenant an event belongs to. `resolution` is `system` for the system chain. */
+export interface AuditOrgRef extends AuditRefBase {
+  /** The tenant id the caller supplied (`org: 'acme'`). `null` for the system chain. */
+  externalId: string | null;
+}
+
+/**
+ * The file an event is about.
+ *
+ * A file has no `external_id` -- the caller never names one; they are handed a
+ * uuid at upload. Its readable handle is therefore the name it was stored
+ * under, and the field says so rather than calling a filename an external id.
+ */
+export interface AuditFileRef extends AuditRefBase {
+  name: string | null;
+}
+
+/**
+ * An audit event with its three identifiers resolved.
+ *
+ * Extends `AuditRow`: every internal id is still present and unchanged, so
+ * anything already reading `actorId`, `fileId` or `orgId` keeps working.
+ */
+export interface ResolvedAuditRow extends AuditRow {
+  actor: AuditActorRef;
+  file: AuditFileRef;
+  org: AuditOrgRef;
+  /**
+   * The whole event as one printable line, e.g.
+   *
+   * ```text
+   * 2026-09-06T10:12:41.002Z marco file.read deny:grant_revoked contract.pdf @acme
+   * ```
+   */
+  summary: string;
+}
+
+/** The label for an event with no actor. A link redemption is not "unknown". */
+export const AUDIT_ANONYMOUS_LABEL = 'anonymous';
+/** The label for the system chain, which has no tenant. */
+export const AUDIT_SYSTEM_LABEL = 'system';
+/** The label for an event that is not about a file. */
+export const AUDIT_NO_FILE_LABEL = 'none';
+
+/**
+ * One line an operator can read. Deliberately fixed-order and greppable
+ * rather than prose: `when who what outcome file @org`.
+ */
+export function auditSummary(row: Omit<ResolvedAuditRow, 'summary'>): string {
+  const outcome =
+    row.decision === 'allow' ? 'allow' : `deny:${row.reason ?? 'unspecified'}`;
+  const parts = [row.occurredAt.toISOString(), row.actor.label, row.action, outcome];
+  if (row.file.id !== null) parts.push(row.file.label);
+  parts.push(`@${row.org.label}`);
+  return parts.join(' ');
+}
+
 /**
  * PGlite returns text[] as a JS array already; node-postgres does too. This
  * guard exists because a raw text round-trip ('{read,write}') would otherwise
@@ -708,35 +822,10 @@ export class PostgresStore implements AuthzDeps {
     );
   }
 
-  async listAudit(
-    orgId: string | null,
-    filter: {
-      decision?: 'allow' | 'deny';
-      fileId?: string;
-      actorId?: string;
-      action?: string;
-      limit?: number;
-    } = {},
-  ): Promise<AuditRow[]> {
+  async listAudit(orgId: string | null, filter: AuditFilter = {}): Promise<AuditRow[]> {
     const params: unknown[] = [orgId];
-    const clauses = ['org_id IS NOT DISTINCT FROM $1'];
-    if (filter.decision) {
-      params.push(filter.decision);
-      clauses.push(`decision = $${params.length}`);
-    }
-    if (filter.fileId) {
-      params.push(filter.fileId);
-      clauses.push(`file_id = $${params.length}`);
-    }
-    if (filter.actorId) {
-      params.push(filter.actorId);
-      clauses.push(`actor_id = $${params.length}`);
-    }
-    if (filter.action) {
-      params.push(filter.action);
-      clauses.push(`action = $${params.length}`);
-    }
-    params.push(Math.min(filter.limit ?? 500, 5000));
+    const clauses = auditFilterClauses('', 1, filter, params);
+    params.push(auditLimit(filter));
     const { rows } = await this.db.query<Record<string, never>>(
       `${AUDIT_COLUMNS}
         WHERE ${clauses.join(' AND ')}
@@ -745,6 +834,50 @@ export class PostgresStore implements AuthzDeps {
       params,
     );
     return rows.map(mapAuditRow);
+  }
+
+  /**
+   * `listAudit`, with `actor_id`, `file_id` and `org_id` resolved back to the
+   * identifiers the caller supplied. See `ResolvedAuditRow`.
+   *
+   * ONE QUERY. The resolution is three LEFT JOINs on the same statement, not a
+   * lookup per row: an audit read is on the operator's critical path during an
+   * incident and turning it into N+1 round trips would be a worse defect than
+   * the one this fixes. Each join is scoped to this store's project, so an id
+   * belonging to another application resolves to nothing (P8) rather than
+   * leaking a foreign customer's vocabulary into this tenant's trail.
+   *
+   * Soft-deleted rows still resolve, deliberately. Deleting a user must not
+   * rewrite what they did -- the same reason `audit_event.actor_id` carries no
+   * foreign key.
+   */
+  async listAuditResolved(
+    orgId: string | null,
+    filter: AuditFilter = {},
+  ): Promise<ResolvedAuditRow[]> {
+    const params: unknown[] = [this.projectId, orgId];
+    const clauses = auditFilterClauses('e.', 2, filter, params);
+    params.push(auditLimit(filter));
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT e.id, e.org_id, e.occurred_at, e.action, e.decision, e.reason,
+              e.actor_id, e.file_id, e.grant_id, host(e.ip) AS ip, e.user_agent,
+              e.context, e.prev_hash, e.hash,
+              a.external_id AS actor_external_id,
+              o.external_id AS org_external_id,
+              f.name        AS file_name
+         FROM audit_event e
+         LEFT JOIN actor a ON a.id = e.actor_id
+                          AND ($1::uuid IS NULL OR a.project_id = $1::uuid)
+         LEFT JOIN org   o ON o.id = e.org_id
+                          AND ($1::uuid IS NULL OR o.project_id = $1::uuid)
+         LEFT JOIN file  f ON f.id = e.file_id
+                          AND ($1::uuid IS NULL OR f.project_id = $1::uuid)
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY e.id ASC
+        LIMIT $${params.length}`,
+      params,
+    );
+    return rows.map(mapResolvedAuditRow);
   }
 
   /**
@@ -949,6 +1082,50 @@ const AUDIT_COLUMNS = `SELECT id, org_id, occurred_at, action, decision, reason,
               file_id, grant_id, host(ip) AS ip, user_agent, context, prev_hash, hash
          FROM audit_event`;
 
+/** Narrowing only. There is no way to widen the org an audit read reaches. */
+export interface AuditFilter {
+  decision?: 'allow' | 'deny';
+  fileId?: string;
+  actorId?: string;
+  action?: string;
+  limit?: number;
+}
+
+/**
+ * The WHERE clauses for an audit read, written once so the plain and the
+ * resolved reader cannot drift apart in what they filter on.
+ *
+ * `prefix` is the table alias (`''` or `'e.'`); `orgParam` is the 1-based index
+ * at which the caller already placed the org id. Everything else is appended.
+ */
+function auditFilterClauses(
+  prefix: string,
+  orgParam: number,
+  filter: AuditFilter,
+  params: unknown[],
+): string[] {
+  const clauses = [`${prefix}org_id IS NOT DISTINCT FROM $${orgParam}`];
+  if (filter.decision) {
+    params.push(filter.decision);
+    clauses.push(`${prefix}decision = $${params.length}`);
+  }
+  if (filter.fileId) {
+    params.push(filter.fileId);
+    clauses.push(`${prefix}file_id = $${params.length}`);
+  }
+  if (filter.actorId) {
+    params.push(filter.actorId);
+    clauses.push(`${prefix}actor_id = $${params.length}`);
+  }
+  if (filter.action) {
+    params.push(filter.action);
+    clauses.push(`${prefix}action = $${params.length}`);
+  }
+  return clauses;
+}
+
+const auditLimit = (filter: AuditFilter): number => Math.min(filter.limit ?? 500, 5000);
+
 export interface AuditHashInput {
   prevHash: string | null;
   orgId: string | null;
@@ -1037,6 +1214,44 @@ function mapAuditRow(r: Record<string, unknown>): AuditRow {
     prevHash: (r['prev_hash'] as string | null) ?? null,
     hash: r['hash'] as string,
   };
+}
+
+/**
+ * `mapAuditRow` plus the three resolved views and the printable line.
+ *
+ * Every branch below produces a non-null `label`. That is the whole point: the
+ * caller must never have to write `?? 'unknown'` to print a row, and must never
+ * have to guess whether a null actor means "anonymous" or "we lost it".
+ */
+function mapResolvedAuditRow(r: Record<string, unknown>): ResolvedAuditRow {
+  const base = mapAuditRow(r);
+  const actorExternal = (r['actor_external_id'] as string | null) ?? null;
+  const orgExternal = (r['org_external_id'] as string | null) ?? null;
+  const fileName = (r['file_name'] as string | null) ?? null;
+
+  const actor: AuditActorRef =
+    base.actorId === null
+      ? { id: null, externalId: null, label: AUDIT_ANONYMOUS_LABEL, resolution: 'anonymous' }
+      : actorExternal !== null
+        ? { id: base.actorId, externalId: actorExternal, label: actorExternal, resolution: 'resolved' }
+        : { id: base.actorId, externalId: null, label: base.actorId, resolution: 'unresolved' };
+
+  const org: AuditOrgRef =
+    base.orgId === null
+      ? { id: null, externalId: null, label: AUDIT_SYSTEM_LABEL, resolution: 'system' }
+      : orgExternal !== null
+        ? { id: base.orgId, externalId: orgExternal, label: orgExternal, resolution: 'resolved' }
+        : { id: base.orgId, externalId: null, label: base.orgId, resolution: 'unresolved' };
+
+  const file: AuditFileRef =
+    base.fileId === null
+      ? { id: null, name: null, label: AUDIT_NO_FILE_LABEL, resolution: 'none' }
+      : fileName !== null
+        ? { id: base.fileId, name: fileName, label: fileName, resolution: 'resolved' }
+        : { id: base.fileId, name: null, label: base.fileId, resolution: 'unresolved' };
+
+  const resolved = { ...base, actor, file, org };
+  return { ...resolved, summary: auditSummary(resolved) };
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -5,11 +5,9 @@
 [![node](https://img.shields.io/node/v/@filelayer/core.svg)](https://nodejs.org)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/filelayer/filelayer/blob/main/LICENSE)
 
-<!-- The first three badges render as "unknown" until the repository is pushed
-     and the package is published. Every URL on this page is rooted at
-     github.com/filelayer/filelayer and npmjs.com/package/@filelayer/core; both
-     namespaces are unclaimed and reserved for this project, so the badges
-     resolve on their own with no edit here. The licence badge is live now. -->
+<!-- Every URL on this page is rooted at github.com/filelayer/filelayer and
+     npmjs.com/package/@filelayer/core, so the badges resolve on their own with
+     no edit here. -->
 
 > ## ⚠️ Alpha — developer preview. Not production software.
 
@@ -154,7 +152,7 @@ engine, not by convention, and each has tests named after it.
 | **P2** | No ambient authority | Knowing an object key, a URL or a file id grants nothing. Storage location is never an input to a decision. |
 | **P3** | Structural tenant isolation | A grant's `org_id` must equal its file's `org_id`, enforced by a composite foreign key. Cross-tenant access is unrepresentable, not merely prevented by a `WHERE` clause. |
 | **P4** | A URL never outlives its permission | Every signed URL embeds a grant id and is re-validated on **every** request, transitively through the whole delegation chain. Revocation beats a live URL. |
-| **P5** | Every decision is audited, including denials | Hash-chained per tenant. Probes that cannot be attributed to a tenant go to a system chain rather than being dropped. |
+| **P5** | Every decision is audited, including denials | Hash-chained per tenant. Probes that cannot be attributed to a tenant go to a system chain rather than being dropped. The log answers in *your* identifiers — `marco`, `contract.pdf`, `acme` — alongside the internal ones, so "who accessed this?" needs no SQL of yours. |
 
 Three more properties are enforced in the schema and documented in
 [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): atomic download
@@ -230,7 +228,7 @@ running in-process, so there is no daemon and no Docker:
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 313 tests
+npm test                 # the security property suite, 324 tests
 npm run typecheck
 npm run verify           # typecheck + tests + build + doc and language checks
 npm run example:tier1    # a public avatar, on :3000
@@ -327,7 +325,7 @@ README says is the most valuable thing you can send us.
 ## Limitations
 
 Restated here so they are not only in an appendix. Each one is current as of
-`0.3.0`; where a limitation has been lifted since an earlier release, the
+`0.4.2`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **No `Range` responses from the shipped HTTP routes.** `fileDownloadRoute()`

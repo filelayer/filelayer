@@ -343,6 +343,28 @@ only successes cannot evidence an attempted breach. Events are hash-chained per
 tenant, so deletion or alteration of history is detectable. Requires `read_audit`
 (admin or owner).
 
+**The answer comes back in your identifiers, not ours.** Each row carries the
+internal uuids it always did *and* the ids you supplied, so "who accessed this
+contract?" is answerable without a join you write yourself:
+
+```ts
+const row = (await fl.orgs.audit('acme', { as: 'ceo', decision: 'deny' }))[0];
+
+row?.summary;           // '2026-09-06T10:12:41.002Z marco file.read deny:grant_revoked contract.pdf @acme'
+row?.actor.label;       // 'marco'        — the `as:` you passed
+row?.file.label;        // 'contract.pdf'
+row?.org.label;         // 'acme'         — the `org:` you passed
+row?.actorId;           // the internal uuid, unchanged, still there
+```
+
+`label` is never null, so a row always prints. An access with no principal —
+a share link, a public URL — reads as `anonymous` rather than as a null you have
+to interpret; an event with no tenant (a probe that could not be attributed to
+one) reads as `system`; and an id that resolves to nothing in your project keeps
+its uuid and says `resolution: 'unresolved'` instead of inventing a name.
+`.actor.externalId`, `.org.externalId` and `.file.name` are the same values with
+no fallback, for when you want the null.
+
 ### Lifecycle
 
 ```ts

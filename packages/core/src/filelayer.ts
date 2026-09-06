@@ -58,8 +58,9 @@ import {
   toCapabilities,
   LIST_DEFAULT_LIMIT,
   LIST_MAX_LIMIT,
-  type AuditRow,
+  type AuditFilter,
   type AuditChainResult,
+  type ResolvedAuditRow,
 } from './store.ts';
 import {
   canList,
@@ -1646,24 +1647,37 @@ export class Filelayer {
   // Audit
   // ---------------------------------------------------------------------------
 
-  /** Requires `read_audit` in the org, which is admin+. Asked of the engine. */
+  /**
+   * "Who touched this?", answered in the words the caller used.
+   *
+   * Requires `read_audit` in the org, which is admin+. Asked of the engine.
+   *
+   * Each row is a `ResolvedAuditRow`: the stored `actorId`, `fileId` and
+   * `orgId` are present and unchanged, and alongside them are `.actor`,
+   * `.file` and `.org`, carrying the external ids the caller supplied, plus a
+   * `.summary` line that prints as an answer:
+   *
+   * ```text
+   * 2026-09-06T10:12:41.002Z marco file.read deny:grant_revoked contract.pdf @acme
+   * ```
+   *
+   * Resolution is a join on the same statement, so this remains one query.
+   * `.actor.label` is `'anonymous'` for a link redemption, `.org.label` is
+   * `'system'` on the system chain, and an id that resolves to nothing in this
+   * project (a probe) keeps the uuid as its label with `resolution:
+   * 'unresolved'` -- there is no null to interpret and nothing is invented.
+   */
   async auditLog(
     principal: Principal,
     orgId: string,
-    filter: {
-      decision?: 'allow' | 'deny';
-      fileId?: string;
-      actorId?: string;
-      action?: string;
-      limit?: number;
-    } = {},
-  ): Promise<AuditRow[]> {
+    filter: AuditFilter = {},
+  ): Promise<ResolvedAuditRow[]> {
     const decision = await authorizeOrg(this.store, principal, orgId, 'read_audit', {
       action: 'audit.read',
       emitAllow: false, // reading the log should not spam the log
     });
     this.#raise(decision);
-    return this.store.listAudit(orgId, filter);
+    return this.store.listAuditResolved(orgId, filter);
   }
 
   /**

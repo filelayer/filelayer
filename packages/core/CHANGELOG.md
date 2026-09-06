@@ -7,25 +7,234 @@ Versioning is pre-1.0 and is explained in [`MIGRATIONS.md`](MIGRATIONS.md) §1.
 
 ## A note on honesty, before the entries
 
-**No version of this package has been published to npm.** The versions below are
-real, dated development milestones in this repository, not registry releases. We
-are writing them up as a changelog rather than starting the history at the first
-publish because a consumer deciding whether to depend on a `0.x` library is
-entitled to know what has already moved underneath it, and because most of the
-entries are security defects we found in our own code.
-
-They are described the way we found them, including the ones that were
+Most of the entries below are security defects we found in our own code, and
+they are described the way we found them, including the ones that were
 embarrassing. A changelog that only records features is a marketing document.
 
-`0.3.0` is the version prepared for the first publish.
+`0.3.0` was the first version published to npm, under the `alpha` dist-tag.
+`0.1.0` and `0.2.0` predate the registry: they are real, dated development
+milestones in this repository rather than releases anyone could install. They
+are written up anyway, because a consumer deciding whether to depend on a `0.x`
+library is entitled to know what has already moved underneath it.
 
 ---
 
 ## [Unreleased]
 
-Two things: **packaging** — the published tarball now has no runtime
-dependencies at all — and **group grant subjects** (RFC-001), a breaking schema
-change with an additive API whose migration is `MIGRATIONS.md` Entry 2.
+Nothing yet.
+
+---
+
+## [0.4.2] — 2026-09-06
+
+The audit log now answers in your identifiers instead of ours. No schema
+change, no API break, no change to any authorization decision.
+
+### Changed
+
+- **`auditLog()` answers "who touched this?" in the caller's own vocabulary.**
+  The log stored `actor_id`, `file_id` and `org_id` — internal uuids — and
+  shipped no supported way back to the ids the caller had supplied. So the one
+  question the audit trail exists to answer rendered as
+  `97cf1649-dd8...` where the developer had written `marco`, and the only route
+  to a readable answer was to find the `actor` table in `schema.sql` and write
+  SQL against it. The first developer to try it from the public docs lost about
+  eight minutes there, on the step this product is *for*.
+
+  Every row returned by `fl.auditLog()` (and therefore by `fl.orgs.audit()`) is
+  now a `ResolvedAuditRow`, which is `AuditRow` **plus** four fields:
+
+  ```ts
+  const [row] = await fl.orgs.audit('acme', { as: 'ceo', decision: 'deny' });
+
+  row.summary;        // '2026-09-06T10:12:41.002Z marco file.read deny:grant_revoked contract.pdf @acme'
+  row.actor.label;    // 'marco'         — the `as:` that was passed
+  row.file.label;     // 'contract.pdf'
+  row.org.label;      // 'acme'          — the `org:` that was passed
+  row.actorId;        // the uuid, unchanged, exactly where it has always been
+  ```
+
+  - **Additive, deliberately.** Every internal id is still on the row, in the
+    same field, with the same value. Something downstream may be keyed on them;
+    replacing them would have been a breaking change wearing a usability
+    costume.
+  - **`label` is never null**, so a row always prints. An access with no
+    principal — a share link, a public URL — reads as `anonymous` rather than a
+    null the caller has to interpret. An event with no tenant (the system
+    chain, `org_id IS NULL`) reads as `system`. An id that resolves to nothing
+    keeps its uuid and says `resolution: 'unresolved'` rather than inventing a
+    name. `.actor.externalId`, `.org.externalId` and `.file.name` are the same
+    values without the fallback, for callers who want the null.
+  - **It is still one query.** Resolution is three `LEFT JOIN`s on the statement
+    that already reads the events, not a lookup per row: an audit read happens
+    during an incident, and turning it into N+1 round trips would be a worse
+    defect than the one being fixed.
+  - **The joins are project-scoped (P8).** An audit event may legitimately name
+    an identifier belonging to another application — that is what a probe looks
+    like — and such an id must resolve to nothing rather than print another
+    customer's vocabulary into this tenant's trail.
+  - `packages/core/test/audit-resolution.test.ts` covers the legible answer, a
+    denial with its reason and the principal who was refused, anonymous access,
+    the system chain, the project boundary, and the single-statement claim.
+
+### Fixed — documentation
+
+- **`packages/core/CHANGELOG.md` asserted in bold that "No version of this
+  package has been published to npm", directly above dated entries for `0.3.0`,
+  `0.4.0` and `0.4.1`, all of which are on the registry.** It was true when it
+  was written and nobody deleted it at the first publish. The same staleness had
+  left everything shipped in `0.3.0` and `0.4.0` sitting under an
+  `[Unreleased]` heading; that material is now filed under the releases it went
+  out in, with its text unchanged.
+- `llms.txt` announced the current version as `0.3.0`, and `README.md` dated its
+  Limitations list "current as of `0.3.0`". Both are `0.4.2`.
+- The HTML comment in `README.md` explaining that the CI and npm badges "render
+  as unknown until the repository is pushed and the package is published" has
+  outlived both conditions and is gone.
+- `TRUST.md` and `README.md` both put the suite at 313 tests. It is 324.
+
+---
+
+## [0.4.1] — 2026-09-06
+
+A single defect, in the first command a new user runs. Nothing else changed: no
+API change, no schema change, no behaviour change. If you already have a working
+install, this release does nothing for you.
+
+### Fixed
+
+- **The documented command for installing PGlite could not resolve against the
+  peer range this package declares.** `0.4.0` declares
+  `peerDependencies: { "@electric-sql/pglite": "^0.3.11" }`, as an optional peer.
+  The install command in the `createTestDb()` error message, in `README.md`, in
+  `docs/QUICKSTART.md`, in `llms.txt` and in the changelog entry above carried no
+  version at all. PGlite's `latest` on npm is `0.5.8`, outside `^0.3.11`, so
+  following our own written instructions could put a version on disk that the
+  declared range does not admit — and npm then refuses the whole tree:
+
+  ```
+  npm error Could not resolve dependency:
+  npm error peerOptional @electric-sql/pglite@"^0.3.11" from @filelayer/core@0.4.0
+  ```
+
+  It is deterministic for anyone whose project already has PGlite, or who asks
+  for a specific version, and it is a hard stop about sixty seconds in. Every
+  install command in this repository is now version-explicit:
+
+  ```bash
+  npm install --save-dev "@electric-sql/pglite@^0.3.11"
+  ```
+
+  The quotes are for the shell, not for npm — `^` is a glob operator under `zsh`
+  with `extendedglob` and an escape character in `cmd.exe`, and a command that
+  breaks in a common shell is the same defect wearing a different hat.
+
+### Not changed, deliberately
+
+- **The peer range is still `^0.3.11`. PGlite 0.5.x is not supported.** Before
+  choosing between widening the range and fixing the instructions, the full
+  suite was run against `0.5.8`. It does not pass. `tsc --noEmit` is clean and
+  every assertion that executes passes, but seven test files are killed by the
+  operating system and the run aborts after 92 of 313 tests. Reproduced in
+  isolation with 3.6 GB free, so it is not a plain out-of-memory: one suite runs
+  20 of 21 subtests green and is then killed. Against `0.3.16` the identical
+  suite is 313 of 313.
+
+  We have not diagnosed it further, because the supported range is the decision
+  in front of us and the cause is upstream. What we will not do is widen the
+  range to whatever npm installs by default and describe an untested
+  configuration as supported. When 0.5.x passes, the range moves and this entry
+  gets a successor.
+
+### Added
+
+- **`tools/check-install-commands.mjs`, wired into `npm run verify`.** It reads
+  every tracked file and fails the build if an install command names a
+  version-constrained package without a version constraint, or pins one to a
+  range that is not the range `packages/core/package.json` declares. The
+  comparison is semver intervals rather than string equality and runs in both
+  directions, so widening the peer range without updating the documentation
+  fails, and so does the reverse. No network and no install: it is a check on
+  what we wrote, evaluated against what we declared.
+
+  It carries a negative control that runs on every invocation, before the real
+  scan: fourteen commands whose correct classification is known — including the
+  exact unversioned command `0.4.0` shipped, in each of the five forms it was
+  written in — plus seven pieces of text that must *not* be read as install
+  commands. If the detector misclassifies any of them the check exits `2` and
+  says the detector is broken rather than reporting a clean repository. A
+  checker that has never rejected anything is a green tick of unknown value.
+
+### Changed
+
+- **The release gate now runs the documented command instead of its own.**
+  `tools/verify-release.mjs` reads the install command out of `README.md` at run
+  time and executes that string in its empty consumer directory. It used to
+  write its own equivalent, which is why a green gate and a broken instruction
+  could coexist for a whole release: the gate was testing a command no user
+  would ever type.
+- **The gate also installs in the other order.** Phases 1 and 2 install the
+  package first and PGlite second, and in that order npm can rescue a bad
+  instruction by quietly walking `latest` back into the peer range — which is
+  precisely how `0.4.0`'s command passed. A new phase does it the other way
+  round, in a second directory that has never contained anything: the documented
+  command first, then `@filelayer/core` on top. There is nothing left to rescue
+  there, so the resolution failure is either real or absent. It asserts, too,
+  that the version actually installed satisfies the declared range, because an
+  install that succeeds by giving the reader something other than what they
+  asked for is still a broken instruction.
+- `README.md`, `docs/QUICKSTART.md` and the `createTestDb()` error message now
+  state the supported range in words as well as in the command: the 0.3.x line
+  is supported, 0.5.x is not, and the reason is that the suite does not pass
+  against it.
+
+---
+
+## [0.4.0] — 2026-09-06
+
+### Changed
+
+- **`@electric-sql/pglite` is no longer a runtime dependency.** It is now a
+  dev dependency and an *optional* peer. The published package declares zero
+  runtime dependencies. A library whose premise is "run it against your own
+  Postgres" should not install an embedded WASM Postgres into every production
+  deployment; it did, and that was wrong.
+  `createTestDb()` and `Filelayer.quickstart()` still need it, and now say so
+  with an actionable message instead of a module-resolution error. If you use
+  either in tests, add
+  `npm install --save-dev "@electric-sql/pglite@^0.3.11"`. Nothing
+  else changes; production code paths never imported it.
+
+  *(The command in this entry originally omitted the version constraint. That
+  omission is the defect fixed in 0.4.1, and the command has been corrected here
+  so that nobody reading the history copies the broken one.)*
+
+### Added
+
+- A CI job that exercises the S3/R2 storage adapter against live object storage
+  when credentials are configured, and states plainly in the build summary when
+  they are not. See `docs/LIVE-S3-TESTS.md`.
+- `TRUST.md` — the current state of this project in numbers, including the ones
+  that are zero, and what would change them.
+
+### Fixed
+
+- `FILELAYER_TEST_S3_PREFIX` used `??` rather than `||`, so the empty string CI
+  supplies for an unset variable became a real value and rooted test objects at
+  the bucket root instead of under the prefix cleanup deletes.
+
+---
+
+## Detail for 0.4.0 and 0.3.0
+
+Everything below shipped. It was written under an `[Unreleased]` heading and
+stayed there through two releases; the heading was wrong, the text was not, so
+the text is kept verbatim and correctly filed. **Packaging** — the published
+tarball having no runtime dependencies — and the live-storage CI job are
+`0.4.0`. **Group grant subjects** (RFC-001), the byte-range status fix and the
+`getActorGrants` ordering fix are `0.3.0`. The dated entries above and below are
+the short form of the same work; this is the long form, kept because it is where
+the reasoning is.
 
 ### Changed — packaging
 
@@ -167,134 +376,6 @@ change with an additive API whose migration is `MIGRATIONS.md` Entry 2.
   contributing ancestor) and was out of scope for RFC-001.
 
 ---
-
-## [0.4.1] — 2026-09-06
-
-A single defect, in the first command a new user runs. Nothing else changed: no
-API change, no schema change, no behaviour change. If you already have a working
-install, this release does nothing for you.
-
-### Fixed
-
-- **The documented command for installing PGlite could not resolve against the
-  peer range this package declares.** `0.4.0` declares
-  `peerDependencies: { "@electric-sql/pglite": "^0.3.11" }`, as an optional peer.
-  The install command in the `createTestDb()` error message, in `README.md`, in
-  `docs/QUICKSTART.md`, in `llms.txt` and in the changelog entry above carried no
-  version at all. PGlite's `latest` on npm is `0.5.8`, outside `^0.3.11`, so
-  following our own written instructions could put a version on disk that the
-  declared range does not admit — and npm then refuses the whole tree:
-
-  ```
-  npm error Could not resolve dependency:
-  npm error peerOptional @electric-sql/pglite@"^0.3.11" from @filelayer/core@0.4.0
-  ```
-
-  It is deterministic for anyone whose project already has PGlite, or who asks
-  for a specific version, and it is a hard stop about sixty seconds in. Every
-  install command in this repository is now version-explicit:
-
-  ```bash
-  npm install --save-dev "@electric-sql/pglite@^0.3.11"
-  ```
-
-  The quotes are for the shell, not for npm — `^` is a glob operator under `zsh`
-  with `extendedglob` and an escape character in `cmd.exe`, and a command that
-  breaks in a common shell is the same defect wearing a different hat.
-
-### Not changed, deliberately
-
-- **The peer range is still `^0.3.11`. PGlite 0.5.x is not supported.** Before
-  choosing between widening the range and fixing the instructions, the full
-  suite was run against `0.5.8`. It does not pass. `tsc --noEmit` is clean and
-  every assertion that executes passes, but seven test files are killed by the
-  operating system and the run aborts after 92 of 313 tests. Reproduced in
-  isolation with 3.6 GB free, so it is not a plain out-of-memory: one suite runs
-  20 of 21 subtests green and is then killed. Against `0.3.16` the identical
-  suite is 313 of 313.
-
-  We have not diagnosed it further, because the supported range is the decision
-  in front of us and the cause is upstream. What we will not do is widen the
-  range to whatever npm installs by default and describe an untested
-  configuration as supported. When 0.5.x passes, the range moves and this entry
-  gets a successor.
-
-### Added
-
-- **`tools/check-install-commands.mjs`, wired into `npm run verify`.** It reads
-  every tracked file and fails the build if an install command names a
-  version-constrained package without a version constraint, or pins one to a
-  range that is not the range `packages/core/package.json` declares. The
-  comparison is semver intervals rather than string equality and runs in both
-  directions, so widening the peer range without updating the documentation
-  fails, and so does the reverse. No network and no install: it is a check on
-  what we wrote, evaluated against what we declared.
-
-  It carries a negative control that runs on every invocation, before the real
-  scan: fourteen commands whose correct classification is known — including the
-  exact unversioned command `0.4.0` shipped, in each of the five forms it was
-  written in — plus seven pieces of text that must *not* be read as install
-  commands. If the detector misclassifies any of them the check exits `2` and
-  says the detector is broken rather than reporting a clean repository. A
-  checker that has never rejected anything is a green tick of unknown value.
-
-### Changed
-
-- **The release gate now runs the documented command instead of its own.**
-  `tools/verify-release.mjs` reads the install command out of `README.md` at run
-  time and executes that string in its empty consumer directory. It used to
-  write its own equivalent, which is why a green gate and a broken instruction
-  could coexist for a whole release: the gate was testing a command no user
-  would ever type.
-- **The gate also installs in the other order.** Phases 1 and 2 install the
-  package first and PGlite second, and in that order npm can rescue a bad
-  instruction by quietly walking `latest` back into the peer range — which is
-  precisely how `0.4.0`'s command passed. A new phase does it the other way
-  round, in a second directory that has never contained anything: the documented
-  command first, then `@filelayer/core` on top. There is nothing left to rescue
-  there, so the resolution failure is either real or absent. It asserts, too,
-  that the version actually installed satisfies the declared range, because an
-  install that succeeds by giving the reader something other than what they
-  asked for is still a broken instruction.
-- `README.md`, `docs/QUICKSTART.md` and the `createTestDb()` error message now
-  state the supported range in words as well as in the command: the 0.3.x line
-  is supported, 0.5.x is not, and the reason is that the suite does not pass
-  against it.
-
----
-
-## [0.4.0] — 2026-09-06
-
-### Changed
-
-- **`@electric-sql/pglite` is no longer a runtime dependency.** It is now a
-  dev dependency and an *optional* peer. The published package declares zero
-  runtime dependencies. A library whose premise is "run it against your own
-  Postgres" should not install an embedded WASM Postgres into every production
-  deployment; it did, and that was wrong.
-  `createTestDb()` and `Filelayer.quickstart()` still need it, and now say so
-  with an actionable message instead of a module-resolution error. If you use
-  either in tests, add
-  `npm install --save-dev "@electric-sql/pglite@^0.3.11"`. Nothing
-  else changes; production code paths never imported it.
-
-  *(The command in this entry originally omitted the version constraint. That
-  omission is the defect fixed in 0.4.1, and the command has been corrected here
-  so that nobody reading the history copies the broken one.)*
-
-### Added
-
-- A CI job that exercises the S3/R2 storage adapter against live object storage
-  when credentials are configured, and states plainly in the build summary when
-  they are not. See `docs/LIVE-S3-TESTS.md`.
-- `TRUST.md` — the current state of this project in numbers, including the ones
-  that are zero, and what would change them.
-
-### Fixed
-
-- `FILELAYER_TEST_S3_PREFIX` used `??` rather than `||`, so the empty string CI
-  supplies for an unset variable became a real value and rooted test objects at
-  the bucket root instead of under the prefix cleanup deletes.
 
 ## [0.3.0] — 2026-09-05
 
