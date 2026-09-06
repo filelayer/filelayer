@@ -32,6 +32,7 @@ const DOCS = [
   'docs/LIVE-S3-TESTS.md',
   'packages/core/SEMANTICS.md',
   'SECURITY.md',
+  'TRUST.md',
   'CONTRIBUTING.md',
   'CODE_OF_CONDUCT.md',
   'llms.txt',

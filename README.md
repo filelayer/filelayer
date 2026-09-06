@@ -12,6 +12,9 @@
      resolve on their own with no edit here. The licence badge is live now. -->
 
 > ## ⚠️ Alpha — developer preview. Not production software.
+
+> **[Should you depend on this?](https://github.com/filelayer/filelayer/blob/main/TRUST.md)** — the real numbers, including the ones
+> that are zero, and exactly what would change them.
 >
 > We would rather you trust us later for good reasons than trust us now for bad
 > ones, so here is the honest state of this project.
