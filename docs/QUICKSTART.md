@@ -47,8 +47,16 @@ not put a second Postgres into every production install. Install it too if you
 want `quickstart()` or `createTestDb()`:
 
 ```bash
-npm install --save-dev @electric-sql/pglite
+npm install --save-dev "@electric-sql/pglite@^0.3.11"
 ```
+
+Keep the version constraint. Filelayer supports the **0.3.x** line of PGlite —
+that is what `peerDependencies` declares and what the suite runs against — and
+**0.5.x is not supported**: the suite was run against 0.5.8 and does not pass, so
+the range was left alone. PGlite's `latest` on npm is a 0.5.x release, so a bare
+`npm install` of it can pick a version outside the range and npm will then refuse
+the install with `ERESOLVE`. The quotes are for your shell: `^` is a glob
+operator under `zsh` with `extendedglob` and an escape character in `cmd.exe`.
 
 Forget it and nothing breaks silently: `createTestDb()` throws an error naming
 the package and that exact command. Production code never reaches it — see §7.

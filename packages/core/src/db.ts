@@ -267,6 +267,27 @@ export async function loadSchemaSql(): Promise<string> {
  */
 const PGLITE = '@electric-sql/pglite';
 
+/**
+ * The install command a caller is handed, spelled out in full.
+ *
+ * The version constraint is not decoration. PGlite's `latest` on npm is a 0.5.x
+ * release and this package declares `peerDependencies` of `^0.3.11`, so an
+ * install with no constraint on it can land a version outside the declared
+ * range -- at which point npm refuses the whole tree with ERESOLVE and the
+ * developer is stuck one minute in, having typed what we told them to type.
+ * That happened; it is the defect 0.4.1 fixes.
+ *
+ * The range is a literal rather than a template so that
+ * `tools/check-install-commands.mjs` can read it out of this file and fail the
+ * build if it ever stops matching `peerDependencies` in package.json. The two
+ * are the same fact written in two places, and the check is what keeps them
+ * one fact.
+ *
+ * The quotes are for the shell, not for npm: `^` is a glob operator under zsh
+ * with `extendedglob`, and an escape character in cmd.exe.
+ */
+const PGLITE_INSTALL = 'npm install --save-dev "@electric-sql/pglite@^0.3.11"';
+
 /** True when `err` is Node refusing to resolve `spec`, and not some other failure. */
 function isModuleNotFound(err: unknown, spec: string): boolean {
   const code = (err as { code?: unknown } | null)?.code;
@@ -314,7 +335,13 @@ async function importPglite(): Promise<{
     throw new Error(
       `createTestDb() needs "${PGLITE}", which is not installed.\n` +
         `\n` +
-        `  npm install --save-dev ${PGLITE}\n` +
+        `  ${PGLITE_INSTALL}\n` +
+        `\n` +
+        `The version is part of the command. @filelayer/core supports the 0.3.x line\n` +
+        `of ${PGLITE}; 0.5.x is not supported, because the test suite does\n` +
+        `not pass against it. Installing without the constraint can resolve to a\n` +
+        `version outside the supported range, and npm then refuses the install with\n` +
+        `ERESOLVE rather than giving you a working tree.\n` +
         `\n` +
         `It is an OPTIONAL peer dependency of @filelayer/core, on purpose: it is an\n` +
         `embedded WASM PostgreSQL used by createTestDb() and Filelayer.quickstart()\n` +

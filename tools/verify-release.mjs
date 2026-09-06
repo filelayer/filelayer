@@ -49,11 +49,18 @@
  *     consumer is unaffected by the packaging. Without the variable the step is
  *     skipped, loudly, on one line -- it is not silently dropped.
  *
- *   PHASE 2, HELPER SHAPE. `npm install --save-dev @electric-sql/pglite`, then
- *     run the SAME lifecycle assertions through `Filelayer.quickstart()`. This
- *     is the documented five-line quickstart, so it has to keep working, and it
- *     is the only part of this file that needs pglite. The install is explicit
- *     and belongs to the CONSUMER's dev dependencies, never to ours.
+ *   PHASE 2, HELPER SHAPE. Install pglite, then run the SAME lifecycle
+ *     assertions through `Filelayer.quickstart()`. This is the documented
+ *     five-line quickstart, so it has to keep working, and it is the only part
+ *     of this file that needs pglite. The install is explicit and belongs to the
+ *     CONSUMER's dev dependencies, never to ours.
+ *
+ *     The command it runs is READ OUT OF README.md, by
+ *     `documentedInstallCommand()` in tools/check-install-commands.mjs. It is
+ *     not written here. 0.4.0 shipped an install command that could not resolve
+ *     against its own peer range, and this gate did not catch it for one
+ *     reason: the gate typed its own command. A gate that writes its own version
+ *     of the instructions is testing itself, not the instructions.
  *
  * The lifecycle assertions are written once, in `LIFECYCLE`, and run in both
  * shapes. Two copies would drift, and the copy that drifts is always the one
@@ -64,10 +71,11 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { documentedInstallCommand, shellWords, satisfies } from './check-install-commands.mjs';
 
 const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..');
 const CORE = join(ROOT, 'packages', 'core');
@@ -75,6 +83,22 @@ const KEEP = process.argv.includes('--keep');
 
 /** The optional peer dependency. Named once so the two phases cannot disagree. */
 const PGLITE = '@electric-sql/pglite';
+
+/** The range the published package declares. Read, not written. */
+const PGLITE_RANGE = JSON.parse(readFileSync(join(CORE, 'package.json'), 'utf8'))
+  .peerDependencies?.[PGLITE];
+
+/**
+ * The install command README.md gives a first user, character for character.
+ * Phases 2 and 3 run THIS. See the header for why it is not written out here.
+ */
+const DOC_INSTALL = (() => {
+  try {
+    return documentedInstallCommand(PGLITE);
+  } catch (e) {
+    die('reading the documented install command', e.message);
+  }
+})();
 
 /** A scratch Postgres for the production-shape lifecycle. Optional; see above. */
 const DB_URL = process.env.FILELAYER_VERIFY_DATABASE_URL ?? '';
@@ -169,10 +193,20 @@ assert.ok(
   'a raw module-resolution error reached the caller:\n' + failure.message,
 );
 assert.match(failure.message, /@electric-sql\/pglite/, 'the error does not name the package');
+// The command in the error must be the command in README.md, character for
+// character, and it must carry a version. 0.4.0's carried none, which is how a
+// developer following it could land outside the declared peer range.
+const DOCUMENTED = ${JSON.stringify(DOC_INSTALL)};
 assert.match(
-  failure.message,
-  /npm install --save-dev @electric-sql\/pglite/,
-  'the error does not give the exact install command',
+  DOCUMENTED,
+  /@\^?\d+\.\d+\.\d+/,
+  'the documented install command carries no version constraint: ' + DOCUMENTED,
+);
+assert.ok(
+  failure.message.includes(DOCUMENTED),
+  'the error does not give the documented install command.\n' +
+    '  README.md says:  ' + DOCUMENTED + '\n' +
+    '  the error says:\n' + failure.message,
 );
 assert.match(failure.message, /DATABASE_URL/, 'the error does not point at the production path');
 assert.ok(failure.cause, 'the underlying resolution error was discarded rather than chained');
@@ -512,10 +546,42 @@ if (DB_URL) {
 // here, explicitly, into the CONSUMER's dev dependencies -- exactly as the
 // documentation tells a reader to do before their first quickstart. If this
 // line is ever removed, phase 2 fails with the message asserted in phase 1.
+//
+// The command is README.md's, read at run time. Not a copy of it.
 console.log('\nPHASE 2 - helper shape: + ' + PGLITE + ' (the consumer\'s devDependency)\n');
-process.stdout.write('   npm install --save-dev ' + PGLITE + ' ....');
-npmInstall(['--save-dev', PGLITE], 'npm install ' + PGLITE);
+const docArgs = shellWords(DOC_INSTALL);
+if (docArgs[0] !== 'npm' || docArgs[1] !== 'install') {
+  die(
+    'the documented install command',
+    'README.md gives "' + DOC_INSTALL + '", which this gate does not know how to run.\n' +
+      'It executes the documented command rather than one of its own, so the command\n' +
+      'has to stay an `npm install`.',
+  );
+}
+console.log('   README.md tells a first user to run:');
+console.log('     $ ' + DOC_INSTALL + '\n');
+process.stdout.write('   running exactly that ...........................');
+npmInstall(docArgs.slice(2), 'the documented install command: ' + DOC_INSTALL);
 console.log(' ok');
+
+// It resolved -- but to WHAT? An install that succeeds because npm quietly
+// picked a version other than the one the reader asked for is still a broken
+// instruction, and it is the shape that hid this defect: with the tarball
+// already in place, npm will silently walk `latest` back into the peer range,
+// so a bare command "worked" here while failing for a real user whose project
+// already had the package.
+process.stdout.write('   the version it installed is in range ...........');
+const installedManifest = join(consumer, 'node_modules', ...PGLITE.split('/'), 'package.json');
+const installedVersion = JSON.parse(readFileSync(installedManifest, 'utf8')).version;
+if (!satisfies(installedVersion, PGLITE_RANGE)) {
+  die(
+    'the documented install command',
+    'it installed ' + PGLITE + '@' + installedVersion + ', which is outside the peer\n' +
+      'range this package declares (' + PGLITE_RANGE + '). The command and the manifest\n' +
+      'disagree, and the developer following the command is the one who finds out.',
+  );
+}
+console.log(' ok  (' + installedVersion + ' satisfies ' + PGLITE_RANGE + ')');
 console.log('');
 runInConsumer(
   'flow-quickstart.mjs',
@@ -526,6 +592,54 @@ runInConsumer(
   'the quickstart lifecycle',
 );
 
+// --- PHASE 3: the other order -----------------------------------------------
+//
+// Phases 1 and 2 install the tarball first and pglite second. In that order npm
+// can rescue a bad instruction: the peer range is already on disk, so it walks
+// `latest` back to something the range admits and the install "succeeds". That
+// is exactly why 0.4.0's unversioned command passed this gate and failed for
+// real people.
+//
+// A developer whose project ALREADY uses pglite adds @filelayer/core the other
+// way round, and there is nothing left to rescue: whatever the documented
+// command put on disk is what the peer range has to admit, or npm refuses the
+// tree with ERESOLVE. So run the documented command in a directory that has
+// never contained anything, then add the package on top.
+console.log('\nPHASE 3 - the other order: the documented command first, then the package\n');
+const reverse = mkdtempSync(join(tmpdir(), 'filelayer-reverse-'));
+writeFileSync(
+  join(reverse, 'package.json'),
+  JSON.stringify({ name: 'filelayer-reverse', private: true, version: '0.0.0', type: 'module' }, null, 2) + '\n',
+);
+const reverseInstall = (args, stage) => {
+  const r = run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts', ...args], {
+    cwd: reverse,
+    env: npmEnv,
+  });
+  if (r.status !== 0) {
+    if (!KEEP) rmSync(reverse, { recursive: true, force: true });
+    die(stage, r.stderr || r.stdout);
+  }
+  return r;
+};
+console.log('     $ ' + DOC_INSTALL);
+console.log('     $ npm install @filelayer/core\n');
+process.stdout.write('   the documented command, in an empty directory ..');
+reverseInstall(docArgs.slice(2), 'the documented install command, in an empty directory');
+console.log(' ok');
+process.stdout.write('   then @filelayer/core on top of it ..............');
+reverseInstall(
+  [tarball],
+  'npm install @filelayer/core on top of the documented pglite install\n\n' +
+    'This is ERESOLVE: the version the documented command installs is not one the\n' +
+    'declared peer range admits. It is the defect 0.4.1 fixed, and a developer\n' +
+    'whose project already uses pglite hits it on their first command.',
+);
+console.log(' ok  (no dependency-resolution error)');
+if (!KEEP) rmSync(reverse, { recursive: true, force: true });
+else console.log('   (kept: ' + reverse + ')');
+
 cleanup();
-console.log('The published tarball installs from nothing and performs the full lifecycle.\n');
+console.log('\nThe published tarball installs from nothing and performs the full lifecycle.');
+console.log('The install command it documents resolves against the range it declares.\n');
 process.exit(0);

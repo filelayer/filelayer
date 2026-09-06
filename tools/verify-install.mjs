@@ -27,7 +27,10 @@
  * dependency of @filelayer/core, not a dependency -- a library whose premise is
  * "point it at your own Postgres" should not put a second Postgres into every
  * production `node_modules`. So whoever prepares the consumer directory must
- * `npm install --save-dev @electric-sql/pglite` into it before running this.
+ * run `npm install --save-dev "@electric-sql/pglite@^0.3.11"` in it before
+ * running this. The version constraint is required, not tidiness: pglite's
+ * `latest` on npm is outside the declared peer range and a bare install of it
+ * can end in ERESOLVE.
  * See the `packaging` job in .github/workflows/ci.yml, which does exactly that
  * and says why. `tools/verify-release.mjs` proves the other half: that the
  * package installs, imports and runs the whole lifecycle WITHOUT pglite.
@@ -116,7 +119,9 @@ try {
 } catch {
   console.error(
     `\nverify-install: ${consumerDir} has no @electric-sql/pglite.\n\n` +
-      `  npm install --save-dev @electric-sql/pglite\n\n` +
+      `  npm install --save-dev "@electric-sql/pglite@^0.3.11"\n\n` +
+      `Keep the version constraint: the supported line is 0.3.x, and pglite's\n` +
+      `\`latest\` on npm is outside it.\n\n` +
       `This script drives Filelayer.quickstart(), which runs on an embedded WASM\n` +
       `Postgres. That package is an OPTIONAL PEER dependency of @filelayer/core on\n` +
       `purpose: a production install of this library ships no database at all.\n`,

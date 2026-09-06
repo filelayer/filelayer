@@ -195,8 +195,17 @@ declared as an *optional peer dependency* so that it never lands in a production
 otherwise — `createTestDb()` will tell you, by name, if you need it:
 
 ```bash
-npm install --save-dev @electric-sql/pglite
+npm install --save-dev "@electric-sql/pglite@^0.3.11"
 ```
+
+**Install PGlite with that version constraint.** Filelayer supports the
+**0.3.x** line, which is what `peerDependencies` declares and what the suite runs
+against. **0.5.x is not supported**: we ran the full suite against 0.5.8 and it
+does not pass, so the range has not been widened. PGlite's `latest` on npm is a
+0.5.x release, so omitting the constraint can install a version outside the
+supported range — and npm then refuses the whole tree with `ERESOLVE`. The quotes
+are for your shell, not for npm: `^` is a glob operator under `zsh` with
+`extendedglob` and an escape character in `cmd.exe`.
 
 ```ts
 import { Filelayer } from '@filelayer/core';

@@ -95,6 +95,14 @@ npm run verify:release
   such a link is a 404 for anyone who found us through npm. Use an absolute
   `https://` URL. `npm run check:links` enforces this.
 - **Every fenced code sample must run.** `npm run check:docs` executes them.
+- **Every documented install command must resolve.** If you tell a reader to
+  install a package we declare a version range for, the command carries that
+  range. `npm run check:install` reads every tracked file and compares each
+  command against `packages/core/package.json` as semver intervals, in both
+  directions: widening a declared range without updating the instructions fails,
+  and so does the reverse. It exists because 0.4.0 shipped an install command
+  that could not resolve against its own peer range, and every other check here
+  passed.
 
 ## Licensing of contributions
 

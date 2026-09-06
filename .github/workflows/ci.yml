@@ -136,6 +136,14 @@ jobs:
       - name: Every link and script reference resolves
         run: npm run check:links
 
+      # A documented command that does not run is a defect the rest of this
+      # workflow cannot see, because everything else here reads the software
+      # rather than the sentences that tell a stranger how to start it. 0.4.0
+      # shipped an install command that could not resolve against its own peer
+      # range. See the header of tools/check-install-commands.mjs.
+      - name: Every documented install command resolves against the declared range
+        run: npm run check:install
+
       # openapi.json and openapi.yaml are generated from tools/openapi.mjs.
       # Two hand-maintained serialisations of one API description drift, and a
       # drifted API description is worse than none because it is trusted.
@@ -231,9 +239,15 @@ jobs:
       # dev dependency, exactly as our documentation tells a reader to before
       # their first quickstart. The step above is what proves it was not
       # already there.
+      #
+      # The version constraint is part of the documented command. pglite's
+      # `latest` on npm is a 0.5.x release, outside the `^0.3.11` peer range
+      # this package declares, so a bare install of it can resolve outside the
+      # range and end in ERESOLVE. tools/check-install-commands.mjs fails the
+      # build if this line, or any other documented install command, loses it.
       - name: Install the optional peer the quickstart helper needs
         working-directory: ${{ runner.temp }}/consumer
-        run: npm install --save-dev @electric-sql/pglite
+        run: npm install --save-dev "@electric-sql/pglite@^0.3.11"
 
       - name: Import it and use it
         run: node "$GITHUB_WORKSPACE/tools/verify-install.mjs" "$RUNNER_TEMP/consumer"
