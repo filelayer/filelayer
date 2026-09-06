@@ -1,6 +1,6 @@
 {
   "name": "@filelayer/core",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Multi-tenant file authorization and lifecycle for Postgres: one decision point for public and private files, revocable URLs, delegated share links and a hash-chained audit trail.",
   "license": "Apache-2.0",
   "type": "module",
@@ -16,6 +16,8 @@
       "default": "./dist/index.js"
     },
     "./schema.sql": "./schema.sql",
+    "./llms.txt": "./llms.txt",
+    "./openapi.json": "./openapi.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -30,7 +32,9 @@
     "MIGRATIONS.md",
     "SEMANTICS.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "llms.txt",
+    "openapi.json"
   ],
   "sideEffects": false,
   "repository": {
@@ -62,7 +66,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "node --eval \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "prepack": "node --input-type=commonjs -e \"['README.md','LICENSE','NOTICE'].forEach(f=>require('node:fs').copyFileSync('../../'+f,f))\" && npm run build",
+    "prepack": "npm run build",
     "test": "node --test --experimental-strip-types \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm test && npm run build"

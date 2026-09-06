@@ -9,7 +9,7 @@
 openapi: "3.1.0"
 info:
   title: "Filelayer byte-delivery routes"
-  version: "0.4.2"
+  version: "0.4.3"
   summary: "The two HTTP routes the Filelayer library serves. There are no others."
   description: "Filelayer is a Node library, not a hosted service. It ships exactly two HTTP route\nhandlers, both in `packages/core/src/delivery.ts`, and this document describes those\ntwo and nothing else.\n\nEverything else in the product — uploading bytes, creating and revoking shares,\nmanaging membership, reading the audit trail — is an in-process method call\n(`fl.files.put()`, `fl.shares.create()`, `fl.orgs.audit()`, …) with no HTTP binding\nthat we ship. You mount those in your own framework, under your own paths, behind\nyour own authentication. If you are looking for `POST /files` in this document, it is\nabsent because it does not exist.\n\nThe two routes below exist as routes rather than as response helpers because both\ncarry a security decision that belongs to the library:\n\n- the response headers are computed from the file record and cannot be turned off, so\n  a developer cannot serve user-uploaded HTML inline from their own origin;\n- the share route reads the password from the request body and refuses, with 400,\n  if any credential appears in the query string — a routing decision, not a response\n  decision, and the reason this is a route.\n\nMount them with `deliveryHandler(fl)`, which is both routes plus a 404 for anything\nelse, and is a complete `node:http` request listener."
   license:

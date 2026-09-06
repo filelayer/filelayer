@@ -65,16 +65,21 @@ Check the artifact one more time, by hand:
 
 ```bash
 cd packages/core
-npm pack --dry-run           # `prepack` runs first: it copies README/LICENSE/
-                             # NOTICE from the repo root and runs `tsc`.
+npm pack --dry-run           # `prepack` runs first: since 0.4.3 it only runs
+                             # `tsc`. It copies nothing.
 cd ../..
 ```
 
 In that listing you must see exactly `LICENSE`, `NOTICE`, `README.md`,
-`CHANGELOG.md`, `MIGRATIONS.md`, `SEMANTICS.md`, `schema.sql`, the two
-`tsconfig` files, `dist/`, `src/` and `test/`. Anything else — any repository
-directory that is not in the `files` array of `packages/core/package.json` — is
-a defect, not a bonus.
+`llms.txt`, `openapi.json`, `CHANGELOG.md`, `MIGRATIONS.md`, `SEMANTICS.md`,
+`schema.sql`, the two `tsconfig` files, `dist/`, `src/` and `test/`. Anything
+else — any repository directory that is not in the `files` array of
+`packages/core/package.json` — is a defect, not a bonus.
+
+The first five of those are tracked inside `packages/core` and are byte-for-byte
+copies of the files at the repository root. `npm run verify` compares them; you
+do not have to. If one of them is missing from the listing, the copy is missing
+from git, and `node tools/check-package-copies.mjs` says which.
 
 One last independent check on the artifact rather than on the source tree. The
 tarball is 69 files; the non-`dist/` half is short enough to read in full:
@@ -209,12 +214,13 @@ and every link in the documentation assume `@filelayer/core`.
 ```bash
 cd packages/core
 
-# Dry run first. This runs `prepack` (copy README/LICENSE/NOTICE from the repo
-# root, then `tsc -p tsconfig.build.json`) and prints the exact tarball.
-npm publish --dry-run --access public --tag alpha
+# Dry run first. This runs `prepack` (`tsc -p tsconfig.build.json`, nothing
+# else) and prints the exact tarball.
+npm publish --dry-run --access public --tag latest
 
 # The real thing.
-npm publish --access public --tag alpha
+npm publish --access public --tag latest
+npm dist-tag add @filelayer/core@0.4.3 alpha
 
 cd ../..
 ```
@@ -225,14 +231,39 @@ Notes on that invocation, because each flag is load-bearing:
   free organization is a hard error. `packages/core/package.json` also sets
   `publishConfig.access = "public"`; the flag is belt and braces and makes the
   intent visible in your shell history.
-- **`--tag alpha`** — this is the important one. Without it npm sets `latest`,
-  and `npm install @filelayer/core` would give a stranger the alpha by default.
-  With it, `latest` stays unset and installing requires
-  `npm install @filelayer/core@alpha`. The README says this is a developer
-  preview; the dist-tag has to say the same thing.
+- **`--tag latest`** — this changed in 0.4.3, and the reasoning is worth
+  reading before changing it back. Releases 0.3.0 to 0.4.2 used `--tag alpha`,
+  on the belief that it left `latest` unset so nobody installed the alpha by
+  accident. It did not do that: the registry sets `latest` itself when it
+  creates a packument, so 0.3.0 became `latest` at the first publish and
+  `npm install @filelayer/core` has resolved to the alpha ever since.
+
+  What `--tag alpha` did do was suppress the README. npm copies a version's
+  `readme` into the top of the packument — the only description of the package
+  a non-browser client can read, because npmjs.com answers 403 to everything
+  else — and it does that only for the version published *as* `latest`. Three
+  releases sent a complete README that the registry never hoisted, leaving
+  `"readme": ""` where every tool and every agent looks. Running
+  `npm dist-tag add ... latest` afterwards does not trigger the hoist either;
+  the version has to arrive as `latest`.
+
+  The `alpha` tag is added straight afterwards so
+  `npm install @filelayer/core@alpha` keeps working. Alpha status is stated by
+  the README banner, the `0.x` version and `TRUST.md`, which is where it was
+  doing the work.
 - **`prepack` runs automatically** as part of `npm publish`. You do not build
   first, and you should not: building separately and then publishing risks
   shipping a `dist/` that does not match the source in the same tarball.
+- **Then look at the packument, not just the tarball.** They are different
+  artifacts, and the difference is exactly where four releases went wrong:
+
+  ```bash
+  curl -s https://registry.npmjs.org/@filelayer/core | node -e \
+    "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log('readme chars:',(JSON.parse(s).readme||'').length))"
+  ```
+
+  Anything under a few thousand characters means the hoist did not happen.
+  `publish.sh` asserts this for you.
 
 ---
 
@@ -242,13 +273,15 @@ Notes on that invocation, because each flag is load-bearing:
 
 ```bash
 npm view @filelayer/core
-npm view @filelayer/core dist-tags       # -> { alpha: '0.3.0' }, no `latest`
+npm view @filelayer/core dist-tags       # -> { latest: '0.4.3', alpha: '0.4.3' }
 npm view @filelayer/core license         # -> Apache-2.0
 npm view @filelayer/core files
 ```
 
-`dist-tags` must show `alpha: 0.3.0` and must **not** show `latest`. If
-`latest` is set, you forgot `--tag alpha`; see the rollback note in §5.
+`dist-tags` must show **both** `latest` and `alpha` pointing at the version you
+just published. `latest` missing means the publish did not go to `latest`, and
+the packument's `readme` will still be empty — see §3.3. `alpha` missing means
+the `npm dist-tag add` after the publish did not run; add it by hand.
 
 ### 4.2 Fresh install from an empty directory, and the end-to-end flow
 
@@ -392,8 +425,12 @@ Read this before you type it:
 For the common mistakes there are cheaper fixes than unpublishing:
 
 ```bash
-# Published without --tag alpha, so `latest` points at the alpha:
-npm dist-tag add @filelayer/core@0.3.0 alpha
+# Published to `latest` and now want the alpha off the default install path.
+# Read §3.3 first: removing `latest` does not restore the "nobody installs this
+# by accident" property the tag was originally chosen for -- 0.3.0 already made
+# this package's `latest` the alpha -- and it does cost the packument README on
+# every release after it.
+npm dist-tag add @filelayer/core@0.4.3 alpha
 npm dist-tag rm  @filelayer/core latest
 npm view @filelayer/core dist-tags        # confirm
 

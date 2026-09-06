@@ -54,6 +54,9 @@ const NPM_SCOPE = 'filelayer';
 /** Files that leave the repository inside the npm tarball. */
 const corePkg = JSON.parse(readFileSync(join(ROOT, 'packages/core/package.json'), 'utf8'));
 const TARBALL_ROOTS = new Set(corePkg.files ?? []);
+/** The published name, and the subpaths its `exports` map actually resolves. */
+const PKG_NAME = corePkg.name;
+const EXPORTED_SUBPATHS = new Set(Object.keys(corePkg.exports ?? {}));
 
 /** package.json files a fenced `npm run` block might be talking about. */
 const SCRIPT_SOURCES = [
@@ -174,6 +177,28 @@ for (const doc of DOCS) {
     for (const m of rawLine.matchAll(/`((?:[\w./@-]+\/)+[\w.-]+\.(?:ts|mjs|js|sql|json|md))`/g)) {
       const path = m[1];
       if (path.startsWith('node_modules')) continue;
+
+      // A subpath import such as `@filelayer/core/openapi.json` is a MODULE
+      // SPECIFIER, not a repository path, and looking for it on disk asks the
+      // wrong question. The right question is whether `exports` in
+      // packages/core/package.json actually resolves it -- a specifier the
+      // documentation offers that npm will not resolve is exactly the class of
+      // defect this file exists to catch, and until now it was invisible
+      // because no such specifier had ever been documented.
+      if (path.startsWith(PKG_NAME + '/')) {
+        const subpath = './' + path.slice(PKG_NAME.length + 1);
+        if (!EXPORTED_SUBPATHS.has(subpath)) {
+          fail(
+            doc,
+            n,
+            `documents the import specifier "${path}", which packages/core/package.json ` +
+              `"exports" does not resolve. Add "${subpath}" to exports, or stop offering it. ` +
+              `Exported: ${[...EXPORTED_SUBPATHS].join(', ')}`,
+          );
+        }
+        continue;
+      }
+
       const candidates = [
         join(ROOT, path),
         resolve(dirname(abs), path),
@@ -212,18 +237,16 @@ for (const { dir, scripts } of SCRIPT_SOURCES) {
 // -----------------------------------------------------------------------------
 // Everything the package claims to ship must actually be there.
 // -----------------------------------------------------------------------------
-// `dist` is a build output, and README.md/LICENSE/NOTICE are copied in from the
-// repository root by `prepack`, so all four are legitimately absent from a
-// checkout that has not packed yet.
+// `dist` is a build output and is legitimately absent from a checkout that has
+// not built yet. Nothing else in `files` is allowed to be missing.
 //
-// This set is derived from the `prepack` script rather than hardcoded, because
-// the two drifted once already: NOTICE was added to `prepack` and to `files`
-// but not here, which failed the build on a file that was never supposed to
-// exist yet. Keeping one source of truth means adding a copied file to
-// `prepack` is now enough.
-// Matches the array literal `prepack` copies from, e.g. ['README.md','LICENSE'].
-// Extensionless names such as LICENSE and NOTICE must be picked up too, so this
-// takes every quoted string inside the first bracketed list.
+// Until 0.4.3 this exemption also covered README.md, LICENSE and NOTICE, which
+// `prepack` copied in from the repository root; the set was derived from the
+// `prepack` script rather than hardcoded, because the two had drifted once
+// already. Those files are tracked now, so the exemption shrank back to the one
+// genuinely generated entry, and it is still derived rather than written twice:
+// if a future `prepack` starts generating something again, that entry is
+// exempt here and `tools/check-package-copies.mjs` objects to the generation.
 const prepackScript = corePkg.scripts?.prepack ?? '';
 const prepackList = prepackScript.match(/\[([^\]]*)\]/)?.[1] ?? '';
 const PREPACK_COPIES = [...prepackList.matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);

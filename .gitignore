@@ -64,13 +64,6 @@ dist/
 build/
 *.tgz
 
-# --- files prepack copies in from the repository root ------------------------
-# These are generated at pack time from the canonical copies at the root.
-# Committing them would let the two drift.
-packages/core/README.md
-packages/core/LICENSE
-packages/core/NOTICE
-
 # --- scratch, working directories and tool output ----------------------------
 scratch/
 outputs/

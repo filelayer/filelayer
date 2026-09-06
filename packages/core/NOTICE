@@ -1,0 +1,40 @@
+Filelayer
+Copyright 2026 Technology Pro Bono S.L.
+
+This product includes software developed by the Filelayer project
+(https://github.com/filelayer/filelayer).
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file in
+this distribution, or http://www.apache.org/licenses/LICENSE-2.0.
+
+--------------------------------------------------------------------------
+THIRD-PARTY SOFTWARE (informational)
+--------------------------------------------------------------------------
+
+The following is recorded for the convenience of downstream redistributors
+and anyone reviewing this distribution's licence obligations. It is
+NOT a required attribution notice under Apache-2.0 section 4(d), and
+redistributors of Filelayer do not inherit an obligation to reproduce it.
+
+Filelayer has NO runtime dependencies. Installing @filelayer/core installs
+@filelayer/core and nothing else. One third-party package is used, and only
+outside production:
+
+  @electric-sql/pglite
+    PostgreSQL compiled to WebAssembly, used for the embedded database in
+    `Filelayer.quickstart()`, in `createTestDb()` and in the test suite.
+    Licensed under the Apache License, Version 2.0.
+    https://github.com/electric-sql/pglite
+
+  It is declared as a devDependency and as an OPTIONAL peer dependency, so a
+  consumer who does not call those two helpers never installs it. When it is
+  installed it comes from the registry. No part of it is vendored into,
+  copied into, or redistributed inside this repository or the published
+  tarball, so this distribution is not a Derivative Work of it. It ships no
+  NOTICE file of its own, so Apache-2.0 section 4(d) imposes no propagation
+  requirement even where a redistributor bundles it.
+
+No other third-party code is vendored, copied or embedded in this
+distribution. The comparison implementations under `benchmark/` are original
+work written for this repository; they are not published to npm and are not
+part of the distributed package.
