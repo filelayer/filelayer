@@ -35,6 +35,7 @@
 !/package.json
 !/packages/
 !/tools/
+!/web/
 
 # The same shape one level down, for the two directories that hold work in
 # progress alongside what is published. Same reasoning: name what is here.

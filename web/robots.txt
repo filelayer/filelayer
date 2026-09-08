@@ -1,0 +1,32 @@
+# Filelayer — robots.txt
+#
+# Deliberately permissive, including to AI crawlers. The whole distribution
+# strategy is that this page is read and cited by models; blocking them would
+# be blocking the channel. Nothing here is private -- every claim on the site
+# is reproducible from a public repository.
+
+User-agent: *
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+Sitemap: https://filelayer.dev/sitemap.xml
