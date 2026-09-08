@@ -154,6 +154,11 @@
       "path": "docs/QUICKSTART.md",
       "contains": "'ceo'",
       "why": "lower-case example user id in a code sample"
+    },
+    {
+      "path": "web/styles.css",
+      "contains": "margin",
+      "why": "the CSS box-model property, which a stylesheet cannot avoid naming. It collides with the money-modelling sense the content digests keep out, and the collision is total: every occurrence in this file is `margin:`, `margin-top:` or `margin-inline:`. The economics sense stays blocked everywhere, including here, by the `prose` rule above, which matches `gross margin` and `contribution margin` as phrases rather than the bare word. Scoped to this one file on purpose: index.html uses the .t1-.t6 utility classes instead of inline styling, and tools/make-og.py names its variable `pad`, so this is the only place in the repository that needs it."
     }
   ]
 }

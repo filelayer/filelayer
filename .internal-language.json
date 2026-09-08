@@ -40,7 +40,10 @@
     "CODE_OF_CONDUCT.md",
     "ARCHITECTURE-PROGRESSIVE.md",
     "PUBLISH-RUNBOOK.md",
-    "architecture/TIER5-DESIGN-NOTE.md"
+    "architecture/TIER5-DESIGN-NOTE.md",
+    "web/*.html",
+    "web/*.txt",
+    "web/*.md"
   ],
   "includeNote": [
     "`include` is the surface a stranger reads: everything in the npm tarball,",

@@ -1,0 +1,255 @@
+/* =============================================================================
+   Filelayer — web/styles.css
+   =============================================================================
+   ONE VISUAL IDEA, and it is the product's: a line that decides.
+
+   The accent is not decorative. `--allow` marks a path that was permitted and
+   `--deny` a path that was refused, and those are the only two colours that
+   carry meaning anywhere on this page. Everything else is ink on paper. If a
+   future edit uses --allow for a button that has nothing to do with an access
+   decision, the idea is gone and the page is just another dev-tool landing.
+
+   No framework, no build step, no webfont. Content renders without JavaScript,
+   because AI crawlers do not reliably execute it and Bing indexation is the
+   practical gate on being retrievable at all.
+   ========================================================================== */
+
+:root {
+  --ink:        #14161a;
+  --ink-2:      #3d434d;
+  --ink-3:      #6b7280;
+  --paper:      #fbfaf8;
+  --paper-2:    #f2f0ec;
+  --rule:       #e2dfd9;
+  --rule-2:     #cfcbc3;
+
+  --allow:      #0f766e;
+  --allow-bg:   #e6f2f0;
+  --deny:       #a13a2b;
+  --deny-bg:    #f7e9e6;
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --measure: 68ch;
+  --gap: clamp(3.5rem, 7vw, 6.5rem);
+  --pad: clamp(1.25rem, 4vw, 2.5rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink:      #ecebe8;
+    --ink-2:    #b3b0aa;
+    --ink-3:    #8b8781;
+    --paper:    #101215;
+    --paper-2:  #191c21;
+    --rule:     #2a2e35;
+    --rule-2:   #3a3f47;
+    --allow:    #5eead4;
+    --allow-bg: #0d2b28;
+    --deny:     #f0a58f;
+    --deny-bg:  #2b1512;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { animation: none !important; transition: none !important; }
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: clamp(1rem, 0.97rem + 0.15vw, 1.0625rem);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- skip link ------------------------------------------------------------ */
+.skip {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: var(--ink); color: var(--paper);
+  padding: 0.75rem 1.25rem; text-decoration: none; border-radius: 0 0 4px 0;
+}
+.skip:focus { left: 0; }
+
+/* --- layout --------------------------------------------------------------- */
+.wrap { width: 100%; max-width: 1120px; margin-inline: auto; padding-inline: var(--pad); }
+.narrow { max-width: var(--measure); }
+
+section { padding-block: var(--gap); border-top: 1px solid var(--rule); }
+section:first-of-type { border-top: 0; }
+
+h1, h2, h3 { line-height: 1.15; letter-spacing: -0.021em; margin: 0 0 0.6em; font-weight: 620; }
+h1 { font-size: clamp(2.35rem, 1.5rem + 4.2vw, 4.15rem); letter-spacing: -0.035em; }
+h2 { font-size: clamp(1.6rem, 1.2rem + 1.7vw, 2.35rem); }
+h3 { font-size: 1.0625rem; letter-spacing: 0; font-weight: 640; }
+p  { margin: 0 0 1.15rem; max-width: var(--measure); }
+ul { max-width: var(--measure); }
+
+a { color: inherit; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { text-decoration-color: var(--allow); }
+:focus-visible { outline: 2px solid var(--allow); outline-offset: 3px; border-radius: 2px; }
+
+.eyebrow {
+  font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.11em;
+  text-transform: uppercase; color: var(--ink-3); margin: 0 0 1.4rem;
+}
+.lead { font-size: clamp(1.1rem, 1rem + 0.55vw, 1.32rem); line-height: 1.55; color: var(--ink-2); }
+.note { font-size: 0.925rem; color: var(--ink-3); }
+strong { font-weight: 640; color: var(--ink); }
+
+/* --- header --------------------------------------------------------------- */
+.masthead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding-block: 1.4rem; border-bottom: 1px solid var(--rule);
+}
+.brand { display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 640; text-decoration: none; letter-spacing: -0.02em; }
+.brand svg { display: block; }
+.nav { display: flex; gap: 1.5rem; align-items: center; font-size: 0.9375rem; }
+.nav a { text-decoration: none; color: var(--ink-2); }
+.nav a:hover { color: var(--ink); text-decoration: underline; }
+@media (max-width: 620px) { .nav .opt { display: none; } }
+
+/* --- alpha disclosure -----------------------------------------------------
+   Present and unmissable, but visually secondary. It was a full bordered
+   panel in the first draft, which made "this is risky" the emotional message
+   of the hero. The honesty is not negotiable; the volume is. A single line
+   with a left rule states the same three facts without shouting them.       */
+.alpha-line {
+  margin-top: 2.25rem; padding-left: 0.9rem;
+  border-left: 2px solid var(--deny);
+  font-size: 0.9rem; color: var(--ink-3); max-width: 58ch;
+}
+.alpha-line b { font-weight: 620; color: var(--ink-2); }
+.alpha-line a { color: var(--ink-2); }
+
+/* --- hero ----------------------------------------------------------------- */
+.hero { padding-block: clamp(3rem, 6vw, 5rem) var(--gap); }
+.hero h1 { max-width: 16ch; }
+.hero .lead { max-width: 56ch; }
+.keep { font-weight: 600; color: var(--ink); }
+
+.cta-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 2rem 0 1.25rem; }
+.btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.72rem 1.35rem; border-radius: 6px; font-size: 0.9375rem;
+  font-weight: 580; text-decoration: none; border: 1px solid var(--ink); transition: opacity .15s;
+}
+.btn-primary { background: var(--ink); color: var(--paper); }
+.btn-primary:hover { opacity: 0.86; }
+.btn-secondary { background: transparent; color: var(--ink); border-color: var(--rule-2); }
+.btn-secondary:hover { border-color: var(--ink); }
+
+.install {
+  font-family: var(--mono); font-size: 0.9rem; color: var(--ink-2);
+  background: var(--paper-2); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 0.7rem 0.95rem; display: inline-block; user-select: all;
+}
+
+/* --- code ----------------------------------------------------------------- */
+pre {
+  margin: 0; padding: 1.15rem 1.25rem; overflow-x: auto;
+  background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px;
+  font-family: var(--mono); font-size: 0.855rem; line-height: 1.72; tab-size: 2;
+}
+code { font-family: var(--mono); font-size: 0.94em; }
+p code, li code, td code {
+  background: var(--paper-2); border: 1px solid var(--rule);
+  border-radius: 4px; padding: 0.08em 0.34em; font-size: 0.875em;
+}
+.c-com { color: var(--ink-3); font-style: italic; }
+.c-key { color: var(--ink-2); }
+.c-str { color: var(--allow); }
+.c-allow { color: var(--allow); font-weight: 600; }
+.c-deny  { color: var(--deny);  font-weight: 600; }
+
+figure { margin: 0; }
+figcaption { font-size: 0.875rem; color: var(--ink-3); margin-top: 0.7rem; }
+
+/* --- grids ---------------------------------------------------------------- */
+.grid { display: grid; gap: 1.5rem; margin-top: 2.25rem; }
+.g2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+.g3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15.5rem), 1fr)); }
+.split { display: grid; gap: 2.5rem; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 900px) { .split { grid-template-columns: 0.95fr 1.05fr; gap: 3.5rem; } }
+
+.card { border: 1px solid var(--rule); border-radius: 8px; padding: 1.35rem; background: var(--paper); }
+.card h3 { margin-bottom: 0.45rem; }
+.card p { font-size: 0.9375rem; color: var(--ink-2); margin: 0; }
+
+/* --- the layer diagram ---------------------------------------------------- */
+.stack { display: grid; gap: 0; margin: 2.25rem 0 1rem; max-width: 34rem; }
+.layer {
+  border: 1px solid var(--rule); padding: 1.05rem 1.25rem; background: var(--paper);
+}
+.layer:first-child { border-radius: 8px 8px 0 0; }
+.layer:last-child  { border-radius: 0 0 8px 8px; }
+.layer + .layer { border-top: 0; }
+.layer.mid { background: var(--allow-bg); border-color: var(--allow); border-top: 1px solid var(--allow); position: relative; z-index: 1; }
+.layer.mid + .layer { border-top: 1px solid var(--allow); }
+.layer .lname { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.layer.mid .lname { color: var(--allow); }
+.layer .ldesc { font-size: 0.9375rem; color: var(--ink-2); margin-top: 0.2rem; }
+
+/* --- primitive chain ------------------------------------------------------ */
+.chain { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 2rem 0 2.5rem; font-family: var(--mono); font-size: 0.875rem; }
+.chain span { border: 1px solid var(--rule-2); border-radius: 5px; padding: 0.42rem 0.8rem; background: var(--paper); }
+.chain i { color: var(--ink-3); font-style: normal; }
+
+/* --- vertical rhythm utilities --------------------------------------------
+   These exist so index.html carries no inline style attributes. That is worth
+   a few classes on its own -- markup without inline styling is easier to read
+   and to re-theme -- and it also keeps the CSS property name out of the HTML,
+   which matters because check-publication-boundary.mjs reads every tracked
+   file for one specific word that a stylesheet cannot avoid using.           */
+.t1 { margin-top: 0.75rem; }
+.t2 { margin-top: 1rem; }
+.t3 { margin-top: 1.5rem; }
+.t4 { margin-top: 2.25rem; }
+.t5 { margin-top: 2.5rem; }
+.t6 { margin-top: 2.75rem; }
+.tup { margin-top: -1.25rem; }
+
+/* --- example ladder ------------------------------------------------------- */
+.rung { border-top: 1px solid var(--rule); padding-block: 2rem; }
+.rung:first-of-type { border-top: 0; padding-top: 0.5rem; }
+.rung .split { gap: 1.75rem; }
+@media (min-width: 900px) { .rung .split { grid-template-columns: 0.8fr 1.2fr; gap: 3rem; } }
+.rung h3 { font-size: 1.15rem; letter-spacing: -0.01em; }
+.rung p { font-size: 0.9375rem; color: var(--ink-2); }
+
+/* --- trust ---------------------------------------------------------------- */
+.numbers { list-style: none; padding: 0; margin: 2rem 0 0; display: grid; gap: 0; max-width: 40rem; }
+.numbers li { display: flex; justify-content: space-between; gap: 1.5rem; padding: 0.7rem 0; border-bottom: 1px solid var(--rule); font-size: 0.9375rem; }
+.numbers li:last-child { border-bottom: 0; }
+.numbers .v { font-family: var(--mono); color: var(--ink-2); text-align: right; white-space: nowrap; }
+.numbers .zero { color: var(--deny); font-weight: 640; }
+
+.does { list-style: none; padding: 0; margin: 0; }
+.does li { padding-left: 1.6rem; position: relative; margin-bottom: 0.6rem; font-size: 0.9375rem; color: var(--ink-2); }
+.does li::before { position: absolute; left: 0; font-family: var(--mono); font-weight: 700; }
+.does.can li::before  { content: "+"; color: var(--allow); }
+.does.cant li::before { content: "\2212"; color: var(--deny); }
+
+/* --- footer --------------------------------------------------------------- */
+footer { border-top: 1px solid var(--rule); padding-block: 3rem 4rem; font-size: 0.9375rem; color: var(--ink-3); }
+.fgrid { display: grid; gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); margin-bottom: 2.5rem; }
+.fgrid h3 { font-size: 0.775rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.85rem; }
+.fgrid ul { list-style: none; padding: 0; margin: 0; }
+.fgrid li { margin-bottom: 0.5rem; }
+.fgrid a { color: var(--ink-2); text-decoration: none; }
+.fgrid a:hover { color: var(--ink); text-decoration: underline; }
+.colophon { border-top: 1px solid var(--rule); padding-top: 1.75rem; max-width: var(--measure); }
+
+/* --- print ---------------------------------------------------------------- */
+@media print {
+  .cta-row, .nav, .skip { display: none; }
+  body { background: #fff; color: #000; }
+  section { break-inside: avoid; }
+}

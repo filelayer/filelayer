@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  ===========================================================================
+  EDITING THIS PAGE
+  ===========================================================================
+  The H1 and the lead paragraph are provisional. They are being tested with
+  developers and may be replaced. Nothing else on this page depends on them,
+  so rewriting them is cheap.
+
+  WHAT THE PAGE SAYS, and the order matters:
+    1. Filelayer is file infrastructure for SaaS applications.
+    2. It handles the ownership, access, sharing and lifecycle parts, which
+       are the parts that are horrible to rebuild in every application.
+  NOT the reverse. A reader who leaves thinking "authorization middleware for
+  private B2B documents" has read a page we failed to write. That describes
+  what the library is best at today, not what it is.
+
+  PUBLIC FILES ARE FIRST-CLASS. One file model, from an avatar to a contract
+  under legal hold. Never apologise for the simple case.
+
+  THESE FACTS ARE NOT PROVISIONAL and must survive every copy edit:
+    - Filelayer is authorization middleware, NOT row-level security. Any
+      "one decision point" phrasing is ALWAYS scoped to "file access that
+      goes through Filelayer". This wording cost us a correction in 0.4.4.
+    - The object bucket must be private. Filelayer cannot make it private.
+    - No CDN on the default byte path, no Range in the shipped routes, no
+      transformations, no direct browser-to-storage upload.
+    - Zero known production deployments.
+
+  If a claim here is not true of the published package, it is a bug.
+  ===========================================================================
+-->
+
+<title>Filelayer — the file layer for SaaS applications</title>
+<meta name="description" content="Open-source Node library that gives your application's files a real model: ownership, access, sharing and lifecycle, on the S3 or R2 bucket you already own. From a public avatar to a contract with an expiring link. Apache-2.0, alpha.">
+
+<link rel="canonical" href="https://filelayer.dev/">
+<link rel="stylesheet" href="./styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://filelayer.dev/">
+<meta property="og:title" content="Filelayer — the file layer for SaaS applications">
+<meta property="og:description" content="Give your application's files a real model — ownership, access, sharing, lifecycle — on the bucket you already own. From an avatar to a contract with an expiring link. Apache-2.0, alpha.">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:description" content="Ownership, access, sharing and lifecycle for your application's files — on the bucket you already own. Apache-2.0, alpha.">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "Filelayer",
+  "alternateName": "@filelayer/core",
+  "description": "An open-source Node library that gives an application's files a model: ownership, access, sharing and lifecycle. Public files and private files share one model. Files live in S3 or R2; metadata, grants and audit events live in your own Postgres. It is authorization middleware, not row-level security.",
+  "codeRepository": "https://github.com/filelayer/filelayer",
+  "programmingLanguage": "TypeScript",
+  "runtimePlatform": "Node.js >=22.18",
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Cross-platform",
+  "softwareVersion": "0.4.4",
+  "releaseNotes": "https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md",
+  "author": { "@type": "Organization", "name": "Technology Pro Bono S.L." }
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a class="opt" href="#model">The model</a>
+      <a class="opt" href="#examples">Examples</a>
+      <a class="opt" href="#install">Install</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main">
+
+<!-- ======================= 1 · HERO ======================================= -->
+<div class="wrap">
+  <section class="hero">
+    <p class="eyebrow">Open-source Node library &middot; Apache-2.0 &middot; v0.4.4 alpha</p>
+
+    <h1>The file layer for SaaS&nbsp;applications.</h1>
+
+    <p class="lead">
+      Every application that stores files ends up rebuilding the same thing:
+      <strong>who owns this file, who can reach it, how it gets shared, and when that ends.</strong>
+      Filelayer is that model, built once, on the S3 or R2 bucket you already own —
+      from a public avatar to a contract with a link you can take back.
+    </p>
+
+    <p class="lead"><span class="keep">Keep your storage.</span> You are adding a dependency, not a vendor.</p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Get started</a>
+      <a class="btn btn-secondary" href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md#0-install">Documentation</a>
+    </div>
+
+    <p><code class="install">npm install @filelayer/core</code></p>
+
+    <p class="alpha-line" role="note">
+      <b>Alpha — developer preview.</b> v0.4.4, zero known production deployments, one maintainer.
+      <a href="#trust">The numbers, including the ones that are zero →</a>
+    </p>
+  </section>
+</div>
+
+<!-- ======================= 2 · ONE MODEL ================================== -->
+<div class="wrap">
+  <section id="model">
+    <h2>One file model, from simple to complex</h2>
+
+    <p class="lead">
+      A public avatar and a board deck under legal hold are the same row, authorized by the same
+      function, on the same table. There is no second code path for the simple case, and no
+      migration when the simple case grows up.
+    </p>
+
+    <figure>
+<pre><code><span class="c-com">// A public avatar</span>
+<span class="c-key">const</span> { url } = <span class="c-key">await</span> fl.files.put(bytes, { public: <span class="c-key">true</span> });
+
+<span class="c-com">// The same file, now owned by someone</span>
+<span class="c-key">const</span> { id } = <span class="c-key">await</span> fl.files.put(bytes, { owner: <span class="c-str">'user_123'</span> });
+<span class="c-key">const</span> file  = <span class="c-key">await</span> fl.files.get(id, { as: <span class="c-str">'user_123'</span> });
+
+<span class="c-com">// The same file, now inside a tenant with roles</span>
+<span class="c-key">await</span> fl.files.put(bytes, { org: <span class="c-str">'acme'</span>, owner: <span class="c-str">'user_123'</span> });
+
+<span class="c-com">// The same file, now shared — with an expiry, a cap, and revocable</span>
+<span class="c-key">const</span> share = <span class="c-key">await</span> fl.shares.create(id, {
+  as: <span class="c-str">'user_123'</span>, expiresIn: 3600, maxDownloads: 3, password: <span class="c-str">'hunter2'</span>,
+});
+<span class="c-key">await</span> fl.shares.revoke(share.grantId, { as: <span class="c-str">'user_123'</span> });   <span class="c-com">// takes effect now</span>
+</code></pre>
+      <figcaption>Verbatim from the README, where every sample is compiled and executed in CI.
+        Promoting a file from tier 1 to tier 4 is adding an option to a call — not a migration.</figcaption>
+    </figure>
+
+    <div class="chain" role="img" aria-label="User, then File, then Access, then Share, then Lifecycle.">
+      <span>User</span><i>→</i><span>File</span><i>→</i><span>Access</span><i>→</i><span>Share</span><i>→</i><span>Lifecycle</span>
+    </div>
+    <p class="note tup">
+      Five concepts, and you only meet the ones you use.
+    </p>
+  </section>
+</div>
+
+<!-- ======================= 3 · WHY IT MATTERS ============================= -->
+<div class="wrap">
+  <section id="why">
+    <h2>Don't rebuild file semantics in every application</h2>
+
+    <p class="lead">
+      Storage is solved. What is not solved is everything that attaches to a file once real people
+      start using your product — and it attaches one question at a time, usually in this order.
+    </p>
+
+    <div class="grid g3">
+      <div class="card"><h3>Ownership</h3><p>The file belongs to a person, and that person is not the account that uploaded it.</p></div>
+      <div class="card"><h3>Organizations</h3><p>It belongs to a tenant too, and two tenants must never see each other's rows.</p></div>
+      <div class="card"><h3>Access</h3><p>An admin, a member and a viewer are not the same reader, and the difference is per file.</p></div>
+      <div class="card"><h3>Sharing</h3><p>Someone outside the org needs it, without an account and without a password reset.</p></div>
+      <div class="card"><h3>Expiration</h3><p>Not forever. For an hour, or three downloads, whichever runs out first.</p></div>
+      <div class="card"><h3>Revocation</h3><p>The link went to the wrong address. It has to stop working now, not at the TTL.</p></div>
+      <div class="card"><h3>Lifecycle</h3><p>Retention, legal hold, and deletion that does not quietly cascade through your grants.</p></div>
+      <div class="card"><h3>Audit</h3><p>Someone asks who opened it — and, in an incident, who was refused.</p></div>
+    </div>
+
+    <p class="t4">
+      Each of these is maybe fifty lines. The cost is that they end up as fifty lines
+      <em>in your application</em>, in different route handlers, written at different times by
+      different people. Filelayer moves them behind one interface so a new file path cannot
+      quietly skip one.
+    </p>
+  </section>
+</div>
+
+<!-- ======================= 4 · HOW IT WORKS =============================== -->
+<div class="wrap">
+  <section id="how">
+    <h2>How it fits</h2>
+
+    <div class="split">
+      <div>
+        <p class="lead">You tell Filelayer who the caller is. It decides what they may do, serves
+          the bytes with the right headers, and writes the audit event.</p>
+        <p>Your bucket keeps the bytes. Your Postgres keeps the metadata, the grants and the audit
+          chain. Filelayer owns neither — it owns the model between them. Nothing moves, and
+          nothing about your storage bill changes.</p>
+        <p class="note">Node ≥ 22.18 and a Postgres you already run.
+          <strong>The package installs zero runtime dependencies.</strong></p>
+      </div>
+
+      <div class="stack" role="img" aria-label="Three layers: your application on top, Filelayer in the middle, your S3 or R2 bucket and Postgres underneath.">
+        <div class="layer">
+          <div class="lname">Your application</div>
+          <div class="ldesc">Knows who the caller is. Passes that identity down.</div>
+        </div>
+        <div class="layer mid">
+          <div class="lname">Filelayer</div>
+          <div class="ldesc">Ownership, organizations, access, sharing, expiry, revocation,
+            lifecycle, audit, byte delivery.</div>
+        </div>
+        <div class="layer">
+          <div class="lname">Your S3 / R2 bucket &nbsp;·&nbsp; your Postgres</div>
+          <div class="ldesc">Your account, your bill, your data.</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="t5">
+      <strong>For file access that goes through Filelayer, the decision is made in one place.</strong>
+      That is the whole value of the middle layer: you write no ownership checks in route handlers,
+      no presigned-URL expiry logic, and no per-route access rules of your own.
+      It is authorization middleware, not row-level security — a client that queries your Postgres
+      directly bypasses it. <a href="#trust">Where that boundary is, exactly →</a>
+    </p>
+  </section>
+</div>
+
+<!-- ======================= 5 · EXAMPLES =================================== -->
+<div class="wrap">
+  <section id="examples">
+    <h2>From an avatar to an audit trail</h2>
+    <p class="lead">The same API the whole way up. Each rung adds one concept, and no rung makes
+      you pay for a concept you are not using.</p>
+
+    <div class="rung">
+      <div class="split">
+        <div>
+          <h3>1 · Public files — avatars, images, PDFs, exports</h3>
+          <p>One call and a URL. Public is a grant rather than a bucket setting, which is why you
+            can take it back later without deleting the object or rotating a key.</p>
+        </div>
+        <figure>
+<pre><code><span class="c-key">const</span> { url } = <span class="c-key">await</span> fl.files.put(bytes, { public: <span class="c-key">true</span> });
+
+<span class="c-com">// later — the URL is printed, indexed, pasted into a ticket</span>
+<span class="c-key">await</span> fl.files.unpublish(id);
+<span class="c-com">// the next request 404s. No deletion, no key rotation, no cache purge.</span>
+</code></pre>
+        </figure>
+      </div>
+    </div>
+
+    <div class="rung">
+      <div class="split">
+        <div>
+          <h3>2 · Files that belong to a user</h3>
+          <p>An owner is the only new concept. A typo in a user id denies rather than quietly
+            becoming an anonymous read.</p>
+        </div>
+        <figure>
+<pre><code><span class="c-key">const</span> { id } = <span class="c-key">await</span> fl.files.put(bytes, { owner: <span class="c-str">'alice'</span> });
+
+<span class="c-key">await</span> fl.files.get(id, { as: <span class="c-str">'alice'</span> });   <span class="c-allow">// bytes</span>
+<span class="c-key">await</span> fl.files.get(id, { as: <span class="c-str">'bob'</span> });     <span class="c-deny">// throws 404</span>
+<span class="c-key">await</span> fl.files.get(id);                    <span class="c-deny">// throws 404</span>
+</code></pre>
+        </figure>
+      </div>
+    </div>
+
+    <div class="rung">
+      <div class="split">
+        <div>
+          <h3>3 · Files that belong to an organization</h3>
+          <p>Add <code>org:</code> and a role model appears. No migration, no second table to keep
+            in step, no tenant predicate to repeat in every route.</p>
+        </div>
+        <figure>
+<pre><code><span class="c-key">await</span> fl.orgs.create(<span class="c-str">'acme'</span>, { name: <span class="c-str">'Acme Inc'</span>, owner: <span class="c-str">'ceo'</span> });
+<span class="c-key">await</span> fl.orgs.setRole(<span class="c-str">'acme'</span>, <span class="c-str">'analyst'</span>, <span class="c-str">'member'</span>, { as: <span class="c-str">'ceo'</span> });
+
+<span class="c-key">const</span> { id } = <span class="c-key">await</span> fl.files.put(deck, {
+  org: <span class="c-str">'acme'</span>, owner: <span class="c-str">'ceo'</span>, name: <span class="c-str">'board-deck.pdf'</span>,
+});
+
+<span class="c-key">await</span> fl.files.get(id, { as: <span class="c-str">'analyst'</span> });  <span class="c-deny">// 404 insufficient_role</span>
+</code></pre>
+        </figure>
+      </div>
+    </div>
+
+    <div class="rung">
+      <div class="split">
+        <div>
+          <h3>4 · Files shared outside the org</h3>
+          <p>An expiry, a password and a download cap on one call. Then the link goes somewhere it
+            should not have, and you take it back — on the next request, not at the TTL.</p>
+        </div>
+        <figure>
+<pre><code><span class="c-key">const</span> share = <span class="c-key">await</span> fl.shares.create(id, {
+  as: <span class="c-str">'ceo'</span>, expiresIn: 3600, maxDownloads: 3, password: <span class="c-str">'hunter2'</span>,
+});
+
+<span class="c-key">await</span> fl.shares.redeem(share.secret, { password: <span class="c-str">'hunter2'</span> });  <span class="c-allow">// bytes</span>
+
+<span class="c-com">// ...forwarded to someone it should not have been</span>
+<span class="c-key">await</span> fl.shares.revoke(share.grantId, { as: <span class="c-str">'ceo'</span> });
+
+<span class="c-key">await</span> fl.shares.redeem(share.secret, { password: <span class="c-str">'hunter2'</span> });  <span class="c-deny">// 404 grant_revoked</span>
+</code></pre>
+        </figure>
+      </div>
+    </div>
+
+    <div class="rung">
+      <div class="split">
+        <div>
+          <h3>5 · Lifecycle, and the record of it</h3>
+          <p>Retention, legal hold, deletion — and a trail answered in <em>your</em> identifiers
+            rather than internal UUIDs, without you writing a query.</p>
+          <p class="note">Hash-chained per tenant and append-only by database rule.
+            The refusals are in it too, which is what makes it useful in an incident.</p>
+        </div>
+        <figure>
+<pre><code><span class="c-key">for</span> (<span class="c-key">const</span> row <span class="c-key">of</span> <span class="c-key">await</span> fl.orgs.audit(<span class="c-str">'acme'</span>, { as: <span class="c-str">'ceo'</span> }))
+  console.log(row.summary);
+</code></pre>
+<pre class="t1"><code>ceo       file.create   <span class="c-allow">allow</span>                    board-deck.pdf @acme
+analyst   file.read     <span class="c-deny">deny:insufficient_role</span>   board-deck.pdf @acme
+ceo       file.share    <span class="c-allow">allow</span>                    board-deck.pdf @acme
+anonymous file.read     <span class="c-allow">allow</span>                    board-deck.pdf @acme
+ceo       grant.revoke  <span class="c-allow">allow</span>                    board-deck.pdf @acme
+anonymous file.read     <span class="c-deny">deny:grant_revoked</span>       board-deck.pdf @acme</code></pre>
+          <figcaption>Real output from the sequence above, timestamps trimmed to fit.
+            The last line is someone opening the link after it was revoked.</figcaption>
+        </figure>
+      </div>
+    </div>
+
+    <p class="t2">
+      All five run from the repository with one command each, and the full B2B document workspace
+      runs over HTTP: <a href="https://github.com/filelayer/filelayer/tree/main/examples">examples/ →</a>
+    </p>
+
+    <p class="note">
+      <strong>One case where a bucket is still the better answer today:</strong> public assets served
+      at CDN volume. Filelayer's default byte path goes through your process, so there is no CDN in
+      front of it. Filelayer earns its place when a file needs an owner, an expiry, or a link you
+      can take back.
+    </p>
+  </section>
+</div>
+
+<!-- ======================= 6 · DEVELOPER EXPERIENCE ======================= -->
+<div class="wrap">
+  <section id="install">
+    <h2>Install, and have a file in the same session</h2>
+
+    <div class="split">
+      <div>
+        <p class="lead">No account. No API key. Nothing to sign up for.</p>
+        <p><code>quickstart()</code> runs Postgres in-process and keeps bytes in memory, so you can
+          exercise the whole model before configuring anything. It is ephemeral — everything is
+          lost when the process exits.</p>
+        <p class="note">
+          <strong>Keep the PGlite version constraint.</strong> The supported line is
+          <code>0.3.x</code>; npm's <code>latest</code> is <code>0.5.x</code>, and installing that
+          makes npm refuse the tree with <code>ERESOLVE</code>. This is the most likely first-run
+          failure, so it is on the page rather than in a footnote.
+        </p>
+        <p>Production is three configuration steps and is not hidden — your Postgres, your bucket,
+          and confirming the bucket is private.
+          <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md#7-going-to-production">Quickstart §7 →</a>
+        </p>
+      </div>
+      <figure>
+<pre><code>npm install @filelayer/core
+npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span></code></pre>
+<pre class="t1"><code><span class="c-key">import</span> { Filelayer } <span class="c-key">from</span> <span class="c-str">'@filelayer/core'</span>;
+
+<span class="c-key">const</span> fl = <span class="c-key">await</span> Filelayer.quickstart({ baseUrl: <span class="c-str">'http://localhost:3000'</span> });
+<span class="c-key">const</span> bytes = <span class="c-key">new</span> TextEncoder().encode(<span class="c-str">'hello'</span>);
+
+<span class="c-key">const</span> { id, url } = <span class="c-key">await</span> fl.files.put(bytes, { public: <span class="c-key">true</span> });</code></pre>
+        <figcaption><code>url</code> is served by a route you mount — three more lines with
+          <code>fileDownloadRoute()</code>, and the quickstart has them.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<!-- ======================= 7 · AI-FIRST =================================== -->
+<div class="wrap">
+  <section id="agents">
+    <h2>Readable by machines, not just by people</h2>
+
+    <p class="lead">
+      Every surface below already exists in the repository and ships inside the npm tarball.
+      This is not a roadmap section.
+    </p>
+
+    <div class="grid g2">
+      <div class="card">
+        <h3><a href="https://github.com/filelayer/filelayer/blob/main/llms.txt">llms.txt</a></h3>
+        <p>The integration map, ordered by what an implementer has to get right rather than by what
+          is interesting — including a "things that will bite you" section, because the expensive
+          failures are all in that list.</p>
+      </div>
+      <div class="card">
+        <h3><a href="https://github.com/filelayer/filelayer/blob/main/openapi.yaml">OpenAPI 3.1</a></h3>
+        <p>The complete HTTP surface, and it is honestly two byte-delivery routes. The description
+          says so, and states the precondition it cannot enforce: your bucket must be private.</p>
+      </div>
+      <div class="card">
+        <h3><a href="https://github.com/filelayer/filelayer/blob/main/packages/core/schema.sql">schema.sql</a></h3>
+        <p>Every property is commented at the constraint that enforces it. Resolvable from an
+          install at <code>node_modules/@filelayer/core/schema.sql</code>.</p>
+      </div>
+      <div class="card">
+        <h3>The tests ship in the tarball</h3>
+        <p>324 tests across 74 suites travel with the package, so every behavioural claim on this
+          page is checkable from what you installed rather than from what we say.</p>
+      </div>
+    </div>
+
+    <p class="t4"><strong>Using a coding agent?</strong> Point it at the map:</p>
+    <p><code class="install">Add Filelayer to my app: https://github.com/filelayer/filelayer/blob/main/llms.txt</code></p>
+    <p class="note">No MCP server yet, and we would rather say so than ship one for the
+      announcement — there is no hosted API to expose over it.</p>
+  </section>
+</div>
+
+<!-- ======================= 8 · TRUST ====================================== -->
+<div class="wrap">
+  <section id="trust">
+    <h2>The state of it, in numbers</h2>
+
+    <p class="lead">
+      Filelayer is alpha and nobody runs it in production. <strong>Should you depend on it?
+      Probably not yet</strong> — and this section exists so you can decide that quickly instead
+      of inferring it from what a landing page does not say.
+    </p>
+
+    <ul class="numbers">
+      <li><span>Version</span><span class="v">0.4.4 — alpha</span></li>
+      <li><span>Known production deployments</span><span class="v zero">0</span></li>
+      <li><span>Maintainers with commit rights</span><span class="v zero">1</span></li>
+      <li><span>Independent security review</span><span class="v zero">none</span></li>
+      <li><span>Storage adapter against live AWS / Cloudflare</span><span class="v zero">never run</span></li>
+      <li><span>Tests, on Node 22 / 24 / 26, every commit</span><span class="v">324 across 74 suites</span></li>
+      <li><span>Adversarial suite</span><span class="v">27 attacks, 0 breaches</span></li>
+      <li><span>Runtime dependencies</span><span class="v">0</span></li>
+      <li><span>Licence</span><span class="v">Apache-2.0, with a patent grant</span></li>
+    </ul>
+
+    <div class="split t6">
+      <div>
+        <h3>What Filelayer guarantees</h3>
+        <ul class="does can">
+          <li>One decision point for every file access that goes through the library.</li>
+          <li>Cross-tenant grants cannot be written — a composite foreign key, binding every writer including <code>psql</code>.</li>
+          <li>Delegation cannot amplify authority — a database trigger, binding raw SQL too.</li>
+          <li>A signed URL is re-validated on every request, so revocation beats a live link.</li>
+          <li>Every decision is recorded, including denials, hash-chained and append-only.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>What it does not</h3>
+        <ul class="does cant">
+          <li><strong>It is not row-level security.</strong> A client querying your Postgres directly is not filtered and writes no audit event.</li>
+          <li><strong>It cannot make your bucket private.</strong> Keys are <code>orgId/fileId</code> and are not secrets. A public bucket bypasses the rest.</li>
+          <li>No CDN on the default byte path. Revocation and no-CDN are the same fact.</li>
+          <li>No <code>Range</code> in the shipped routes, so no video seeking out of the box.</li>
+          <li>No thumbnails, transformations or format negotiation.</li>
+          <li>No direct browser-to-storage upload.</li>
+          <li>Org admins and owners can read <code>private</code> files. Deliberate.</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="note t4">
+      What would change the numbers above, in the order it matters: production deployments that are
+      not ours; the storage adapter proven against live R2 and S3 in CI; an independent review of
+      <code>schema.sql</code> and <code>authz.ts</code> published in full; 1.0 with a frozen schema;
+      a second maintainer. We report against that list publicly, including when a number stays at zero.
+    </p>
+
+    <p>
+      <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md">The full trust page →</a> &nbsp;·&nbsp;
+      <a href="https://github.com/filelayer/filelayer/blob/main/SECURITY.md">Security policy →</a> &nbsp;·&nbsp;
+      <a href="https://github.com/filelayer/filelayer/blob/main/ARCHITECTURE-PROGRESSIVE.md#5-where-filelayer-is-not-worth-using-today">Where we are the wrong tool →</a>
+    </p>
+  </section>
+</div>
+
+<!-- ======================= 9 · FINAL CTA ================================== -->
+<div class="wrap">
+  <section>
+    <h2>Give your files a model</h2>
+    <p class="lead">Not a demo account — a file you actually own, in a process you actually run.</p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Get started</a>
+      <a class="btn btn-secondary" href="https://github.com/filelayer/filelayer">GitHub</a>
+    </div>
+
+    <p><code class="install">npm install @filelayer/core</code></p>
+
+    <p class="note t3">
+      If something on this page confused you,
+      <a href="https://github.com/filelayer/filelayer/issues">that is a defect and we want the report</a>.
+    </p>
+  </section>
+</div>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div>
+        <h3>Start</h3>
+        <ul>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Quickstart</a></li>
+          <li><a href="https://github.com/filelayer/filelayer/tree/main/examples">Examples</a></li>
+          <li><a href="https://www.npmjs.com/package/@filelayer/core">npm</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Reference</h3>
+        <ul>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md">Semantics</a></li>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/packages/core/schema.sql">Schema</a></li>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/openapi.yaml">OpenAPI</a></li>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md">Migrations</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>For agents</h3>
+        <ul>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/llms.txt">llms.txt</a></li>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/openapi.json">openapi.json</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Project</h3>
+        <ul>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md">Trust</a></li>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/SECURITY.md">Security</a></li>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/CONTRIBUTING.md">Contributing</a></li>
+          <li><a href="https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md">Changelog</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="colophon">
+      <p>
+        <strong>Filelayer</strong> — the file layer for SaaS applications.
+        Apache-2.0, with a patent grant. Copyright 2026 Technology&nbsp;Pro&nbsp;Bono&nbsp;S.L.
+      </p>
+      <p class="note">
+        Alpha software, zero known production deployments. Every figure on this page is checked
+        against the published package and reproducible from
+        <a href="https://github.com/filelayer/filelayer">the repository</a>.
+      </p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
