@@ -34,6 +34,7 @@ import {
   type StorageAdapter,
 } from '../src/storage.ts';
 import { REDIRECT_ACKNOWLEDGEMENT, MAX_REDIRECT_TTL_SECONDS } from '../src/delivery.ts';
+import { normalizeIp } from '../src/store.ts';
 import { createLocalS3, type LocalS3 } from './local-s3.mjs';
 import { bytes, text, rejects } from './helpers.ts';
 
@@ -949,5 +950,87 @@ describe('every public method that names a resource also names a principal', () 
     for (const m of PRINCIPAL_FIRST) {
       assert.ok(methods.includes(m), `${m} disappeared from the public surface`);
     }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// The client address is canonicalised to EXACTLY what Postgres reads back
+// -----------------------------------------------------------------------------
+// Found by audit, 2026-09-29, in the published 0.4.4. `auditHashTail()` builds
+// the digest in this process from the submitted string; the column is `inet`,
+// which Postgres canonicalises; `verifyAuditChain()` recomputes from
+// `host(ip)`. `normalizeIp` validated the shape and returned the string
+// UNCHANGED, so `2001:0db8::1` -- one leading zero, which plenty of clients
+// emit -- hashed one value and verified another, and the tenant's own audit log
+// read as forged from that row onward. Permanently: the table is append-only.
+// `X-Forwarded-For` is attacker-controlled, so it was one header away from
+// anybody.
+//
+// This is a DIFFERENTIAL test against Postgres rather than a table of expected
+// strings, because the claim is "matches libc's inet_ntop", and a table of
+// strings I wrote would only prove that I am consistent with myself.
+describe('the client address is canonicalised to what Postgres reads back', () => {
+  const FIXED = [
+    '2001:0db8::1', '2001:DB8::1', '2001:db8:0:0:0:0:0:1', '::1', '::',
+    '0:0:0:0:0:0:0:0', '1:0:0:2:0:0:0:3', '2001:db8:0:0:1:0:0:1',
+    '::ffff:1.2.3.4', '::FFFF:1.2.3.4', '::1.2.3.4', '2001:db8::0:1',
+    '0000:0000:0000:0000:0000:0000:0000:0001', '1::', 'a:b:c:d:e:f:0:1',
+    '0:0:0:0:0:ffff:0102:0304', '::ffff:0102:0304', '0:0:0:0:0:0:0102:0304',
+    '::0102:0304', '::ffff:0:1.2.3.4', '64:ff9b::1.2.3.4', '2001:db8::1.2.3.4',
+    '::ffff:255.255.255.255', '1:2:3:4:5:6:7:8', '0:1:2:3:4:5:6:7',
+    '::2:3:4:5:6:7:8', 'fe80::', '::ffff:0:0', '10.0.0.1',
+  ];
+
+  it('agrees with host(inet) on every address Postgres accepts', async () => {
+    const { db: pg } = await createTestDb();
+    // A deterministic corpus weighted towards zero groups, because the `::`
+    // run-selection rule is where the disagreements live.
+    let seed = 20260929;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const corpus = [...FIXED];
+    for (let n = 0; n < 1500; n++) {
+      const groups = Array.from({ length: 8 }, () =>
+        rnd() < 0.45 ? 0 : Math.floor(rnd() * 65536),
+      );
+      const padded = rnd() < 0.33;
+      let s = groups.map((g) => (padded ? g.toString(16).padStart(4, '0') : g.toString(16))).join(':');
+      if (rnd() > 0.66) s = s.toUpperCase();
+      corpus.push(s);
+    }
+
+    let checked = 0;
+    for (const candidate of corpus) {
+      let expected: string | null = null;
+      try {
+        expected = (
+          await pg.query<{ h: string }>(`SELECT host($1::inet) AS h`, [candidate])
+        ).rows[0]!.h;
+      } catch {
+        continue; // Postgres will not take it; normalizeIp is free to refuse too.
+      }
+      checked++;
+      assert.equal(normalizeIp(candidate), expected, `normalizeIp(${candidate})`);
+    }
+    assert.ok(checked > 1000, `expected a real corpus, checked ${checked}`);
+  });
+
+  it('a non-canonical address does not break the chain it is recorded in', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });
+    await fl.orgs.create('acme', { name: 'Acme', owner: 'ceo' });
+    const inner = (fl as unknown as { db: Queryable }).db;
+    const orgId = (
+      await inner.query<{ id: string }>(`SELECT id FROM org WHERE external_id = 'acme'`)
+    ).rows[0]!.id;
+    const ceoId = (
+      await inner.query<{ id: string }>(`SELECT id FROM actor WHERE external_id = 'ceo'`)
+    ).rows[0]!.id;
+
+    for (const ip of ['2001:0db8::1', '2001:DB8::1', '::FFFF:1.2.3.4', '10.0.0.1']) {
+      await (fl as unknown as { store: { audit(e: unknown): Promise<void> } }).store.audit({
+        orgId, actorId: ceoId, action: 'file.read', decision: 'allow', ip,
+      });
+    }
+    const v = await fl.verifyAuditChain({ actorId: ceoId }, orgId);
+    assert.equal(v.valid, true, JSON.stringify(v));
   });
 });

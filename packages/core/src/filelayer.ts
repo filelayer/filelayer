@@ -1292,6 +1292,19 @@ export class Filelayer {
     // the row: I6 says a grant-derived issuer may not widen the population.
     // Passing it here is what lets the ENGINE refuse -- with a reason and an
     // audit event -- rather than leaving the trigger to raise at INSERT time.
+    // A password is only meaningful on a link, because the link path is the only
+    // one that has anything to prompt. Accepting it anywhere else stored a hash
+    // that NO read path ever consulted: `share({ subject: { type: 'anonymous' },
+    // password })` published the file to the world while looking, at the call
+    // site, exactly like publishing it behind a password. Silent, and the worst
+    // direction to be silent in. Refusing is the whole fix -- there is no
+    // sensible thing to do with a password on a subject that is never asked for
+    // one. `grant_password_only_on_link` in schema.sql refuses the row as well,
+    // so this cannot be reintroduced by a second writer.
+    if (input.password !== undefined && input.subject.type !== 'link') {
+      throw new FilelayerError(400, 'password_requires_link_subject');
+    }
+
     const decision = await authorizeShare(store, principal, fileId, capabilities, {
       subjectType: input.subject.type,
     });

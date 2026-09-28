@@ -482,6 +482,22 @@ CREATE TABLE file_grant (
                                     AND subject_org_id IS NOT NULL AND subject_min_role IS NOT NULL)
     ),
 
+    -- A password belongs to a link and to nothing else, because the link path is
+    -- the only one that has a credential to prompt for. `authorize()` reads
+    -- `password_hash` on the link branch alone, so a hash stored on any other
+    -- subject type is a hash nothing will ever check.
+    --
+    -- This is not hypothetical tidiness. Before this constraint existed,
+    -- `share({ subject: { type: 'anonymous' }, password })` was accepted, the
+    -- hash was stored, and the file was then readable by anybody with no
+    -- password at all -- while the call site looked exactly like publishing
+    -- behind a password. The row is the thing that made it survivable, so the
+    -- row is where it is fixed: `grant_subject_coherent` above pins every other
+    -- subject column for precisely this reason, and this one was missed.
+    CONSTRAINT grant_password_only_on_link CHECK (
+        password_hash IS NULL OR subject_type = 'link'
+    ),
+
     -- Capability escalation guard: an anonymous grant may only ever read.
     CONSTRAINT grant_anonymous_read_only CHECK (
         subject_type <> 'anonymous' OR capabilities = ARRAY['read']::grant_capability[]

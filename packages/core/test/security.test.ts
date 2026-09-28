@@ -1650,3 +1650,76 @@ describe('PROPERTY 14: deleted files are unreachable by every path', () => {
     await rejects(() => s.fl.read(P(s.alice), s.fileA.id), 404);
   });
 });
+
+// -----------------------------------------------------------------------------
+// PROPERTY 16: a password protects the thing it looks like it protects
+// -----------------------------------------------------------------------------
+// Found by audit, 2026-09-29, in the published 0.4.4. `share()` hashed and
+// stored `password` for EVERY subject type, but `authorize()` consults
+// `password_hash` only on the link branch. So
+// `share({ subject: { type: 'anonymous' }, password })` stored a hash nothing
+// read, and published the file to the world -- silently, while the call site
+// looked exactly like publishing behind a password.
+//
+// Two independent fixes, so both are tested: the API refuses the combination,
+// and the schema refuses the row. The second matters because the first is one
+// `if` that a refactor could drop.
+describe('PROPERTY 16: a password is only accepted where it is enforced', () => {
+  it('the API refuses a password on every subject type that cannot be prompted', async () => {
+    const s = await twoOrgs();
+    for (const subject of [
+      { type: 'anonymous' } as const,
+      { type: 'actor', actorId: s.alice } as const,
+      { type: 'org', orgId: s.orgA } as const,
+      { type: 'role', orgId: s.orgA, minRole: 'viewer' } as const,
+    ]) {
+      await rejects(
+        () => s.fl.share(P(s.alice), s.fileA.id, { subject, capabilities: ['read'], password: 'hunter2' }),
+        400,
+      );
+    }
+  });
+
+  it('a link may still carry one, and it is still enforced', async () => {
+    const s = await twoOrgs();
+    const link = await s.fl.share(P(s.alice), s.fileA.id, {
+      subject: { type: 'link' },
+      capabilities: ['read'],
+      password: 'hunter2',
+    });
+    await rejects(() => s.fl.redeem(link.secret!, {}), 401);
+    const ok = await s.fl.redeem(link.secret!, { password: 'hunter2' });
+    assert.equal(text(ok.body), 'ACME CONFIDENTIAL');
+  });
+
+  it('the DATABASE refuses a password on a non-link grant, engine bypassed', async () => {
+    const s = await twoOrgs();
+    for (const [type, extra] of [
+      ['anonymous', 'NULL, NULL'],
+      ['actor', `'${s.alice}'::uuid, NULL`],
+    ] as const) {
+      await dbRejects(
+        s.db,
+        `INSERT INTO file_grant (file_id, org_id, subject_type, subject_id, subject_org_id,
+                                 capabilities, password_hash, created_by)
+         VALUES ($1, $2, '${type}', ${extra}, ARRAY['read']::grant_capability[], 'x', $3)`,
+        [s.fileA.id, s.orgA, s.alice],
+        /grant_password_only_on_link/,
+      );
+    }
+  });
+
+  it('the constraint is not vacuous: a link grant WITH a hash is accepted', async () => {
+    const s = await twoOrgs();
+    await s.db.query(
+      `INSERT INTO file_grant (file_id, org_id, subject_type, secret_hash, capabilities,
+                               password_hash, created_by)
+       VALUES ($1, $2, 'link', 'deadbeef', ARRAY['read']::grant_capability[], 'x', $3)`,
+      [s.fileA.id, s.orgA, s.alice],
+    );
+    const { rows } = await s.db.query<{ c: string }>(
+      `SELECT count(*)::text AS c FROM file_grant WHERE password_hash IS NOT NULL`,
+    );
+    assert.equal(rows[0]!.c, '1');
+  });
+});

@@ -68,6 +68,13 @@ const CLAIMS = [
     re: /pre-1\.0 \(`([\d.]+)`\)/g },
   { file: 'llms.txt', kind: 'version',
     re: /developer preview, version ([\d.]+), Apache-2\.0/g },
+  // TRUST.md is the page the README's alpha banner and the website both send a
+  // sceptic to, and it is the surface this gate was NOT watching when it was
+  // written -- so it sat at 0.4.3 through the whole of 0.4.4. Added 0.5.0.
+  { file: 'TRUST.md', kind: 'version',
+    re: /\|\s*Version\s*\|\s*([\d.]+) — alpha\s*\|/g },
+  { file: 'TRUST.md', kind: 'tests',
+    re: /\|\s*Tests\s*\|\s*(\d+), on Node/g },
   { file: 'packages/core/llms.txt', kind: 'version',
     re: /developer preview, version ([\d.]+), Apache-2\.0/g },
   { file: 'ARCHITECTURE-PROGRESSIVE.md', kind: 'version',

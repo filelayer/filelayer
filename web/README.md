@@ -51,7 +51,7 @@ saying so, and nothing else on the page depends on them.
 **Every factual claim is not.** Version numbers, test counts, what Filelayer
 guarantees and what it does not, the private-bucket requirement, and the
 middleware-not-RLS distinction are checked against the published package. If a
-claim on the page is not true of `@filelayer/core@0.4.4`, that is a bug, not a
+claim on the page is not true of `@filelayer/core@0.5.0`, that is a bug, not a
 copy preference.
 
 The claims most easily broken by a well-meaning edit, all of which have cost us

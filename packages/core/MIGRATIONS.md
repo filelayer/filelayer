@@ -310,6 +310,137 @@ is issued.
 No custom groups, no nested orgs, no configurable inheritance, no deny rules.
 `file.visibility = 'org'` is retained and is unchanged.
 
+### Entry 3 — `0.4.x` → `0.5.0`: a password is refused where it was never enforced
+
+#### The defect
+
+`share()` hashed and stored `password` for **every** subject type, but
+`authorize()` consults `password_hash` on the **link** branch alone. A hash
+stored on any other subject type was therefore a hash nothing ever read.
+
+The consequence was not cosmetic. This call:
+
+```ts
+await fl.share(principal, fileId, {
+  subject: { type: 'anonymous' },
+  capabilities: ['read'],
+  password: 'hunter2',
+});
+```
+
+was accepted, stored the hash, and published the file to **anyone, with no
+password at all**. There was no error, no warning, and nothing in the audit log
+to notice, and at the call site it looked exactly like publishing behind a
+password. The link path enforced the same option correctly, which is what made
+the mistake plausible.
+
+Found by internal audit on 2026-09-29, in the published `0.4.4`. No known
+deployment was affected, because there are no known deployments — we are
+recording it here anyway, per `SECURITY.md`.
+
+#### What changed
+
+Two independent refusals, because one `if` is a thing a refactor can drop:
+
+- `share()` raises `400 password_requires_link_subject` when `password` is
+  supplied with a subject that is not `link`.
+- `file_grant` gains `CONSTRAINT grant_password_only_on_link`, so the row is
+  refused from any writer, including `psql`.
+
+`ShareInput.password` keeps its type and its meaning on links. Nothing else
+changes.
+
+**This is a breaking change** in the narrow sense that a call which previously
+returned a grant now raises. If you were passing `password` with a non-link
+subject, that call was not doing what it appeared to do, and the fix is to
+remove the argument or to switch the subject to `link`.
+
+#### The migration
+
+The constraint will refuse to apply if any offending row exists. Find them
+first — and treat each one as a file that has been publicly readable:
+
+```sql
+-- 1. Anything here was published without the protection its creator intended.
+SELECT id, file_id, org_id, subject_type, created_at
+  FROM file_grant
+ WHERE password_hash IS NOT NULL
+   AND subject_type <> 'link';
+```
+
+Decide per row: revoke it, or clear the hash that was never doing anything.
+Revoking is the safer default, because the grant is not what its author asked
+for.
+
+```sql
+BEGIN;
+
+-- 2a. Revoke them (recommended), OR
+UPDATE file_grant
+   SET revoked_at = now()
+ WHERE password_hash IS NOT NULL AND subject_type <> 'link';
+
+-- 2b. ...keep them open and drop the inert hash. Only if you have confirmed
+--     each file is genuinely meant to be public.
+UPDATE file_grant
+   SET password_hash = NULL
+ WHERE password_hash IS NOT NULL AND subject_type <> 'link';
+
+-- 3. Now the constraint applies.
+ALTER TABLE file_grant
+  ADD CONSTRAINT grant_password_only_on_link
+  CHECK (password_hash IS NULL OR subject_type = 'link');
+
+COMMIT;
+```
+
+Note that 2a alone is not enough to let step 3 succeed: a revoked grant still
+has its `password_hash`. Run 2a **and** 2b if you revoke.
+
+---
+
+### Entry 4 — `0.4.x` → `0.5.0`: client addresses are canonicalised before hashing
+
+#### The defect
+
+`auditHashTail()` builds the audit digest in the application process from the
+submitted address string. The column is `inet`, which Postgres canonicalises on
+the way in, and `verifyAuditChain()` recomputes the digest from `host(ip)`.
+`normalizeIp()` validated the shape and returned the string **unchanged**.
+
+So `2001:0db8::1` — one leading zero, which plenty of clients emit — hashed one
+value and verified against another, and that tenant's chain read as
+`hash_mismatch` from that row onward. Permanently, because `audit_event` is
+append-only. `X-Forwarded-For` is attacker-controlled, so this was one header
+away from anybody.
+
+#### What changed
+
+`normalizeIp()` now returns the address in exactly the form `host(inet)` reads
+back — the `inet_ntop` algorithm, not an approximation of it. It is
+differentially tested against Postgres over a randomised corpus in
+`test/persistence.test.ts`, because "matches libc" is a claim that has to be
+checked against libc.
+
+No schema change. No API change.
+
+#### The migration
+
+**None for new events.** Existing chains that were already broken by this cannot
+be repaired — the rows are append-only and the digest is over data that was
+never stored. To find out whether you are affected:
+
+```sql
+SELECT DISTINCT org_id
+  FROM audit_event
+ WHERE family(ip) = 6
+   AND host(ip) <> text(ip);
+```
+
+If that returns nothing, no chain was ever broken by this. If it returns rows,
+`verifyAuditChain()` will report `hash_mismatch` at the first of them for those
+tenants, and will verify cleanly for every event appended after upgrading.
+
 ---
 
 ## 4. What is not covered here

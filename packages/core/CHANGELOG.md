@@ -25,6 +25,69 @@ Nothing yet.
 
 ---
 
+## [0.5.0] — 2026-09-29
+
+**Two security defects found by internal audit, in the published `0.4.4`.**
+Neither had a known victim, because there are no known deployments. Both are
+recorded here anyway, because a quietly patched authorization bug is how a
+project teaches people not to trust its changelog.
+
+Both carry a migration: see `MIGRATIONS.md` entries 3 and 4.
+
+### Fixed — a password was accepted where it was never enforced
+
+`share()` hashed and stored `password` for **every** subject type, but
+`authorize()` consults `password_hash` on the **link** branch alone. So
+
+```ts
+share(principal, fileId, { subject: { type: 'anonymous' }, password: 'hunter2' })
+```
+
+was accepted, stored the hash, and published the file **to anybody, with no
+password at all** — silently, with nothing in the audit log to notice, while at
+the call site it looked exactly like publishing behind a password. The link path
+enforced the same option correctly, which is what made the mistake plausible.
+
+Fixed in two independent places, because one `if` is a thing a refactor drops:
+`share()` now raises `400 password_requires_link_subject`, and
+`grant_password_only_on_link` refuses the row from any writer including `psql`.
+`grant_subject_coherent` already pinned every *other* subject column for exactly
+this reason; `password_hash` was the one it missed.
+
+### Fixed — a client IPv6 address could mark a tenant's audit chain as forged
+
+`auditHashTail()` builds the digest in the application process from the
+submitted address; the column is `inet`, which Postgres canonicalises; and
+`verifyAuditChain()` recomputes from `host(ip)`. `normalizeIp()` validated the
+shape and returned the string **unchanged**.
+
+`2001:0db8::1` — one leading zero, which plenty of clients emit — therefore
+hashed one value and verified against another, and that tenant's chain read
+`hash_mismatch` from that row onward. Permanently: `audit_event` is append-only.
+`X-Forwarded-For` is attacker-controlled, so this was one header away from
+anybody. `schema.sql` states the standard it failed: tamper evidence that cries
+wolf is not tamper evidence.
+
+`normalizeIp()` now returns exactly what `host(inet)` reads back — the
+`inet_ntop` algorithm, not an approximation — and is **differentially tested
+against Postgres** over a randomised corpus, because "matches libc" is a claim
+that has to be checked against libc rather than reasoned about.
+
+### Fixed — `TRUST.md` stated the wrong version
+
+It said `0.4.3` while the package was `0.4.4`, on the one page every other
+surface sends a sceptic to. `tools/check-version-claims.mjs` — added in 0.4.4 to
+prevent precisely this — had no `TRUST.md` entry. It does now.
+
+### Tests
+
+324 → **330** across **76** suites. Six new, all regression tests for the above:
+four for the password refusal (API, link still works, database, and a
+non-vacuous control) and two for the address canonicalisation (the differential
+test against Postgres, and a chain that survives a non-canonical address).
+
+---
+
 ## [0.4.4] — 2026-09-06
 
 Documentation only. **No API change, no schema change, no behaviour change.**

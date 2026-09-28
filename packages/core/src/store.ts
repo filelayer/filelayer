@@ -1263,14 +1263,125 @@ const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
 const IPV6_RE = /^[0-9a-f:]{2,45}$/i;
 
 /**
- * Accept only what `inet` will take back out unchanged.
+ * Parse an IPv6 literal into its eight 16-bit groups, or null.
  *
- * Two reasons this is not paranoia. First, `host(inet)` is what the chain
- * verifier reads, so any value Postgres would normalise (a CIDR suffix, for
- * instance) would silently break tamper-evidence for every subsequent event.
- * Second, an unparseable address would raise on INSERT, and since the audit
- * write is on the critical path of every request, that turns a malformed
- * `X-Forwarded-For` header into an outage.
+ * Accepts `::` compression anywhere (at most once) and a trailing dotted quad
+ * in the `::ffff:1.2.3.4` family. Deliberately strict: a zone id (`%eth0`), a
+ * CIDR suffix or an out-of-range group is a rejection, not a repair.
+ */
+function parseIpv6(s: string): number[] | null {
+  if (s.includes('%') || s.includes('/')) return null;
+
+  // A dotted tail becomes its two hex groups first, so the rest of this
+  // function never has to reason about a `::` and a `.` sharing a colon --
+  // which is exactly where the first version of it got `::1.2.3.4` wrong.
+  let head = s;
+  const lastColon = s.lastIndexOf(':');
+  const after = s.slice(lastColon + 1);
+  if (after.includes('.')) {
+    if (!IPV4_RE.test(after)) return null;
+    const octets = after.split('.').map(Number);
+    if (!octets.every((o) => o >= 0 && o <= 255)) return null;
+    const hi = ((octets[0]! << 8) | octets[1]!).toString(16);
+    const lo = ((octets[2]! << 8) | octets[3]!).toString(16);
+    head = `${s.slice(0, lastColon + 1)}${hi}:${lo}`;
+  }
+
+  const parts = head.split('::');
+  if (parts.length > 2) return null;
+
+  const toGroups = (chunk: string): number[] | null => {
+    if (chunk === '') return [];
+    const out: number[] = [];
+    for (const g of chunk.split(':')) {
+      if (!/^[0-9a-f]{1,4}$/i.test(g)) return null;
+      out.push(parseInt(g, 16));
+    }
+    return out;
+  };
+
+  const left = toGroups(parts[0]!);
+  const right = parts.length === 2 ? toGroups(parts[1]!) : [];
+  if (left === null || right === null) return null;
+
+  const present = left.length + right.length;
+  if (parts.length === 2) {
+    if (present > 7) return null; // `::` must stand for at least one group
+    return [...left, ...new Array(8 - present).fill(0), ...right];
+  }
+  return present === 8 ? left : null;
+}
+
+/**
+ * Render eight groups exactly as Postgres `host(inet)` would.
+ *
+ * This is the `inet_ntop` algorithm, not an approximation of it: lower case,
+ * leading zeros suppressed, the LONGEST run of two or more zero groups replaced
+ * by `::` with the leftmost winning a tie, and the dotted-quad tail emitted for
+ * precisely the three shapes libc emits it for. The `words[7] !== 1` clause is
+ * why `::1` stays `::1` instead of becoming `::0.0.0.1`.
+ */
+function formatIpv6(w: number[]): string {
+  let bestBase = -1;
+  let bestLen = 0;
+  for (let i = 0; i < 8; i++) {
+    if (w[i] !== 0) continue;
+    let j = i;
+    while (j < 8 && w[j] === 0) j++;
+    if (j - i > bestLen) {
+      bestLen = j - i;
+      bestBase = i;
+    }
+    i = j - 1;
+  }
+  if (bestLen < 2) bestBase = -1;
+
+  let out = '';
+  for (let i = 0; i < 8; i++) {
+    if (bestBase !== -1 && i >= bestBase && i < bestBase + bestLen) {
+      if (i === bestBase) out += ':';
+      continue;
+    }
+    if (i !== 0) out += ':';
+    if (
+      i === 6 &&
+      bestBase === 0 &&
+      (bestLen === 6 || (bestLen === 7 && w[7] !== 1) || (bestLen === 5 && w[5] === 0xffff))
+    ) {
+      out += `${w[6]! >> 8}.${w[6]! & 0xff}.${w[7]! >> 8}.${w[7]! & 0xff}`;
+      return out;
+    }
+    out += w[i]!.toString(16);
+  }
+  if (bestBase !== -1 && bestBase + bestLen === 8) out += ':';
+  return out;
+}
+
+/**
+ * Return the address in the EXACT form `host(inet)` will read back, or null.
+ *
+ * WHY THIS CANONICALISES RATHER THAN MERELY VALIDATES. `auditHashTail()` builds
+ * the digest in this process, from this string; the column is `inet`, which
+ * Postgres canonicalises on the way in; and `verifyAuditChain()` recomputes the
+ * digest from `host(ip)`. If those two strings differ by so much as a leading
+ * zero, the digest is computed over one value and checked against another, and
+ * the chain reads as forged from that row onward -- permanently, because the
+ * table is append-only.
+ *
+ * An earlier version of this function validated the shape and returned the
+ * string UNCHANGED. `2001:0db8::1` -- a leading zero, which plenty of clients
+ * emit -- was therefore enough to mark a tenant's own audit log as tampered
+ * with. `X-Forwarded-For` is attacker-controlled, so that was one header away
+ * from anybody. `schema.sql` says it plainly: tamper evidence that cries wolf
+ * is not tamper evidence.
+ *
+ * `test/persistence.test.ts` differentially tests this against Postgres itself
+ * over a randomised corpus, because "matches libc" is a claim that has to be
+ * checked against libc rather than reasoned about.
+ *
+ * Rejection is still the answer for anything unparseable: an address that
+ * raises on INSERT would take the whole request with it, and the audit write is
+ * on the critical path of every request.
  */
 export function normalizeIp(v: string | null | undefined): string | null {
   if (typeof v !== 'string') return null;
@@ -1280,8 +1391,6 @@ export function normalizeIp(v: string | null | undefined): string | null {
     return s.split('.').every((o) => Number(o) <= 255 && String(Number(o)) === o) ? s : null;
   }
   if (!s.includes(':') || !IPV6_RE.test(s.replace(/\.\d{1,3}/g, ''))) return null;
-  // ::ffff:1.2.3.4 and friends: the tail must still be a legal dotted quad.
-  const tail = s.slice(s.lastIndexOf(':') + 1);
-  if (tail.includes('.') && !IPV4_RE.test(tail)) return null;
-  return s;
+  const groups = parseIpv6(s);
+  return groups === null ? null : formatIpv6(groups);
 }
