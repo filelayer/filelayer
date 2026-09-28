@@ -37,6 +37,16 @@
 !/tools/
 !/web/
 
+# The deploy copies `llms.txt` and the OpenAPI documents into `web/` so a
+# machine finds them at the site root. The repository root is the single source
+# of truth for all three; a tracked second copy would be a second thing to
+# forget to update, which is the defect check-package-copies.mjs exists to
+# prevent elsewhere. Build artefacts, not sources.
+
+/web/llms.txt
+/web/openapi.yaml
+/web/openapi.json
+
 # The same shape one level down, for the two directories that hold work in
 # progress alongside what is published. Same reasoning: name what is here.
 
