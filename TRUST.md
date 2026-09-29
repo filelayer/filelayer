@@ -70,6 +70,12 @@ matter:
   bounded revocation window for cacheability.
 - The shipped HTTP route helpers do not parse `Range`, though everything beneath
   them honours it.
+- No thumbnails, transformations or format negotiation. Bytes go in and the same
+  bytes come out.
+- No direct browser-to-storage upload. Upload bytes travel through your server.
+- Org admins and owners can read `private` files. Deliberate — retention and
+  legal hold are useless if the people accountable for them cannot see what they
+  are holding — but it is a policy decision, so it belongs on this page.
 - Concurrency guarantees are argued from Postgres semantics and tested on a
   single-backend engine. The lock ordering is reasoned and followed, not proven
   under real contention.

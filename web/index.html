@@ -127,8 +127,8 @@
     <p><code class="install">npm install @filelayer/core</code></p>
 
     <p class="alpha-line" role="note">
-      <b>Alpha — developer preview.</b> v0.5.0, zero known production deployments, one maintainer.
-      <a href="#trust">The numbers, including the ones that are zero →</a>
+      <b>Alpha — developer preview.</b> v0.5.0. The schema can still change in any 0.x release.
+      <a href="#trust">Every number behind that word →</a>
     </p>
   </section>
 </div>
@@ -360,8 +360,9 @@ anonymous file.read     <span class="c-deny">deny:grant_revoked</span>       boa
     </div>
 
     <p class="t2">
-      All five run from the repository with one command each, and the full B2B document workspace
-      runs over HTTP: <a href="https://github.com/filelayer/filelayer/tree/main/examples">examples/ →</a>
+      Tiers 1 to 3 each run from the repository with one command. Sharing and the audit trail
+      come together in the B2B document workspace, which runs over HTTP:
+      <a href="https://github.com/filelayer/filelayer/tree/main/examples">examples/ →</a>
     </p>
 
     <p class="note">
@@ -447,8 +448,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
 
     <p class="t4"><strong>Using a coding agent?</strong> Point it at the map:</p>
     <p><code class="install">Add Filelayer to my app: https://github.com/filelayer/filelayer/blob/main/llms.txt</code></p>
-    <p class="note">No MCP server yet, and we would rather say so than ship one for the
-      announcement — there is no hosted API to expose over it.</p>
+    <p class="note">No MCP server yet — there is no hosted API to put behind one.</p>
   </section>
 </div>
 
@@ -458,9 +458,9 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
     <h2>The state of it, in numbers</h2>
 
     <p class="lead">
-      Filelayer is alpha and nobody runs it in production. <strong>Should you depend on it?
-      Probably not yet</strong> — and this section exists so you can decide that quickly instead
-      of inferring it from what a landing page does not say.
+      Most pages like this one are built out of the numbers that flatter them.
+      <strong>This is the whole set, including the ones sitting at zero</strong> — so you can
+      make the call from evidence rather than from what a page chose not to mention.
     </p>
 
     <ul class="numbers">
@@ -487,25 +487,20 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
         </ul>
       </div>
       <div>
-        <h3>What it does not</h3>
+        <h3>The one precondition</h3>
         <ul class="does cant">
-          <li><strong>It is not row-level security.</strong> A client querying your Postgres directly is not filtered and writes no audit event.</li>
-          <li><strong>It cannot make your bucket private.</strong> Keys are <code>orgId/fileId</code> and are not secrets. A public bucket bypasses the rest.</li>
-          <li>No CDN on the default byte path. Revocation and no-CDN are the same fact.</li>
-          <li>No <code>Range</code> in the shipped routes, so no video seeking out of the box.</li>
-          <li>No thumbnails, transformations or format negotiation.</li>
-          <li>No direct browser-to-storage upload.</li>
-          <li>Org admins and owners can read <code>private</code> files. Deliberate.</li>
+          <li><strong>Filelayer cannot make your bucket private.</strong> Keys are
+            <code>orgId/fileId</code> and are not secrets, so a public bucket bypasses
+            everything above it. Confirming that setting is the one step of going to
+            production we cannot do for you.</li>
         </ul>
+        <p class="note t2">
+          Where else Filelayer is the wrong tool — no CDN on the default path, no
+          <code>Range</code>, no transformations, no direct browser upload —
+          <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md#what-is-known-broken-or-unfinished">the trust page has the full list →</a>
+        </p>
       </div>
     </div>
-
-    <p class="note t4">
-      What would change the numbers above, in the order it matters: production deployments that are
-      not ours; the storage adapter proven against live R2 and S3 in CI; an independent review of
-      <code>schema.sql</code> and <code>authz.ts</code> published in full; 1.0 with a frozen schema;
-      a second maintainer. We report against that list publicly, including when a number stays at zero.
-    </p>
 
     <p>
       <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md">The full trust page →</a> &nbsp;·&nbsp;
@@ -581,7 +576,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
         Apache-2.0, with a patent grant. Copyright 2026 Technology&nbsp;Pro&nbsp;Bono&nbsp;S.L.
       </p>
       <p class="note">
-        Alpha software, zero known production deployments. Every figure on this page is checked
+        Every figure on this page is checked
         against the published package and reproducible from
         <a href="https://github.com/filelayer/filelayer">the repository</a>.
       </p>
