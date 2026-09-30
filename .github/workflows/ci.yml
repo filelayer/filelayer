@@ -441,9 +441,28 @@ jobs:
             echo "::error title=Live suite skipped with credentials present::The five secrets were set and the suite still skipped itself. Something is wrong with how they are being passed."
             exit 1
           fi
-          passed=$(sed -n 's/^# pass \([0-9]*\)$/\1/p' "$log" | tail -n 1)
+          # REPORTER-AGNOSTIC ON PURPOSE. `node --test` writes its tally as
+          # `# pass 12` under the TAP reporter and `<U+2139> pass 12` under the spec
+          # reporter, and which one you get depends on the Node version and on
+          # whether stdout is a TTY. This step originally matched `^# pass N`
+          # only, and on its FIRST EVER execution -- 2026-09-30, the day the
+          # credentials were finally configured -- Node 24 emitted spec format
+          # through a pipe and the parse found nothing. The suite had passed 12
+          # of 12 against real R2; the checker written to catch a silent failure
+          # failed silently instead, which is the joke writing itself.
+          #
+          # Matching on the two fields rather than a prefix means the format can
+          # change again without this going red for the wrong reason. A test
+          # NAMED "pass 3" cannot collide: the tally line has exactly two fields
+          # after any marker, and the second is all digits.
+          passed=$(awk '$(NF-1) == "pass" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
+          failed=$(awk '$(NF-1) == "fail" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
           if [ -z "$passed" ] || [ "$passed" -lt 1 ]; then
-            echo "::error title=Live suite asserted nothing::the runner reported '# pass ${passed:-<none>}'"
+            echo "::error title=Live suite asserted nothing::no 'pass <n>' tally in the runner output. Either the suite ran nothing, or the reporter format changed again and this parse needs updating."
+            exit 1
+          fi
+          if [ -n "$failed" ] && [ "$failed" -gt 0 ]; then
+            echo "::error title=Live suite had failures::the runner reported 'fail ${failed}'"
             exit 1
           fi
           echo "live S3/R2 suite: $passed assertion group(s) ran against a real bucket"
