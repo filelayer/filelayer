@@ -48,6 +48,7 @@ if (!existsSync(PAGE)) {
 }
 const html = readFileSync(PAGE, 'utf8');
 const lineOf = (i) => html.slice(0, i).split('\n').length;
+const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 
 // -----------------------------------------------------------------------------
 // 1. Document shape
@@ -222,12 +223,80 @@ for (const bot of ['GPTBot', 'ClaudeBot', 'Bingbot']) {
 }
 
 // -----------------------------------------------------------------------------
-// 5. Negative controls — a gate that cannot fail is not a gate
+// 5. Countable claims about the repository
+// -----------------------------------------------------------------------------
+// THE DEFECT THIS EXISTS TO PREVENT. The page said "All five run from the
+// repository with one command each". There are four examples and four
+// `example:*` scripts. The fifth rung of the ladder -- lifecycle and audit --
+// is illustrated in prose and demonstrated inside the vault example; it has no
+// command of its own. Nobody noticed, because no gate counted and the sentence
+// had been true of an earlier plan.
+//
+// check-version-claims.mjs already stops a version or test count from drifting.
+// This is the same class of defect one field over: a number about the repository
+// stated on a page whose entire argument is that its numbers are checkable. The
+// cheapest permanent fix is to make the page unable to name a count that the
+// repository does not have.
+//
+// The rule: every example the page says runs with a command must have that
+// command, and any count the page attaches to the examples must be the real one.
+const exampleScripts = Object.keys(rootPkg.scripts ?? {}).filter((k) => k.startsWith('example:'));
+const exampleDirs = existsSync(join(ROOT, 'examples'))
+  ? readdirSync(join(ROOT, 'examples'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
+  : [];
+
+if (exampleDirs.length !== exampleScripts.length)
+  fail(
+    'package.json',
+    `examples/ holds ${exampleDirs.length} director(ies) (${exampleDirs.join(', ')}) but there are ` +
+      `${exampleScripts.length} example:* script(s) (${exampleScripts.join(', ')}). An example nobody can ` +
+      `run with one command is an example the site must not claim runs with one command.`,
+  );
+
+// "Tiers 1 to 3 each run ... with one command" -> example:tier1..3 must exist.
+const tierRange = html.match(/Tiers?\s+(\d)\s+to\s+(\d)\s+each run/i);
+if (tierRange) {
+  for (let t = Number(tierRange[1]); t <= Number(tierRange[2]); t++) {
+    if (!exampleScripts.includes(`example:tier${t}`))
+      fail(
+        'web/index.html',
+        `claims tiers ${tierRange[1]}–${tierRange[2]} each run with one command, but there is no ` +
+          `\`example:tier${t}\` script. Present: ${exampleScripts.join(', ')}`,
+      );
+  }
+}
+
+// Any spelled-out or numeric count attached to the examples must be the real one.
+const WORD_NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+const COUNT_CLAIM = /\b(?:all|every)\s+(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:of\s+them\s+)?run\b/gi;
+for (const m of html.matchAll(COUNT_CLAIM)) {
+  const claimed = WORD_NUMBERS[m[1].toLowerCase()] ?? Number(m[1]);
+  if (claimed !== exampleScripts.length)
+    fail(
+      `web/index.html:${lineOf(m.index)}`,
+      `says "${m[0]}" — that is ${claimed} runnable examples, and the repository has ` +
+        `${exampleScripts.length} (${exampleScripts.join(', ')}).`,
+    );
+}
+
+// -----------------------------------------------------------------------------
+// 6. Negative controls — a gate that cannot fail is not a gate
 // -----------------------------------------------------------------------------
 const controls = [
   ['a repo link to a file that does not exist', () => !existsSync(join(ROOT, 'docs/THIS-FILE-DOES-NOT-EXIST.md'))],
   ['an anchor with no matching id', () => !ids.has('there-is-no-such-section-on-this-page')],
   ['a relative link to a missing asset', () => !existsSync(join(WEB, 'no-such-asset.css'))],
+  // The exact sentence that shipped. If this ever stops being a violation, the
+  // count check above has quietly stopped working.
+  [
+    'the miscount that shipped',
+    () => {
+      const m = /\b(?:all|every)\s+(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:of\s+them\s+)?run\b/i.exec(
+        'All five run from the repository with one command each',
+      );
+      return m !== null && (WORD_NUMBERS[m[1].toLowerCase()] ?? Number(m[1])) !== exampleScripts.length;
+    },
+  ],
 ];
 const controlsPass = controls.every(([, f]) => f());
 
