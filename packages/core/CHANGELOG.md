@@ -25,6 +25,86 @@ Nothing yet.
 
 ---
 
+## [0.5.2] — 2026-09-30
+
+**An org could be left with no living owner, and a failed membership change was
+recorded as a success.** Both found by re-verifying our own audit report, which
+also turned out to contain two findings that were not real. That is written up
+below too.
+
+### Fixed
+
+- **`countOwners` counted soft-deleted owners.** It feeds exactly one decision:
+  the `last_owner` guard that refuses to demote an org's final owner, so that no
+  org is left with nobody accountable for it. The query read `membership` alone,
+  while `getMembership` — two methods above it — has always excluded deleted
+  actors. An org whose other owner had been deleted therefore read as having two,
+  the guard stood down, and the last living owner could demote herself.
+
+  The result was an unadministrable org: no member could be added, no file
+  deleted, no audit log read, and no supported call could repair it. A deleted
+  actor cannot act, so it must not count toward the quorum that proves somebody
+  can.
+
+- **`addMember` and `removeMember` are now one transaction with their audit
+  event.** They authorized — which *writes* the allow event — and then mutated,
+  as two autocommit statements. A well-formed but unregistered actor id is enough
+  to make the `INSERT` fail on its foreign key, and the call then threw while
+  leaving `member.add / allow` in the log for a privilege grant that never
+  happened.
+
+  A log that records privilege grants which did not occur is worse than a log
+  with a gap, because the gap is visible. `test/persistence.test.ts` has asserted
+  this property since 0.4.0 under the name *"the mutation and the audit event
+  that records it commit together"* — for uploads and revocations. Membership,
+  which is the privilege that confers every other privilege, was the one mutation
+  it did not cover. It is covered now, in both directions: the failure path
+  leaves nothing behind, and the success path is asserted to take the chain lock
+  before the row lock, as every other mutation does.
+
+- **`shares.create` now types its return correctly for the link case.** A share
+  with neither `withUser` nor `withOrg` is a link, and a link always carries a
+  secret — but `ShareResult.secret` is optional, because an `actor`, `org` or
+  `role` grant has nothing to hand out. An overload now narrows it, so
+  `redeem(share.secret)` typechecks without a non-null assertion. The shortest
+  correct version of our own headline example needed a `!`, which reads as the
+  library's types being wrong about the library.
+
+### Added
+
+- **`npm run check:web-samples`.** Typechecks every TypeScript block on the
+  homepage against the real library under `--strict`. `check-doc-samples.mjs` has
+  compiled and executed every sample in `README.md` and `docs/QUICKSTART.md`
+  since before the site existed; the homepage was never added to a list, so the
+  most-read code we publish was the only code we published that nobody checked.
+  It is a typecheck rather than an execution because homepage samples are
+  deliberately elided, and a sample rewritten to be executable is no longer the
+  sample on the page.
+
+  Four negative controls, including the exact defect that shipped.
+
+### A note on the audit report
+
+Of the six HIGH findings in the 2026-09-29 internal audit, **two were not real**
+and one was overstated. They are recorded here because the report was used to
+order this work, and a defect list that invents entries is worse than no list:
+
+- **H1 — "a malformed `X-Forwarded-For` rolls back the transaction." False.**
+  `store.audit()` has kept an unparseable address in `context.rawIp` since the
+  initial `0.3.0` release, and `context` is covered by the audit digest, so the
+  value is preserved *and* tamper-evident while the request survives. Verified
+  against `v0.4.4` as well, to rule out an incidental fix.
+- **H6 — "every example tells you to run a command that does not exist." False.**
+  The documents reference `npm run example:tier1` … `:vault`, and all four exist.
+  The broken form appears only inside the audit report itself.
+- **H5 — "two website code samples do not compile." One sample**, failing at two
+  lines with one root cause, fixed above.
+
+H2, H3 and H4 were real, are fixed, and each now has a test that fails against
+the release before it.
+
+---
+
 ## [0.5.1] — 2026-09-30
 
 **Every index on `file_grant` was unreachable. Authorization cost grew with the

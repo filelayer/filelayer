@@ -430,6 +430,76 @@ describe('the mutation and the audit event that records it commit together', () 
     assert.equal((await fl.store.verifyAuditChain(org)).valid, true);
   });
 
+  // Found by audit, 2026-09-29. `addMember` authorized -- which WRITES the allow
+  // event -- and then INSERTed, as two autocommit statements. A well-formed but
+  // unregistered actor id is enough to make the INSERT fail on the foreign key,
+  // and the call then threw while leaving `member.add / allow` in the log for a
+  // privilege grant that never happened.
+  //
+  // The describe this sits in already asserted exactly this property, for uploads
+  // and revocations. Membership -- the privilege that confers every other
+  // privilege -- was the one mutation it did not cover.
+  it('addMember: a FAILED membership change leaves no allow event behind', async () => {
+    const f = await fixture(new MemoryStorage());
+    const ghost = '11111111-2222-3333-4444-555555555555'; // well formed, never registered
+
+    const before = await f.fl.store.listAudit(f.org, { action: 'member.add' });
+    await assert.rejects(() => f.fl.addMember({ actorId: f.alice }, f.org, ghost, 'member'));
+
+    const after = await f.fl.store.listAudit(f.org, { action: 'member.add' });
+    assert.deepEqual(
+      after.map((e) => e.id),
+      before.map((e) => e.id),
+      'the rolled-back membership change left an audit event claiming it succeeded',
+    );
+    const { rows } = await f.db.query<{ c: number }>(
+      `SELECT count(*)::int c FROM membership WHERE org_id = $1 AND actor_id = $2`,
+      [f.org, ghost],
+    );
+    assert.equal(rows[0]!.c, 0, 'no membership row, which is the point');
+    assert.equal((await f.fl.store.verifyAuditChain(f.org)).valid, true);
+  });
+
+  it('addMember: a SUCCESSFUL change is one transaction, audit inside it', async () => {
+    // The mirror of the test above: proving the failure path is clean is only
+    // half of it, because deleting the INSERT entirely would also pass that one.
+    const { db } = await createTestDb();
+    const log: string[] = [];
+    const recording: Queryable = {
+      query: (sql: string, params?: unknown[]) => {
+        log.push(sql.trim().replace(/\s+/g, ' ').slice(0, 40));
+        return db.query(sql, params);
+      },
+    };
+    const fl = new Filelayer(recording, new MemoryStorage(), { baseUrl: 'https://t.test' });
+    const alice = (await fl.createActor('a')).id;
+    const carol = (await fl.createActor('c')).id;
+    const org = (await fl.createOrg('o', 'O', { ownerActorId: alice })).id;
+
+    log.length = 0;
+    await fl.addMember({ actorId: alice }, org, carol, 'member');
+
+    const begin = log.findIndex((s) => s === 'BEGIN');
+    const append = log.findIndex((s) => s.includes('audit_append'));
+    const insert = log.findIndex((s) => s.startsWith('INSERT INTO membership'));
+    const commit = log.findIndex((s) => s === 'COMMIT');
+
+    assert.ok(begin >= 0, 'addMember opened a transaction');
+    assert.ok(begin < append && append < insert, 'the chain lock is taken before the row lock');
+    assert.ok(insert < commit, 'and the membership INSERT commits with it');
+    assert.equal(
+      log.slice(begin + 1, commit).filter((s) => s === 'COMMIT' || s === 'BEGIN').length,
+      0,
+      'nothing committed in between',
+    );
+
+    const { rows } = await db.query<{ role: string }>(
+      `SELECT role FROM membership WHERE org_id = $1 AND actor_id = $2`,
+      [org, carol],
+    );
+    assert.equal(rows[0]!.role, 'member');
+  });
+
   it('revoke: the state change and its event are inseparable, and the chain stays valid', async () => {
     const f = await fixture(new MemoryStorage());
     const file = await f.fl.upload({ actorId: f.alice }, f.org, {

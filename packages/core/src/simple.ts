@@ -58,6 +58,7 @@ import {
   FilelayerError,
   type Filelayer,
   type FileRecord,
+  type ShareResult,
   type ShareSubject,
 } from './filelayer.ts';
 import { DEFAULT_PROJECT_ID } from './store.ts';
@@ -599,7 +600,26 @@ export class SharesApi {
     this.ids = new Identities(fl);
   }
 
-  async create(fileId: string, opts: ShareOptions) {
+  /**
+   * A share with neither `withUser` nor `withOrg` is a LINK, and a link always
+   * carries a secret -- so this overload says so, and `redeem(share.secret)`
+   * typechecks without a non-null assertion.
+   *
+   * WHY THIS IS A TYPE FIX AND NOT A DOCUMENTATION FIX. `ShareResult.secret` is
+   * optional because an `actor`, `org` or `role` grant has nothing to hand out:
+   * the subject is already identified. But the link case is the one the
+   * quickstart and the homepage lead with, and there `secret` is always present.
+   * Leaving it optional for that call meant the shortest correct version of our
+   * own headline example needed a `!`, which reads as the library's types being
+   * wrong about the library. Found by audit, 2026-09-29, as a website sample
+   * that does not compile under `--strict`.
+   */
+  async create(
+    fileId: string,
+    opts: ShareOptions & { withUser?: undefined; withOrg?: undefined },
+  ): Promise<ShareResult & { secret: string }>;
+  async create(fileId: string, opts: ShareOptions): Promise<ShareResult>;
+  async create(fileId: string, opts: ShareOptions): Promise<ShareResult> {
     const actorId = await this.ids.findActor(opts.as);
     if (!actorId) throw new FilelayerError(404, 'not_found', 'unknown_actor');
     if (opts.withUser && opts.withOrg) {

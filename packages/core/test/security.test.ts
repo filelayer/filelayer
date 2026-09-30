@@ -1510,6 +1510,52 @@ describe('PROPERTY 15: delegation cannot amplify or outlive the permission it ca
     assert.equal(text((await s.fl.redeem(ok.secret!)).body), 'ACME CONFIDENTIAL');
   });
 
+  // Found by audit, 2026-09-29. `countOwners` counted `membership` rows without
+  // joining `actor`, so a SOFT-DELETED owner still counted. The `last_owner`
+  // guard exists so that no org can be left with nobody accountable for it; with
+  // a deleted co-owner on the books it stood down, and the last living owner
+  // could demote herself. The org was then unadministrable by anyone: no member
+  // could be added, no file deleted, no audit log read, and no supported call
+  // could repair it.
+  it('the last LIVING owner cannot be demoted, even with a deleted owner on the books', async () => {
+    const s = await twoOrgs();
+    const second = (await s.fl.createActor('second-owner')).id;
+    await s.fl.addMember(P(s.alice), s.orgA, second, 'owner');
+
+    const living = async () =>
+      Number(
+        (
+          await s.db.query<{ c: string }>(
+            `SELECT count(*)::text AS c
+               FROM membership m JOIN actor a ON a.id = m.actor_id
+              WHERE m.org_id = $1 AND m.role = 'owner' AND a.deleted_at IS NULL`,
+            [s.orgA],
+          )
+        ).rows[0]!.c,
+      );
+    assert.equal(await living(), 2);
+
+    // Two owners, so demoting one is legitimate and must still work.
+    await s.fl.addMember(P(s.alice), s.orgA, second, 'admin');
+    assert.equal(await living(), 1);
+    await s.fl.addMember(P(s.alice), s.orgA, second, 'owner');
+
+    // Now the co-owner is deleted. She cannot act -- `getMembership` already
+    // excludes her -- so alice is the only owner there is.
+    await s.db.query(`UPDATE actor SET deleted_at = now() WHERE id = $1`, [second]);
+    assert.equal(await living(), 1);
+
+    const err = await rejects(() => s.fl.addMember(P(s.alice), s.orgA, s.alice, 'member'), 403);
+    assert.equal(err.reason, 'last_owner');
+    assert.equal(await living(), 1, 'the org still has a living owner');
+
+    // And restoring her makes the demotion legitimate again, so the guard is
+    // tracking liveness rather than just refusing always.
+    await s.db.query(`UPDATE actor SET deleted_at = NULL WHERE id = $1`, [second]);
+    await s.fl.addMember(P(s.alice), s.orgA, s.alice, 'member');
+    assert.equal(await living(), 1);
+  });
+
   it('membership management is authorized and audited like everything else', async () => {
     // `addMember` used to take no principal at all: any code path that reached
     // it could make anyone an owner of any org, and nothing was written to the

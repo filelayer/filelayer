@@ -596,22 +596,44 @@ export class Filelayer {
     actorId: string,
     role: OrgRole,
   ): Promise<void> {
-    const decision = await authorizeMembershipChange(this.store, principal, orgId, actorId, role);
-    this.#raise(decision);
-    await this.db.query(
-      `INSERT INTO membership (org_id, actor_id, role) VALUES ($1,$2,$3)
-       ON CONFLICT (org_id, actor_id) DO UPDATE SET role = EXCLUDED.role`,
-      [orgId, actorId, role],
-    );
+    // IN A TRANSACTION, for the same reason `revoke()` is.
+    //
+    // This used to authorize (which WRITES the audit event) and then INSERT, as
+    // two independent statements. When the INSERT failed -- a well-formed but
+    // unregistered actor id is enough, the foreign key rejects it -- the call
+    // threw and the audit log kept an `allow` for a membership change that never
+    // happened. A log that records privilege grants which did not occur is worse
+    // than a log with a gap: the gap is visible.
+    //
+    // Found by audit, 2026-09-29. `test/persistence.test.ts` already asserted
+    // this property under the name *"the mutation and the audit event that
+    // records it commit together"* -- for uploads and revocations. Membership,
+    // which is the privilege that confers every other privilege, was the one
+    // mutation not covered by it.
+    //
+    // LOCK ORDERING holds: `authorizeMembershipChange` takes the chain lock via
+    // its audit write, before the INSERT takes any row lock. See `revoke()`.
+    await this.#transaction(async (tx, store) => {
+      const decision = await authorizeMembershipChange(store, principal, orgId, actorId, role);
+      this.#raise(decision);
+      await tx.query(
+        `INSERT INTO membership (org_id, actor_id, role) VALUES ($1,$2,$3)
+         ON CONFLICT (org_id, actor_id) DO UPDATE SET role = EXCLUDED.role`,
+        [orgId, actorId, role],
+      );
+    });
   }
 
   async removeMember(principal: Principal, orgId: string, actorId: string): Promise<void> {
-    const decision = await authorizeMembershipChange(this.store, principal, orgId, actorId, null);
-    this.#raise(decision);
-    await this.db.query(`DELETE FROM membership WHERE org_id = $1 AND actor_id = $2`, [
-      orgId,
-      actorId,
-    ]);
+    // See `addMember`: the decision and the change are one transaction.
+    await this.#transaction(async (tx, store) => {
+      const decision = await authorizeMembershipChange(store, principal, orgId, actorId, null);
+      this.#raise(decision);
+      await tx.query(`DELETE FROM membership WHERE org_id = $1 AND actor_id = $2`, [
+        orgId,
+        actorId,
+      ]);
+    });
   }
 
   // ---------------------------------------------------------------------------

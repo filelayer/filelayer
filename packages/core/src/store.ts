@@ -409,10 +409,32 @@ export class PostgresStore implements AuthzDeps {
     return rows[0]?.role ?? null;
   }
 
+  /**
+   * How many owners the org has that could actually act.
+   *
+   * THE JOIN IS THE POINT. This feeds exactly one decision: the `last_owner`
+   * guard in `authorizeMembershipChange`, which refuses to demote the final
+   * owner so that no org can be left with nobody accountable for it. Counting
+   * `membership` alone counted SOFT-DELETED owners, and a deleted actor cannot
+   * act -- `getMembership` already excludes them, two methods above. So an org
+   * whose only other owner had been deleted read as having two, the guard stood
+   * down, and the last living owner could demote herself. The org was then
+   * unadministrable: nobody could add a member, delete a file, or read the audit
+   * log, and no supported call could repair it.
+   *
+   * Found by audit, 2026-09-29. It is the same class of mistake as the one
+   * `getMembership` was already written to avoid, which is why the two queries
+   * now filter identically.
+   */
   async countOwners(orgId: string): Promise<number> {
     if (!isUuid(orgId)) return 0;
     const { rows } = await this.db.query<{ c: number }>(
-      `SELECT count(*)::int AS c FROM membership WHERE org_id = $1 AND role = 'owner'`,
+      `SELECT count(*)::int AS c
+         FROM membership m
+         JOIN actor a ON a.id = m.actor_id
+        WHERE m.org_id = $1
+          AND m.role = 'owner'
+          AND a.deleted_at IS NULL`,
       [orgId],
     );
     return Number(rows[0]?.c ?? 0);
