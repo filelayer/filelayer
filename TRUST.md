@@ -13,11 +13,11 @@ that records denials. It was first published on **6 September 2026**.
 
 | | |
 |---|---|
-| Version | 0.5.0 — alpha |
+| Version | 0.5.1 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
-| Tests | 330, on Node 22 / 24 / 26, every commit |
+| Tests | 340, on Node 22 / 24 / 26, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
 | Licence | Apache-2.0 |

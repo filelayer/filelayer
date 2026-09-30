@@ -23,10 +23,10 @@ ships.
 At 1.0 this changes to ordinary semantic versioning, and schema changes become
 additive-with-a-deprecation-window rather than replace-in-place.
 
-**Nothing has been published to npm yet.** At the time of writing there are no
-installs, so no migration in this file has ever been executed by anyone other
-than us. Entry 1 below is written as if it had been, because the next one will
-be.
+**No migration in this file has been executed by anyone other than us.** The
+package is published — `0.3.0` onward are on npm — but there are no known
+deployments, so every entry below is written as if it had run somewhere, because
+sooner or later one will and that is not the moment to start being careful.
 
 ---
 
@@ -440,6 +440,103 @@ SELECT DISTINCT org_id
 If that returns nothing, no chain was ever broken by this. If it returns rows,
 `verifyAuditChain()` will report `hash_mismatch` at the first of them for those
 tenants, and will verify cleanly for every event appended after upgrading.
+
+---
+
+### Entry 5 — `0.5.0` → `0.5.1`: every index on `file_grant` becomes reachable
+
+#### The defect
+
+Not a correctness defect. Every authorization decision read `file_grant` without
+using any of its indexes, and the cost grew with the number of grants in the
+database.
+
+`file_grant` carries six indexes, five of them partial on `revoked_at IS NULL`. A
+partial index is only usable by a query whose predicate the planner can prove
+implies the index predicate — and no query in `store.ts` did.
+
+Two separate reasons, same symptom. Every grant lookup reads `live_grant`, which
+was `SELECT * FROM file_grant WHERE grant_is_live(id)`; a function call is opaque
+to the planner, so `revoked_at IS NULL` was unprovable. And
+`findGrantBySecret()`, which reads `file_grant` directly, never stated it.
+
+The consequence was worse than a sequential scan. On the `live_grant` paths the
+planner evaluated `grant_is_live(id)` — a recursive CTE declared `COST 100` —
+once per candidate row. `getActorGrants()` was not even a scan: it used the
+composite unique key, read every grant on the file, and called the function on
+all of them.
+
+Which request paid for it matters. `redeemStream()` resolves a link secret to a
+file **before** authorizing anything, because a revoked link has to reach the
+engine for its denial to be attributed to the right tenant. So the table scan sat
+on the one path an unauthenticated caller reaches with `GET /d/<secret>`.
+
+Measured on 6,001 grants with a tenth revoked, before → after:
+
+| lookup | before | after |
+|---|---|---|
+| `findGrantBySecret` | Seq Scan, 6001 rows filtered | `grant_secret_idx`, 0 |
+| `findLiveGrantBySecret` | Seq Scan, 6001 rows filtered | `grant_secret_idx`, 0 |
+| `getActorGrants` | 6001 rows filtered | `grant_subject_idx`, 0 |
+| `getAnonymousGrant` | 6000 rows filtered | `grant_file_subject_type_idx`, 0 |
+
+#### What changed
+
+`live_grant` now states `revoked_at IS NULL` alongside `grant_is_live(id)`. That
+conjunct is **logically redundant** — `grant_is_live` already requires it of the
+row itself — so the view returns exactly the rows it returned before. Asserted
+both ways in `test/performance.test.ts`, including against
+`live_grant_recursive`, the independent formulation that shares no code with
+`grant_is_live`.
+
+`grant_secret_idx` loses its `revoked_at IS NULL` predicate, deliberately: the
+pre-authorization lookup **must** see revoked rows, and an index that excluded
+them would leave that path scanning.
+
+`grant_file_subject_type_idx` is new, for the lookups that filter by
+`subject_type` on a file with many link grants.
+
+No API change. No behavioural change. `test/performance.test.ts` fails against
+the 0.5.0 schema — five of its nine tests — which is how we know the assertions
+are load-bearing rather than decorative.
+
+#### The migration
+
+Safe to run online. Index builds take a lock that blocks writes to `file_grant`,
+so on a large table use `CONCURRENTLY` (outside a transaction) as shown.
+
+```sql
+-- 1. Make the cheap conjunct visible to the planner. Changes no result.
+CREATE OR REPLACE VIEW live_grant AS
+SELECT * FROM file_grant WHERE revoked_at IS NULL AND grant_is_live(id);
+
+-- 2. The pre-authorization secret lookup must reach revoked grants.
+CREATE INDEX CONCURRENTLY grant_secret_all_idx
+    ON file_grant (secret_hash) WHERE secret_hash IS NOT NULL;
+DROP INDEX CONCURRENTLY grant_secret_idx;
+ALTER INDEX grant_secret_all_idx RENAME TO grant_secret_idx;
+
+-- 3. The subject-type lookups.
+CREATE INDEX CONCURRENTLY grant_file_subject_type_idx
+    ON file_grant (file_id, subject_type) WHERE revoked_at IS NULL;
+
+-- 4. The planner needs statistics to choose any of this.
+ANALYZE file_grant;
+```
+
+Step 2 is in that order on purpose: build the replacement before dropping the
+original, so there is no window in which the secret lookup has no index at all.
+
+To confirm it took effect:
+
+```sql
+EXPLAIN (ANALYZE) SELECT * FROM file_grant
+ WHERE subject_type = 'link' AND secret_hash = 'not-a-real-hash' LIMIT 1;
+```
+
+An `Index Scan using grant_secret_idx` with `Rows Removed by Filter: 0` is
+correct. A `Seq Scan`, or any non-zero `Rows Removed by Filter`, means step 1 or
+step 4 did not run.
 
 ---
 

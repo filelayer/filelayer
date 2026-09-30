@@ -526,15 +526,51 @@ CREATE TRIGGER file_grant_project
     BEFORE INSERT OR UPDATE OF org_id ON file_grant
     FOR EACH ROW EXECUTE FUNCTION project_from_org();
 
+-- INDEXES, AND THE PREDICATE THAT HAS TO BE VISIBLE FOR THEM TO WORK
+--
+-- Most of these are PARTIAL on `revoked_at IS NULL`, which is correct: a revoked
+-- grant is dead forever, so there is no reason to carry it in an index that only
+-- authorization reads. But a partial index can only be used by a query the
+-- planner can PROVE implies the index predicate, and until 0.5.1 not one query in
+-- `store.ts` did. Every grant lookup reads `live_grant`, whose predicate was
+-- `grant_is_live(id)` -- an opaque function to the planner, so `revoked_at IS
+-- NULL` was unprovable and every one of these indexes was dead weight.
+--
+-- The fix is in the VIEW, two hundred lines below: it now states
+-- `revoked_at IS NULL` explicitly alongside `grant_is_live(id)`. That conjunct is
+-- logically redundant -- `grant_is_live` already requires it for the row itself --
+-- and it is what makes every index here reachable. It also lets the planner
+-- discard a revoked row BEFORE paying for `grant_is_live`, which is a recursive
+-- CTE declared COST 100.
+--
+-- So: if you ever add a partial index here, its predicate must be one the
+-- queries actually state. And if you change the view, check these are still
+-- usable. `test/performance.test.ts` fails if they stop being.
 CREATE INDEX grant_file_idx    ON file_grant (file_id) WHERE revoked_at IS NULL;
 CREATE INDEX grant_subject_idx ON file_grant (subject_id) WHERE revoked_at IS NULL AND subject_id IS NOT NULL;
-CREATE INDEX grant_secret_idx  ON file_grant (secret_hash) WHERE revoked_at IS NULL AND secret_hash IS NOT NULL;
 CREATE INDEX grant_org_idx     ON file_grant (org_id);
 CREATE INDEX grant_parent_idx  ON file_grant (parent_grant_id) WHERE parent_grant_id IS NOT NULL;
+
+-- NOT partial on `revoked_at IS NULL`, deliberately, and this is the one place
+-- where that is the point rather than an oversight. `findGrantBySecret` resolves
+-- a link secret to a FILE before any authorization, and it MUST see revoked rows:
+-- that is how a redemption of a revoked link gets attributed to the right tenant
+-- and recorded with the right reason instead of vanishing into the system chain.
+-- An index that excluded them would leave exactly the pre-authorization path --
+-- the one an unauthenticated caller reaches -- scanning the whole table.
+CREATE INDEX grant_secret_idx  ON file_grant (secret_hash) WHERE secret_hash IS NOT NULL;
+
 -- The group-grant path: (file, subject org) is what the membership join keys on,
 -- and it is what keeps a group grant one index probe rather than a scan.
 CREATE INDEX grant_subject_org_idx ON file_grant (file_id, subject_org_id)
     WHERE revoked_at IS NULL AND subject_org_id IS NOT NULL;
+
+-- The anonymous and actor lookups filter by (file, subject_type), and a file with
+-- many link grants on it -- the normal shape for anything that has been sharing
+-- documents for a year -- made `grant_file_idx` alone return every one of them for
+-- the `subject_type` filter to throw away, calling `grant_is_live` on each.
+CREATE INDEX grant_file_subject_type_idx ON file_grant (file_id, subject_type)
+    WHERE revoked_at IS NULL;
 
 -- -----------------------------------------------------------------------------
 -- GRANT LINEAGE AND LIVENESS (P4, transitive)
@@ -732,8 +768,31 @@ $$;
 
 -- The liveness predicate, expressed once, so no caller can get it subtly wrong.
 -- Every grant lookup in store.ts reads through this view.
+--
+-- `revoked_at IS NULL` IS REDUNDANT HERE, AND IT IS LOAD-BEARING ANYWAY.
+-- `grant_is_live(p_grant_id)` already requires it of the row itself, in the
+-- `self_live` term of the non-recursive branch above, so this conjunct cannot
+-- change which rows the view returns. Removing it is a correctness no-op and a
+-- performance regression, which is the worst combination a future edit can have:
+-- the tests would still pass and every authorization decision would get slower.
+--
+-- What it buys: a function call is opaque to the planner, so with only
+-- `grant_is_live(id)` here, `revoked_at IS NULL` was unprovable and EVERY partial
+-- index on `file_grant` was unusable from every query in `store.ts`. Stating it
+-- makes them reachable, and lets a revoked row be discarded before paying for a
+-- recursive CTE declared COST 100.
+--
+-- Measured on 6,001 grants with a tenth revoked, before -> after:
+--   findGrantBySecret       Seq Scan, 6001 rows filtered -> grant_secret_idx, 0
+--   findLiveGrantBySecret   Seq Scan, 6001 rows filtered -> grant_secret_idx, 0
+--   getActorGrants          6001 rows filtered           -> grant_subject_idx, 0
+--   getAnonymousGrant       6000 rows filtered           -> grant_file_subject_type_idx, 0
+--
+-- `test/performance.test.ts` asserts both halves of this: that the view still
+-- returns exactly the rows the old definition did, and that no grant lookup
+-- filters rows an index should have discarded.
 CREATE VIEW live_grant AS
-SELECT * FROM file_grant WHERE grant_is_live(id);
+SELECT * FROM file_grant WHERE revoked_at IS NULL AND grant_is_live(id);
 
 -- An INDEPENDENT, top-down formulation of the same property, used only by the
 -- test suite as a cross-check on `grant_is_live`. Two implementations that must

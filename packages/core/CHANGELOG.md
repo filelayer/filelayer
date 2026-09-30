@@ -25,6 +25,88 @@ Nothing yet.
 
 ---
 
+## [0.5.1] — 2026-09-30
+
+**Every index on `file_grant` was unreachable. Authorization cost grew with the
+size of the table.**
+
+No correctness defect, no API change, and no behavioural change. The published
+`0.5.0` — and every release before it — performed every authorization decision
+without using a single one of the six indexes on `file_grant`.
+
+### Fixed
+
+- **The partial indexes on `file_grant` are now usable.** Five of the six are
+  partial on `revoked_at IS NULL`, and a partial index can only be used by a
+  query the planner can prove implies its predicate. No query in `store.ts`
+  did — for two different reasons. Every grant lookup reads `live_grant`, whose
+  predicate was `grant_is_live(id)`; a function call is opaque, so
+  `revoked_at IS NULL` was unprovable. And `findGrantBySecret()`, which reads
+  `file_grant` directly, simply never stated it.
+
+  `live_grant` now states `revoked_at IS NULL` alongside `grant_is_live(id)`.
+  The conjunct is **logically redundant** — `grant_is_live` already requires it
+  of the row itself — so the view returns exactly the rows it did before, which
+  is asserted in both directions and against `live_grant_recursive`, the
+  independent formulation that shares no code with `grant_is_live`.
+
+  The cost was worse than a sequential scan. On the `live_grant` paths the
+  planner evaluated `grant_is_live(id)` — a recursive CTE declared `COST 100` —
+  once per candidate row. `getActorGrants()` was not even a scan: it used the
+  composite unique key, read every grant on the file, and called the function on
+  all of them.
+
+  Measured on 6,001 grants with a tenth revoked:
+
+  | lookup | before | after |
+  |---|---|---|
+  | `findGrantBySecret` | Seq Scan, 6001 rows filtered | `grant_secret_idx`, 0 |
+  | `findLiveGrantBySecret` | Seq Scan, 6001 rows filtered | `grant_secret_idx`, 0 |
+  | `getActorGrants` | 6001 rows filtered | `grant_subject_idx`, 0 |
+  | `getAnonymousGrant` | 6000 rows filtered | `grant_file_subject_type_idx`, 0 |
+
+- **`grant_secret_idx` is no longer partial on `revoked_at`**, deliberately.
+  `redeemStream()` resolves a link secret to a file *before* authorizing
+  anything, because a revoked link has to reach the engine for its denial to be
+  attributed to the right tenant instead of vanishing onto the system chain. So
+  that lookup must see revoked rows — and an index excluding them left the one
+  path an unauthenticated caller reaches, `GET /d/<secret>`, scanning the whole
+  table, growing with every grant ever issued.
+
+- **`grant_file_subject_type_idx` added**, on `(file_id, subject_type)` where not
+  revoked, for the anonymous and actor lookups. A file that has been shared for a
+  year has many link grants on it, and `grant_file_idx` alone returned all of
+  them for the `subject_type` filter to throw away.
+
+### Added
+
+- `test/performance.test.ts`. Nine tests asserting the **shape of the plan**
+  rather than a wall-clock number, which would measure the machine: that no grant
+  lookup sequentially scans `file_grant`, that none of them reaches the filter
+  with rows an index should have discarded, and — with `enable_seqscan = off` —
+  that the indexes are *usable* rather than merely sometimes chosen. Those are
+  different failures and only the first is a defect.
+
+  Two of the nine are negative controls that reintroduce each half of the fix and
+  assert the plans regress. Against the 0.5.0 schema, five of the nine fail.
+
+  This is the gap the defect lived in: the suite tests behaviour exhaustively,
+  and the return values were always correct. Nothing was looking at how they were
+  obtained.
+
+### Changed
+
+- `MIGRATIONS.md` no longer says nothing has been published to npm. It has been
+  since `0.3.0`.
+
+### Migration
+
+Entry 5 in [`MIGRATIONS.md`](MIGRATIONS.md). One `CREATE OR REPLACE VIEW`, an
+index swap and one new index, all safe online; use `CONCURRENTLY` on a large
+table. A deployment that does not run it keeps working and stays slow.
+
+---
+
 ## [0.5.0] — 2026-09-29
 
 **Two security defects found by internal audit, in the published `0.4.4`.**
