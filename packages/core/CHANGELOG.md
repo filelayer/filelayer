@@ -25,6 +25,35 @@ Nothing yet.
 
 ---
 
+## [0.5.3] — 2026-09-30
+
+**Two public surfaces contradicted two other public surfaces.** No code change.
+
+### Fixed
+
+- **`examples/vault/server.ts` claimed an independent security review.** Its
+  revision-3 header said four defects were found by *"an independent security
+  review"*. `TRUST.md` lists **Independent security review: none**, and that is
+  the true one — the review was internal. A page that trades on accuracy cannot
+  have one file quietly awarding itself a credential another file disclaims, and
+  of the two possible fixes, deleting the claim was the only honest one.
+
+- **The homepage linked `openapi.yaml` under a heading promising the tarball.**
+  §7 opens with *"Every surface below already exists in the repository and ships
+  inside the npm tarball"*, and the OpenAPI card linked the YAML. The tarball
+  ships `openapi.json` only. The card now links the JSON and says where the YAML
+  lives.
+
+### Not a defect, checked
+
+The homepage does not mention the opt-in redirect delivery mode, which trades a
+bounded revocation window for cacheability. The page describes the **default**
+byte path, where revocation is immediate, and that description is accurate. An
+omission of a mode you have to switch on is not a false claim about the mode you
+get. `TRUST.md` and `README.md` both document the window.
+
+---
+
 ## [0.5.2] — 2026-09-30
 
 **An org could be left with no living owner, and a failed membership change was

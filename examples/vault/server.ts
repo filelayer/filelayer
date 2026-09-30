@@ -22,8 +22,11 @@
  * threat model includes callers that reach Postgres without passing through this
  * file, you want RLS underneath, and the two compose fine.
  *
- * REVISION 3. Four things changed and all four were defects an independent
- * security review found in this file, not cosmetics:
+ * REVISION 3. Four things changed and all four were real defects in this file,
+ * not cosmetics. Found by internal review -- NOT by an independent security
+ * review, which this project has never had and says so in TRUST.md. The two
+ * sentences contradicted each other until 0.5.3, and the one that inflated our
+ * credentials was this one:
  *   1. `GET /orgs/:id/files` exists. It was missing, and its absence was the
  *      only reason the "0 authorization lines" claim survived.
  *   2. Byte delivery is the library's job now. Both download paths are library
