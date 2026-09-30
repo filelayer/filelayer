@@ -21,7 +21,8 @@ that records denials. It was first published on **6 September 2026**.
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
 | Licence | Apache-2.0 |
-| Storage adapter against live AWS/Cloudflare | **never run** — see below |
+| Storage adapter against live Cloudflare R2 | 12 tests, every commit |
+| Storage adapter against live AWS S3 | **never run** — see below |
 
 If any row in that table is disqualifying for you, it should be, and you can stop
 reading. We would rather you decline today for accurate reasons than adopt on a
@@ -46,19 +47,33 @@ mistakes people actually make:
   revision of this library that is known to be vulnerable. It scores 3 breaches
   there and 0 here. A suite that only ever passes proves nothing about itself.
 
-## What has never run
+## What runs against a real object store, and what still does not
 
-**The S3/R2 storage adapter has never executed against live AWS or Cloudflare
-credentials.** It is exercised against a local harness that recomputes every
-SigV4 signature, which found nine real bugs — including one where a key
+**Since 30 September 2026 the storage adapter runs against live Cloudflare R2
+on every commit.** Twelve tests, in CI, against a real bucket: put/get/head/
+delete, ranged reads, prefix listing, keys containing characters that break
+naive URL construction, a presigned GET the store actually honours, a presigned
+URL expiring for real, a tampered one refused, and — on the nightly run and on
+manual dispatch — an 11 MB multipart upload reassembled byte-exactly. Plus the
+whole `Filelayer` lifecycle end to end on top of it.
+
+Before that it had never run against anything but a local harness, and this page
+said so for three weeks.
+
+**It has still never run against AWS S3.** R2 is S3-compatible, not S3. AWS's
+checksum requirements, IAM evaluation, virtual-hosted addressing and its own
+error codes are exercised only against the local harness that recomputes every
+SigV4 signature — which found nine real bugs, including one where a key
 containing `#` silently collided with a different object and returned the wrong
-file's bytes. But a faithful harness is not the counterparty. TLS, real IAM
-evaluation, R2's divergences from S3, throttling behaviour and the exact error
-codes a real store returns are all unverified.
+file's bytes. A faithful harness is not the counterparty. If you are on AWS, you
+are still the first.
 
-The CI job for this exists and is wired. It runs the moment credentials are
-configured, and until then it says so out loud in the build summary rather than
-passing quietly.
+The job fails, rather than passing quietly, if the credentials are present and
+the suite skips itself — the one failure mode that looks exactly like success.
+That check had itself never executed until the day the credentials arrived, and
+it was broken: it read the runner's tally in a format the runner had stopped
+emitting. Fixed the same day, and it now reads either format and also fails on a
+non-zero failure count, which the first version did not.
 
 ## What is known broken or unfinished
 

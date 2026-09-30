@@ -26,12 +26,13 @@
 > the tarball, installs it into an empty directory and drives the whole lifecycle
 > as a stranger would.
 >
-> **What has never run against live infrastructure.** The S3/R2 storage adapter
-> has **never been executed against real AWS or Cloudflare credentials.** It is
-> exercised against a local implementation that verifies SigV4 signatures, which
-> is not the same thing and we will not pretend it is. A live-credential suite
-> exists and runs automatically once `FILELAYER_TEST_S3_*` is in the
-> environment; nobody has supplied it yet.
+> **What runs against a real object store.** Since 30 September 2026 the storage
+> adapter runs against **live Cloudflare R2 on every commit** — 12 tests,
+> including a presigned URL the store actually honours, one that expires for
+> real, and an 11 MB multipart upload reassembled byte-exactly on the nightly
+> run. It has **never run against AWS S3**: R2 is S3-compatible, not S3, so AWS's
+> checksum requirements, IAM evaluation and error codes are still covered only by
+> a local harness that verifies SigV4 signatures. On AWS you are the first.
 >
 > **What may break.** Nobody has deployed this. There is no production usage, no
 > hosted service, no CLI, and no operational track record — so the failure modes
@@ -371,9 +372,11 @@ Restated here so they are not only in an appendix. Each one is current as of
    and `org.external_id` are scoped to a project (one customer application). Two
    orgs inside one project cannot both have a user called `alice` meaning
    different people.
-6. **The S3/R2 adapter has never run against live credentials.** It is tested
-   against a local implementation that verifies SigV4 signatures, which is not
-   the same thing.
+6. **The storage adapter has never run against AWS S3.** It runs against live
+   Cloudflare R2 in CI on every commit, and R2 is S3-compatible — but compatible
+   is not identical. AWS's checksum requirements, IAM evaluation and error codes
+   are covered only by a local implementation that verifies SigV4 signatures,
+   which is not the same thing.
 7. **Unauthenticated callers can still append denial events to the audit chain
    of a tenant inside a project they can reach.** That is P5 working as designed
    — denials are the events worth recording — but it is a load-bearing reason to
