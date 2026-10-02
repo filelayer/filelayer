@@ -617,3 +617,203 @@ describe('the file-state gate has no vestigial branch', () => {
     assert.equal(src.includes('capabilityRequiresLiveFile'), false);
   });
 });
+
+// =============================================================================
+// THE 2026-10-02 ADVERSARIAL SWEEP
+// =============================================================================
+//
+// Three independent agents attacked the published 0.5.3 in parallel. Five
+// findings were reproduced against the PUBLISHED TARBALL, not against a working
+// tree, and are fixed in 0.6.0. Every test below was observed to fail on 0.5.3.
+//
+// What they have in common is worth stating, because it is the lesson rather
+// than the list: the authorization ENGINE held. 1,440 differential comparisons
+// between `listFiles` and `authorize` over soft-delete axes the shipped corpus
+// never touched, 54 delete/restore orderings, cross-tenant isolation,
+// attenuation, lock ordering -- zero discrepancies. Every one of these five is
+// in the surface AROUND the engine: the convenience facade, the HTTP helpers
+// and the control plane. 343 tests and twelve gates did not see them.
+
+describe('2026-10-02: the share route cannot be crashed by its own URL', () => {
+  // `shareDownloadRoute` decoded the secret segment OUTSIDE its try. `GET /d/%%%`
+  // -- no credential, no valid secret, four characters -- threw URIError, the
+  // async handler rejected, node:http had nowhere to catch it, and the process
+  // exited. Reachable through `deliveryHandler()`, the one-liner the quickstart,
+  // the homepage and examples/vault all recommend.
+  it('a malformed percent-escape is a 404, not an unhandled rejection', async () => {
+    const { createServer } = await import('node:http');
+    const { deliveryHandler } = await import('../src/delivery.ts');
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost' });
+    const srv = createServer(deliveryHandler(fl));
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+    const port = (srv.address() as { port: number }).port;
+    try {
+      for (const path of ['/d/%%%', '/d/%E0%A4%A', '/d/%', '/f/%%%']) {
+        const res = await fetch(`http://127.0.0.1:${port}${path}`);
+        assert.equal(res.status, 404, `${path} should be a clean 404`);
+        await res.text();
+      }
+      // Still serving: the point is that the process survived all of them.
+      assert.equal((await fetch(`http://127.0.0.1:${port}/d/nope`)).status, 404);
+    } finally {
+      srv.close();
+    }
+  });
+
+  it('a malformed file id is the same 404 as an unknown one, and is audited', async () => {
+    // A non-uuid reached the audit write, whose `file_id` column is uuid, and
+    // raised 22P02 -- not a FilelayerError, so the routes answered 500 for a
+    // malformed id and 404 for a well-formed unknown one. An existence oracle on
+    // the one input an internet user types, and the probe left no audit event at
+    // all, because the write that would have recorded it was the write that
+    // failed.
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    const f = await fl.files.put(bytes('X'), { owner: 'alice' });
+    for (const id of ['not-a-uuid', '../../etc/passwd', `${f.id} `]) {
+      const err = await rejects(() => fl.files.get(id, { as: 'alice' }), 404);
+      assert.equal(err.code, 'not_found');
+    }
+    const sweep = (await fl.store.listAudit(null, {})).filter(
+      (e) => (e.context as Record<string, unknown> | null)?.['rawFileId'] !== undefined,
+    );
+    assert.ok(sweep.length >= 3, 'the probes must be legible on the system chain');
+    assert.equal((await fl.store.verifyAuditChain(null)).valid, true);
+  });
+
+  it('the credential-in-the-query refusal does not depend on letter case', async () => {
+    const { createServer } = await import('node:http');
+    const { deliveryHandler } = await import('../src/delivery.ts');
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost' });
+    const f = await fl.files.put(bytes('PRIVATEBYTES'), { owner: 'alice' });
+    const sh = await fl.shares.create(f.id, { as: 'alice' });
+    const srv = createServer(deliveryHandler(fl));
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+    const port = (srv.address() as { port: number }).port;
+    try {
+      for (const q of ['password=x', 'Password=x', 'PASSWORD=x', 'pass=x', 'Pass=x', 'ToKeN=x']) {
+        const res = await fetch(`http://127.0.0.1:${port}/d/${sh.secret}?${q}`);
+        assert.equal(res.status, 400, `?${q} must be refused`);
+        assert.equal((await res.json() as { error: string }).error, 'credential_in_query');
+      }
+    } finally {
+      srv.close();
+    }
+  });
+});
+
+describe('2026-10-02: the facade is never more permissive than the engine', () => {
+  // `orgs.create()` is documented as idempotent, which invites calling it on
+  // every signup. On an org that already existed it returned that org AND
+  // bootstrapped the named identity as an OWNER of it -- no principal, no
+  // authorization. `Filelayer.createOrg` refuses the same call.
+  it('orgs.create on an existing tenant cannot mint an owner', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    await fl.orgs.create('acme', { name: 'Acme', owner: 'ceo' });
+    const deck = await fl.files.put(bytes('BOARD DECK'), { org: 'acme', owner: 'ceo' });
+
+    const err = await rejects(() => fl.orgs.create('acme', { owner: 'mallory' }), 409);
+    assert.equal(err.code, 'org_exists');
+    await rejects(() => fl.files.get(deck.id, { as: 'mallory' }), 404);
+    await rejects(() => fl.orgs.audit('acme', { as: 'mallory' }), 404);
+
+    // Still idempotent where idempotence is what was wanted: a retry.
+    const again = await fl.orgs.create('acme', { owner: 'ceo' });
+    assert.ok(again.id);
+  });
+
+  it('the implicit single-tenant workspace is not takeable either', async () => {
+    // A tier-2 application that has never heard the word "org" was equally
+    // exposed, because the default workspace is a real org with a known name.
+    const { DEFAULT_WORKSPACE } = await import('../src/simple.ts');
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    const a = await fl.files.put(bytes('ALICE PRIVATE NOTES'), { owner: 'alice' });
+    await rejects(() => fl.orgs.create(DEFAULT_WORKSPACE, { owner: 'mallory' }), 409);
+    await rejects(() => fl.files.get(a.id, { as: 'mallory' }), 404);
+  });
+
+  it('files.put does not auto-join an existing named tenant', async () => {
+    // One byte into somebody else's tenant added the uploader as a `member`,
+    // which is read access to every `visibility: 'org'` file in it. `addMember`
+    // denies the same call.
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    await fl.orgs.create('acme', { owner: 'ceo' });
+    const memo = await fl.files.put(bytes('ORG WIDE MEMO'), {
+      org: 'acme', owner: 'ceo', visibility: 'org',
+    });
+
+    await rejects(() => fl.files.put(bytes('x'), { org: 'acme', owner: 'mallory' }), 403);
+    await rejects(() => fl.files.get(memo.id, { as: 'mallory' }), 404);
+
+    // The tenant's own people are unaffected.
+    assert.ok((await fl.files.put(bytes('legit'), { org: 'acme', owner: 'ceo' })).id);
+    assert.equal(text((await fl.files.get(memo.id, { as: 'ceo' })).body), 'ORG WIDE MEMO');
+  });
+});
+
+describe('2026-10-02: a bound instance stays inside its project', () => {
+  // `#setOrgDeleted` and `#setActorDeleted` both carried the project filter.
+  // `#setProjectDeleted`, twelve lines below them, did not -- so a project-bound
+  // instance could delete, and RESTORE, another customer's entire project.
+  // Restoring is the worse direction: it silently re-arms every share link an
+  // operator believed revoked when they terminated that customer.
+  it('cannot soft-delete or restore another customer`s project', async () => {
+    const { db } = await createTestDb();
+    const storage = new MemoryStorage();
+    const { DEFAULT_PROJECT_ID } = await import('../src/store.ts');
+    const A = new Filelayer(db, storage, { baseUrl: 'http://x', projectId: DEFAULT_PROJECT_ID });
+    const pB = (
+      await db.query<{ id: string }>(
+        `INSERT INTO project (key, name) VALUES ('cust-b','B') RETURNING id`,
+      )
+    ).rows[0]!.id;
+    const B = new Filelayer(db, storage, { baseUrl: 'http://x', projectId: pB });
+    const bob = (await B.createActor('bob')).id;
+    const orgB = (await B.createOrg('bcorp', 'B Corp', { ownerActorId: bob })).id;
+    const fB = await B.upload(P(bob), orgB, {
+      name: 'b.pdf', contentType: 'application/pdf', body: bytes('B SECRET'),
+    });
+
+    await rejects(() => A.softDeleteProject(pB), 404);
+    await rejects(() => A.restoreProject(pB), 404);
+    assert.equal(text((await B.read(P(bob), fB.id)).body), 'B SECRET');
+
+    // B may still administer its own project, and the control plane -- an
+    // instance built with an EXPLICIT `projectId: null`, which is the only way
+    // to be unscoped; omitting the option binds you to the default project --
+    // may still reach any of them.
+    await B.softDeleteProject(pB);
+    await rejects(() => B.read(P(bob), fB.id), 404);
+    const control = new Filelayer(db, storage, { baseUrl: 'http://x', projectId: null });
+    await control.restoreProject(pB);
+    assert.equal(text((await B.read(P(bob), fB.id)).body), 'B SECRET');
+  });
+});
+
+describe('2026-10-02: a bound asked for is never silently dropped', () => {
+  // `input.expiresIn ? ... : null` made the two falsy numbers mean "never
+  // expires". `NaN` is what `Number(req.body.ttl)` gives for a missing field and
+  // `0` is what someone writes meaning "immediately", so the most restrictive
+  // value anyone could ask for produced the least restrictive outcome -- while
+  // `-1`, which is nonsense, failed closed. The same shape as the password that
+  // was accepted and never enforced in 0.5.0.
+  it('expiresIn 0 and NaN are refused rather than meaning "forever"', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    const f = await fl.files.put(bytes('S'), { owner: 'alice' });
+    for (const bad of [0, NaN, Infinity, -1]) {
+      await rejects(() => fl.shares.create(f.id, { as: 'alice', expiresIn: bad }), 400);
+    }
+    // A real bound still works, and still binds.
+    const sh = await fl.shares.create(f.id, { as: 'alice', expiresIn: 3600 });
+    assert.equal(text((await fl.shares.redeem(sh.secret, {})).body), 'S');
+  });
+
+  it('the same holds for upload expiry and retention', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    for (const field of ['expiresIn', 'retainFor'] as const) {
+      for (const bad of [0, NaN, -5]) {
+        await rejects(() => fl.files.put(bytes('S'), { owner: 'a', [field]: bad }), 400);
+      }
+    }
+    assert.ok((await fl.files.put(bytes('S'), { owner: 'a', expiresIn: 60 })).id);
+  });
+});

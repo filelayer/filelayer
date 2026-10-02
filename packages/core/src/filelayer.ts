@@ -562,10 +562,25 @@ export class Filelayer {
 
   async #setProjectDeleted(projectId: string, deleted: boolean): Promise<void> {
     if (!isUuid(projectId)) throw new FilelayerError(404, 'not_found');
+    // THE PROJECT FILTER ITS TWO NEIGHBOURS ALREADY CARRIED.
+    //
+    // `#setOrgDeleted` and `#setActorDeleted`, twelve lines above, both end with
+    // `AND ($2::uuid IS NULL OR project_id = $2::uuid)`. This one did not, so a
+    // project-bound instance could soft-delete -- and, worse, RESTORE -- another
+    // customer's entire project. Deleting took every tenant in it dark;
+    // restoring silently re-armed every share link an operator believed revoked
+    // when they terminated that customer.
+    //
+    // This method's own docstring calls project deletion "the widest blast
+    // radius in the system", which is exactly why it was the one that had to be
+    // bounded. Found 2026-10-02 by adversarial review.
+    //
+    // An unbound instance (`projectId` null) is the control plane and may still
+    // act on any project; that is what unbound means.
     const { rows } = await this.db.query<{ id: string }>(
       `UPDATE project SET deleted_at = ${deleted ? 'now()' : 'NULL'}
-        WHERE id = $1 RETURNING id`,
-      [projectId],
+        WHERE id = $1 AND ($2::uuid IS NULL OR id = $2::uuid) RETURNING id`,
+      [projectId, this.store.projectId],
     );
     if (!rows[0]) throw new FilelayerError(404, 'not_found');
     // The system chain: a project is above every tenant, so there is no single
@@ -680,8 +695,8 @@ export class Filelayer {
     const id = randomUUID();
     const storageKey = `${orgId}/${id}`;
     const now = Date.now();
-    const expiresAt = input.expiresIn ? new Date(now + input.expiresIn * 1000) : null;
-    const retainUntil = input.retainFor ? new Date(now + input.retainFor * 1000) : null;
+    const expiresAt = secondsFromNow(input.expiresIn, now, 'expiresIn');
+    const retainUntil = secondsFromNow(input.retainFor, now, 'retainFor');
     const visibility: FileVisibility = input.visibility ?? 'private';
 
     // ORDERING: BYTES FIRST, METADATA SECOND. See the long note in db.ts.
@@ -1338,7 +1353,7 @@ export class Filelayer {
     const file = await getFileRecord(tx, this.projectId, fileId);
     if (!file) throw new FilelayerError(404, 'not_found');
 
-    const expiresAt = input.expiresIn ? new Date(Date.now() + input.expiresIn * 1000) : null;
+    const expiresAt = secondsFromNow(input.expiresIn, Date.now(), 'expiresIn');
 
     let secret: string | undefined;
     let secretHash: string | null = null;
@@ -1829,6 +1844,41 @@ export interface FileListPage {
  * within your own authorized set and nowhere else. It is validated on the way
  * in so that a malformed one is a 400 rather than a silently-ignored filter.
  */
+/**
+ * Seconds-from-now, where asking for a bound and getting none is an ERROR.
+ *
+ * THE DEFECT THIS EXISTS TO PREVENT. Both call sites were
+ * `input.expiresIn ? new Date(now + input.expiresIn * 1000) : null`, so the two
+ * falsy numbers meant "never expires":
+ *
+ *     expiresIn: 0    -> expires_at = null -> the link redeems forever
+ *     expiresIn: NaN  -> expires_at = null -> the link redeems forever
+ *     expiresIn: -1   -> already expired   -> refused
+ *
+ * `NaN` is what `Number(req.body.ttl)` gives you when the field is missing, and
+ * `0` is what a caller writes when they mean "immediately". The handling was
+ * also non-monotonic: the most restrictive value anyone could ask for produced
+ * the least restrictive outcome, while a nonsensical one failed closed.
+ *
+ * This is the same shape as the password that was accepted and never enforced
+ * in 0.5.0 -- an option taken, not honoured, and silent about it -- on the
+ * option that bounds how long a share link lives. Found 2026-10-02 by
+ * adversarial review.
+ *
+ * `undefined` still means "no bound", because that is the absence of a request
+ * rather than a request for nothing.
+ */
+function secondsFromNow(seconds: number | undefined, now: number, field: string): Date | null {
+  if (seconds === undefined) return null;
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
+    throw new FilelayerError(400, 'invalid_argument', `${field}_not_finite`);
+  }
+  if (seconds <= 0) {
+    throw new FilelayerError(400, 'invalid_argument', `${field}_not_positive`);
+  }
+  return new Date(now + seconds * 1000);
+}
+
 function encodeCursor(createdAt: Date, id: string): string {
   return Buffer.from(`${createdAt.toISOString()}|${id}`, 'utf8').toString('base64url');
 }

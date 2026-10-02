@@ -25,6 +25,113 @@ Nothing yet.
 
 ---
 
+## [0.6.0] — 2026-10-02
+
+**A security release. Upgrade from any earlier version.**
+
+`0.3.0` through `0.5.3` contain a remote unauthenticated denial of service and a
+tenant takeover. Both were found by an adversarial review of the *published*
+package, not of a working tree, and both were reproduced against the tarball
+before anything was changed. Earlier versions are deprecated on npm.
+
+### Fixed — critical
+
+- **A single unauthenticated request could stop the process.**
+  `shareDownloadRoute` decoded the secret path segment *outside* its `try`, so a
+  malformed percent-escape — `GET /d/%%%`, four characters, no credential, no
+  valid secret, no body — threw `URIError`. The returned async handler rejected,
+  `node:http` had nowhere to catch it, and Node's default `unhandledRejection`
+  policy terminated the process.
+
+  It was reachable through `deliveryHandler()`, which is the one-liner the
+  quickstart, the homepage and `examples/vault/server.ts` all recommend. Both
+  route helpers are now total: nothing before the `try` can throw, and a segment
+  that is not valid percent-encoding is the same 404 as a secret we never issued.
+
+- **`orgs.create()` on an existing tenant made the named identity an owner of
+  it.** The method is documented as idempotent, which invites calling it on every
+  signup. On an `external_id` that already existed it returned that tenant *and*
+  bootstrapped the named identity as an **owner** — no principal, no
+  authorization check. Any caller who controlled the tenant slug could read the
+  tenant's private files, read its audit log, and evict the real owner.
+
+  It worked on the implicit single-tenant workspace too, so a tier-2 application
+  that had never heard the word "org" was equally exposed:
+  `orgs.create('__filelayer_workspace__', { owner: 'mallory' })`.
+
+  `Filelayer.createOrg` refused the same call with a unique violation. The facade
+  was more permissive than the engine it wraps, which is the one thing a facade
+  must never be. It is now idempotent only for a genuine retry — same owner, same
+  answer — and `409 org_exists` otherwise.
+
+### Fixed — high
+
+- **A project-bound instance could soft-delete, and restore, another customer's
+  project.** `#setOrgDeleted` and `#setActorDeleted` both carry the project
+  filter; `#setProjectDeleted`, twelve lines below them, did not. Deleting took
+  every tenant in the victim project dark. Restoring is the worse direction: it
+  silently re-arms every share link an operator believed revoked when they
+  terminated that customer. An instance built with an explicit `projectId: null`
+  is the control plane and may still reach any project.
+
+- **`files.put({ org, owner })` auto-joined an arbitrary existing tenant.** One
+  byte uploaded into someone else's named org added the uploader as a `member`,
+  which is read access to every `visibility: 'org'` file in it and a listing of
+  the tenant's documents. `addMember` denies that exact call. Auto-join now
+  happens only in the default workspace — where it is the single-tenant design —
+  or in an org the same call just created.
+
+- **A malformed file id was a 500 with no audit event, where an unknown one is a
+  404 with a deny.** A non-uuid reached the audit write, whose `file_id` column
+  is `uuid`, and raised `22P02`. That is not a `FilelayerError`, so the shipped
+  routes could not map it: an existence oracle on the one input an internet user
+  types, and the probe left *no* record, because the write that would have
+  recorded it was the write that failed. Malformed identifiers are now kept
+  verbatim in the event's `context` — inside the hash digest, so as
+  tamper-evident as the rest of the row — exactly as malformed addresses already
+  were.
+
+  Found while fixing it: the audit `INSERT` read `actor_id` and `file_id` from
+  the caller's input while the chain digest was computed over the normalised
+  values. Both now come from the same object, so a row can no longer be covered
+  by a hash over data it does not hold.
+
+### Fixed — behaviour changes you may notice
+
+- **`expiresIn: 0` and `expiresIn: NaN` meant "never expires".** Both call sites
+  were `input.expiresIn ? … : null`. `NaN` is what `Number(req.body.ttl)` returns
+  for a missing field, and `0` is what someone writes meaning "immediately", so
+  the most restrictive value anyone could ask for produced the least restrictive
+  outcome — while `-1`, which is nonsense, failed closed. The same shape as the
+  password that was accepted and never enforced in `0.5.0`. Non-finite and
+  non-positive values are now `400 invalid_argument`, for `expiresIn` and
+  `retainFor`, on uploads and on shares.
+
+- **The credential-in-the-query refusal was case-sensitive.** `?password=` was a
+  400; `?Password=` was served with a 200. A guard that depends on the attacker's
+  shift key is decoration. Matching is now case-insensitive.
+
+### Added
+
+- Nine regression tests in `test/regression.test.ts`, each observed to fail
+  against the `0.5.3` sources and pass here. The suite is **352 tests across 83
+  suites**.
+
+### A note on where the defects were
+
+Three independent agents attacked in parallel. The authorization **engine**
+held: 1,440 differential comparisons between `listFiles` and `authorize` over
+soft-delete axes the shipped corpus never touched, 54 delete/restore orderings,
+cross-tenant isolation, delegation attenuation, audit-chain lock ordering — zero
+discrepancies.
+
+Every defect above is in the surface *around* the engine: the convenience facade,
+the HTTP route helpers, and the control plane. 343 tests and twelve gates did not
+see them, because all of them tested what the library decides and none of them
+tested what the library does with a request that is merely malformed.
+
+---
+
 ## [0.5.3] — 2026-09-30
 
 **Two public surfaces contradicted two other public surfaces.** No code change.

@@ -511,6 +511,45 @@ function sendNodeError(res: ServerResponse, err: unknown): void {
  */
 const FORBIDDEN_QUERY_KEYS = ['password', 'pw', 'pass', 'passwd', 'token', 'secret', 'key'];
 
+/**
+ * CASE-INSENSITIVE, because `?Password=` lands in the access log exactly as
+ * `?password=` does. The first version compared against lowercase literals with
+ * `searchParams.has()`, so `?Password=hunter2` sailed through and was served
+ * with a 200 while `?password=hunter2` was refused with a 400. A guard that
+ * depends on the attacker's shift key is decoration.
+ */
+function forbiddenQueryKey(url: URL): string | null {
+  for (const [k] of url.searchParams) {
+    if (FORBIDDEN_QUERY_KEYS.includes(k.toLowerCase())) return k;
+  }
+  return null;
+}
+
+/**
+ * `decodeURIComponent` that answers `null` instead of throwing.
+ *
+ * THE DEFECT THIS EXISTS TO PREVENT. `shareDownloadRoute` decoded the secret
+ * segment OUTSIDE its `try`. A malformed percent-escape -- `GET /d/%%%`, four
+ * characters, no credential, no valid secret, no body -- threw `URIError`, the
+ * returned async handler rejected, `node:http` had nothing to catch it, and
+ * Node's default `unhandledRejection` policy terminated the process.
+ *
+ * It was reachable through `deliveryHandler()`, which is the one-liner the
+ * quickstart, the homepage and `examples/vault/server.ts` all recommend. Any
+ * anonymous client could stop the application with a single request.
+ *
+ * A segment that is not valid percent-encoding cannot be a secret we issued, so
+ * `null` means exactly what a wrong secret means, and the caller turns it into
+ * the same 404 — no oracle, no new branch for an attacker to time.
+ */
+function safeDecode(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+}
+
 async function readBody(req: IncomingMessage, limit = 64 * 1024): Promise<string> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -572,26 +611,35 @@ export function shareDownloadRoute(
   const prefix = (opts.prefix ?? '/d').replace(/\/+$/, '');
 
   return async (req, res) => {
-    const url = new URL(req.url ?? '/', 'http://filelayer.invalid');
+    // NOTHING BEFORE THE `try` MAY THROW. This handler is handed to
+    // `http.createServer`, which has nowhere to catch a rejected promise, so a
+    // throw out here is a process exit rather than a bad response. That is not
+    // hypothetical: see `safeDecode`. Parsing therefore happens inside.
+    let url: URL;
+    try {
+      url = new URL(req.url ?? '/', 'http://filelayer.invalid');
+    } catch {
+      return false;
+    }
     const segments = url.pathname.split('/').filter(Boolean);
     const prefixSegments = prefix.split('/').filter(Boolean);
     if (segments.length !== prefixSegments.length + 1) return false;
     if (prefixSegments.some((s, i) => segments[i] !== s)) return false;
     if (req.method !== 'GET' && req.method !== 'POST') return false;
 
-    const secret = decodeURIComponent(segments[prefixSegments.length]!);
-
     try {
+      const secret = safeDecode(segments[prefixSegments.length]!);
+      if (secret === null) throw new FilelayerError(404, 'not_found', 'bad_link_secret');
+
       // THE FIX FOR THE CREDENTIAL-IN-THE-URL DEFECT, and the reason this
       // route exists.
       // A password (or any other credential) in the query string ends up in
       // access logs, proxy logs and browser history. The old example accepted
       // one. We refuse -- loudly, before doing any work, and without consuming
       // a download -- so the mistake cannot be made silently.
-      for (const k of FORBIDDEN_QUERY_KEYS) {
-        if (url.searchParams.has(k)) {
-          throw new FilelayerError(400, 'credential_in_query', `query_param:${k}`);
-        }
+      const offending = forbiddenQueryKey(url);
+      if (offending !== null) {
+        throw new FilelayerError(400, 'credential_in_query', `query_param:${offending}`);
       }
 
       let password: string | undefined;
@@ -660,7 +708,13 @@ export function fileDownloadRoute(
   const prefix = (opts.prefix ?? '/files').replace(/\/+$/, '');
 
   return async (req, res) => {
-    const url = new URL(req.url ?? '/', 'http://filelayer.invalid');
+    // See `shareDownloadRoute`: nothing before the `try` may throw.
+    let url: URL;
+    try {
+      url = new URL(req.url ?? '/', 'http://filelayer.invalid');
+    } catch {
+      return false;
+    }
     const segments = url.pathname.split('/').filter(Boolean);
     const prefixSegments = prefix.split('/').filter(Boolean);
     if (req.method !== 'GET') return false;
@@ -670,7 +724,7 @@ export function fileDownloadRoute(
     try {
       const delivery = await fl.readStream(
         await opts.principal(req),
-        segments[prefixSegments.length]!,
+        safeDecode(segments[prefixSegments.length]!) ?? '',
         {
           ...(opts.disposition ? { disposition: opts.disposition } : {}),
           ...(opts.mode ? { mode: opts.mode } : {}),

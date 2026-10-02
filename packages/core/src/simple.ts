@@ -215,16 +215,31 @@ class Identities {
    * customer's application and "acme" in another are different rows that can
    * never resolve to each other.
    */
-  async org(externalId: string, opts: { name?: string; ownerActorId?: string } = {}): Promise<string> {
-    const { rows } = await this.fl.store.db.query<{ id: string }>(
+  async org(
+    externalId: string,
+    opts: { name?: string; ownerActorId?: string } = {},
+  ): Promise<{ id: string; created: boolean }> {
+    // `xmax = 0` is true only on the INSERT arm of an upsert, which is the one
+    // bit this function was missing. Without it there is no way to tell "I made
+    // this tenant" from "this tenant already belonged to someone", and the
+    // caller below bootstrapped an OWNER either way.
+    const { rows } = await this.fl.store.db.query<{ id: string; created: boolean }>(
       `INSERT INTO org (project_id, external_id, name) VALUES ($3, $1, $2)
          ON CONFLICT (project_id, external_id) DO UPDATE SET external_id = EXCLUDED.external_id
-       RETURNING id`,
+       RETURNING id, (xmax = 0) AS created`,
       [externalId, opts.name ?? externalId, this.project],
     );
-    const id = rows[0]!.id;
-    if (opts.ownerActorId) await this.membership(id, opts.ownerActorId, 'owner', true);
-    return id;
+    const { id, created } = rows[0]!;
+    // ONLY ON CREATION. Bootstrapping an owner into an org that already existed
+    // is how `orgs.create('acme', { owner: 'mallory' })` handed an outsider the
+    // keys to someone else's tenant -- private files, the audit log, and the
+    // power to evict the real owner -- with no principal and no authorization.
+    // Found 2026-10-02 by adversarial review. P2 of this file already said it:
+    // auto-provisioning creates IDENTITIES, never PERMISSIONS.
+    if (opts.ownerActorId && created) {
+      await this.membership(id, opts.ownerActorId, 'owner', true);
+    }
+    return { id, created };
   }
 
   /**
@@ -320,15 +335,37 @@ export class FilesApi {
     // org with a real id, not a hole in the model.
     const isDefaultWorkspace = opts.org === undefined;
     const system = await this.ids.actor(SYSTEM_ACTOR);
-    const orgId = isDefaultWorkspace
+    const resolved = isDefaultWorkspace
       ? await this.ids.org(DEFAULT_WORKSPACE, { name: 'workspace', ownerActorId: system })
       : await this.ids.org(opts.org!);
+    const orgId = resolved.id;
 
     // Resolve the owner. `owner:` auto-registers, because the developer is
     // asserting the identity exists in their system; we are not inventing it.
     let ownerId: string;
     if (opts.owner !== undefined) {
       ownerId = await this.ids.actor(opts.owner);
+      // JOINING IS NOT THE SAME AS BEING REGISTERED.
+      //
+      // In the DEFAULT workspace, auto-join is the design: a tier-1/tier-2
+      // application has one implicit tenant and every user belongs to it.
+      //
+      // In a NAMED org it was a hole. `put({ org: 'acme', owner: 'mallory' })`
+      // -- one byte into somebody else's tenant -- added mallory as a `member`
+      // of acme with no authorization, which is read access to every
+      // `visibility: 'org'` file in it and a listing of the tenant's documents.
+      // `addMember`, the verbose equivalent, denies that exact call. Found
+      // 2026-10-02 by adversarial review.
+      //
+      // Creating the tenant with this call still joins you to it, because then
+      // there is nobody whose tenant it was.
+      const mayJoin =
+        isDefaultWorkspace ||
+        resolved.created ||
+        (await this.fl.store.getMembership(orgId, ownerId)) !== null;
+      if (!mayJoin) {
+        throw new FilelayerError(403, 'forbidden', 'no_membership');
+      }
       await this.ids.membership(orgId, ownerId, 'member');
     } else {
       ownerId = system;
@@ -474,17 +511,43 @@ export class OrgsApi {
   }
 
   /**
-   * Create a tenant with its first owner. Idempotent.
+   * Create a tenant with its first owner.
    *
    * The owner is created WITH the org for the same reason `createOrg` does it:
    * there is never a memberless org for someone to walk into.
+   *
+   * IDEMPOTENT FOR A RETRY, AND ONLY FOR A RETRY. Calling this again with the
+   * same owner returns the same tenant, so a client that retries a timed-out
+   * request is safe. Calling it with a DIFFERENT owner is refused.
+   *
+   * Until 0.6.0 it was idempotent in the dangerous direction: the second call
+   * returned the existing tenant and bootstrapped the named identity as an
+   * OWNER of it. Since the method is documented as idempotent, the natural way
+   * to use it is on every signup -- so any caller who controlled the tenant slug
+   * became owner of an existing tenant, read its private files, read its audit
+   * log, and could evict the real owner. `Filelayer.createOrg` refused the same
+   * call with a unique violation; the facade was more permissive than the engine
+   * it wraps, which is the one thing a facade must never be.
+   *
+   * It worked on the implicit single-tenant workspace too, so a tier-2
+   * application that had never heard the word "org" was equally exposed.
    */
   async create(externalId: string, opts: { name?: string; owner: string }): Promise<{ id: string }> {
     const ownerActorId = await this.ids.actor(opts.owner);
-    const id = await this.ids.org(externalId, {
+    const { id, created } = await this.ids.org(externalId, {
       ...(opts.name ? { name: opts.name } : {}),
       ownerActorId,
     });
+
+    if (!created) {
+      // The retry case: the caller is already the owner, so this is the same
+      // request arriving twice and the answer is the same id. Anything else is
+      // somebody asking for standing in a tenant that is not theirs.
+      const role = await this.fl.store.getMembership(id, ownerActorId);
+      if (role !== 'owner') {
+        throw new FilelayerError(409, 'org_exists', 'not_owner');
+      }
+    }
     return { id };
   }
 

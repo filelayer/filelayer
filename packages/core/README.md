@@ -121,11 +121,11 @@ an inaccurate README wastes your time and ours.
   isolation, revocation, delegation attenuation, download caps, audit
   tamper-evidence and the full role matrix, plus a differential test that
   asserts the set query and the point check agree exactly.
-- The S3/R2 storage adapter is exercised against a **signature-verifying local
-  S3 implementation** (`packages/core/test/storage.test.ts`). It has **never
-  been run against live AWS or Cloudflare credentials.** A live-credential suite
-  exists (`packages/core/test/s3-live.test.ts`) and runs automatically when
-  `FILELAYER_TEST_S3_*` is present in the environment; nobody has supplied it.
+- The storage adapter runs against **live Cloudflare R2 on every commit**
+  (`packages/core/test/s3-live.test.ts`, 12 tests) and against a
+  **signature-verifying local S3 implementation**
+  (`packages/core/test/storage.test.ts`). It has **never run against AWS S3** —
+  R2 is S3-compatible, not S3.
 - There is no hosted service and no CLI. You run it against your own Postgres.
 - Versioning is pre-1.0: see [Versioning](#versioning) below and
   [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md).
@@ -348,7 +348,7 @@ README says is the most valuable thing you can send us.
 ## Limitations
 
 Restated here so they are not only in an appendix. Each one is current as of
-`0.5.3`; where a limitation has been lifted since an earlier release, the
+`0.6.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **No `Range` responses from the shipped HTTP routes.** `fileDownloadRoute()`

@@ -809,6 +809,33 @@ export class PostgresStore implements AuthzDeps {
     if (event.ip !== undefined && event.ip !== null && ip === null) {
       context['rawIp'] = String(event.ip).slice(0, 64);
     }
+
+    // THE SAME TREATMENT FOR THE IDENTIFIERS, and for the same reason.
+    //
+    // `file_id`, `actor_id` and `grant_id` are `uuid` columns. A caller who puts
+    // `/f/not-a-uuid` in the address bar reaches `deny(..., 'file_not_found')`,
+    // whose audit write then handed that string to a uuid cast and raised
+    // `22P02`. The error is not a `FilelayerError`, so `toPublicError` could not
+    // map it: the shipped routes answered **500** for a malformed id and **404**
+    // for a well-formed one that does not exist.
+    //
+    // That is an existence oracle on the one input an internet user types, and
+    // it is the same oracle class `audit_event`'s own FK comment says was
+    // deliberately removed. Worse, the probe left NO audit event at all, because
+    // the write that would have recorded it is the write that failed -- so a
+    // file-id sweep in the malformed shape was both faster to run and invisible,
+    // which is the exact inversion of what P5 is for.
+    //
+    // Keeping the raw value in `context` rather than discarding it means the
+    // sweep is still legible to whoever reads the system chain, and `context` is
+    // inside the hash digest, so it is as tamper-evident as the rest of the row.
+    const uuidOrNull = (v: string | null | undefined, key: string): string | null => {
+      if (v === undefined || v === null) return null;
+      if (isUuid(v)) return v;
+      context[key] = String(v).slice(0, 64);
+      return null;
+    };
+
     const fields = {
       // The predecessor is supplied by the database, under the chain lock.
       prevHash: null,
@@ -817,9 +844,9 @@ export class PostgresStore implements AuthzDeps {
       action: event.action,
       decision: event.decision,
       reason: event.reason ?? null,
-      actorId: event.actorId,
-      fileId: event.fileId,
-      grantId: event.grantId ?? null,
+      actorId: uuidOrNull(event.actorId, 'rawActorId'),
+      fileId: uuidOrNull(event.fileId, 'rawFileId'),
+      grantId: uuidOrNull(event.grantId, 'rawGrantId'),
       ip,
       userAgent: event.userAgent ?? null,
       context,
@@ -833,8 +860,13 @@ export class PostgresStore implements AuthzDeps {
         event.action,
         event.decision,
         fields.reason,
-        event.actorId,
-        event.fileId,
+        // `fields.*`, NEVER `event.*`. The digest below is computed over
+        // `fields`, so anything that reads from `event` here can store a row
+        // whose hash covers a different value than the row holds -- a chain that
+        // verifies against data that was never written. It also re-opened the
+        // malformed-uuid crash after that was fixed one object higher up.
+        fields.actorId,
+        fields.fileId,
         fields.grantId,
         fields.ip,
         fields.userAgent,

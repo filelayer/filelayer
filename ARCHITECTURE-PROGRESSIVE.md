@@ -2,12 +2,12 @@
 
 **Does the Filelayer primitive scale DOWN as well as up?**
 
-Current as of `@filelayer/core` **0.5.3**. Everything below is measured against
+Current as of `@filelayer/core` **0.6.0**. Everything below is measured against
 code in this repository, from the repository root. Reproduce with:
 
 ```bash
 npm run bootstrap                  # npm ci in packages/core
-npm test                     # 343 tests, 0 failures
+npm test                     # 352 tests, 0 failures
 npm run dev:fracture               # the four §2 experiments
 npm run loc:tiers                  # LOC per tier (§4.2)
 node benchmark/count-loc.mjs       # LOC for the full-vault implementations
@@ -15,14 +15,14 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **343 / 343 passing** across 79 suites:
+**Test status.** `npm test` is **352 / 352 passing** across 83 suites:
 
 | Suite | Tests |
 |---|---|
 | `test/tiers.test.ts` — the tiered API, and §3 below | 27 |
 | `test/group-subjects.test.ts` — `org` and `role` grant subjects | 49 |
 | everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 254 |
-| **total** | **343** |
+| **total** | **352** |
 
 Reproduce a single suite with
 `node --test --experimental-strip-types packages/core/test/tiers.test.ts`.
@@ -406,7 +406,7 @@ the developer to decide who may read a file, at any tier.
 
 Written by the people who built it. This section is meant to be quoted against
 Filelayer, and it is kept current on purpose: every item below was re-checked
-against `0.5.3`.
+against `0.6.0`.
 
 1. **Public, high-volume, cacheable media — avatars, marketing images, product
    photos, anything a CDN should serve.** The default byte path proxies every
