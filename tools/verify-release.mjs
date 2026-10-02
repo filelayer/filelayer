@@ -288,14 +288,19 @@ async function mustDeny(label, fn) {
 // authorization decision, not a "who?" lookup miss.
 //
 // THE MEMBERSHIP IS NOW EXPLICIT, AND THAT IS THE POINT. Until 0.6.0 this block
-// had the same comment and no `setRole` call: the `files.put` below silently
-// made bob a member of a tenant he had no standing in, because `put` auto-joined
-// any named org. So the gate asserted "a registered member is denied" while
-// quietly demonstrating the privilege-escalation path that made him one.
+// had the same comment and no setRole call: the files.put below silently made
+// bob a member of a tenant he had no standing in, because put auto-joined any
+// named org. So the gate asserted "a registered member is denied" while quietly
+// demonstrating the privilege-escalation path that made him one.
 //
 // A gate whose precondition is manufactured by the line it is a precondition for
 // is not testing what it says. Granting the membership through the authorized
 // path is what the comment always claimed was happening.
+//
+// NO BACKTICKS IN HERE. This text lives inside a String.raw template that is
+// emitted into the throwaway consumer project; a backtick closes the template
+// and everything after it is parsed as source. That is how the first attempt at
+// this comment broke the gate it was explaining.
 await fl.orgs.setRole('acme', 'bob', 'member', { as: 'alice' });
 await fl.files.put(new TextEncoder().encode('bobs own file'), { org: 'acme', owner: 'bob', name: 'bob.txt' });
 await mustDeny('registered non-owner reading a private file', () => fl.files.get(created.id, { as: 'bob' }));
