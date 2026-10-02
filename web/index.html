@@ -113,7 +113,7 @@
     <p class="lead">
       Every application that stores files ends up rebuilding the same thing:
       <strong>who owns this file, who can reach it, how it gets shared, and when that ends.</strong>
-      Filelayer is that model, built once, on the S3 or R2 bucket you already own —
+      Filelayer is that model, built once, on the S3 or R2 bucket you already own,
       from a public avatar to a contract with a link you can take back.
     </p>
 
@@ -127,7 +127,7 @@
     <p><code class="install">npm install @filelayer/core</code></p>
 
     <p class="alpha-line" role="note">
-      <b>Alpha — developer preview.</b> v0.7.0. The schema can still change in any 0.x release.
+      <b>Alpha. Developer preview.</b> v0.7.0. The schema can still change in any 0.x release.
       <a href="#trust">Every number behind that word →</a>
     </p>
   </section>
@@ -162,7 +162,7 @@
 <span class="c-key">await</span> fl.shares.revoke(share.grantId, { as: <span class="c-str">'user_123'</span> });   <span class="c-com">// takes effect now</span>
 </code></pre>
       <figcaption>Verbatim from the README, where every sample is compiled and executed in CI.
-        Promoting a file from tier 1 to tier 4 is adding an option to a call — not a migration.</figcaption>
+        Promoting a file from tier 1 to tier 4 is adding an option to a call, not a migration.</figcaption>
     </figure>
 
     <div class="chain" role="img" aria-label="User, then File, then Access, then Share, then Lifecycle.">
@@ -181,7 +181,7 @@
 
     <p class="lead">
       Storage is solved. What is not solved is everything that attaches to a file once real people
-      start using your product — and it attaches one question at a time, usually in this order.
+      start using your product. It arrives one question at a time, usually in this order.
     </p>
 
     <div class="grid g3">
@@ -192,7 +192,7 @@
       <div class="card"><h3>Expiration</h3><p>Not forever. For an hour, or three downloads, whichever runs out first.</p></div>
       <div class="card"><h3>Revocation</h3><p>The link went to the wrong address. It has to stop working now, not at the TTL.</p></div>
       <div class="card"><h3>Lifecycle</h3><p>Retention, legal hold, and deletion that does not quietly cascade through your grants.</p></div>
-      <div class="card"><h3>Audit</h3><p>Someone asks who opened it — and, in an incident, who was refused.</p></div>
+      <div class="card"><h3>Audit</h3><p>Someone asks who opened it, and in an incident, who was refused.</p></div>
     </div>
 
     <p class="t4">
@@ -214,7 +214,7 @@
         <p class="lead">You tell Filelayer who the caller is. It decides what they may do, serves
           the bytes with the right headers, and writes the audit event.</p>
         <p>Your bucket keeps the bytes. Your Postgres keeps the metadata, the grants and the audit
-          chain. Filelayer owns neither — it owns the model between them. Nothing moves, and
+          chain. Filelayer owns neither. It owns the model between them. Nothing moves, and
           nothing about your storage bill changes.</p>
         <p class="note">Node ≥ 22.18 and a Postgres you already run.
           <strong>The package installs zero runtime dependencies.</strong></p>
@@ -241,7 +241,7 @@
       <strong>For file access that goes through Filelayer, the decision is made in one place.</strong>
       That is the whole value of the middle layer: you write no ownership checks in route handlers,
       no presigned-URL expiry logic, and no per-route access rules of your own.
-      It is authorization middleware, not row-level security — a client that queries your Postgres
+      It is authorization middleware, not row-level security. A client that queries your Postgres
       directly bypasses it. <a href="#trust">Where that boundary is, exactly →</a>
     </p>
   </section>
@@ -316,7 +316,7 @@
         <div>
           <h3>4 · Files shared outside the org</h3>
           <p>An expiry, a password and a download cap on one call. Then the link goes somewhere it
-            should not have, and you take it back — on the next request, not at the TTL.</p>
+            should not have, and you take it back. It stops working on the next request.</p>
         </div>
         <figure>
 <pre><code><span class="c-key">const</span> share = <span class="c-key">await</span> fl.shares.create(id, {
@@ -338,10 +338,10 @@
       <div class="split">
         <div>
           <h3>5 · Lifecycle, and the record of it</h3>
-          <p>Retention, legal hold, deletion — and a trail answered in <em>your</em> identifiers
+          <p>Retention, legal hold, deletion, and a trail answered in <em>your</em> identifiers
             rather than internal UUIDs, without you writing a query.</p>
           <p class="note">Hash-chained per tenant and append-only by database rule.
-            The refusals are in it too, which is what makes it useful in an incident.</p>
+            The refusals are in it too. That is the half you need during an incident.</p>
         </div>
         <figure>
 <pre><code><span class="c-key">for</span> (<span class="c-key">const</span> row <span class="c-key">of</span> <span class="c-key">await</span> fl.orgs.audit(<span class="c-str">'acme'</span>, { as: <span class="c-str">'ceo'</span> }))
@@ -383,15 +383,15 @@ anonymous file.read     <span class="c-deny">deny:grant_revoked</span>       boa
       <div>
         <p class="lead">No account. No API key. Nothing to sign up for.</p>
         <p><code>quickstart()</code> runs Postgres in-process and keeps bytes in memory, so you can
-          exercise the whole model before configuring anything. It is ephemeral — everything is
-          lost when the process exits.</p>
+          exercise the whole model before configuring anything. It is ephemeral: everything is
+      lost when the process exits.</p>
         <p class="note">
           <strong>Keep the PGlite version constraint.</strong> The supported line is
           <code>0.3.x</code>; npm's <code>latest</code> is <code>0.5.x</code>, and installing that
           makes npm refuse the tree with <code>ERESOLVE</code>. This is the most likely first-run
-          failure, so it is on the page rather than in a footnote.
+          failure, so it is on the page and not in a footnote.
         </p>
-        <p>Production is three configuration steps and is not hidden — your Postgres, your bucket,
+        <p>Production is three configuration steps and is not hidden: your Postgres, your bucket,
           and confirming the bucket is private.
           <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md#7-going-to-production">Quickstart §7 →</a>
         </p>
@@ -405,7 +405,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
 <span class="c-key">const</span> bytes = <span class="c-key">new</span> TextEncoder().encode(<span class="c-str">'hello'</span>);
 
 <span class="c-key">const</span> { id, url } = <span class="c-key">await</span> fl.files.put(bytes, { public: <span class="c-key">true</span> });</code></pre>
-        <figcaption><code>url</code> is served by a route you mount — three more lines with
+        <figcaption><code>url</code> is served by a route you mount. Three more lines with
           <code>fileDownloadRoute()</code>, and the quickstart has them.</figcaption>
       </figure>
     </div>
@@ -425,8 +425,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
     <div class="grid g2">
       <div class="card">
         <h3><a href="https://github.com/filelayer/filelayer/blob/main/llms.txt">llms.txt</a></h3>
-        <p>The integration map, ordered by what an implementer has to get right rather than by what
-          is interesting — including a "things that will bite you" section, because the expensive
+        <p>The integration map, ordered by what an implementer has to get right first. It includes a "things that will bite you" section, because the expensive
           failures are all in that list.</p>
       </div>
       <div class="card">
@@ -444,13 +443,13 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
       <div class="card">
         <h3>The tests ship in the tarball</h3>
         <p>364 tests across 90 suites travel with the package, so every behavioural claim on this
-          page is checkable from what you installed rather than from what we say.</p>
+          page is checkable from what you installed.</p>
       </div>
     </div>
 
     <p class="t4"><strong>Using a coding agent?</strong> Point it at the map:</p>
     <p><code class="install">Add Filelayer to my app: https://github.com/filelayer/filelayer/blob/main/llms.txt</code></p>
-    <p class="note">No MCP server yet — there is no hosted API to put behind one.</p>
+    <p class="note">No MCP server yet. There is no hosted API to put behind one.</p>
   </section>
 </div>
 
@@ -461,8 +460,8 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
 
     <p class="lead">
       Most pages like this one are built out of the numbers that flatter them.
-      <strong>This is the whole set, including the ones sitting at zero</strong> — so you can
-      make the call from evidence rather than from what a page chose not to mention.
+      <strong>This is the whole set, including the ones sitting at zero</strong>, so you can
+      make the call on evidence.
     </p>
 
     <ul class="numbers">
@@ -483,8 +482,8 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
         <h3>What Filelayer guarantees</h3>
         <ul class="does can">
           <li>One decision point for every file access that goes through the library.</li>
-          <li>Cross-tenant grants cannot be written — a composite foreign key, binding every writer including <code>psql</code>.</li>
-          <li>Delegation cannot amplify authority — a database trigger, binding raw SQL too.</li>
+          <li>Cross-tenant grants cannot be written: a composite foreign key, binding every writer including <code>psql</code>.</li>
+          <li>Delegation cannot amplify authority: a database trigger, binding raw SQL too.</li>
           <li>A signed URL is re-validated on every request, so revocation beats a live link.</li>
           <li>Every decision is recorded, including denials, hash-chained and append-only.</li>
         </ul>
@@ -498,8 +497,8 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
             production we cannot do for you.</li>
         </ul>
         <p class="note t2">
-          Where else Filelayer is the wrong tool — no CDN on the default path, no
-          <code>Range</code>, no transformations, no direct browser upload —
+          Where else Filelayer is the wrong tool (no CDN on the default path, no
+          <code>Range</code>, no transformations, no direct browser upload):
           <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md#what-is-known-broken-or-unfinished">the trust page has the full list →</a>
         </p>
       </div>
@@ -517,7 +516,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
 <div class="wrap">
   <section>
     <h2>Give your files a model</h2>
-    <p class="lead">Not a demo account — a file you actually own, in a process you actually run.</p>
+    <p class="lead">Not a demo account. A file you actually own, in a process you actually run.</p>
 
     <div class="cta-row">
       <a class="btn btn-primary" href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Get started</a>

@@ -27,7 +27,7 @@
 > as a stranger would.
 >
 > **What runs against a real object store.** Since 30 September 2026 the storage
-> adapter runs against **live Cloudflare R2 on every commit** — 12 tests,
+> adapter runs against **live Cloudflare R2 on every commit**: 12 tests,
 > including a presigned URL the store actually honours, one that expires for
 > real, and an 11 MB multipart upload reassembled byte-exactly on the nightly
 > run. It has **never run against AWS S3**: R2 is S3-compatible, not S3, so AWS's
@@ -35,7 +35,7 @@
 > a local harness that verifies SigV4 signatures. On AWS you are the first.
 >
 > **What may break.** Nobody has deployed this. There is no production usage, no
-> hosted service, no CLI, and no operational track record — so the failure modes
+> hosted service, no CLI, and no operational track record, so the failure modes
 > that only appear under real traffic, real object stores and real connection
 > pools are unmeasured. Expect to be the person who finds them.
 >
@@ -57,15 +57,15 @@ one authorization model behind both.
 
 You tell Filelayer who the caller is. Filelayer decides what they may do with a
 file, serves the bytes with the right headers, and writes the audit event. For
-file access that goes through Filelayer, that decision is made in one place —
-`packages/core/src/authz.ts` — so you write no ownership checks in route
+file access that goes through Filelayer, that decision is made in one place,
+`packages/core/src/authz.ts`, so you write no ownership checks in route
 handlers, no presigned-URL expiry logic, and no per-route access rules of your
 own.
 
 **Filelayer is authorization middleware, not row-level security.** It runs in
 your application process, in front of Postgres and your bucket. Code that
 queries these tables directly does not go through it. The schema does enforce a
-set of invariants against *every* writer — cross-tenant grants, cross-project
+set of invariants against *every* writer: cross-tenant grants, cross-project
 identities, and delegation that amplifies authority or subject breadth are
 refused by constraints and triggers, so a migration or a `psql` session cannot
 write them. But there is no RLS policy in `schema.sql`, and a direct `SELECT` is
@@ -90,7 +90,7 @@ const file  = await fl.files.get(id, { as: 'user_123' });
 // Multi-tenant, role-controlled
 await fl.files.put(bytes, { org: 'acme', owner: 'user_123' });
 
-// Shared with an expiry, a password and a download cap — and revocable
+// Shared with an expiry, a password and a download cap, and revocable
 const share = await fl.shares.create(id, {
   as: 'user_123', expiresIn: 3600, maxDownloads: 3, password: 'hunter2',
 });
@@ -124,7 +124,7 @@ an inaccurate README wastes your time and ours.
 - The storage adapter runs against **live Cloudflare R2 on every commit**
   (`packages/core/test/s3-live.test.ts`, 12 tests) and against a
   **signature-verifying local S3 implementation**
-  (`packages/core/test/storage.test.ts`). It has **never run against AWS S3** —
+  (`packages/core/test/storage.test.ts`). It has **never run against AWS S3**.
   R2 is S3-compatible, not S3.
 - There is no hosted service and no CLI. You run it against your own Postgres.
 - Versioning is pre-1.0: see [Versioning](#versioning) below and
@@ -176,7 +176,7 @@ Two consequences worth knowing before you adopt:
 
 - **Revocation actually works.** `fl.files.unpublish(id)` makes a URL that has
   been printed, indexed and pasted into a support ticket stop working on the
-  next request — no deletion, no key rotation, no cache purge. Supabase's
+  next request. No deletion, no key rotation, no cache purge. Supabase's
   `getPublicUrl()` is offline string concatenation, so it has no request at
   which to make that decision; deleting the object is the only withdrawal.
 - **This costs you a byte path.** P4 is why the default is to serve bytes rather
@@ -203,7 +203,7 @@ Postgres and *your* bucket, so it ships neither. The throwaway instance below is
 the one exception: `quickstart()` runs on an embedded WebAssembly Postgres,
 declared as an *optional peer dependency* so that it never lands in a production
 `node_modules`. Add it if you want the throwaway instance, and skip it
-otherwise — `createTestDb()` will tell you, by name, if you need it:
+otherwise. `createTestDb()` will tell you, by name, if you need it:
 
 ```bash
 npm install --save-dev "@electric-sql/pglite@^0.3.11"
@@ -214,7 +214,7 @@ npm install --save-dev "@electric-sql/pglite@^0.3.11"
 against. **0.5.x is not supported**: we ran the full suite against 0.5.8 and it
 does not pass, so the range has not been widened. PGlite's `latest` on npm is a
 0.5.x release, so omitting the constraint can install a version outside the
-supported range — and npm then refuses the whole tree with `ERESOLVE`. The quotes
+supported range, and npm then refuses the whole tree with `ERESOLVE`. The quotes
 are for your shell, not for npm: `^` is a glob operator under `zsh` with
 `extendedglob` and an escape character in `cmd.exe`.
 
@@ -225,8 +225,8 @@ const fl2 = await Filelayer.quickstart();          // PGlite + in-memory bytes
 const { url: avatarUrl } = await fl2.files.put(bytes, { public: true });
 ```
 
-`quickstart()` is **ephemeral** — everything is lost when the process exits.
-Production is three configuration steps and is not hidden — the third is
+`quickstart()` is **ephemeral**: everything is lost when the process exits.
+Production is three configuration steps and is not hidden. The third is
 confirming your bucket is private:
 [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md)
 §7.
@@ -236,7 +236,7 @@ confirming your bucket is private:
 The tests are in the tarball but they cannot be executed from inside
 `node_modules`: Node refuses to strip types from files under `node_modules`, and
 the tests import the TypeScript source directly. To run them, clone the
-repository — tests run against PGlite, PostgreSQL 17 compiled to WebAssembly and
+repository. Tests run against PGlite, PostgreSQL 17 compiled to WebAssembly and
 running in-process, so there is no daemon and no Docker:
 
 ```bash
@@ -298,8 +298,8 @@ and no browser. The npm package therefore carries the same files on disk, under
 `node_modules/@filelayer/core/`: this README, `llms.txt`, `openapi.json`,
 `schema.sql`, `SEMANTICS.md`, `MIGRATIONS.md`, `CHANGELOG.md`, `LICENSE` and
 `NOTICE`, alongside `src/` and `test/`. Three of them also resolve as subpath
-imports — `@filelayer/core/llms.txt`, `@filelayer/core/openapi.json` and
-`@filelayer/core/schema.sql` — so a reader does not have to guess at the layout
+imports: `@filelayer/core/llms.txt`, `@filelayer/core/openapi.json` and
+`@filelayer/core/schema.sql`, so a reader does not have to guess at the layout
 of `node_modules`.
 
 ## License
@@ -319,7 +319,7 @@ Copyright 2026 Technology Pro Bono S.L.
 [`NOTICE`](https://github.com/filelayer/filelayer/blob/main/NOTICE) carries the
 attribution notice required by section 4(d); both are inside the published npm
 tarball, so the grant travels with the artifact rather than only with the
-repository. There are no per-file licence headers — the grant is carried by
+repository. There are no per-file licence headers. The grant is carried by
 `LICENSE`, `NOTICE` and the `license` field of every `package.json`.
 
 **Dependencies.** Filelayer has **no runtime dependencies**. Its one third-party
@@ -365,21 +365,21 @@ Restated here so they are not only in an appendix. Each one is current as of
    through it is fully resident in memory. The core `fl.upload()` accepts a
    `ReadableStream`; use that above a few tens of megabytes.
 3. **No direct browser → storage upload.** Upload bytes go through your server.
-4. **Org admins and owners can read `private` files.** Deliberate — retention
-   and legal hold are their responsibility — but if you need to exclude the
+4. **Org admins and owners can read `private` files.** Deliberate, since retention
+   and legal hold are their responsibility. But if you need to exclude the
    operator, you need envelope encryption and we do not have it.
 5. **Identifiers are unique per *project*, not per org.** `actor.external_id`
    and `org.external_id` are scoped to a project (one customer application). Two
    orgs inside one project cannot both have a user called `alice` meaning
    different people.
 6. **The storage adapter has never run against AWS S3.** It runs against live
-   Cloudflare R2 in CI on every commit, and R2 is S3-compatible — but compatible
+   Cloudflare R2 in CI on every commit, and R2 is S3-compatible, but compatible
    is not identical. AWS's checksum requirements, IAM evaluation and error codes
    are covered only by a local implementation that verifies SigV4 signatures,
    which is not the same thing.
 7. **Unauthenticated callers can still append denial events to the audit chain
-   of a tenant inside a project they can reach.** That is P5 working as designed
-   — denials are the events worth recording — but it is a load-bearing reason to
+   of a tenant inside a project they can reach.** That is P5 working as designed.
+   Denials are the events worth recording, but it is a load-bearing reason to
    rate-limit at ingest. `orgExists` is project-scoped, so the reach is bounded
    to a project the caller is already authenticated for.
 8. **Orphan collection is a job you have to run.** Bytes are written before the
@@ -393,7 +393,7 @@ Restated here so they are not only in an appendix. Each one is current as of
    Replay catches any edit to a recorded event, the removal of one from the
    middle, and the removal of the first. It cannot catch the removal of the last
    *n*: nothing in the table records where the chain was supposed to end, so what
-   remains verifies cleanly. An anchor kept in the same database would not help —
+   remains verifies cleanly. An anchor kept in the same database would not help:
    whoever can delete the rows can rewrite the anchor in the same transaction.
    `verifyAuditChain()` returns `lastId` and `lastHash` so you can pin the head
    somewhere outside your database and compare it on the next run; doing that is

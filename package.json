@@ -34,7 +34,7 @@
     "verify:release": "node tools/verify-release.mjs",
     "adversarial": "node benchmark/adversarial/run.mjs filelayer",
     "adversarial:all": "node benchmark/adversarial/run.mjs",
-    "verify": "npm run typecheck && npm test && npm run build && npm run check:boundary && npm run check:language && npm run check:links && npm run check:install && npm run check:copies && npm run check:versions && npm run check:web && npm run check:web-samples && npm run check:openapi && npm run check:docs && npm run adversarial",
+    "verify": "npm run typecheck && npm test && npm run build && npm run check:boundary && npm run check:language && npm run check:links && npm run check:install && npm run check:copies && npm run check:versions && npm run check:web && npm run check:web-samples && npm run check:register && npm run check:openapi && npm run check:docs && npm run adversarial",
     "example:tier1": "node --experimental-strip-types examples/tier1-avatar/app.ts",
     "example:tier2": "node --experimental-strip-types examples/tier2-user-files/app.ts",
     "example:tier3": "node --experimental-strip-types examples/tier3-org-roles/app.ts",
@@ -44,6 +44,7 @@
     "dev:bench": "node --experimental-strip-types packages/core/dev/bench-authz.ts",
     "dev:fracture": "node --experimental-strip-types packages/core/dev/fracture-probe.ts",
     "loc:tiers": "node benchmark/count-tiers.mjs",
-    "check:boundary": "node tools/check-publication-boundary.mjs"
+    "check:boundary": "node tools/check-publication-boundary.mjs",
+    "check:register": "node tools/check-register.mjs"
   }
 }
