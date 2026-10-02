@@ -13,11 +13,11 @@ that records denials. It was first published on **6 September 2026**.
 
 | | |
 |---|---|
-| Version | 0.6.0 — alpha |
+| Version | 0.7.0 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
-| Tests | 352, on Node 22 / 24 / 26, every commit |
+| Tests | 364, on Node 22 / 24 / 26, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
 | Licence | Apache-2.0 |
@@ -35,7 +35,8 @@ misunderstanding and discover the gap during an incident.
 The authorization engine is the part we stand behind. There is one function that
 answers every access question, and a property suite that covers cross-tenant
 isolation, revocation that beats a live URL, delegation attenuation, download
-caps under concurrency, audit tamper-evidence, and the full role matrix.
+caps under concurrency, audit tamper-evidence (within the limit named below),
+and the full role matrix.
 
 Two of those tests are worth naming because they are the ones that catch the
 mistakes people actually make:
@@ -91,6 +92,13 @@ matter:
 - Org admins and owners can read `private` files. Deliberate — retention and
   legal hold are useless if the people accountable for them cannot see what they
   are holding — but it is a policy decision, so it belongs on this page.
+- The audit chain detects any edit to a recorded event, and the removal of one
+  from the middle or the start. It does **not** detect truncation of the most
+  recent events — replay walks forward and nothing records where the chain was
+  supposed to end. An anchor inside the same database would not fix that, so
+  `verifyAuditChain()` hands you the head hash and pinning it somewhere else is
+  your job. Found by our own adversarial sweep, 2 October 2026, after three
+  weeks of this page saying "tamper-evidence" without that sentence.
 - Concurrency guarantees are argued from Postgres semantics and tested on a
   single-backend engine. The lock ordering is reasoned and followed, not proven
   under real contention.

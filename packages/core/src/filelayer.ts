@@ -325,6 +325,9 @@ export class Filelayer {
    * Anything else -- a driver error, an unanticipated constraint, a bug --
    * rolls the whole unit back.
    */
+  /**
+   * See `lockOrgForMembershipChange` at the foot of this file.
+   */
   #transaction<T>(fn: (tx: Tx, store: PostgresStore) => Promise<T>): Promise<T> {
     return withTransaction(this.db, async (tx) => {
       try {
@@ -399,28 +402,47 @@ export class Filelayer {
     name?: string,
     opts: { ownerActorId?: string } = {},
   ): Promise<{ id: string }> {
-    const { rows } = await this.db.query<{ id: string }>(
-      `INSERT INTO org (project_id, external_id, name)
-       VALUES (coalesce($3::uuid, '${DEFAULT_PROJECT_ID}'::uuid), $1, $2) RETURNING id`,
-      [externalId, name ?? null, this.projectId],
-    );
-    const id = rows[0]!.id;
-
-    if (opts.ownerActorId) {
-      await this.db.query(
-        `INSERT INTO membership (org_id, actor_id, role) VALUES ($1,$2,'owner')`,
-        [id, opts.ownerActorId],
+    // THE THREE STATEMENTS BELOW USED TO BE THREE TRANSACTIONS.
+    //
+    // The org INSERT committed on its own. If the membership INSERT then failed
+    // -- and a well-formed but unregistered `ownerActorId` is enough, because
+    // the membership foreign key rejects it -- the result was an org row that
+    // had committed with NO owner. That state is not merely untidy, it is
+    // TERMINAL: nobody holds `manage_members`, so no principal can create the
+    // first membership; `createOrg` again hits the unique constraint on
+    // (project_id, external_id); and the 0.6.0 `created` gate in `simple.ts`
+    // correctly refuses to bootstrap an owner into an org that already exists.
+    // The external id was burned and the tenant was permanently unadministrable
+    // short of raw SQL.
+    //
+    // The audit statement had the same problem from the other end: it could
+    // fail after the owner had been granted, leaving an owner nobody could see
+    // in the chain -- the one thing `#transaction` exists to prevent everywhere
+    // else in this file.
+    return this.#transaction(async (tx, store) => {
+      const { rows } = await tx.query<{ id: string }>(
+        `INSERT INTO org (project_id, external_id, name)
+         VALUES (coalesce($3::uuid, '${DEFAULT_PROJECT_ID}'::uuid), $1, $2) RETURNING id`,
+        [externalId, name ?? null, this.projectId],
       );
-      await this.store.audit({
-        orgId: id,
-        action: 'member.bootstrap',
-        decision: 'allow',
-        actorId: opts.ownerActorId,
-        fileId: null,
-        context: { targetActorId: opts.ownerActorId, toRole: 'owner', via: 'org.create' },
-      });
-    }
-    return { id };
+      const id = rows[0]!.id;
+
+      if (opts.ownerActorId) {
+        await tx.query(
+          `INSERT INTO membership (org_id, actor_id, role) VALUES ($1,$2,'owner')`,
+          [id, opts.ownerActorId],
+        );
+        await store.audit({
+          orgId: id,
+          action: 'member.bootstrap',
+          decision: 'allow',
+          actorId: opts.ownerActorId,
+          fileId: null,
+          context: { targetActorId: opts.ownerActorId, toRole: 'owner', via: 'org.create' },
+        });
+      }
+      return { id };
+    });
   }
 
   async createActor(externalId: string): Promise<{ id: string }> {
@@ -545,6 +567,28 @@ export class Filelayer {
         context: { via: 'control_plane', targetActorId: actorId },
       });
     }
+    // A FAN-OUT OVER AN EMPTY SET WROTE NOTHING AT ALL.
+    //
+    // The loop above is the whole audit for this operation, so an actor who
+    // belongs to no org -- registered, never added anywhere, or removed from
+    // their last org -- could be deleted and restored with zero events on any
+    // chain, tenant or system. The docstring 90 lines up says "every one of them
+    // is audited to the affected tenant's chain", and with no tenants affected
+    // that sentence quietly evaluated to nothing.
+    //
+    // The system chain is exactly the right home for it: it is where this file
+    // already sends events that have no tenant to charge (see `#setProjectDeleted`),
+    // and it is chained and verifiable like any other.
+    if (orgs.length === 0) {
+      await this.store.audit({
+        orgId: null,
+        action: deleted ? 'actor.delete' : 'actor.restore',
+        decision: 'allow',
+        actorId,
+        fileId: null,
+        context: { chain: 'system', via: 'control_plane', targetActorId: actorId, orgs: 0 },
+      });
+    }
   }
 
   /**
@@ -629,6 +673,7 @@ export class Filelayer {
     // LOCK ORDERING holds: `authorizeMembershipChange` takes the chain lock via
     // its audit write, before the INSERT takes any row lock. See `revoke()`.
     await this.#transaction(async (tx, store) => {
+      await lockOrgForMembershipChange(tx, orgId);
       const decision = await authorizeMembershipChange(store, principal, orgId, actorId, role);
       this.#raise(decision);
       await tx.query(
@@ -642,6 +687,7 @@ export class Filelayer {
   async removeMember(principal: Principal, orgId: string, actorId: string): Promise<void> {
     // See `addMember`: the decision and the change are one transaction.
     await this.#transaction(async (tx, store) => {
+      await lockOrgForMembershipChange(tx, orgId);
       const decision = await authorizeMembershipChange(store, principal, orgId, actorId, null);
       this.#raise(decision);
       await tx.query(`DELETE FROM membership WHERE org_id = $1 AND actor_id = $2`, [
@@ -697,6 +743,25 @@ export class Filelayer {
     const now = Date.now();
     const expiresAt = secondsFromNow(input.expiresIn, now, 'expiresIn');
     const retainUntil = secondsFromNow(input.retainFor, now, 'retainFor');
+
+    // VALIDATED HERE, WHICH IS BEFORE THE BYTES GO OUT.
+    //
+    // `secondsFromNow` validates each field on its own; nothing compared them.
+    // `retainFor` greater than `expiresIn` violates `file_retention_before_expiry`
+    // in schema.sql, and the constraint fired on the INSERT -- which happens
+    // AFTER `storage.put()`. So the caller got a raw SQLSTATE 23514 instead of a
+    // 400 (an HTTP layer that maps `FilelayerError` and rethrows the rest turns
+    // that into a 500), and every rejected attempt left an orphaned object
+    // behind. A member could loop on it and run up an unbounded storage bill
+    // with no row, no audit event and no rate limit to show for it.
+    //
+    // Moving the check above `storage.put()` fixes both halves at once: the
+    // status code and the orphan. The combination is nonsense on its face --
+    // "keep this past the moment it stops being readable" -- so refusing it is
+    // not a policy choice.
+    if (expiresAt && retainUntil && retainUntil > expiresAt) {
+      throw new FilelayerError(400, 'invalid_argument', 'retain_for_exceeds_expires_in');
+    }
     const visibility: FileVisibility = input.visibility ?? 'private';
 
     // ORDERING: BYTES FIRST, METADATA SECOND. See the long note in db.ts.
@@ -1155,6 +1220,12 @@ export class Filelayer {
       throw new FilelayerError(400, 'link_principal_cannot_list', 'link_principal_cannot_list');
     }
     const capability = opts.capability ?? 'read';
+    // `Math.max(1, ...)` silently clamped `limit: 0` UP to one row -- neither
+    // the zero the caller asked for nor the default they would have got by
+    // omitting it. Refuse instead of guessing which one they meant.
+    if (opts.limit !== undefined && (!Number.isSafeInteger(opts.limit) || opts.limit < 1)) {
+      throw new FilelayerError(400, 'invalid_argument', 'limit_must_be_a_positive_integer');
+    }
     const limit = Math.max(1, Math.min(opts.limit ?? LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT));
 
     const { files, hasMore } = await authorizeList(this.store, principal, orgId, {
@@ -1250,7 +1321,24 @@ export class Filelayer {
         'orphan collection needs a storage adapter that implements list()',
       );
     }
-    const grace = Math.max(60, opts.olderThanSeconds ?? 3600) * 1000;
+    // THE FLOOR IS NOT THE GUARD. `Math.max(60, x)` clamps every finite number,
+    // including 0 and -Infinity -- that part worked. But `Math.max(60, NaN)` is
+    // `NaN`, `cutoff` becomes `NaN`, and `e.lastModified.getTime() > NaN` is
+    // false for every object, so the skip below never fires and the grace period
+    // disappears entirely. The collector then deletes objects written
+    // milliseconds ago -- which is byte-for-byte the state of an upload in
+    // flight, since `upload()` writes no reservation row before `storage.put()`.
+    // The result is a committed, listable, authorizable file whose object does
+    // not exist: the precise data loss the byte-first ordering exists to prevent.
+    //
+    // `Number(process.env.GC_GRACE)` on a misspelled variable is `NaN`, and
+    // TypeScript does not survive the process boundary, so this is reachable by
+    // a correct caller with a typo in a deployment config.
+    const requestedGrace = opts.olderThanSeconds ?? 3600;
+    if (!Number.isFinite(requestedGrace)) {
+      throw new FilelayerError(400, 'invalid_argument', 'older_than_seconds_not_finite');
+    }
+    const grace = Math.max(60, requestedGrace) * 1000;
     const limit = Math.max(1, Math.min(opts.limit ?? 1000, 10_000));
     const cutoff = Date.now() - grace;
     const dryRun = opts.dryRun ?? true;
@@ -1271,8 +1359,30 @@ export class Filelayer {
         scanned++;
         // No timestamp means we cannot prove it is old. Fail closed: skip it.
         if (e.lastModified === null || e.lastModified.getTime() > cutoff) continue;
+        // A SOFT-DELETED ROW NO LONGER SHIELDS ITS OWN BYTES.
+        //
+        // The lookup used to match any row at all. That made the tombstone left
+        // by `delete()` permanently protective: when `delete()` committed the
+        // soft delete and then its `storage.delete()` threw -- a transient S3
+        // error is enough -- the bytes survived, the row survived, and because
+        // the row survived no GC run could ever reach them. There is no retry,
+        // no queue and no reconciler, and `delete()` is a 404 the second time.
+        // The customer had been told the bytes were gone and nothing would ever
+        // make that true.
+        //
+        // Collecting them is not a race against the delete path, it is the same
+        // operation finishing: a file row has no undelete, so `state =
+        // 'deleted'` is terminal and those bytes are garbage by definition.
+        //
+        // The retention clause is belt and braces. `lifecycleDenial` already
+        // refuses to delete a file under an active hold, so no soft-deleted row
+        // can have `retain_until` in the future -- but stating it here makes the
+        // invariant local instead of inferred from another file, and the next
+        // person to add a deletion path does not have to rediscover it.
         const { rows } = await this.db.query(
-          `SELECT 1 FROM file WHERE storage_provider = $1 AND storage_key = $2`,
+          `SELECT 1 FROM file
+            WHERE storage_provider = $1 AND storage_key = $2
+              AND (deleted_at IS NULL OR (retain_until IS NOT NULL AND retain_until > now()))`,
           [this.storage.provider, e.key],
         );
         if (rows.length > 0) continue;
@@ -1286,24 +1396,43 @@ export class Filelayer {
 
     let deleted = 0;
     if (!dryRun) {
-      for (const key of orphans) {
-        await this.storage.delete(key);
-        deleted++;
+      // THE AUDIT WRITE IS IN A `finally`, AND IT CARRIES THE KEYS.
+      //
+      // Two defects, one shape. The event used to be written after the loop, so
+      // a `storage.delete()` that threw on the third of three orphans destroyed
+      // the first two and recorded NOTHING -- bytes gone, log silent. And on the
+      // happy path it recorded only counts, so even a successful run could not
+      // answer "which objects did you destroy?". For a library whose claim is a
+      // trail you can hand to a compliance auditor, an unreconstructable destructive job
+      // is the wrong default.
+      //
+      // The keys are bounded by `limit` (<= 10,000) and are storage keys, not
+      // user content.
+      const destroyed: string[] = [];
+      try {
+        for (const key of orphans) {
+          await this.storage.delete(key);
+          destroyed.push(key);
+          deleted++;
+        }
+      } finally {
+        await this.store.audit({
+          orgId: null,
+          action: 'storage.gc',
+          decision: 'allow',
+          actorId: null,
+          fileId: null,
+          context: {
+            chain: 'system',
+            provider: this.storage.provider,
+            scanned,
+            deleted,
+            keys: destroyed,
+            complete: destroyed.length === orphans.length,
+            via: 'control_plane',
+          },
+        });
       }
-      await this.store.audit({
-        orgId: null,
-        action: 'storage.gc',
-        decision: 'allow',
-        actorId: null,
-        fileId: null,
-        context: {
-          chain: 'system',
-          provider: this.storage.provider,
-          scanned,
-          deleted,
-          via: 'control_plane',
-        },
-      });
     }
     return { scanned, orphans, deleted, truncated };
   }
@@ -1354,6 +1483,33 @@ export class Filelayer {
     if (!file) throw new FilelayerError(404, 'not_found');
 
     const expiresAt = secondsFromNow(input.expiresIn, Date.now(), 'expiresIn');
+
+    // `?? null` does not catch 0, and `max_downloads integer CHECK (> 0)` in
+    // schema.sql does -- on the INSERT, as a raw SQLSTATE 23514. Since 23514 is
+    // not one of the named `grant_*` triggers in `SCHEMA_REFUSAL`, the error was
+    // rethrown unmapped AND the deny-audit branch never fired, so a caller
+    // hammering this left no grant row and no trace of having tried.
+    //
+    // Three more values reached the driver raw for the same reason: -1 (23514),
+    // 1.5 (22P02, invalid integer syntax) and 2^31 (22003, out of range). All
+    // four are caller-supplied, all four are a 400.
+    //
+    // 0 deserves naming on its own. It reads as "nobody may download this",
+    // which is a coherent thing to want -- and it is spelled by not creating the
+    // grant. Letting it mean "unlimited", which is what `?? null` would have
+    // done had the constraint not caught it, is the `expiresIn: 0` mistake again:
+    // the most restrictive value anyone can ask for producing the least
+    // restrictive outcome.
+    if (input.maxDownloads !== undefined && input.maxDownloads !== null) {
+      const n = input.maxDownloads;
+      if (!Number.isSafeInteger(n) || n < 1 || n > 2147483647) {
+        throw new FilelayerError(
+          400,
+          'invalid_argument',
+          'max_downloads_must_be_a_positive_integer',
+        );
+      }
+    }
 
     let secret: string | undefined;
     let secretHash: string | null = null;
@@ -1868,6 +2024,41 @@ export interface FileListPage {
  * `undefined` still means "no bound", because that is the absence of a request
  * rather than a request for nothing.
  */
+/**
+ * Serialize every membership decision for one org, BEFORE the decision reads
+ * anything.
+ *
+ * `authorizeMembershipChange` is a check-then-act: it counts the owners and
+ * then writes. Both halves were already inside one transaction, so the defect
+ * was never atomicity -- it was LOCK ORDER. The only lock the unit took was the
+ * audit chain lock, acquired inside `audit_append`, which is reached from the
+ * *settle* step, i.e. after the count. Two backends demoting two different
+ * owners of a three-owner org therefore both read the pre-state, both passed
+ * the `last_owner` guard on a count that was already stale, and both committed.
+ * Under READ COMMITTED -- the default -- that leaves an org with no owner.
+ *
+ * Taking the same per-org key the chain already uses, as the first statement of
+ * the unit, makes the whole decide-and-write sequence mutually exclusive per
+ * org. It also PRESERVES the documented global ordering (SEMANTICS.md: the
+ * audit chain lock is taken before any row lock), which is the reason this is
+ * an advisory lock on the existing key rather than `SELECT ... FOR UPDATE` on
+ * `membership` -- a row lock here would invert that order and reintroduce the
+ * deadlock the ordering rule exists to prevent.
+ *
+ * `pg_advisory_xact_lock` is re-entrant for the same key in the same
+ * transaction, so the later `audit_append` on this chain is a no-op acquisition
+ * rather than a self-deadlock.
+ *
+ * NOT PROVEN UNDER CONTENTION. The test engine is PGlite, which has a single
+ * backend and cannot interleave two transactions, so this is argued from
+ * Postgres semantics and verified only in statement order. That limitation is
+ * already disclosed in TRUST.md and this does not change it.
+ */
+async function lockOrgForMembershipChange(tx: Tx, orgId: string): Promise<void> {
+  if (!isUuid(orgId)) return;
+  await tx.query(`SELECT pg_advisory_xact_lock(audit_chain_lock_key($1::uuid))`, [orgId]);
+}
+
 function secondsFromNow(seconds: number | undefined, now: number, field: string): Date | null {
   if (seconds === undefined) return null;
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {

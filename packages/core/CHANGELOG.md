@@ -25,6 +25,165 @@ Nothing yet.
 
 ---
 
+## [0.7.0] — 2026-10-02
+
+**A correctness release, from the sweep that followed `0.6.0` by about an hour.**
+
+`0.6.0` shipped as a security release, and the obvious next question was whether
+the sweep that produced it had looked hard enough. It had not. Three independent
+agents were given the tree with one rule — a finding is real only if you have an
+executed test that fails here and passes once it is fixed — and they came back
+with 66 probes and eleven defects. None of them is an authorization bypass; the
+engine held again. All of them are in the surface around it.
+
+The one that should not have shipped:
+
+### Fixed — an expired file could not be deleted by anyone
+
+`lifecycleDenial` returned `file_expired` for every capability, `delete`
+included, while the two gates on either side of it were already scoped —
+`pending` to `read`, `retention_hold` to `delete`. Expiry was the only unscoped
+line, which is how we know it was an oversight rather than a decision.
+
+`delete()` is the only method in the library that removes bytes and it authorizes
+`delete` first; the orphan collector skips any key that still has a row. So an
+expired file was terminal in both directions at once: the row could not go and
+the bytes could not be collected. A plain member could manufacture one with
+`expiresIn`, no org owner could clean it up, and the bytes billed forever. An
+erasure request against an expired file could not be satisfied through the API.
+
+Expiry gates *use*. Deleting is not use. Retention, which is the control that is
+supposed to block deletion, is unchanged and still binds owners.
+
+### Fixed — two ways to leave a tenant with no owner and no way back
+
+An org admin could delete the sole owner's membership the moment that owner was
+soft-deleted. `authorizeMembershipChange` read the target's role through
+`getMembership`, which excludes soft-deleted actors, so the role came back `null`
+and both guards that protect an owner — `superior_target` and `last_owner` —
+stood down at once. Restoring the actor afterwards returned an identity with no
+role. The event was recorded as `member.add` with `fromRole: null`: the log
+described a destruction as an addition.
+
+Separately, `createOrg` ran its three statements in three transactions. A
+well-formed but unregistered `ownerActorId` is enough for the membership insert
+to fail after the org row had already committed, and the result was permanent:
+nobody held `manage_members` so no first membership could be created, `createOrg`
+again hit the unique constraint, and `orgs.create` correctly refused to bootstrap
+into an org that already existed. The external id was burned.
+
+Membership decisions now read the row **on paper**, soft-deleted actors included,
+and enforce two invariants rather than one: at least one owner membership row
+must survive (recoverability), and at least one live owner must survive
+(administrability). `createOrg` is one transaction.
+
+### Fixed — bytes written for requests that were refused
+
+`retainFor` greater than `expiresIn` violates a CHECK that fires on the INSERT,
+which is *after* `storage.put()`. The caller got a raw SQLSTATE 23514 instead of
+a 400, and every rejected attempt left an orphaned object with no row and no
+audit event to find it by — a member could run up an unbounded storage bill in a
+loop. Validated now before the bytes go out, which fixes the status code and the
+orphan with one check.
+
+### Fixed — the collector could be talked out of its grace period
+
+`Math.max(60, x)` clamps every finite number, so `0` and `-Infinity` were
+harmless. `Math.max(60, NaN)` is `NaN`, `cutoff` becomes `NaN`, and
+`lastModified > NaN` is false for everything — the skip never fired and the
+60-second floor disappeared. `Number(process.env.GC_GRACE)` on a misspelled
+variable is `NaN`, so a correct caller with a typo in a deployment config could
+collect uploads still in flight and turn a committed file into one whose object
+does not exist.
+
+### Fixed — a destructive job that recorded nothing when it failed
+
+`collectStorageOrphans` wrote its audit event after the delete loop, so a
+`storage.delete()` that threw on the third of three destroyed the first two and
+recorded nothing at all. The event now goes out in a `finally` and names the keys
+actually destroyed, with `complete: false` when it did not finish. On the happy
+path it used to record only counts, so even a successful run was
+unreconstructable.
+
+### Fixed — a failed `storage.delete()` stranded bytes permanently
+
+`delete()` commits the soft delete and then removes the bytes. If that throws —
+one transient S3 error — the row survived, and because the orphan collector
+skipped any key with a matching row, the tombstone shielded its own bytes
+forever. There is no retry, no reconciler, and the second `delete()` is a 404.
+The collector now ignores soft-deleted rows whose retention has lapsed, which is
+the same operation finishing rather than a race with it: a file row has no
+undelete.
+
+### Fixed — argument validation that reached Postgres raw
+
+`maxDownloads` of `0`, `-1`, `1.5` and `2^31` surfaced as SQLSTATE `23514`,
+`23514`, `22P02` and `22003`. Because `23514` is not one of the named `grant_*`
+triggers in `SCHEMA_REFUSAL`, the deny-audit branch never fired either, so a
+caller hammering it left no row and no trace. `limit: 0` was handled three
+different ways on three surfaces: honoured by `fl.auditLog`, discarded by
+truthiness in `fl.orgs.audit`, and clamped *up* to one row by `listFiles`.
+Negative and non-integer limits reached the driver unvalidated. All are 400s now.
+
+Soft-deleting an actor who belongs to no org wrote no audit event anywhere — the
+fan-out loop was the whole audit, and over an empty set it did nothing. It now
+falls back to the system chain, as the project lifecycle paths already did.
+
+### Changed — the tamper-evidence claim is narrower, and true
+
+The audit chain detects any edit to a recorded event, the removal of one from the
+middle, and the removal of the first. It does **not** detect truncation of the
+most recent events: replay walks forward and nothing in the table records where
+the chain was supposed to end, so what remains verifies cleanly and reports
+`valid: true`. An emptied chain is indistinguishable from one that never existed.
+
+We are not fixing this with an anchor inside the same database, because that
+would not be a fix — whoever can delete the rows can rewrite the anchor in the
+same transaction. `verifyAuditChain()` now returns `lastId` and `lastHash` so the
+head can be pinned somewhere outside, which is the only place the comparison
+means anything. `schema.sql`, `README.md` and `TRUST.md` say so plainly, and
+`TRUST.md` says how long it said otherwise.
+
+`TRUNCATE audit_event` also bypassed the append-only rules entirely — Postgres
+rewrite rules are per-DML-statement-type and `TRUNCATE` is not DML. A
+statement-level `BEFORE TRUNCATE` trigger now refuses it. See MIGRATIONS.md Entry
+6; the migration is additive.
+
+Two schema comments described things that do not exist and have been corrected: a
+"retention trimming path" (there is none, and the log grows without bound) and
+`SEMANTICS.md` §5's claim that expiries are "extendable" (nothing in the library
+ever updates `expires_at` after the upload).
+
+### Changed — lock ordering on membership changes
+
+`authorizeMembershipChange` counts the owners and then writes. Both halves were
+already in one transaction, but the only lock in the unit was the audit chain
+lock, taken from the *settle* step — after the count. Two backends demoting two
+different owners could both read the pre-state and both commit. The per-org chain
+lock is now taken as the first statement of the unit, which preserves the
+documented global ordering (chain lock before any row lock) where a `FOR UPDATE`
+on `membership` would have inverted it. Not proven under contention: the test
+engine has one backend. Disclosed in TRUST.md, unchanged.
+
+### Documented
+
+`Queryable.query` now states its contract: every call in a unit of work must
+reach the same backend connection. Every shape we document is safe — a `pg.Pool`
+is used through `connect()`, a `Client` is one connection, PGlite has one backend
+— but the type accepts a hand-rolled forwarding wrapper, and with one of those
+`withTransaction` issues `BEGIN` on one connection and the write on another. The
+call looks transactional and has no atomicity at all.
+
+### Tests
+
+364 across 90 suites, up from 352 across 83. Ten new regression tests, each
+observed to fail against `0.6.0` and pass here. Two existing tests changed, and
+both deserve naming: one used `retainFor > expiresIn` as its failure injection,
+which was relying on the defect above to stage itself; the other asserted that
+the collector never touches a soft-deleted row, on a rationale — "a retention
+hold blocks the delete, so the row survives" — that cannot happen, because a hold
+blocks the delete and the file therefore never reaches `state = deleted`.
+
 ## [0.6.0] — 2026-10-02
 
 **A security release. Upgrade from any earlier version.**

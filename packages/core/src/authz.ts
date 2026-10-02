@@ -273,7 +273,15 @@ export interface AuthzDeps {
   getFile(fileId: string): Promise<FileRef | null>;
   orgExists(orgId: string): Promise<boolean>;
   getMembership(orgId: string, actorId: string): Promise<OrgRole | null>;
+  /**
+   * The membership row INCLUDING a soft-deleted actor. Used by exactly one
+   * decision -- `authorizeMembershipChange` -- and never to authorize access.
+   * See the long note on the store method of the same name.
+   */
+  getMembershipOnPaper(orgId: string, actorId: string): Promise<OrgRole | null>;
   countOwners(orgId: string): Promise<number>;
+  /** Owner membership ROWS, soft-deleted actors included. */
+  countOwnerMemberships(orgId: string): Promise<number>;
   /** Live grants only: the store must apply the `live_grant` predicate. */
   getActorGrants(fileId: string, actorId: string): Promise<GrantRow[]>;
   /**
@@ -528,10 +536,30 @@ function noStandingReason(principal: Principal, role: OrgRole | null): DenyReaso
  * Retention holds block deletion even for org owners. This is the point of
  * retention: it must bind the people who would otherwise be able to override
  * it, or it is not a compliance control.
+ *
+ * EXPIRY DOES NOT BLOCK DELETION, and the scoping is the whole point.
+ *
+ * It used to. `file_expired` was returned for every capability including
+ * `delete`, while the two gates around it were already scoped -- `pending` to
+ * `read`, `retention_hold` to `delete`. Expiry was the one unscoped line, and
+ * the consequence was that an expired file became TERMINAL: `delete()` is the
+ * only method in this library that removes bytes, it authorizes `delete`
+ * first, and the orphan collector skips any key that still has a row. So the
+ * row could not be removed, the bytes could not be collected, and they billed
+ * forever. A plain member could manufacture one with `expiresIn`, and no org
+ * owner could clean it up.
+ *
+ * It was also a compliance defect in the exact direction this library claims
+ * to help with: an erasure request against an expired file could not be
+ * satisfied through the API at all.
+ *
+ * Expiry is a gate on USE. Deletion is not use. Retention, which is the
+ * control that is *supposed* to block deletion, is unaffected -- it is checked
+ * two lines below and still binds owners.
  */
 function lifecycleDenial(file: FileRef, capability: Capability, now: Date): DenyReason | null {
   if (file.state === 'deleted') return 'file_deleted';
-  if (file.expiresAt && file.expiresAt <= now) return 'file_expired';
+  if (capability !== 'delete' && file.expiresAt && file.expiresAt <= now) return 'file_expired';
   if (file.state === 'pending' && capability === 'read') return 'file_not_ready';
   if (capability === 'delete' && file.retainUntil && file.retainUntil > now) {
     return 'retention_hold';
@@ -1181,7 +1209,9 @@ export async function authorizeMembershipChange(
   newRole: OrgRole | null,
 ): Promise<Decision> {
   const orgReal = await deps.orgExists(orgId);
-  const currentRole = orgReal ? await deps.getMembership(orgId, targetActorId) : null;
+  // ON PAPER, deliberately: a membership decision is about the membership row,
+  // not about whether the target can act today. See `getMembershipOnPaper`.
+  const currentRole = orgReal ? await deps.getMembershipOnPaper(orgId, targetActorId) : null;
   const action =
     newRole === null ? 'member.remove' : currentRole === null ? 'member.add' : 'member.role_change';
 
@@ -1215,8 +1245,25 @@ export async function authorizeMembershipChange(
   if (newRole !== null && ROLE_RANK[newRole] > ROLE_RANK[actorRole]) {
     return settle('role_escalation');
   }
-  if (currentRole === 'owner' && newRole !== 'owner' && (await deps.countOwners(orgId)) <= 1) {
-    return settle('last_owner');
+  // TWO INVARIANTS, NOT ONE, and they fail differently.
+  //
+  //   (a) At least one owner membership ROW must survive. That row is the only
+  //       path back to an administered org: if its actor is soft-deleted,
+  //       restoring them is one supported call. Zero rows is terminal -- no
+  //       principal holds `manage_members`, so nobody can create the first one.
+  //   (b) At least one LIVE owner must survive, so the org is administrable
+  //       today and not merely repairable. This is the 0.5.2 invariant, and it
+  //       is why `countOwners` joins `actor`.
+  //
+  // (a) is the one that was missing, and it is the one the soft-delete hole
+  // walked through: the target's role read as null, so this guard never even
+  // looked. (b) alone would not have caught it either, since a soft-deleted
+  // owner is not counted as live and removing them changes no live count.
+  if (currentRole === 'owner' && newRole !== 'owner') {
+    if ((await deps.countOwnerMemberships(orgId)) <= 1) return settle('last_owner');
+    if ((await deps.countOwners(orgId)) <= 1 && (await deps.getMembership(orgId, targetActorId))) {
+      return settle('last_owner');
+    }
   }
   return settle(null);
 }

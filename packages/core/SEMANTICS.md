@@ -223,11 +223,21 @@ hard org delete destroys that tenant's chain. Use soft delete.
 ## 5. Expiry is not deletion
 
 `file.expires_at` and `grant.expires_at` are **time gates**, evaluated on every
-access and extendable. `deleted_at` is **existence**, and it is what grant scope
-liveness reads. Two different questions, two different mechanisms — which is why
-an expired file does not make its grants non-live (the lifecycle gate denies the
-access instead), and why extending an expiry restores access without touching a
-grant.
+access. `deleted_at` is **existence**, and it is what grant scope liveness reads.
+Two different questions, two different mechanisms — which is why an expired file
+does not make its grants non-live (the lifecycle gate denies the access instead),
+and why moving an expiry forward would restore access without touching a grant.
+
+**No API currently moves one.** `expires_at` is written once, by the upload, and
+nothing in the library updates it afterwards. This paragraph used to say expiries
+were "extendable" and that "extending an expiry restores access", which described
+a property of the design as though it were an operation you could call. The
+property is real; the operation does not exist yet.
+
+Expiry does **not** block deletion. It gates use, and deleting is not use — so an
+expired file can still be deleted by anyone who could have deleted it before, and
+a retention hold still binds. Until 0.7.0 it blocked deletion too, which made an
+expired file permanently undeletable and its bytes permanently billable.
 
 ---
 

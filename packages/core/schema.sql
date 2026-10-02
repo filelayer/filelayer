@@ -1047,9 +1047,20 @@ $$;
 -- -----------------------------------------------------------------------------
 -- AUDIT (P5)
 -- -----------------------------------------------------------------------------
--- Append-only. Records denials as well as successes. Hash-chained per org so
--- that deletion or alteration of history is detectable -- this is what makes
--- the log a compliance artifact rather than a convenience.
+-- Append-only. Records denials as well as successes. Hash-chained per org, and
+-- the chain detects THREE of the four things that can be done to it: any edit
+-- to a recorded event, the removal of an event from the middle, and the removal
+-- of the first. It does NOT detect truncation of the most recent events,
+-- because replay walks forward and nothing in the table records where the chain
+-- was supposed to end.
+--
+-- That limit is structural rather than an oversight waiting to be fixed: an
+-- anchor kept in this database is editable by anyone who can edit the rows.
+-- `verifyAuditChain` therefore returns the head (`lastId`, `lastHash`) so the
+-- operator can pin it somewhere outside, which is the only place the comparison
+-- actually means anything. Said plainly on TRUST.md and in the README
+-- limitations, because a compliance artifact that oversells itself is worse
+-- than one that does not exist.
 --
 -- org_id IS NULLABLE, and that is a security feature, not laxity. A probe
 -- against a file id that does not exist, or a sweep against link secrets, has
@@ -1110,10 +1121,45 @@ CREATE INDEX audit_actor_idx    ON audit_event (actor_id) WHERE actor_id IS NOT 
 CREATE INDEX audit_deny_idx     ON audit_event (org_id, occurred_at DESC) WHERE decision = 'deny';
 CREATE INDEX audit_system_idx   ON audit_event (occurred_at DESC) WHERE org_id IS NULL;
 
--- Append-only enforcement. Audit rows cannot be updated or deleted through
--- normal privileges; retention trimming is a separate privileged path.
+-- Append-only enforcement, and an honest account of its limits.
+--
+-- The two rules rewrite UPDATE and DELETE to nothing. Note SILENTLY: the
+-- statement succeeds and reports zero rows, so a caller who believes they
+-- trimmed the log is not told otherwise. That is a deliberate trade -- failing
+-- loudly would let a prober distinguish this table from any other -- but it is
+-- worth knowing before you build anything on top of it.
+--
+-- RULES DO NOT COVER TRUNCATE. Postgres rewrite rules are per-DML-statement-
+-- type, and TRUNCATE is not DML, so `TRUNCATE audit_event` empties the table
+-- including the system chain with the rules fully in place. The trigger below
+-- closes that, because a statement-level TRUNCATE trigger does fire.
+--
+-- Neither mechanism is a privilege boundary. Both are owned by the table owner
+-- and can be dropped by it in one statement. They stop an accident and an
+-- application bug; they do not stop whoever owns the database. If the audit log
+-- needs to survive its own DBA, the head hash has to be pinned outside this
+-- database -- see `AuditChainResult.lastHash` in store.ts.
+--
+-- THERE IS NO RETENTION-TRIMMING PATH. This comment used to claim one existed
+-- as "a separate privileged path". It did not, and still does not: `audit_event`
+-- grows without bound, and because `ON DELETE CASCADE` from `org` is itself a
+-- DELETE that the rule rewrites away, deleting a tenant row fails its own
+-- referential-integrity check. Erasing a tenant's history is not currently a
+-- supported operation.
 CREATE RULE audit_no_update AS ON UPDATE TO audit_event DO INSTEAD NOTHING;
 CREATE RULE audit_no_delete AS ON DELETE TO audit_event DO INSTEAD NOTHING;
+
+CREATE FUNCTION audit_no_truncate() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_event is append-only: TRUNCATE is refused'
+        USING ERRCODE = 'raise_exception';
+END;
+$$;
+
+CREATE TRIGGER audit_no_truncate
+    BEFORE TRUNCATE ON audit_event
+    FOR EACH STATEMENT EXECUTE FUNCTION audit_no_truncate();
 
 -- -----------------------------------------------------------------------------
 -- THE CHAIN CANNOT FORK

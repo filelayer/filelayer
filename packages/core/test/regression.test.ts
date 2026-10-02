@@ -817,3 +817,214 @@ describe('2026-10-02: a bound asked for is never silently dropped', () => {
     assert.ok((await fl.files.put(bytes('S'), { owner: 'a', expiresIn: 60 })).id);
   });
 });
+
+// =============================================================================
+/** Resolve a facade-created identity by its external id. `Identities` is internal. */
+async function idOf(fl: Filelayer, table: 'actor' | 'org', externalId: string): Promise<string> {
+  const { rows } = await fl.store.db.query<{ id: string }>(
+    `SELECT id FROM ${table} WHERE external_id = $1`,
+    [externalId],
+  );
+  return rows[0]!.id;
+}
+
+// 0.7.0 -- the second adversarial sweep, 2 October 2026
+// =============================================================================
+
+describe('2026-10-02: an expired file is not a file nobody can delete', () => {
+  // `lifecycleDenial` returned `file_expired` for EVERY capability, `delete`
+  // included, while the gates on either side of it were already scoped --
+  // `pending` to `read`, `retention_hold` to `delete`. `delete()` is the only
+  // method that removes bytes and it authorizes `delete` first, and the orphan
+  // collector skips any key that still has a row. So an expired file was
+  // terminal in both directions at once: the row could not go and the bytes
+  // could not be collected.
+  it('the owner can delete a file that has already expired', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    const f = await fl.files.put(bytes('E'), { owner: 'alice', expiresIn: 1 });
+    await new Promise((r) => setTimeout(r, 1300));
+
+    // Reading is still refused -- expiry gates USE, which is the part that works.
+    await rejects(() => fl.files.get(f.id, { as: 'alice' }), 410);
+    // Deleting is not use.
+    await fl.files.delete(f.id, { as: 'alice' });
+    await rejects(() => fl.files.get(f.id, { as: 'alice' }), 404);
+  });
+
+  it('but a retention hold still binds, which is the control that should', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    const f = await fl.files.put(bytes('R'), { owner: 'alice', retainFor: 3600 });
+    await rejects(() => fl.files.delete(f.id, { as: 'alice' }), 409);
+  });
+});
+
+describe('2026-10-02: an org cannot be stripped of its last owner', () => {
+  // `authorizeMembershipChange` read the target's role through `getMembership`,
+  // which excludes soft-deleted actors. For a soft-deleted owner that returned
+  // null, so `superior_target` and `last_owner` BOTH stood down and an admin
+  // could delete the sole owner's membership -- an operation refused outright
+  // while that owner was live. Restoring the actor afterwards brought back an
+  // identity with no role and no way to get one.
+  it('an admin cannot remove the sole owner once that owner is soft-deleted', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    await fl.orgs.create('acme', { owner: 'alice' });
+    await fl.orgs.setRole('acme', 'mallory', 'admin', { as: 'alice' });
+
+    const aliceId = await idOf(fl, 'actor', 'alice');
+    const mallory = await idOf(fl, 'actor', 'mallory');
+    const org = await idOf(fl, 'org', 'acme');
+    await fl.softDeleteActor(aliceId);
+
+    // Driven through the core API with explicit ids, because the point is the
+    // GUARD. The facade would refuse earlier, on resolving a soft-deleted
+    // external id, and that would prove nothing about `last_owner`.
+    await rejects(() => fl.removeMember(P(mallory), org, aliceId), 403);
+    await rejects(() => fl.addMember(P(mallory), org, aliceId, 'viewer'), 403);
+
+    // And the tenant is still repairable, which is the property that matters.
+    await fl.restoreActor(aliceId);
+    await fl.orgs.setRole('acme', 'bob', 'member', { as: 'alice' });
+  });
+
+  it('createOrg leaves no half-built tenant when the owner does not exist', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    const ghost = '00000000-0000-4000-8000-00000000dead';
+    await assert.rejects(() => fl.createOrg('acme', 'Acme', { ownerActorId: ghost }));
+
+    // The org INSERT used to commit on its own, burning the external id forever:
+    // nobody held `manage_members`, so no principal could create the first
+    // membership, and `createOrg` again hit the unique constraint.
+    const { rows } = await fl.store.db.query(`SELECT id FROM org WHERE external_id = 'acme'`);
+    assert.equal(rows.length, 0, 'the whole thing rolled back');
+    const ok = await fl.orgs.create('acme', { owner: 'alice' });
+    assert.ok(ok.id, 'and the name is still available');
+  });
+});
+
+describe('2026-10-02: bytes are never written for a request that is refused', () => {
+  it('retainFor beyond expiresIn is a 400, and leaves no orphan', async () => {
+    const storage = new MemoryStorage();
+    const { db } = await createTestDb();
+    const fl = new Filelayer(db, storage, { baseUrl: 'http://x' });
+    const alice = (await fl.createActor('alice')).id;
+    const org = (await fl.createOrg('acme', 'Acme', { ownerActorId: alice })).id;
+
+    // The constraint fired on the INSERT, which is AFTER storage.put(). Every
+    // rejected attempt therefore cost an object, with no row and no audit event
+    // to find it by -- a member could run up a storage bill in a loop.
+    await rejects(
+      () =>
+        fl.upload(P(alice), org, {
+          name: 'x', contentType: 'text/plain', body: bytes('x'),
+          expiresIn: 60, retainFor: 600,
+        }),
+      400,
+    );
+    assert.deepEqual(storage.keys(), [], 'nothing was written');
+  });
+
+  it('maxDownloads 0 is a 400, not a raw check-constraint violation', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    const f = await fl.files.put(bytes('S'), { owner: 'alice' });
+    for (const bad of [0, -1, 1.5, 2 ** 31]) {
+      await rejects(() => fl.shares.create(f.id, { as: 'alice', maxDownloads: bad }), 400);
+    }
+    const sh = await fl.shares.create(f.id, { as: 'alice', maxDownloads: 1 });
+    assert.equal(text((await fl.shares.redeem(sh.secret, {})).body), 'S');
+    // 404, not 403: a capped-out link is answered the same way as one that never
+    // existed, which is the uniform-denial rule the whole surface keeps.
+    await rejects(() => fl.shares.redeem(sh.secret, {}), 404);
+  });
+});
+
+describe('2026-10-02: the collector cannot be talked out of its grace period', () => {
+  // `Math.max(60, x)` clamps every finite number, so 0 and -Infinity were
+  // harmless. `Math.max(60, NaN)` is NaN, `cutoff` becomes NaN, and
+  // `lastModified > NaN` is false for everything -- the skip never fired and the
+  // grace period vanished. `Number(process.env.GC_GRACE)` on a misspelled
+  // variable is NaN, so a correct caller with a typo deleted uploads in flight.
+  it('a non-finite olderThanSeconds is refused, not silently infinite', async () => {
+    const storage = new MemoryStorage();
+    const { db } = await createTestDb();
+    const fl = new Filelayer(db, storage, { baseUrl: 'http://x' });
+    await storage.put('in-flight/key', bytes('x'), 'text/plain');
+
+    for (const bad of [NaN, Number('oops')]) {
+      await rejects(() => fl.collectStorageOrphans({ olderThanSeconds: bad, dryRun: false }), 400);
+    }
+    assert.deepEqual(storage.keys(), ['in-flight/key'], 'the fresh object survives');
+  });
+});
+
+describe('2026-10-02: verifying a chain tells you where its head is', () => {
+  // Replay alone cannot detect truncation: remove the last n events and what
+  // remains is perfectly consistent. The library cannot fix that from inside the
+  // database -- an anchor stored here is editable by whoever deleted the rows --
+  // so it owes the caller the value to pin OUTSIDE.
+  it('verifyAuditChain returns the head id and hash', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    // Reading an audit chain needs `read_audit`, so alice has to be an OWNER --
+    // `files.put` would only have made her a member of a tenant it created.
+    await fl.orgs.create('acme', { owner: 'alice' });
+    await fl.files.put(bytes('S'), { org: 'acme', owner: 'alice' });
+    const org = await idOf(fl, 'org', 'acme');
+
+    const r = await fl.verifyAuditChain(P(await idOf(fl, 'actor', 'alice')), org);
+    assert.equal(r.valid, true);
+    assert.ok(r.lastId !== null && r.lastHash !== null, 'the head is reported');
+
+    const { rows } = await fl.store.db.query<{ id: number; hash: string }>(
+      `SELECT id, hash FROM audit_event WHERE org_id = $1 ORDER BY id DESC LIMIT 1`,
+      [org],
+    );
+    assert.equal(Number(r.lastId), Number(rows[0]!.id));
+    assert.equal(r.lastHash, rows[0]!.hash);
+  });
+
+  it('TRUNCATE on the audit table is refused', async () => {
+    const { db } = await createTestDb();
+    await assert.rejects(() => db.query(`TRUNCATE audit_event`), /append-only/);
+  });
+});
+
+describe('2026-10-02: an operation that audits nothing is a bug', () => {
+  it('soft-deleting an actor with no memberships still writes an event', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    const loner = (await fl.createActor('loner')).id;
+
+    const before = (
+      await fl.store.db.query<{ c: number }>(`SELECT count(*)::int c FROM audit_event`)
+    ).rows[0]!.c;
+    await fl.softDeleteActor(loner);
+    await fl.restoreActor(loner);
+    const after = await fl.store.db.query<{ action: string; org_id: string | null }>(
+      `SELECT action, org_id FROM audit_event ORDER BY id DESC LIMIT 2`,
+    );
+    assert.equal(
+      (await fl.store.db.query<{ c: number }>(`SELECT count(*)::int c FROM audit_event`)).rows[0]!.c,
+      before + 2,
+    );
+    assert.deepEqual(
+      after.rows.map((r) => r.action).sort(),
+      ['actor.delete', 'actor.restore'],
+    );
+    assert.ok(after.rows.every((r) => r.org_id === null), 'on the system chain');
+  });
+});
+
+describe('2026-10-02: limit: 0 means zero, or it means refuse', () => {
+  it('the two audit surfaces agree, and listFiles stops guessing', async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: 'http://x' });
+    await fl.orgs.create('acme', { owner: 'alice' });
+    await fl.files.put(bytes('S'), { org: 'acme', owner: 'alice' });
+    await fl.files.put(bytes('T'), { org: 'acme', owner: 'alice' });
+
+    // The facade discarded 0 by truthiness and returned the default page, while
+    // the verbose call on the same data returned nothing.
+    assert.deepEqual(await fl.orgs.audit('acme', { as: 'alice', limit: 0 }), []);
+    // listFiles clamped 0 UP to one row: neither reading of the argument.
+    const alice = await idOf(fl, 'actor', 'alice');
+    const org = await idOf(fl, 'org', 'acme');
+    await rejects(() => fl.listFiles(P(alice), org, { limit: 0 }), 400);
+  });
+});

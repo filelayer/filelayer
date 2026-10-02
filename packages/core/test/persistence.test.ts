@@ -293,17 +293,26 @@ describe('the mutation and the audit event that records it commit together', () 
       await f.db.query<{ c: number }>(`SELECT count(*)::int c FROM audit_event`)
     ).rows[0]!.c;
 
-    // A real constraint violation, raised by the INSERT itself: the schema's
-    // `file_retention_before_expiry` CHECK refuses a retention floor that
-    // outlives the expiry. The storage write has ALREADY happened at this point,
-    // which is the whole reason the ordering question exists.
+    // THE INJECTION USED TO BE `retainFor > expiresIn`, and that is no longer a
+    // way in: 0.7.0 refuses the pair up front, BEFORE the bytes go out, because
+    // reaching the constraint meant every rejected upload orphaned an object and
+    // returned a raw SQLSTATE 23514 to the caller. Keeping this test honest
+    // means injecting the failure where the test actually claims it happens --
+    // at the metadata write, after a successful `storage.put()` -- rather than
+    // relying on a defect to stage it.
+    //
+    // A `visibility` outside the `file_visibility` enum is rejected by the
+    // INSERT itself (22P02), which is after `storage.put()` has already
+    // succeeded -- the ordering this test is about. It is reachable the way
+    // these things are reachable in practice: an untyped caller passing a string
+    // from a request body, since TypeScript does not survive the process
+    // boundary.
     await assert.rejects(() =>
       f.fl.upload({ actorId: f.alice }, f.org, {
         name: 'doomed.txt',
         contentType: 'text/plain',
         body: bytes('data'),
-        expiresIn: 10,
-        retainFor: 1000,
+        visibility: 'public' as 'private',
       }),
     );
 
@@ -906,20 +915,86 @@ describe('orphan collection', () => {
     assert.equal(gc[0]!.context['deleted'], 2);
   });
 
-  it('does NOT collect the bytes of a soft-deleted file whose row still exists', async () => {
-    // A retention hold blocks the delete; the row survives. If the collector
-    // treated "state = deleted" as "collectable" it would destroy exactly the
-    // bytes a legal hold exists to preserve.
+  it('collects a soft-deleted row ONLY once its retention has lapsed', async () => {
+    // THIS TEST ASSERTED THE OPPOSITE UNTIL 0.7.0, on a rationale that did not
+    // survive being checked. It said: "a retention hold blocks the delete; the
+    // row survives", so treating `state = deleted` as collectable would destroy
+    // bytes a legal hold exists to preserve. But a hold blocks `delete`, so a
+    // held file never REACHES `state = deleted` -- the scenario was unreachable,
+    // and the test body did not build it either: it wrote the tombstone by raw
+    // SQL with no `retain_until` at all.
+    //
+    // What the old predicate actually did was let ANY surviving row shield its
+    // bytes forever. When `delete()` committed the tombstone and its
+    // `storage.delete()` then threw -- one transient S3 error -- the bytes
+    // stayed, the row stayed, and because the row stayed no collector run could
+    // ever reach them. A file row has no undelete, so those bytes were garbage
+    // that nothing in the library could ever collect.
+    //
+    // Both halves are now asserted, which is strictly more than the old test
+    // claimed.
     const storage = new MemoryStorage();
     const f = await fixture(storage);
-    const file = await f.fl.upload({ actorId: f.alice }, f.org, {
+
+    // (a) Still under retention: NOT collected. Belt and braces -- this state is
+    // not reachable through the API, which is why it is manufactured here.
+    const held = await f.fl.upload({ actorId: f.alice }, f.org, {
       name: 'held', contentType: 'text/plain', body: bytes('H'),
     });
-    await f.db.query(`UPDATE file SET state='deleted', deleted_at=now() WHERE id=$1`, [file.id]);
+    await f.db.query(
+      `UPDATE file SET state='deleted', deleted_at=now(), retain_until=now() + interval '1 day'
+        WHERE id=$1`,
+      [held.id],
+    );
+
+    // (b) Tombstone with no live hold: exactly the residue of a failed
+    // `storage.delete()`, and the collector is the only thing that can repair it.
+    const stranded = await f.fl.upload({ actorId: f.alice }, f.org, {
+      name: 'stranded', contentType: 'text/plain', body: bytes('S'),
+    });
+    await f.db.query(`UPDATE file SET state='deleted', deleted_at=now() WHERE id=$1`, [
+      stranded.id,
+    ]);
+
     await ageMemoryObjects(storage, 3600_000);
     const r = await f.fl.collectStorageOrphans({ olderThanSeconds: 60, dryRun: false });
-    assert.deepEqual(r.orphans, []);
-    assert.ok(storage.keys().includes(file.storageKey));
+
+    assert.deepEqual(r.orphans, [stranded.storageKey], 'only the unheld tombstone is collectable');
+    assert.ok(storage.keys().includes(held.storageKey), 'retention still shields its bytes');
+    assert.ok(!storage.keys().includes(stranded.storageKey), 'the stranded bytes are reclaimed');
+  });
+
+  it('records WHICH keys it destroyed, even when it fails partway', async () => {
+    // The event used to be written after the loop and carried only counts. A
+    // `storage.delete()` that threw on the last of three destroyed the first two
+    // and recorded nothing at all: bytes gone, log silent.
+    const storage = new MemoryStorage();
+    const f = await fixture(storage);
+    for (const k of ['orph-a', 'orph-b', 'orph-c']) {
+      await storage.put(`${f.org}/${k}`, bytes('x'), 'text/plain');
+    }
+    await ageMemoryObjects(storage, 3600_000);
+
+    const realDelete = storage.delete.bind(storage);
+    storage.delete = async (key: string) => {
+      if (key.endsWith('orph-c')) throw new Error('simulated storage failure');
+      return realDelete(key);
+    };
+
+    await assert.rejects(() =>
+      f.fl.collectStorageOrphans({ olderThanSeconds: 60, dryRun: false }),
+    );
+    storage.delete = realDelete;
+
+    const gc = await f.fl.store.listAudit(null, { action: 'storage.gc' });
+    assert.equal(gc.length, 1, 'the failure is still recorded');
+    const ctx = gc[0]!.context;
+    assert.equal(ctx['complete'], false, 'and it says it did not finish');
+    assert.deepEqual(
+      (ctx['keys'] as string[]).sort(),
+      [`${f.org}/orph-a`, `${f.org}/orph-b`].sort(),
+      'naming exactly the objects it actually destroyed',
+    );
   });
 
   it('refuses when the adapter cannot list', async () => {

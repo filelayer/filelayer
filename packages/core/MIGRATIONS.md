@@ -540,6 +540,72 @@ step 4 did not run.
 
 ---
 
+### Entry 6 — `0.6.0` → `0.7.0`: `TRUNCATE` on the audit log is refused
+
+#### What was wrong
+
+`audit_event` carries two rewrite rules that turn `UPDATE` and `DELETE` into
+no-ops, and the schema described the table as append-only on the strength of
+them. Postgres rewrite rules are per-DML-statement-type, and `TRUNCATE` is not
+DML — so `TRUNCATE audit_event` emptied the whole table, every tenant chain and
+the system chain with it, with both rules fully in place and no error.
+
+This is a gap in a stated property, not a privilege escalation: it needs the
+`TRUNCATE` privilege, which a least-privileged application role does not have.
+It matters because nothing in our own quickstart creates a least-privileged
+role — the documented deployment hands the application the same `DATABASE_URL`
+that applied the schema, and that connection owns the table.
+
+#### What changed
+
+A statement-level `BEFORE TRUNCATE` trigger that raises. Statement-level
+TRUNCATE triggers do fire, which is the whole reason this works where the rule
+did not.
+
+Also corrected, in the same release, two comments in this schema that described
+things which do not exist: that deletion of history is detectable (it is not, for
+truncation of the most recent events — see `AuditChainResult.lastHash`), and that
+retention trimming is "a separate privileged path" (there is no such path; the
+table grows without bound).
+
+#### The migration
+
+Additive and safe to apply at any time, with no downtime and no backfill:
+
+```sql
+CREATE FUNCTION audit_no_truncate() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_event is append-only: TRUNCATE is refused'
+        USING ERRCODE = 'raise_exception';
+END;
+$$;
+
+CREATE TRIGGER audit_no_truncate
+    BEFORE TRUNCATE ON audit_event
+    FOR EACH STATEMENT EXECUTE FUNCTION audit_no_truncate();
+```
+
+#### What it does not do
+
+It is not a privilege boundary and we do not present it as one. The trigger is
+owned by the table owner and `DROP TRIGGER` is one statement. It stops an
+accident, a stray script and an application bug. If your audit log needs to
+survive someone who owns the database, the head hash has to live outside it:
+`verifyAuditChain()` returns `lastId` and `lastHash` for exactly that.
+
+#### Recommended alongside
+
+Give the runtime a role that is not the owner:
+
+```sql
+REVOKE TRUNCATE, DELETE, UPDATE ON audit_event FROM <your_app_role>;
+```
+
+Nothing in the library needs any of the three.
+
+---
+
 ## 4. What is not covered here
 
 - **Data migration between storage adapters.** Moving objects from one bucket to
@@ -550,7 +616,13 @@ step 4 did not run.
 - **Downgrades.** None of the entries above has a reverse script. Restore from a
   backup.
 - **Audit chain rewriting.** By construction there is none: `audit_event` has
-  rules that make `UPDATE` and `DELETE` no-ops, and the chain is verified by
-  recomputation. A migration that needed to rewrite history would invalidate
-  every subsequent hash, and we would rather that be impossible than
-  documented.
+  rules that make `UPDATE` and `DELETE` no-ops, a trigger that refuses
+  `TRUNCATE`, and the chain is verified by recomputation. A migration that needed
+  to rewrite history would invalidate every subsequent hash, and we would rather
+  that be impossible than documented. Note the limit of "verified by
+  recomputation": replay detects edits and interior deletions, not truncation of
+  the most recent events. See Entry 6.
+- **Audit log retention.** There is none. `audit_event` grows without bound, and
+  erasing a tenant's history is not a supported operation — the `ON DELETE
+  CASCADE` from `org` is itself a `DELETE` that the rule rewrites away, so
+  deleting an org row fails its own referential-integrity check.

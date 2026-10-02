@@ -348,7 +348,7 @@ README says is the most valuable thing you can send us.
 ## Limitations
 
 Restated here so they are not only in an appendix. Each one is current as of
-`0.6.0`; where a limitation has been lifted since an earlier release, the
+`0.7.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **No `Range` responses from the shipped HTTP routes.** `fileDownloadRoute()`
@@ -389,3 +389,15 @@ Restated here so they are not only in an appendix. Each one is current as of
    URL stays valid for up to its TTL after the grant is revoked. It is off by
    default, defaults to anonymous grants only, and requires passing a verbatim
    acknowledgement string. That string is the point.
+10. **The audit chain does not detect truncation of its most recent events.**
+   Replay catches any edit to a recorded event, the removal of one from the
+   middle, and the removal of the first. It cannot catch the removal of the last
+   *n*: nothing in the table records where the chain was supposed to end, so what
+   remains verifies cleanly. An anchor kept in the same database would not help —
+   whoever can delete the rows can rewrite the anchor in the same transaction.
+   `verifyAuditChain()` returns `lastId` and `lastHash` so you can pin the head
+   somewhere outside your database and compare it on the next run; doing that is
+   your job, not ours. `UPDATE`, `DELETE` and `TRUNCATE` are refused at the
+   database, but by a rule and a trigger the table's owner can drop.
+11. **There is no retention trimming for the audit log.** `audit_event` grows
+   without bound, and erasing a tenant's history is not a supported operation.

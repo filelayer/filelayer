@@ -69,6 +69,28 @@ export interface QueryResult<R = Record<string, unknown>> {
 }
 
 export interface Queryable {
+  /**
+   * THE CONTRACT: every call in one unit of work must reach the SAME BACKEND
+   * CONNECTION.
+   *
+   * This is not pedantry about types. When nothing below is present,
+   * `withTransaction` falls back to issuing a literal `BEGIN` through this
+   * method -- so a `query` that round-robins across a pool puts `BEGIN` on one
+   * connection and the write on another, and the `ROLLBACK` undoes nothing. The
+   * call looks transactional, type-checks, passes a smoke test, and silently has
+   * no atomicity at all.
+   *
+   * Every shape this project documents is safe, which is why the hole is easy to
+   * miss: a `pg.Pool` is used through `connect()` so a transaction stays on one
+   * checked-out client, a single `pg.Client` is one connection by construction,
+   * and PGlite has one backend. The unsafe shape is the hand-rolled wrapper --
+   * `{ query: (s, p) => pool.query(s, p) }` -- which nothing in the docs asks
+   * for and the type happily accepts.
+   *
+   * If your wrapper cannot guarantee connection affinity, do not hand it over
+   * bare: implement `withTransaction` below and let your own driver own the
+   * unit of work.
+   */
   query<R = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<QueryResult<R>>;
   exec?(sql: string): Promise<unknown>;
   /**

@@ -630,8 +630,27 @@ describe('listFiles fails closed at its edges', () => {
     const owner = { actorId: c.actors[0]! };
     const page = await c.fl.listFiles(owner, c.orgs[0]!, { limit: 10_000 });
     assert.ok(page.files.length <= 200);
-    const one = await c.fl.listFiles(owner, c.orgs[0]!, { limit: 0 });
-    assert.ok(one.files.length <= 1);
+
+    // THE UPPER BOUND CLAMPS, THE LOWER BOUND REFUSES, and the asymmetry is
+    // deliberate. "More than the maximum" has one sensible reading -- give me as
+    // much as you will -- so clamping answers it. `limit: 0` has two
+    // incompatible readings: "no rows" (which is spelled by not calling) or a
+    // variable that arrived zero by accident. This line used to assert the old
+    // behaviour, `Math.max(1, ...)`, which silently answered with exactly ONE
+    // row: neither reading, and indistinguishable from a working page of one.
+    await assert.rejects(
+      () => c.fl.listFiles(owner, c.orgs[0]!, { limit: 0 }),
+      (e: { status?: number; code?: string }) =>
+        e.status === 400 && e.code === 'invalid_argument',
+    );
+    await assert.rejects(
+      () => c.fl.listFiles(owner, c.orgs[0]!, { limit: -5 }),
+      (e: { status?: number }) => e.status === 400,
+    );
+    await assert.rejects(
+      () => c.fl.listFiles(owner, c.orgs[0]!, { limit: 2.5 }),
+      (e: { status?: number }) => e.status === 400,
+    );
   });
 
   it('a list emits exactly ONE audit event, naming the files it disclosed', async () => {

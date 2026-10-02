@@ -583,7 +583,11 @@ export class OrgsApi {
     const principal = await this.requirePrincipal(opts.as);
     return this.fl.auditLog(principal, orgId, {
       ...(opts.decision ? { decision: opts.decision } : {}),
-      ...(opts.limit ? { limit: opts.limit } : {}),
+      // `opts.limit ? ...` is a TRUTHINESS test, so `limit: 0` was discarded and
+      // the caller got the default page instead of nothing. The verbose
+      // `fl.auditLog` handles 0 correctly, which made the two documented
+      // surfaces disagree about the same argument on the same data.
+      ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
     });
   }
 

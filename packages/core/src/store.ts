@@ -53,6 +53,7 @@ import type {
 import type { Queryable } from './db.ts';
 
 import { membershipCells, type MembershipCell } from './authz.ts';
+import { FilelayerError } from './errors.ts';
 
 const scrypt = promisify(_scrypt) as (
   password: string | Buffer,
@@ -407,6 +408,69 @@ export class PostgresStore implements AuthzDeps {
       [orgId, actorId, this.projectId],
     );
     return rows[0]?.role ?? null;
+  }
+
+  /**
+   * The membership row as it stands ON PAPER -- including one whose actor has
+   * been soft-deleted.
+   *
+   * THIS IS NOT AN ACCESS QUERY AND MUST NEVER BE USED AS ONE. `getMembership`
+   * above answers "may this actor act?", and it is right to exclude deleted
+   * actors. This one answers a different question -- "what does the membership
+   * table say about this person?" -- and it exists because exactly one decision
+   * needs it: whether a membership may be CHANGED.
+   *
+   * THE DEFECT IT CLOSES. `authorizeMembershipChange` read the target's current
+   * role through `getMembership`. For a soft-deleted owner that returned null,
+   * and null meant "not a member", so BOTH guards that protect an owner stood
+   * down at once: `superior_target` (which needs a non-null role to compare)
+   * and `last_owner` (which needs the role to be 'owner'). An org admin could
+   * therefore delete the sole owner's membership the moment that owner was
+   * soft-deleted -- an operation refused outright while the owner was live --
+   * and restoring the actor afterwards brought back an identity with no role.
+   * The org had no owner, no path to one, and the event was recorded as
+   * `member.add` with `fromRole: null`, so the log described a destruction as
+   * an addition.
+   *
+   * Soft deletion is reversible. A membership row is the path back. Deciding
+   * whether to destroy that path on a query that pretends it is already gone is
+   * the mistake.
+   */
+  async getMembershipOnPaper(orgId: string, actorId: string): Promise<OrgRole | null> {
+    if (!isUuid(orgId) || !isUuid(actorId)) return null;
+    const { rows } = await this.db.query<{ role: OrgRole }>(
+      `SELECT m.role FROM membership m
+         JOIN org o     ON o.id = m.org_id
+         JOIN project p ON p.id = o.project_id
+        WHERE m.org_id = $1 AND m.actor_id = $2
+          AND o.deleted_at IS NULL
+          AND p.deleted_at IS NULL
+          AND ($3::uuid IS NULL OR o.project_id = $3::uuid)`,
+      [orgId, actorId, this.projectId],
+    );
+    return rows[0]?.role ?? null;
+  }
+
+  /**
+   * How many owner memberships exist ON PAPER, soft-deleted actors included.
+   *
+   * The companion to `getMembershipOnPaper`, and the invariant is: AN ORG MUST
+   * ALWAYS RETAIN AT LEAST ONE OWNER MEMBERSHIP ROW. A paper owner whose actor
+   * is soft-deleted is not administering anything today, but restoring that
+   * actor is a supported, one-call repair. Zero owner rows is not repairable
+   * through any call this library exposes.
+   *
+   * `countOwners` below is the stricter, live-only count and it stays: the two
+   * guard different failure modes. This one guards "can this org ever be
+   * administered again"; that one guards "is it administrable right now".
+   */
+  async countOwnerMemberships(orgId: string): Promise<number> {
+    if (!isUuid(orgId)) return 0;
+    const { rows } = await this.db.query<{ c: number }>(
+      `SELECT count(*)::int AS c FROM membership WHERE org_id = $1 AND role = 'owner'`,
+      [orgId],
+    );
+    return Number(rows[0]?.c ?? 0);
   }
 
   /**
@@ -944,6 +1008,8 @@ export class PostgresStore implements AuthzDeps {
       [orgId],
     );
     const events = rows.map(mapAuditRow);
+    const last = events[events.length - 1];
+    const head = { lastId: last ? last.id : null, lastHash: last ? last.hash : null };
     let prev: string | null = null;
     for (const e of events) {
       if (e.prevHash !== prev) {
@@ -952,6 +1018,7 @@ export class PostgresStore implements AuthzDeps {
           checked: events.length,
           brokenAt: e.id,
           problem: 'prev_hash_mismatch',
+          ...head,
         };
       }
       const expected = auditHash({
@@ -969,11 +1036,17 @@ export class PostgresStore implements AuthzDeps {
         context: e.context,
       });
       if (expected !== e.hash) {
-        return { valid: false, checked: events.length, brokenAt: e.id, problem: 'hash_mismatch' };
+        return {
+          valid: false,
+          checked: events.length,
+          brokenAt: e.id,
+          problem: 'hash_mismatch',
+          ...head,
+        };
       }
       prev = e.hash;
     }
-    return { valid: true, checked: events.length };
+    return { valid: true, checked: events.length, ...head };
   }
 
   // --- Counters (P6) --------------------------------------------------------
@@ -1130,6 +1203,33 @@ export interface AuditChainResult {
   checked: number;
   brokenAt?: number;
   problem?: 'prev_hash_mismatch' | 'hash_mismatch';
+  /**
+   * The id and hash of the LAST event in the chain, or null for an empty chain.
+   *
+   * THIS IS THE HALF OF TAMPER EVIDENCE THE DATABASE CANNOT PROVIDE ITSELF, and
+   * it is here because replay alone does not detect truncation.
+   *
+   * Replay walks forward from the first row. Remove a row from the middle and
+   * its successor's `prev_hash` points at something that is no longer there;
+   * remove the first and the second's `prev_hash` is non-null where null was
+   * expected. Both are caught. But remove the LAST n rows and what remains is a
+   * perfectly consistent chain -- every link verifies, because nothing in the
+   * table records where the chain was supposed to END. `valid: true`, quietly,
+   * with history missing. The same is true of an emptied chain, which is
+   * indistinguishable from one that never existed.
+   *
+   * An anchor stored in this same database would not fix it: anyone who can
+   * delete the rows can update the anchor in the same transaction. The fix has
+   * to leave the blast radius, so what the library owes you is the value to
+   * take OUT: record `lastHash` somewhere your database administrator cannot
+   * rewrite -- an append-only log, a different account, a signed daily digest --
+   * and compare it on the next run. A chain whose head moved backwards, or
+   * whose head at a given id no longer matches, was truncated.
+   *
+   * We do not pretend this is automatic. README and TRUST.md say the same.
+   */
+  lastId: number | null;
+  lastHash: string | null;
 }
 
 const AUDIT_COLUMNS = `SELECT id, org_id, occurred_at, action, decision, reason, actor_id,
@@ -1178,7 +1278,22 @@ function auditFilterClauses(
   return clauses;
 }
 
-const auditLimit = (filter: AuditFilter): number => Math.min(filter.limit ?? 500, 5000);
+/**
+ * `limit: 0` is honoured here and always was -- `??` only fires on null and
+ * undefined, so `LIMIT 0` reaches Postgres and zero rows come back. What did NOT
+ * happen was any validation of the other shapes: `-1` reached the server as
+ * `LIMIT -1` (SQLSTATE 2201W) and `2.5` as `LIMIT 2.5` (22P02). Both are raw
+ * driver errors on a caller-supplied argument, i.e. a 500 where the caller
+ * deserved a 400.
+ */
+const auditLimit = (filter: AuditFilter): number => {
+  if (filter.limit !== undefined) {
+    if (!Number.isSafeInteger(filter.limit) || filter.limit < 0) {
+      throw new FilelayerError(400, 'invalid_argument', 'limit_must_be_a_non_negative_integer');
+    }
+  }
+  return Math.min(filter.limit ?? 500, 5000);
+};
 
 export interface AuditHashInput {
   prevHash: string | null;
