@@ -284,8 +284,19 @@ async function mustDeny(label, fn) {
     return true;
   }, label + ': WAS NOT DENIED');
 }
-// bob is a real, registered member of acme -- so this is an authorization
-// decision, not a "who?" lookup miss.
+// bob is a real, registered member of acme -- so the denial below is an
+// authorization decision, not a "who?" lookup miss.
+//
+// THE MEMBERSHIP IS NOW EXPLICIT, AND THAT IS THE POINT. Until 0.6.0 this block
+// had the same comment and no `setRole` call: the `files.put` below silently
+// made bob a member of a tenant he had no standing in, because `put` auto-joined
+// any named org. So the gate asserted "a registered member is denied" while
+// quietly demonstrating the privilege-escalation path that made him one.
+//
+// A gate whose precondition is manufactured by the line it is a precondition for
+// is not testing what it says. Granting the membership through the authorized
+// path is what the comment always claimed was happening.
+await fl.orgs.setRole('acme', 'bob', 'member', { as: 'alice' });
 await fl.files.put(new TextEncoder().encode('bobs own file'), { org: 'acme', owner: 'bob', name: 'bob.txt' });
 await mustDeny('registered non-owner reading a private file', () => fl.files.get(created.id, { as: 'bob' }));
 await mustDeny('anonymous caller reading a private file', () => fl.files.get(created.id));
