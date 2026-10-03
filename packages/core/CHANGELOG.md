@@ -37,6 +37,23 @@ docs/LIVE-S3-TESTS.md and the homepage. The replacement text is narrower than
 configuration, no load, and nothing about S3 Express One Zone, requester pays,
 object lock, cross-region replication or a stricter bucket policy.
 
+### Fixed — "12 tests, every commit" was eleven
+
+Found by reading the job summary of the run that was supposed to confirm the
+entry above. Both live suites report `ran: 11 test(s)`, not twelve: the twelfth
+uploads ~11 MB and is skipped unless `FILELAYER_TEST_S3_MULTIPART=1`, which only
+the nightly schedule and a manual dispatch set. The overclaim had been on the R2
+side since 30 September and was copied onto the AWS side the same day it was
+written, because nobody compared the sentence to the summary that states the
+number in plain text.
+
+One test behind a flag is the smallest gap there is between a claim and its
+evidence, which is the size of gap this project can least afford: the argument
+for reading our numbers at all is that we do not round them in our favour. Seven
+surfaces now say eleven per commit and a twelfth nightly, and that count is a
+claim in `check-version-claims`, derived from the test file rather than from
+memory.
+
 ### Fixed — the website's trust table drifted where no gate was looking
 
 The homepage said `0.8.0 — alpha` and `375 across 94 suites` while the package

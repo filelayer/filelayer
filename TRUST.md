@@ -22,8 +22,8 @@ that records denials. It was first published on **6 September 2026**.
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
 | Licence | Apache-2.0 |
-| Storage adapter against live Cloudflare R2 | 12 tests, every commit |
-| Storage adapter against live AWS S3 | 12 tests, every commit, `eu-north-1` only |
+| Storage adapter against live Cloudflare R2 | 11 tests every commit, 12 nightly |
+| Storage adapter against live AWS S3 | 11 tests every commit, 12 nightly, `eu-north-1` only |
 
 If any row in that table is disqualifying for you, it should be, and you can stop
 reading. We would rather you decline today for accurate reasons than adopt on a
@@ -62,7 +62,7 @@ whole `Filelayer` lifecycle end to end on top of it.
 Before that it had never run against anything but a local harness, and this page
 said so for three weeks.
 
-**Since 3 October 2026 the same twelve tests also run against AWS S3 itself**,
+**Since 3 October 2026 the same tests also run against AWS S3 itself**,
 on every commit, against a bucket in `eu-north-1` reached through a
 least-privilege IAM user. R2 is S3-compatible, not S3, which is the whole reason
 for running both: AWS has its own checksum requirements, real IAM evaluation,

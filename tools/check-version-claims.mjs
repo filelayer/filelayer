@@ -121,6 +121,34 @@ const CLAIMS = [
     re: /every commit<\/span><span class="v">(\d+) across \d+ suites<\/span>/g },
   { file: 'web/index.html', kind: 'suites',
     re: /every commit<\/span><span class="v">\d+ across (\d+) suites<\/span>/g },
+
+  // --- how many LIVE-storage tests actually run on a commit -------------------
+  //
+  // Six surfaces said "12 tests, every commit" against both live providers. The
+  // run says eleven: the twelfth uploads ~11 MB and is skipped unless
+  // FILELAYER_TEST_S3_MULTIPART=1, which only the nightly schedule and a manual
+  // dispatch set. The overclaim had been on the R2 side since 30 September and
+  // was copied onto the AWS side on 3 October without anyone reading the job
+  // summary that says `ran: 11 test(s)` in plain text.
+  //
+  // One test behind a flag is the smallest possible gap between a claim and the
+  // evidence for it, which is exactly the size of gap this project cannot
+  // afford: the whole argument for reading our numbers is that we do not round
+  // them in our favour.
+  { file: 'TRUST.md', kind: 'livetests',
+    re: /live Cloudflare R2 \| (\d+) tests every commit/g },
+  { file: 'TRUST.md', kind: 'livetests',
+    re: /live AWS S3 \| (\d+) tests every commit/g },
+  { file: 'web/index.html', kind: 'livetests',
+    re: /live Cloudflare R2<\/span><span class="v">(\d+) tests, every commit<\/span>/g },
+  { file: 'web/index.html', kind: 'livetests',
+    re: /live AWS S3<\/span><span class="v">(\d+) tests, every commit<\/span>/g },
+  { file: 'README.md', kind: 'livetests',
+    re: /live Cloudflare R2 on every commit\*\*: (\d+) tests/g },
+  { file: 'llms.txt', kind: 'livetests',
+    re: /in CI on every commit \((\d+) tests each/g },
+  { file: 'packages/core/llms.txt', kind: 'livetests',
+    re: /in CI on every commit \((\d+) tests each/g },
 ];
 
 function scan(claims) {
@@ -254,6 +282,32 @@ if (recorded) {
         }
       }
     }
+    // --- the live-storage count, read out of the suite file -----------------
+    //
+    // Counted statically rather than from a run, because the live suites need
+    // credentials this gate does not have. `it(` minus the ones carrying a
+    // `skip:` is what executes on an ordinary commit, which is the number every
+    // surface above claims.
+    const live = readFileSync(join(ROOT, 'packages/core/test/s3-live.test.ts'), 'utf8');
+    const total = (live.match(/^\s{2}it\(/gm) ?? []).length;
+    const gated = (live.match(/\{\s*skip:/g) ?? []).length;
+    const everyCommit = total - gated;
+    for (const c of claims.filter((x) => x.kind === 'livetests')) {
+      if (Number(c.value) !== everyCommit) {
+        violations.push(
+          `${c.file}:${c.line} claims ${c.value} live-storage test(s) per commit; ` +
+            `test/s3-live.test.ts has ${total} test(s), ${gated} of them behind a skip ` +
+            `flag, so ${everyCommit} run on an ordinary commit.\n      > ${c.text}`,
+        );
+      }
+    }
+    if (total === 0 || everyCommit <= 0) {
+      violations.push(
+        'could not count the live-storage tests in test/s3-live.test.ts. The shape of ' +
+          'that file changed; fix the patterns in this gate in the same commit.',
+      );
+    }
+
     if (recorded.fail > 0) {
       violations.push(
         `the recorded run had ${recorded.fail} failing test(s). No count on a public ` +

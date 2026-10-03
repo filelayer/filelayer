@@ -642,7 +642,9 @@ than *proven*: a harness that recomputes every signature cannot tell you what
 the counterparty does with it.
 
 **What that still does not cover**, because "proven" is a word worth spending
-carefully: one AWS region, one bucket configuration, and no load. Other regions
+carefully: one AWS region, one bucket configuration, and no load. Eleven of the
+twelve tests run on a commit; the twelfth uploads ~11 MB and runs only on the
+nightly schedule and on manual dispatch. Other regions
 and their endpoint quirks, S3 Express One Zone, requester pays, object lock,
 cross-region replication, throttling under real traffic, and any bucket policy
 more restrictive than the IAM user these tests use are all unexercised.

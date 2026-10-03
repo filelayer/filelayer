@@ -27,15 +27,15 @@
 > as a stranger would.
 >
 > **What runs against a real object store.** Since 30 September 2026 the storage
-> adapter runs against **live Cloudflare R2 on every commit**: 12 tests,
-> including a presigned URL the store actually honours, one that expires for
-> real, and an 11 MB multipart upload reassembled byte-exactly on the nightly
-> Since 3 October 2026 the same twelve tests also run against **AWS S3 itself**,
-> in `eu-north-1`, against a bucket with a least-privilege IAM user: R2 is
-> S3-compatible, not S3, and AWS's checksum requirements, IAM evaluation,
-> virtual-hosted addressing and error codes are a different counterparty. Both
-> providers run on every commit. What is still unmeasured on either is traffic:
-> nobody has pointed real load at this.
+> adapter runs against **live Cloudflare R2 on every commit**: 11 tests,
+> including a presigned URL the store actually honours and one that expires for
+> real, plus a twelfth on the nightly run and on manual dispatch, an 11 MB
+> multipart upload reassembled byte-exactly. Since 3 October 2026 the same tests
+> also run against **AWS S3 itself**, in `eu-north-1`, against a bucket reached
+> through a least-privilege IAM user: R2 is S3-compatible, not S3, and AWS's
+> checksum requirements, IAM evaluation, virtual-hosted addressing and error
+> codes are a different counterparty. What is still unmeasured on both is
+> traffic: nobody has pointed real load at this.
 >
 > **What may break.** Nobody has deployed this. There is no production usage, no
 > hosted service, no CLI, and no operational track record, so the failure modes
@@ -125,10 +125,11 @@ an inaccurate README wastes your time and ours.
   tamper-evidence and the full role matrix, plus a differential test that
   asserts the set query and the point check agree exactly.
 - The storage adapter runs against **live Cloudflare R2 on every commit**
-  (`packages/core/test/s3-live.test.ts`, 12 tests) and against a
+  (`packages/core/test/s3-live.test.ts`, 11 tests per commit and a twelfth
+  nightly) and against a
   **signature-verifying local S3 implementation**
   (`packages/core/test/storage.test.ts`), and since 3 October 2026 against
-  **live AWS S3** as well (12 tests, `eu-north-1`, virtual-hosted addressing).
+  **live AWS S3** as well (same tests, `eu-north-1`, virtual-hosted addressing).
   R2 is S3-compatible, not S3, which is why both run.
 - There is no hosted service and no CLI. You run it against your own Postgres.
 - Versioning is pre-1.0: see [Versioning](#versioning) below and
@@ -377,8 +378,9 @@ Restated here so they are not only in an appendix. Each one is current as of
    orgs inside one project cannot both have a user called `alice` meaning
    different people.
 6. **The storage adapter has run against AWS S3 since 3 October 2026, and only
-   in one region.** Twelve tests against a real bucket in `eu-north-1`, on every
-   commit, alongside the same twelve against Cloudflare R2. What that does not
+   in one region.** Eleven tests against a real bucket in `eu-north-1` on every
+   commit and a twelfth on the nightly run, alongside the same against
+   Cloudflare R2. What that does not
    cover: other regions and their endpoint quirks, S3 Express One Zone, requester
    pays, object lock, cross-region replication, and any bucket policy more
    restrictive than the least-privilege IAM user the tests use.
