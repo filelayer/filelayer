@@ -2,7 +2,7 @@
 
 **Does the Filelayer primitive scale DOWN as well as up?**
 
-Current as of `@filelayer/core` **0.8.0**. Everything below is measured against
+Current as of `@filelayer/core` **0.9.0**. Everything below is measured against
 code in this repository, from the repository root. Reproduce with:
 
 ```bash
@@ -411,7 +411,7 @@ the developer to decide who may read a file, at any tier.
 
 Written by the people who built it. This section is meant to be quoted against
 Filelayer, and it is kept current on purpose: every item below was re-checked
-against `0.8.0`.
+against `0.9.0`.
 
 1. **Public, high-volume, cacheable media — avatars, marketing images, product
    photos, anything a CDN should serve.** The default byte path proxies every

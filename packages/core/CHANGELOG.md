@@ -21,6 +21,12 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+Nothing yet.
+
+---
+
+## [0.9.0] — 2026-10-03
+
 **`FsStorage`: bytes on a local disk, and three rewrites of how it writes them.**
 
 ### Added — `FsStorage`, the adapter between a Map and a bucket
