@@ -395,7 +395,7 @@ jobs:
       - name: Refuse a silent skip
         run: |
           log=/tmp/contention.log
-          tally() { awk -v k="$1" '$(NF-1) == k && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log"; }
+          tally() { awk -v k="$1" 'NF >= 2 && $(NF-1) == k && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log"; }
           pass=$(tally pass)
           fail=$(tally fail)
           skip=$(tally skipped)
@@ -561,8 +561,8 @@ jobs:
           # change again without this going red for the wrong reason. A test
           # NAMED "pass 3" cannot collide: the tally line has exactly two fields
           # after any marker, and the second is all digits.
-          passed=$(awk '$(NF-1) == "pass" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
-          failed=$(awk '$(NF-1) == "fail" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
+          passed=$(awk 'NF >= 2 && $(NF-1) == "pass" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
+          failed=$(awk 'NF >= 2 && $(NF-1) == "fail" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
           if [ -z "$passed" ] || [ "$passed" -lt 1 ]; then
             echo "::error title=Live suite asserted nothing::no 'pass <n>' tally in the runner output. Either the suite ran nothing, or the reporter format changed again and this parse needs updating."
             exit 1
@@ -708,8 +708,8 @@ jobs:
           # change again without this going red for the wrong reason. A test
           # NAMED "pass 3" cannot collide: the tally line has exactly two fields
           # after any marker, and the second is all digits.
-          passed=$(awk '$(NF-1) == "pass" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
-          failed=$(awk '$(NF-1) == "fail" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
+          passed=$(awk 'NF >= 2 && $(NF-1) == "pass" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
+          failed=$(awk 'NF >= 2 && $(NF-1) == "fail" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
           if [ -z "$passed" ] || [ "$passed" -lt 1 ]; then
             echo "::error title=Live AWS suite asserted nothing::no 'pass <n>' tally in the runner output. Either the suite ran nothing, or the reporter format changed again and this parse needs updating."
             exit 1
