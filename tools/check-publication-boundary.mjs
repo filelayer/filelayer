@@ -173,11 +173,27 @@ for (const path of everTracked) {
 //    "delete it and commit again" a way past this.
 // -----------------------------------------------------------------------------
 const BINARY_EXT = /\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|tgz|woff2?|ttf|eot|mp4|wasm)$/i;
-const allowed = (file, line) =>
+/**
+ * `historyOnly` exists so that an escape hatch for something already pushed
+ * cannot quietly become a licence to reintroduce it.
+ *
+ * A term that leaked into a commit which is already on a remote cannot be
+ * un-leaked without rewriting history, and rewriting a pushed history to erase a
+ * stale comment is the worse trade. But an allow that forgives the term in a
+ * file forgives it at HEAD too, so the fix for yesterday silently legalises
+ * tomorrow. With `historyOnly: true` the entry covers the blobs of past commits
+ * and nothing else: write the same term into the working tree again and the
+ * scan fails, which is the behaviour the entry's own justification claims.
+ *
+ * Added 3 October 2026, after writing exactly that justification and then
+ * checking whether it was true. It was not.
+ */
+const allowed = (file, line, inHistory) =>
   ALLOW.some(
     (a) =>
       (a.path === undefined || a.path === file) &&
-      (a.contains === undefined || line.includes(a.contains)),
+      (a.contains === undefined || line.includes(a.contains)) &&
+      (a.historyOnly !== true || inHistory),
   );
 
 // An encoded blob is the one shape that walks past a vocabulary check, because
@@ -187,7 +203,7 @@ const allowed = (file, line) =>
 const B64_LINE = /^[A-Za-z0-9+/=]{60,}$/;
 const B64_RUN = 4;
 
-function scanText(where, file, text) {
+function scanText(where, file, text, inHistory = false) {
   if (text.includes('\0')) return; // binary without a telling extension
   const lines = text.split('\n');
   let run = 0;
@@ -210,7 +226,7 @@ function scanText(where, file, text) {
     }
 
     if (!line.trim()) continue;
-    if (allowed(file, line)) continue;
+    if (allowed(file, line, inHistory)) continue;
     const at = `${where}:${i + 1}`;
     const trimmed = line.trim();
     const excerpt = trimmed.length > 100 ? trimmed.slice(0, 97) + '...' : trimmed;
@@ -291,7 +307,7 @@ for (const line of git(['rev-list', '--objects', '--all'])) {
   } catch {
     continue;
   }
-  scanText(`${path} (history ${oid.slice(0, 8)})`, path, text);
+  scanText(`${path} (history ${oid.slice(0, 8)})`, path, text, true);
 }
 
 // -----------------------------------------------------------------------------

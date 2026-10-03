@@ -478,10 +478,40 @@ export async function sendNodeStream(
       if (done) break;
       if (!value) continue;
       if (!res.write(value)) {
-        await new Promise<void>((resolve) => res.once('drain', resolve));
+        // WAIT FOR `drain` OR FOR THE CLIENT TO GO AWAY, never for `drain`
+        // alone.
+        //
+        // When the client disconnects mid-download, the response is destroyed:
+        // `write()` returns false from then on and `drain` is never emitted
+        // again. Awaiting it on its own is awaiting an event that cannot fire,
+        // so this function never returned. Measured: 150 abandoned downloads,
+        // 150 handlers still suspended, zero upstream streams cancelled.
+        //
+        // The visible cost is not the suspended promise, it is what hangs off
+        // it. `S3Storage.stream()` hands back a live undici response body, so
+        // every abandoned download held an open socket to the object store --
+        // four of five still open eight seconds later, against a real signing
+        // server. The adapter already knows this hazard and drains for exactly
+        // this reason elsewhere (`storage.ts`, "undici leaks the connection
+        // otherwise"). And because `await route(req, res)` never resolved,
+        // every per-request log line, metric and cleanup a caller had written
+        // after it silently stopped running too.
+        //
+        // One closed browser tab was enough. Found 3 October 2026.
+        await new Promise<void>((resolve) => {
+          const settle = (): void => {
+            res.off('drain', settle);
+            res.off('close', settle);
+            resolve();
+          };
+          res.once('drain', settle);
+          res.once('close', settle);
+        });
       }
+      // The client is gone. Stop pulling bytes nobody will read.
+      if (res.destroyed || res.writableEnded) break;
     }
-    res.end();
+    if (!res.destroyed) res.end();
   } catch (err) {
     // Headers are already sent, so there is no way to turn this into a status
     // code. Destroying the socket is the only honest signal that the body is
@@ -489,6 +519,10 @@ export async function sendNodeStream(
     // like a successful download.
     res.destroy(err instanceof Error ? err : new Error(String(err)));
   } finally {
+    // CANCEL, not just release. Releasing the lock leaves the underlying stream
+    // open; cancelling is what returns the object-store connection to the pool.
+    // It is a no-op on a stream that already completed.
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
@@ -543,11 +577,41 @@ function forbiddenQueryKey(url: URL): string | null {
  * the same 404 — no oracle, no new branch for an attacker to time.
  */
 function safeDecode(segment: string): string | null {
+  let out: string;
   try {
-    return decodeURIComponent(segment);
+    out = decodeURIComponent(segment);
   } catch {
     return null;
   }
+  // A NUL BYTE IS NOT STORABLE, SO IT MUST NOT BE CARRIED ANY FURTHER.
+  //
+  // 0.6.0 fixed a route that could be killed by its own URL: `decodeURIComponent`
+  // threw outside the try, nothing caught it, and the process died. The remedy
+  // was this function, plus a decision in `store.audit()` to keep an
+  // unrecognisable identifier VERBATIM in the audit event's `context` so the
+  // probe is at least recorded. The CHANGELOG puts it well: "the probe left no
+  // record, because the write that would have recorded it was the write that
+  // failed."
+  //
+  // `context` is `jsonb`, and jsonb cannot hold U+0000 any more than a `uuid`
+  // column could. So `GET /f/%00` decoded cleanly, travelled all the way to the
+  // audit INSERT, and died there with SQLSTATE 22P05 -- a 500 to an
+  // unauthenticated caller, and once again NO AUDIT ROW. The defect had not
+  // been closed, it had moved one column over, and an unauthenticated prober
+  // could sweep the whole file namespace invisibly by appending `%00`.
+  //
+  // REPLACED RATHER THAN REFUSED, and the difference is P5.
+  //
+  // Returning `null` here was the first fix, and it traded one defect for a
+  // smaller one: a NUL probe then short-circuited to a 404 with NO audit event
+  // on the share route, which is the same invisibility the 500 produced, just
+  // quieter. The probe has to stay visible -- that is the entire argument for
+  // the system chain.
+  //
+  // U+FFFD is storable in jsonb, is not a valid uuid, and is not a secret we
+  // ever issued, so the request still gets the uniform 404 while the attempt
+  // lands in the log with the substitution plainly visible in `rawFileId`.
+  return out.replace(/\u0000/g, '\uFFFD');
 }
 
 async function readBody(req: IncomingMessage, limit = 64 * 1024): Promise<string> {
@@ -717,11 +781,31 @@ export function fileDownloadRoute(
     }
     const segments = url.pathname.split('/').filter(Boolean);
     const prefixSegments = prefix.split('/').filter(Boolean);
-    if (req.method !== 'GET') return false;
+    // HEAD IS ROUTED TOO. Answering 404 to HEAD and 200 to GET for the same
+    // file misreports existence to every cache, link checker and `curl -I`, and
+    // RFC 9110 asks for the two header sections to match. `node:http` drops the
+    // body for a HEAD itself, so this needs no second code path -- but note
+    // that a HEAD therefore spends a download against a capped grant, which is
+    // the honest reading of "a download was served". `stat()` is the call that
+    // does not charge.
+    if (req.method !== 'GET' && req.method !== 'HEAD') return false;
     if (segments.length !== prefixSegments.length + 1) return false;
     if (prefixSegments.some((s, i) => segments[i] !== s)) return false;
 
     try {
+      // THE SAME REFUSAL THE SHARE ROUTE MAKES. `deliveryHandler` advertises
+      // "the query-string credential refusal" for the whole surface, and this
+      // route did not make it: `/d/x?token=abc` was a 400 and `/f/<id>?token=abc`
+      // was a 200. The credential is in the access log either way, which is the
+      // only thing the guard is about.
+      const forbidden = forbiddenQueryKey(url);
+      if (forbidden) {
+        throw new FilelayerError(
+          400,
+          'credential_in_query_string',
+          `remove ?${forbidden}= from the URL; credentials belong in a header or a body`,
+        );
+      }
       const delivery = await fl.readStream(
         await opts.principal(req),
         safeDecode(segments[prefixSegments.length]!) ?? '',

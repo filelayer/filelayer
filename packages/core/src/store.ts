@@ -896,7 +896,22 @@ export class PostgresStore implements AuthzDeps {
     const uuidOrNull = (v: string | null | undefined, key: string): string | null => {
       if (v === undefined || v === null) return null;
       if (isUuid(v)) return v;
-      context[key] = String(v).slice(0, 64);
+      // SUBSTITUTE WHAT jsonb CANNOT HOLD, which is the whole reason this
+      // branch exists.
+      //
+      // Keeping the unrecognisable identifier verbatim is deliberate: dropping
+      // it is what made an id sweep invisible before 0.6.0. But `context` is
+      // `jsonb`, and jsonb refuses U+0000 exactly as the `uuid` column did, so
+      // a NUL in the identifier made THIS INSERT fail -- the write that exists
+      // to record the probe, defeated by the probe, with the caller getting an
+      // unauthenticated 500 and the chain getting nothing. The same defect, one
+      // column over.
+      //
+      // The HTTP routes substitute at the edge too, but this is the backstop
+      // that holds for a caller who never went through them. Found 3 October
+      // 2026; the comment above `rawIp` already made this argument and then did
+      // not apply it to the identifiers.
+      context[key] = String(v).replace(/\u0000/g, '\uFFFD').slice(0, 64);
       return null;
     };
 

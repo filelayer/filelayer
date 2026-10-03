@@ -115,6 +115,30 @@ requires path-style, which is the default.
 
 ## The exact names to configure
 
+### Two providers, two sets of names
+
+There are **two** live jobs and they are deliberately independent:
+
+| Job | Secret prefix | Status |
+| --- | --- | --- |
+| `s3-live` — Cloudflare R2 | `FILELAYER_TEST_S3_…` | configured, runs on every commit |
+| `s3-live-aws` — AWS S3 itself | `FILELAYER_TEST_AWS_S3_…` | **not configured yet** |
+
+The AWS job is a copy of the R2 one, down to the guard that fails the build if
+the credentials are present and the suite skips itself anyway. Add the five
+`FILELAYER_TEST_AWS_S3_…` secrets and it starts running; add nothing and it stays
+green and says, in the run summary, that it did not run.
+
+The infix exists so the two can never be pointed at the same bucket by accident.
+Inside the job the AWS secrets are mapped back to the un-prefixed names, because
+that is what the adapter and the test file read.
+
+**R2 and AWS are not the same test.** R2 is S3-compatible, which is not the same
+as being S3: AWS has its own checksum requirements, real IAM evaluation,
+virtual-hosted addressing and its own error codes. "Storage adapter against live
+AWS S3: never run" is a row on the public trust page, and these five secrets are
+what retires it.
+
 **Repository secrets** — *Settings → Secrets and variables → Actions → Secrets*.
 All five are required. Set fewer than five and the job skips, names the ones
 that are missing, and stays green.
@@ -140,6 +164,38 @@ are easier to read in a log if they are not.
 | --- | --- | --- |
 | `FILELAYER_TEST_S3_PATH_STYLE` | path-style | set to `false` for virtual-hosted addressing (AWS) |
 | `FILELAYER_TEST_S3_PREFIX` | `filelayer-ci/` | key prefix; everything written lives under it |
+
+For the AWS job the same two variables take the `FILELAYER_TEST_AWS_S3_` prefix,
+and `FILELAYER_TEST_AWS_S3_PATH_STYLE` should be `false`: virtual-hosted
+addressing is what AWS prefers and is a code path R2 never exercises, since R2
+requires path-style.
+
+### The whole AWS checklist, in one place
+
+1. A bucket, Block Public Access fully on, nothing else in it.
+2. An IAM user whose only policy is the JSON above, with the bucket name
+   substituted in both ARNs.
+3. These five repository secrets:
+
+   ```
+   FILELAYER_TEST_AWS_S3_ENDPOINT           https://s3.<region>.amazonaws.com
+   FILELAYER_TEST_AWS_S3_BUCKET             <your bucket>
+   FILELAYER_TEST_AWS_S3_REGION             <the real region, not "auto">
+   FILELAYER_TEST_AWS_S3_ACCESS_KEY_ID      <from step 2>
+   FILELAYER_TEST_AWS_S3_SECRET_ACCESS_KEY  <from step 2>
+   ```
+
+4. These two repository variables:
+
+   ```
+   FILELAYER_TEST_AWS_S3_PATH_STYLE   false
+   FILELAYER_TEST_AWS_S3_PREFIX       filelayer-ci/
+   ```
+
+5. Re-run the workflow. The job summary says `RUNNING` and reports the bucket.
+
+Cost is a rounding error: twelve small objects per commit, deleted by the suite,
+plus one 11 MB multipart upload on the nightly run only.
 
 The multipart test (~11 MB per run) is controlled by
 `FILELAYER_TEST_S3_MULTIPART` and is set by the workflow, not by you: off on

@@ -13,16 +13,17 @@ that records denials. It was first published on **6 September 2026**.
 
 | | |
 |---|---|
-| Version | 0.7.0 — alpha |
+| Version | 0.8.0 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
-| Tests | 364, on Node 22 / 24 / 26, every commit |
+| Tests | 375, on Node 22 / 24 / 26, every commit |
+| Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
 | Licence | Apache-2.0 |
 | Storage adapter against live Cloudflare R2 | 12 tests, every commit |
-| Storage adapter against live AWS S3 | **never run** — see below |
+| Storage adapter against live AWS S3 | **never run** — the CI job is written and waiting on credentials |
 
 If any row in that table is disqualifying for you, it should be, and you can stop
 reading. We would rather you decline today for accurate reasons than adopt on a
@@ -99,9 +100,16 @@ matter:
   `verifyAuditChain()` hands you the head hash and pinning it somewhere else is
   your job. Found by our own adversarial sweep, 2 October 2026, after three
   weeks of this page saying "tamper-evidence" without that sentence.
-- Concurrency guarantees are argued from Postgres semantics and tested on a
-  single-backend engine. The lock ordering is reasoned and followed, not proven
-  under real contention.
+- Concurrency is no longer argued. **Since 3 October 2026 eight tests run on
+  every commit against a real PostgreSQL with two connections**, staging the
+  races rather than reasoning about them: two backends demoting two owners, ten
+  simultaneous redemptions against a cap of three, twenty concurrent writers on
+  one audit chain, and cross-tenant traffic under load. Three of them carry a
+  calibration control that drives the same interleaving with the protection
+  removed and asserts the bad outcome does occur, because a concurrency test
+  that has never been seen to fail is indistinguishable from one that cannot.
+  What is still unproven is everything above those four properties: this is a
+  floor, not a sweep.
 - The schema may change before 1.0. One breaking change has already shipped, with
   a migration.
 

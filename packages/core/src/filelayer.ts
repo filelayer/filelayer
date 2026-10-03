@@ -987,7 +987,12 @@ export class Filelayer {
     fileId: string,
     decision: Extract<Decision, { allow: true }>,
     principal: Principal,
-    opts: { disposition?: Disposition; mode?: 'proxy' | 'auto' },
+    opts: {
+      disposition?: Disposition;
+      mode?: 'proxy' | 'auto';
+      /** Carried only so `#redirectEligible` can refuse to redirect a ranged read. */
+      range?: { start: number; end?: number };
+    },
   ): Promise<Reservation> {
     const grantId = decision.grantId ?? null;
     let remainingDownloads: number | null = null;
@@ -1019,7 +1024,7 @@ export class Filelayer {
     if (!file) throw new FilelayerError(404, 'not_found');
 
     const headers = deliveryHeaders(file, opts);
-    const mode = this.#redirectEligible(decision, opts.mode ?? 'auto');
+    const mode = this.#redirectEligible(decision, opts.mode ?? 'auto', opts);
 
     if (mode === 'proxy') {
       return { kind: 'proxy', file, headers, remainingDownloads, grantId };
@@ -1098,10 +1103,33 @@ export class Filelayer {
   #redirectEligible(
     decision: Extract<Decision, { allow: true }>,
     requested: 'proxy' | 'auto',
+    opts: { range?: { start: number; end?: number } } = {},
   ): 'proxy' | 'redirect' {
     if (requested !== 'auto') return 'proxy';
     if (this.redirect === null) return 'proxy';
     if (!canPresign(this.storage)) return 'proxy';
+    // A RANGE CANNOT SURVIVE A REDIRECT, so a request that asked for one is
+    // proxied instead of being answered with a URL for the whole object.
+    //
+    // The redirect arm of `#fetchDelivery` never read `opts.range` -- it could
+    // not, since the range was not even carried that far -- so a caller asking
+    // for six bytes received a 302 to all of them, with no `Content-Range`, no
+    // `Accept-Ranges`, and nothing in the response to tell them their range had
+    // been discarded. Silently widening what a caller asked for is the one
+    // outcome they cannot detect, which is what makes this worth a branch
+    // rather than a note in the docs.
+    if (opts.range) return 'proxy';
+    // 'all-grants' MEANS ALL GRANTS, which is why this is not the same check as
+    // the one below.
+    //
+    // The scope option is documented as widening redirects from anonymous
+    // grants to "link and actor grants too". But the only test was on
+    // `'anonymous-grants-only'`, so under `'all-grants'` nothing looked at
+    // `via` at all and an OWNER read of a private file -- a delivery that came
+    // from no grant whatsoever -- was redirected. `grantId === null` is exactly
+    // how the rest of this class already distinguishes the two: it is why
+    // `#reserve` does not charge an owner read against a download cap.
+    if ((decision.grantId ?? null) === null) return 'proxy';
     if (this.redirect.scope === 'anonymous-grants-only' && decision.via !== 'grant:anonymous') {
       return 'proxy';
     }

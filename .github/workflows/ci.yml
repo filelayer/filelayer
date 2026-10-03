@@ -314,6 +314,90 @@ jobs:
           FILELAYER_VERIFY_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/filelayer_verify
 
   # ---------------------------------------------------------------------------
+  # CONTENTION. The properties that only exist when two backends collide.
+  #
+  # The rest of the suite runs on PGlite, which is PostgreSQL 17 compiled to
+  # WASM and is excellent at everything except the one thing this job is for:
+  # it has a SINGLE BACKEND, so two transactions never overlap and a
+  # check-then-act race cannot be staged on it.
+  #
+  # That gap was not theoretical. On 2 October 2026 a review found three races
+  # in this codebase and the fixes shipped on reasoning alone, because no engine
+  # in CI could produce the interleaving they defend against. TRUST.md said the
+  # concurrency guarantees were "reasoned and followed, not proven under real
+  # contention". This job is what retires that sentence.
+  #
+  # Each property is tested twice: once forwards, and once as a calibration
+  # control that drives the same interleaving with the protection removed and
+  # asserts the bad outcome DOES occur. A concurrency test that has never been
+  # seen to fail is indistinguishable from one that cannot.
+  # ---------------------------------------------------------------------------
+  contention:
+    name: concurrency against a real PostgreSQL
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        working-directory: packages/core
+        run: npm ci
+
+      - name: Contention suite
+        working-directory: packages/core
+        env:
+          # Set, so the suite opts in AND refuses to skip itself. The tests
+          # create a throwaway database per world on this server.
+          FILELAYER_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: |
+          set -o pipefail
+          npm run test:contention 2>&1 | tee /tmp/contention.log
+
+      # THE SAME GUARD THE R2 JOB NEEDED, for the same reason. A suite that
+      # skips itself reports success, and that is the one failure mode
+      # indistinguishable from the real thing. We shipped it once already.
+      - name: Refuse a silent skip
+        run: |
+          pass=$(awk '/^# pass/ {print $3}' /tmp/contention.log)
+          fail=$(awk '/^# fail/ {print $3}' /tmp/contention.log)
+          skip=$(awk '/^# skipped/ {print $3}' /tmp/contention.log)
+          echo "pass=$pass fail=$fail skipped=$skip"
+          if [ "${skip:-0}" != "0" ]; then
+            echo "::error::The contention suite skipped ${skip} test(s) with a server configured."
+            exit 1
+          fi
+          if [ "${pass:-0}" -lt 8 ]; then
+            echo "::error::Expected at least 8 contention tests, saw ${pass:-0}."
+            exit 1
+          fi
+          if [ "${fail:-1}" != "0" ]; then
+            echo "::error::Contention failures: ${fail}."
+            exit 1
+          fi
+          echo "Contention: ${pass} passed against a real PostgreSQL." >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
   # The storage adapter, against a REAL bucket.
   #
   # test/storage.test.ts proves the wire format against a local server that
@@ -467,3 +551,150 @@ jobs:
           fi
           echo "live S3/R2 suite: $passed assertion group(s) ran against a real bucket"
           echo "Live S3/R2 suite ran: **$passed** test(s) passed against a real bucket." >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # THE SAME ADAPTER, AGAINST AWS S3 ITSELF.
+  #
+  # The job above runs against Cloudflare R2, which is S3-compatible. Compatible
+  # is not identical, and the public trust page has carried "Storage adapter
+  # against live AWS S3: never run" since the project was published. AWS differs
+  # in the places that are expensive to get wrong: its own checksum requirements,
+  # real IAM evaluation, virtual-hosted addressing, and its own error codes.
+  #
+  # Identical to the R2 job in every other respect, including the two properties
+  # that job was built around: a fork must not go red, and a skip with
+  # credentials present is a failure rather than a pass.
+  #
+  # The secrets carry an AWS_ infix so the two providers cannot be pointed at one
+  # bucket by accident. docs/LIVE-S3-TESTS.md has the five names and the minimum
+  # IAM policy.
+  # ---------------------------------------------------------------------------
+  s3-live-aws:
+    name: the storage adapter against live AWS S3
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Are the live-storage credentials configured?
+        id: creds
+        env:
+          # AWS_-prefixed HERE, because the presence check below reads these
+          # very names back out of the environment. The run step maps them to
+          # the un-prefixed names the adapter expects.
+          FILELAYER_TEST_AWS_S3_ENDPOINT: ${{ secrets.FILELAYER_TEST_AWS_S3_ENDPOINT }}
+          FILELAYER_TEST_AWS_S3_BUCKET: ${{ secrets.FILELAYER_TEST_AWS_S3_BUCKET }}
+          FILELAYER_TEST_AWS_S3_REGION: ${{ secrets.FILELAYER_TEST_AWS_S3_REGION }}
+          FILELAYER_TEST_AWS_S3_ACCESS_KEY_ID: ${{ secrets.FILELAYER_TEST_AWS_S3_ACCESS_KEY_ID }}
+          FILELAYER_TEST_AWS_S3_SECRET_ACCESS_KEY: ${{ secrets.FILELAYER_TEST_AWS_S3_SECRET_ACCESS_KEY }}
+        run: |
+          required=(
+            FILELAYER_TEST_AWS_S3_ENDPOINT
+            FILELAYER_TEST_AWS_S3_BUCKET
+            FILELAYER_TEST_AWS_S3_REGION
+            FILELAYER_TEST_AWS_S3_ACCESS_KEY_ID
+            FILELAYER_TEST_AWS_S3_SECRET_ACCESS_KEY
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "have=true" >> "$GITHUB_OUTPUT"
+            echo "### Live AWS S3 suite: RUNNING" >> "$GITHUB_STEP_SUMMARY"
+            echo "All 5 credentials are configured. Bucket: \`${FILELAYER_TEST_AWS_S3_BUCKET}\`, region \`${FILELAYER_TEST_AWS_S3_REGION}\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "have=false" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Live AWS S3 suite SKIPPED::Not run. Missing repository secret(s): ${missing[*]}. See docs/LIVE-S3-TESTS.md. This is expected on forks."
+          {
+            echo "### Live AWS S3 suite: SKIPPED - no credentials"
+            echo
+            echo "The storage adapter was **not** exercised against a real bucket in this run."
+            echo "Everything else on this build is green on its own merits; this line exists so"
+            echo "that a green tick is not mistaken for one."
+            echo
+            echo "Missing repository secret(s):"
+            echo
+            for name in "${missing[@]}"; do echo "- \`$name\`"; done
+            echo
+            echo "A maintainer can fix this in about five minutes: follow \`docs/LIVE-S3-TESTS.md\`."
+            echo
+            echo "Secrets are unavailable to pull requests from forks. A skip on a fork PR is"
+            echo "correct and is not a failure."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        if: steps.creds.outputs.have == 'true'
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        if: steps.creds.outputs.have == 'true'
+        working-directory: packages/core
+        run: npm ci
+
+      # Run the live file ON ITS OWN. Two reasons: the rest of the suite is
+      # already covered by the `test` job on three Node versions, and running
+      # this file alone makes "did it actually run?" answerable below.
+      - name: Live AWS S3 suite
+        if: steps.creds.outputs.have == 'true'
+        working-directory: packages/core
+        env:
+          # The adapter and the test file read the un-prefixed names. The
+          # secrets carry an AWS_ infix only so that the two live providers can
+          # never be pointed at the same bucket by accident.
+          FILELAYER_TEST_S3_ENDPOINT: ${{ secrets.FILELAYER_TEST_AWS_S3_ENDPOINT }}
+          FILELAYER_TEST_S3_BUCKET: ${{ secrets.FILELAYER_TEST_AWS_S3_BUCKET }}
+          FILELAYER_TEST_S3_REGION: ${{ secrets.FILELAYER_TEST_AWS_S3_REGION }}
+          FILELAYER_TEST_S3_ACCESS_KEY_ID: ${{ secrets.FILELAYER_TEST_AWS_S3_ACCESS_KEY_ID }}
+          FILELAYER_TEST_S3_SECRET_ACCESS_KEY: ${{ secrets.FILELAYER_TEST_AWS_S3_SECRET_ACCESS_KEY }}
+          FILELAYER_TEST_S3_SESSION_TOKEN: ${{ secrets.FILELAYER_TEST_AWS_S3_SESSION_TOKEN }}
+          FILELAYER_TEST_S3_PATH_STYLE: ${{ vars.FILELAYER_TEST_AWS_S3_PATH_STYLE }}
+          FILELAYER_TEST_S3_PREFIX: ${{ vars.FILELAYER_TEST_AWS_S3_PREFIX }}
+          # ~11 MB of uploads. Too much for every push, too important never to
+          # run, so it runs on the nightly schedule and on a manual dispatch.
+          FILELAYER_TEST_S3_MULTIPART: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
+        run: |
+          set -o pipefail
+          node --test --experimental-strip-types test/s3-live.test.ts 2>&1 | tee "$RUNNER_TEMP/s3-live-aws.log"
+
+      # Credentials present and the suite skipped itself is the failure mode
+      # this whole job exists to prevent: it looks exactly like success.
+      - name: The suite must actually have run
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          log="$RUNNER_TEMP/s3-live-aws.log"
+          if grep -q '\[s3-live\] SKIPPED' "$log"; then
+            echo "::error title=Live AWS suite skipped with credentials present::The five secrets were set and the suite still skipped itself. Something is wrong with how they are being passed."
+            exit 1
+          fi
+          # REPORTER-AGNOSTIC ON PURPOSE. `node --test` writes its tally as
+          # `# pass 12` under the TAP reporter and `<U+2139> pass 12` under the spec
+          # reporter, and which one you get depends on the Node version and on
+          # whether stdout is a TTY. This step originally matched `^# pass N`
+          # only, and on its FIRST EVER execution -- 2026-09-30, the day the
+          # credentials were finally configured -- Node 24 emitted spec format
+          # through a pipe and the parse found nothing. The suite had passed 12
+          # of 12 against real R2; the checker written to catch a silent failure
+          # failed silently instead, which is the joke writing itself.
+          #
+          # Matching on the two fields rather than a prefix means the format can
+          # change again without this going red for the wrong reason. A test
+          # NAMED "pass 3" cannot collide: the tally line has exactly two fields
+          # after any marker, and the second is all digits.
+          passed=$(awk '$(NF-1) == "pass" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
+          failed=$(awk '$(NF-1) == "fail" && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log")
+          if [ -z "$passed" ] || [ "$passed" -lt 1 ]; then
+            echo "::error title=Live AWS suite asserted nothing::no 'pass <n>' tally in the runner output. Either the suite ran nothing, or the reporter format changed again and this parse needs updating."
+            exit 1
+          fi
+          if [ -n "$failed" ] && [ "$failed" -gt 0 ]; then
+            echo "::error title=Live AWS suite had failures::the runner reported 'fail ${failed}'"
+            exit 1
+          fi
+          echo "live AWS S3 suite: $passed assertion group(s) ran against a real bucket"
+          echo "Live AWS S3 suite ran: **$passed** test(s) passed against a real bucket." >> "$GITHUB_STEP_SUMMARY"

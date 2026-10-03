@@ -348,7 +348,7 @@ README says is the most valuable thing you can send us.
 ## Limitations
 
 Restated here so they are not only in an appendix. Each one is current as of
-`0.7.0`; where a limitation has been lifted since an earlier release, the
+`0.8.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **No `Range` responses from the shipped HTTP routes.** `fileDownloadRoute()`
@@ -401,3 +401,14 @@ Restated here so they are not only in an appendix. Each one is current as of
    database, but by a rule and a trigger the table's owner can drop.
 11. **There is no retention trimming for the audit log.** `audit_event` grows
    without bound, and erasing a tenant's history is not a supported operation.
+12. **The shipped HTTP routes still ignore the `Range` request header.** They
+   answer a full `200` and send no `Accept-Ranges`, so a resumable client has no
+   way to learn that ranges are unsupported and will retry whole objects.
+   Everything beneath the routes honours a range; parsing the header is the part
+   you write.
+13. **A proxied delivery is audited at the decision, not at the last byte.** The
+   allow event and the download-cap charge happen before any bytes move, so a
+   transfer that dies mid-stream is recorded as an allowed read and still spends
+   the cap. "Every access on the record" means every authorization decision. On
+   the redirect path a `file.deliver` event does record the handoff; on the proxy
+   path there is no event that says the bytes arrived.

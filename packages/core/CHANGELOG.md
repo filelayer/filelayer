@@ -25,6 +25,157 @@ Nothing yet.
 
 ---
 
+## [0.8.0] — 2026-10-03
+
+**The sweep nobody had done: the storage adapter and the delivery routes.**
+
+Three previous reviews went at authorization, the published package, and
+lifecycle. None had gone at `storage.ts` or at what happens to bytes between the
+object store and a browser, so that is where this one went, with the usual rule:
+a finding is real only if there is an executed test that fails before the fix and
+passes after. Fourteen were real.
+
+Also in this release, and the reason it exists at all: **concurrency is no longer
+argued.**
+
+### Added — eight contention tests against a real PostgreSQL, on every commit
+
+PGlite has a single backend. Two transactions never overlap on it, so a
+check-then-act race cannot be staged and a lock that is never contended cannot be
+observed to work. Three races were found by review on 2 October and fixed on
+reasoning alone, because nothing in CI could produce the interleaving they defend
+against.
+
+`test/contention.test.ts` now runs against a real server with real, separate
+connections: two backends demoting two owners of the same org, ten simultaneous
+redemptions against a cap of three, twenty concurrent writers on one audit chain,
+and cross-tenant traffic under load. Three of them carry a **calibration
+control** that drives the same interleaving with the protection removed and
+asserts the bad outcome does occur — zero owners, a counter over its cap, a chain
+that fails replay — because a concurrency test that has never been seen to fail
+is indistinguishable from one that cannot fail.
+
+`npm test` is unchanged: no server, no download, two seconds. The suite opts in
+via `npm run test:contention`, and CI sets `FILELAYER_TEST_DATABASE_URL` and then
+refuses to let it skip.
+
+### Added — the AWS S3 job, waiting on credentials
+
+"Storage adapter against live AWS S3: never run" has been a row on the trust page
+since publication. The job is now written, identical to the R2 one including the
+guard that fails the build if credentials are present and the suite skips itself.
+Five secrets turn it on; `docs/LIVE-S3-TESTS.md` lists them and the minimum IAM
+policy. Until then it stays green and says in the run summary that it did not run.
+
+### Fixed — an unauthenticated probe could still make itself invisible
+
+`GET /f/%00`. Four characters, no credential, and the 0.6.0 defect was back.
+
+0.6.0 fixed a route its own URL could kill and chose, deliberately, to keep an
+unrecognisable identifier verbatim in the audit event's `context` so that a probe
+left a record. That changelog entry put it well: *"the probe left no record,
+because the write that would have recorded it was the write that failed."* But
+`context` is `jsonb`, and jsonb refuses U+0000 exactly as the `uuid` column it
+replaced did. So the NUL decoded cleanly, travelled to the audit INSERT, and died
+there with SQLSTATE 22P05: an unauthenticated 500, and again no audit row. The
+defect had moved one column over rather than closed, and an attacker could sweep
+the file namespace invisibly by appending `%00`.
+
+Refusing the NUL outright was the first fix and it was quietly worse: the probe
+then vanished from the log entirely, which is the same invisibility with better
+manners. U+FFFD is substituted instead, at the route and again in the store, so
+the attempt is denied and recorded.
+
+### Fixed — a closed browser tab leaked an object-store connection
+
+`sendNodeStream` awaited `drain` and only `drain`. Once a client disconnects the
+response is destroyed, `write()` returns false forever and `drain` never fires
+again, so the handler suspended permanently. Measured: 150 abandoned downloads,
+150 handlers still suspended, zero upstream streams cancelled.
+
+The suspended promise was not the cost. `S3Storage.stream()` hands back a live
+undici response body, so every abandoned download held an open socket to the
+object store — four of five still open eight seconds later against a real signing
+server. And because `await route(req, res)` never resolved, every per-request log
+line, metric and cleanup written after it silently stopped running.
+
+Now the wait races `drain` against `close`, the loop breaks when the response is
+gone, and the reader is cancelled rather than merely released.
+
+### Fixed — `scope: 'all-grants'` redirected deliveries that came from no grant
+
+The option is documented as widening redirects from anonymous grants to "link and
+actor grants too". The only `via` check lived inside the narrow scope, so under
+the wide one nothing checked where the authority came from and an **owner read of
+a private file** was handed out as a presigned URL that outlives a revocation.
+`grantId === null` is how the rest of the class already tells the two apart; it
+is why an owner read is not charged against a download cap.
+
+### Fixed — a ranged read was silently widened to the whole object
+
+The redirect arm never read `opts.range`. A caller asking for six bytes got a 302
+for all of them, with no `Content-Range`, no `Accept-Ranges`, and nothing in the
+response to detect it by. A range now forces the proxy path.
+
+### Fixed — the storage adapter trusted the response shape
+
+- **A 3xx was followed.** No signature covers where a redirect points, so an
+  endpoint able to shape its responses could substitute arbitrary bytes for an
+  authorized object — served under the real file's pinned content-type and
+  audited as a successful read. It also forwarded `x-amz-security-token`, which
+  undici does not strip across origins, to a host of the redirector's choosing.
+  `redirect: 'error'` now.
+- **A 200 carrying an `<Error>` body was a successful write.** `res.ok` was the
+  whole check, so a store that answers 200 for everything got a byte count back
+  that became `file.size_bytes` — a row describing an object that does not exist.
+  A missing `ETag` is now a failure, as it already was for `uploadPart`. The same
+  applies to `delete()`, where it matters more: the caller has already been told
+  the bytes are gone.
+- **A HEAD with no `content-length` reported `size: 0`.** `stream()` got the
+  identical case right twenty lines away, so one adapter gave two answers about
+  one response.
+- **`head()` and `delete()` discarded the store's error code**, while every other
+  method reported it, because they drained the body before testing the status.
+- **A malformed `ByteRange` was formatted straight into the header.** RFC 9110
+  says a recipient must ignore a `Range` it cannot parse, so the store returned
+  the WHOLE object and the adapter reported an unranged read. `MemoryStorage`
+  disagreed with the S3 path on the same input, which meant a range test passing
+  against the in-memory double proved nothing. `assertRange` is now exported and
+  enforced by both.
+- **A non-finite presign TTL signed `X-Amz-Expires=NaN`.** `Math.max(1,
+  Math.min(Math.floor(NaN), n))` is NaN at every step, and being signed it could
+  not be stripped.
+- **A part could exceed `partSizeBytes`.** `readAtLeast` carried whatever the
+  last source chunk brought with it, so a 12 MiB chunk against a 5 MiB part size
+  produced a 12 MiB part — measured off the wire. The documented invariant
+  ("peak memory is bounded by ONE part") was false; the overshoot is now carried.
+- **The multipart ETag came back XML-escaped**, so one field had two formats
+  depending on object size and the multipart one was not a valid entity-tag.
+- **An endpoint carrying a path was silently dropped.** The limitation is fine;
+  the silence was not.
+
+### Fixed — two smaller delivery gaps
+
+`fileDownloadRoute` did not apply the query-string credential refusal that
+`deliveryHandler` advertises for the whole surface: `/d/x?token=abc` was a 400 and
+`/f/<id>?token=abc` a 200. And `HEAD` was unroutable, so an existing authorized
+file answered 404 to HEAD and 200 to GET, which misreports existence to every
+cache and link checker. Note that a HEAD now spends a download against a capped
+grant; `stat()` is the call that does not.
+
+### Tests
+
+383 across 98 suites, of which 375 run on PGlite on every commit and 8 against a
+real PostgreSQL. Ten new regression tests, each observed to fail against `0.7.0`
+and pass here. The two scratch probe files the review produced were deleted; what
+survives is in `regression.test.ts` with the rest.
+
+Two of those ten were weak when first written and passed against the pre-fix tree
+— one exercised the engine instead of the route, the other pointed its redirect at
+an unreachable port, so the fetch failed either way and proved nothing. Both were
+rewritten until they discriminated. That check is the only reason the suite means
+anything, and it is worth recording that it caught its own author twice.
+
 ## [0.7.0] — 2026-10-02
 
 **A correctness release, from the sweep that followed `0.6.0` by about an hour.**

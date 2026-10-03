@@ -83,6 +83,30 @@ export interface ByteRange {
   end?: number;
 }
 
+/**
+ * VALIDATED IN THE ADAPTER, because the failure was silent and widening.
+ *
+ * A malformed range was formatted straight into the `Range` header. RFC 9110
+ * says a recipient MUST ignore a `Range` it cannot parse, so the store answered
+ * 200 with the WHOLE object and the adapter reported it as an unranged read: a
+ * caller who asked for six bytes got all of them, with nothing in the response
+ * to say so. The two adapters in this file also disagreed about the same bad
+ * input -- `MemoryStorage` returned null for a reversed range, a slice for a
+ * fractional one, and `NaN` for `start: NaN` -- so a range test passing against
+ * the in-memory double proved nothing about the S3 path.
+ *
+ * Refusing is the only option a caller can detect.
+ */
+export function assertRange(r: ByteRange): void {
+  const bad = (why: string): never => {
+    throw new Error(`invalid byte range: ${why}`);
+  };
+  if (!Number.isInteger(r.start) || r.start < 0) bad(`start must be a non-negative integer, got ${r.start}`);
+  if (r.end === undefined) return;
+  if (!Number.isInteger(r.end) || r.end < 0) bad(`end must be a non-negative integer, got ${r.end}`);
+  if (r.end < r.start) bad(`end (${r.end}) is before start (${r.start})`);
+}
+
 export interface ObjectHead {
   size: number;
   contentType: string | null;
@@ -242,6 +266,7 @@ export class MemoryStorage implements StorageAdapter {
     if (!o) return null;
     const total = o.body.byteLength;
     if (opts.range) {
+      assertRange(opts.range);
       const start = Math.max(0, opts.range.start);
       const end = Math.min(opts.range.end ?? total - 1, total - 1);
       if (start > end) return null;
@@ -394,7 +419,19 @@ export class S3Storage implements StorageAdapter {
     });
     if (!res.ok) throw await s3Error('put', res);
     await res.arrayBuffer(); // drain; undici leaks the connection otherwise
-    return { bytes: body.byteLength, etag: res.headers.get('etag') };
+    // A 200 WITH NO ETag IS NOT A WRITE. Some S3-compatible stores and
+    // intermediaries answer 200 carrying an `<Error>` document; `res.ok` is
+    // true and nothing was stored. This method then returned a byte count that
+    // became `file.size_bytes`, so the row described an object that did not
+    // exist. `uploadPart` has treated a missing ETag as a failure all along --
+    // this is the same check, on the path that writes every small file.
+    const etag = res.headers.get('etag');
+    if (etag === null) {
+      throw new Error(
+        `storage put failed: ${res.status} with no ETag, which means the store did not accept the object`,
+      );
+    }
+    return { bytes: body.byteLength, etag };
   }
 
   /**
@@ -415,7 +452,8 @@ export class S3Storage implements StorageAdapter {
   ): Promise<StoragePutResult> {
     const partSize = this.cfg.partSizeBytes;
     const reader = body.getReader();
-    const first = await readAtLeast(reader, partSize);
+    const carry: { rest: Uint8Array | null } = { rest: null };
+    const first = await readAtLeast(reader, partSize, carry);
 
     if (first.done) {
       // Whole object fits in one part.
@@ -437,7 +475,7 @@ export class S3Storage implements StorageAdapter {
         partNumber += 1;
         parts.push({ partNumber, etag: await this.uploadPart(key, uploadId, partNumber, pending) });
         total += pending.byteLength;
-        const next = await readAtLeast(reader, partSize);
+        const next = await readAtLeast(reader, partSize, carry);
         if (next.chunk.byteLength === 0 && next.done) break;
         pending = next.chunk;
         if (next.done) {
@@ -527,7 +565,12 @@ export class S3Storage implements StorageAdapter {
         `storage completeMultipartUpload failed with 200 + Error body: ${xmlTag(text, 'Code') ?? text.slice(0, 200)}`,
       );
     }
-    return xmlTag(text, 'ETag');
+    // UNESCAPE, as `list()` already does for Key. Without it a multipart upload
+    // returned `&quot;...&quot;` while a single PUT returned `"..."`, so one
+    // field had two formats depending on object size and neither consumer could
+    // tell which it had. The escaped form is not a valid HTTP entity-tag.
+    const etag = xmlTag(text, 'ETag');
+    return etag === null ? null : unescapeXml(etag);
   }
 
   private async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
@@ -549,15 +592,30 @@ export class S3Storage implements StorageAdapter {
 
   async head(key: string): Promise<ObjectHead | null> {
     const res = await this.signedFetch({ method: 'HEAD', key });
+    if (res.status === 404) {
+      await res.arrayBuffer().catch(() => {});
+      return null;
+    }
+    // STATUS BEFORE DRAIN. Draining first threw away the body `s3Error` reads,
+    // so `head` and `delete` reported a bare status while every other method
+    // reported the store's own error code -- exactly the detail an operator
+    // needs, missing from two of the six methods for no reason but ordering.
+    if (!res.ok) throw await s3Error('head', res);
     // A HEAD has no body to read, but undici still wants the (empty) body
     // consumed before the socket goes back to the pool.
     await res.arrayBuffer().catch(() => {});
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`storage head failed: ${res.status}`);
     const len = res.headers.get('content-length');
+    // UNKNOWN IS NOT ZERO. A chunked response, or an intermediary that dropped
+    // the header, used to be reported as a zero-byte object -- and `stream()`
+    // gets the identical case right twenty lines down, so one adapter gave two
+    // answers about one response. Refusing is the honest option while
+    // `ObjectHead.size` is a plain `number`.
+    if (len === null) {
+      throw new Error('storage head failed: the store returned no content-length, so the size is unknown');
+    }
     const lm = res.headers.get('last-modified');
     return {
-      size: len === null ? 0 : Number(len),
+      size: Number(len),
       contentType: res.headers.get('content-type'),
       etag: res.headers.get('etag'),
       lastModified: lm ? new Date(lm) : null,
@@ -567,6 +625,7 @@ export class S3Storage implements StorageAdapter {
   async stream(key: string, opts: { range?: ByteRange } = {}): Promise<ObjectStream | null> {
     const headers: Record<string, string> = {};
     if (opts.range) {
+      assertRange(opts.range);
       headers['range'] =
         opts.range.end === undefined
           ? `bytes=${opts.range.start}-`
@@ -601,10 +660,20 @@ export class S3Storage implements StorageAdapter {
 
   async delete(key: string): Promise<void> {
     const res = await this.signedFetch({ method: 'DELETE', key });
-    await res.arrayBuffer().catch(() => {});
     // S3 returns 204 for a delete of a key that never existed. 404 is here for
     // S3-compatible stores that disagree; either way "it is gone" is success.
-    if (!res.ok && res.status !== 404) throw new Error(`storage delete failed: ${res.status}`);
+    if (!res.ok && res.status !== 404) throw await s3Error('delete', res);
+    const text = await res.text().catch(() => '');
+    // A 200 CARRYING AN <Error> DOCUMENT IS NOT A DELETE, and this one matters
+    // more than the others: the caller has already been told the bytes are
+    // gone, and `file.state` is about to say so too. `completeMultipartUpload`
+    // has guarded this shape all along; the path that removes every file did
+    // not.
+    if (text !== '' && /<Error>/.test(text)) {
+      throw new Error(
+        `storage delete failed with ${res.status} + Error body: ${xmlTag(text, 'Code') ?? text.slice(0, 200)}`,
+      );
+    }
   }
 
   async list(
@@ -651,6 +720,14 @@ export class S3Storage implements StorageAdapter {
    * protections that `deliveryHeaders()` exists to guarantee.
    */
   async presignGet(key: string, opts: PresignOptions): Promise<string> {
+    // `Math.max(1, Math.min(Math.floor(NaN), n))` is NaN: the clamp this method
+    // documents is NaN-poisoned at every step, and the result was a signed
+    // `X-Amz-Expires=NaN`. Being signed, it could not be stripped, and a store
+    // parsing it with `parseInt` never found the URL expired. The finite cases
+    // were always right; this is only the hole at the edge.
+    if (!Number.isFinite(opts.expiresInSeconds)) {
+      throw new Error('presign failed: expiresInSeconds must be a finite number');
+    }
     const expires = Math.max(1, Math.min(Math.floor(opts.expiresInSeconds), this.cfg.maxPresignSeconds));
     const now = new Date();
     const amzDate = amzDateOf(now);
@@ -698,6 +775,17 @@ export class S3Storage implements StorageAdapter {
    */
   private objectUrl(key: string): { url: URL; canonicalUri: string } {
     const base = new URL(this.cfg.endpoint);
+    // AN ENDPOINT PATH IS NOT SUPPORTED, so say so instead of dropping it.
+    // Only protocol and host are used below, so `https://host/s3-gateway`
+    // addressed `/bucket/key` and failed at the far end with something that
+    // named neither the endpoint nor the prefix. The limitation is fine; the
+    // silence was not.
+    if (base.pathname !== '/' && base.pathname !== '') {
+      throw new Error(
+        `storage endpoint must not carry a path: got ${base.pathname}. ` +
+          'Use pathStyle for bucket addressing.',
+      );
+    }
     const segments = key === '' ? [] : key.split('/');
     let host = base.host;
     let path: string;
@@ -783,6 +871,21 @@ export class S3Storage implements StorageAdapter {
     return fetch(target, {
       method: req.method,
       headers: wire,
+      // NEVER FOLLOW A REDIRECT. The signature covers the request we are
+      // sending, and nothing covers wherever a 3xx points. Following one let an
+      // endpoint that can shape its own responses substitute arbitrary bytes
+      // for an authorized object -- Filelayer then serves those bytes under the
+      // real file's pinned content-type and disposition, and audits a
+      // successful read. It also forwarded `x-amz-security-token` to the
+      // redirect target: undici strips `authorization` across origins and does
+      // not strip that one, so an STS credential travelled to a host of the
+      // redirector's choosing.
+      //
+      // A conformant S3 does not 3xx a GET of an existing object, so this costs
+      // nothing and closes the case where the endpoint is a compromised
+      // gateway, an on-path attacker on a non-TLS endpoint, or a bucket with
+      // website-redirect behaviour. Found 3 October 2026.
+      redirect: 'error',
       ...(req.body !== undefined && req.method !== 'GET' && req.method !== 'HEAD'
         ? { body: req.body as unknown as BodyInit }
         : {}),
@@ -843,20 +946,49 @@ function canonicalHeaderValue(v: string): string {
  * which is what lets `putStream` decide between a one-shot PUT and multipart
  * without a second read.
  */
+/**
+ * Read EXACTLY `n` bytes, or everything that is left.
+ *
+ * It used to read AT LEAST `n` and hand back whatever the last source chunk
+ * brought with it, which made the documented invariant of `putStream` false:
+ * "peak memory is bounded by ONE part regardless of object size" was really
+ * bounded by one part PLUS the largest chunk the source happened to emit. A
+ * single 12 MiB chunk against a 5 MiB part size produced a 12 MiB part,
+ * measured off the wire -- and a large enough chunk would breach S3's own 5 GiB
+ * per-part limit.
+ *
+ * `carry` holds the overshoot between calls, so the bound is now the one the
+ * documentation claims.
+ */
 async function readAtLeast(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   n: number,
+  carry: { rest: Uint8Array | null },
 ): Promise<{ chunk: Uint8Array; done: boolean }> {
   const chunks: Uint8Array[] = [];
   let total = 0;
-  while (total < n) {
-    const { done, value } = await reader.read();
-    if (done) return { chunk: concat(chunks, total), done: true };
-    if (!value || value.byteLength === 0) continue;
-    chunks.push(value);
-    total += value.byteLength;
+  if (carry.rest !== null) {
+    chunks.push(carry.rest);
+    total += carry.rest.byteLength;
+    carry.rest = null;
   }
-  return { chunk: concat(chunks, total), done: false };
+  let done = false;
+  while (total < n) {
+    const r = await reader.read();
+    if (r.done) {
+      done = true;
+      break;
+    }
+    if (!r.value || r.value.byteLength === 0) continue;
+    chunks.push(r.value);
+    total += r.value.byteLength;
+  }
+  if (total <= n) return { chunk: concat(chunks, total), done };
+  const all = concat(chunks, total);
+  carry.rest = all.subarray(n);
+  // `done` is deliberately false: there are buffered bytes left to emit, even
+  // if the source is finished.
+  return { chunk: all.subarray(0, n), done: false };
 }
 
 function concat(chunks: Uint8Array[], total: number): Uint8Array {

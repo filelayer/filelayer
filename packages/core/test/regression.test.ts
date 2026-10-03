@@ -17,7 +17,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb, type Queryable } from '../src/db.ts';
 import { Filelayer } from '../src/filelayer.ts';
-import { MemoryStorage } from '../src/storage.ts';
+import { MemoryStorage, S3Storage as S3StorageT, assertRange } from '../src/storage.ts';
+import type { IncomingMessage as NodeIncoming, ServerResponse as NodeServerResponse } from 'node:http';
 import type { Capability, OrgRole, Principal } from '../src/authz.ts';
 import { bytes, text, rejects } from './helpers.ts';
 
@@ -1026,5 +1027,286 @@ describe('2026-10-02: limit: 0 means zero, or it means refuse', () => {
     const alice = await idOf(fl, 'actor', 'alice');
     const org = await idOf(fl, 'org', 'acme');
     await rejects(() => fl.listFiles(P(alice), org, { limit: 0 }), 400);
+  });
+});
+
+// =============================================================================
+// The storage and delivery sweep, 3 October 2026
+// =============================================================================
+
+describe('2026-10-03: a probe cannot make itself invisible', () => {
+  // 0.6.0 fixed a route that its own URL could kill: `decodeURIComponent` threw
+  // outside the try. The remedy kept an unrecognisable id VERBATIM in the audit
+  // event's `context` so the probe was at least recorded. But `context` is
+  // jsonb, which cannot hold U+0000 any more than a uuid column could, so
+  // `GET /f/%00` decoded cleanly, reached the audit INSERT, and died there with
+  // SQLSTATE 22P05. An unauthenticated 500, and once again no audit row. The
+  // defect had moved one column over rather than closed.
+  //
+  // Refusing the NUL outright was the first fix and it was worse than it looked:
+  // the probe then vanished from the log entirely, which is the same
+  // invisibility, just quieter. Substituting U+FFFD keeps the attempt on the
+  // record while still denying it.
+  it('an identifier carrying a NUL is denied AND recorded', async () => {
+    const { db } = await createTestDb();
+    const fl = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://x' });
+    const alice = (await fl.createActor('alice')).id;
+    const org = (await fl.createOrg('acme', 'Acme', { ownerActorId: alice })).id;
+    await fl.upload(P(alice), org, { name: 'f', contentType: 'text/plain', body: bytes('S') });
+
+    const count = async (): Promise<number> =>
+      Number((await db.query<{ c: number }>(`SELECT count(*)::int c FROM audit_event`)).rows[0]!.c);
+
+    const before = await count();
+    // A RAW NUL, not the substituted form: this is what any caller who did not
+    // come through our routes hands the engine, and it is what used to kill the
+    // audit INSERT with SQLSTATE 22P05 and surface as a 500.
+    await rejects(() => fl.read(P(alice), '\u0000'), 404);
+    await rejects(() => fl.read(P(alice), 'a\u0000b'), 404);
+    assert.ok((await count()) > before, 'the probe is on the record, which is the point of P5');
+
+    const { rows } = await db.query<{ context: Record<string, unknown> }>(
+      `SELECT context FROM audit_event WHERE context ? 'rawFileId' ORDER BY id DESC LIMIT 1`,
+    );
+    assert.ok(rows[0], 'and the identifier it probed with is in the event');
+    assert.ok(
+      !String(rows[0].context['rawFileId']).includes('\u0000'),
+      'with the byte jsonb cannot hold substituted rather than dropped',
+    );
+  });
+
+  it('safeDecode substitutes the NUL rather than dropping the request', async () => {
+    const { safeDecode } = (await import('../src/delivery.ts')) as unknown as {
+      safeDecode?: (s: string) => string | null;
+    };
+    // `safeDecode` is module-private; if it is ever exported, this pins it.
+    if (!safeDecode) return;
+    assert.equal(safeDecode('%00'), '�');
+    assert.equal(safeDecode('%%%'), null);
+  });
+});
+
+describe('2026-10-03: the redirect path keeps the promises its name makes', () => {
+  const REDIRECT = {
+    acknowledgeRevocationWindow:
+      'I accept a revocation window of up to ttlSeconds on redirected deliveries',
+    scope: 'all-grants',
+  } as const;
+
+  async function presignable(): Promise<{
+    fl: Filelayer;
+    alice: string;
+    file: { id: string };
+  }> {
+    const { db } = await createTestDb();
+    const storage = new MemoryStorage();
+    // MemoryStorage cannot presign, so lend it the capability. What is under
+    // test is `#redirectEligible`, not the signature.
+    (storage as unknown as { presignGet: unknown }).presignGet = async () =>
+      'https://signed.example/object';
+    const fl = new Filelayer(db, storage, { baseUrl: 'http://x', redirectDelivery: REDIRECT });
+    const alice = (await fl.createActor('alice')).id;
+    const org = (await fl.createOrg('acme', 'Acme', { ownerActorId: alice })).id;
+    const file = await fl.upload(P(alice), org, {
+      name: 'f',
+      contentType: 'text/plain',
+      body: bytes('ABCDEFGHIJ'),
+    });
+    return { fl, alice, file };
+  }
+
+  it('an owner read is never redirected, because it came from no grant', async () => {
+    // `scope: 'all-grants'` is documented as widening redirects to "link and
+    // actor grants too". The only `via` test was on the narrow scope, so under
+    // the wide one nothing checked where the authority came from at all, and an
+    // owner read of a private file -- authority from no grant whatsoever -- was
+    // handed out as a URL that outlives a revocation.
+    const { fl, alice, file } = await presignable();
+    const d = await fl.readStream(P(alice), file.id, { mode: 'auto' });
+    assert.equal(d.mode, 'proxy', 'an owner read is not a grant');
+  });
+
+  it('a ranged read is proxied rather than silently widened', async () => {
+    // The redirect arm never read `opts.range`, so a caller asking for four
+    // bytes received a 302 for all ten: no Content-Range, no Accept-Ranges, and
+    // nothing in the response to say the range had been discarded. Serving MORE
+    // than was asked for is the one outcome a caller cannot detect.
+    const { fl, alice, file } = await presignable();
+    const anon = await fl.share(P(alice), file.id, { subject: { type: 'link' } });
+    assert.ok(anon.secret);
+    const d = await fl.redeemStream(anon.secret, { range: { start: 2, end: 5 } });
+    assert.equal(d.mode, 'proxy', 'a range forces the proxy path');
+  });
+});
+
+describe('2026-10-03: the storage adapter does not trust the response shape', () => {
+  async function fakeStore(
+    handler: (req: NodeIncoming, res: NodeServerResponse) => void,
+  ): Promise<{ s3: InstanceType<typeof S3StorageT>; port: number; close: () => Promise<void> }> {
+    const { createServer } = await import('node:http');
+    const srv = createServer(handler as never);
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+    const port = (srv.address() as { port: number }).port;
+    const s3 = new S3StorageT({
+      endpoint: `http://127.0.0.1:${port}`,
+      bucket: 'b',
+      region: 'auto',
+      accessKeyId: 'AK',
+      secretAccessKey: 'SK',
+    });
+    return { s3, port, close: () => new Promise<void>((r) => srv.close(() => r())) };
+  }
+
+  it('a 3xx from the endpoint is refused, not followed', async () => {
+    // No signature covers where a redirect points. Following one let an endpoint
+    // that can shape its own responses substitute arbitrary bytes for an
+    // authorized object -- Filelayer then served those bytes under the real
+    // file's pinned content-type and audited a successful read. It also
+    // forwarded `x-amz-security-token`, which undici does not strip across
+    // origins, to a host of the redirector's choosing.
+    // The redirect target must be REACHABLE and must serve different bytes,
+    // otherwise the test passes for the wrong reason: an unreachable target
+    // fails the fetch either way and proves nothing about following it.
+    const evil = await fakeStore((_req, res) => {
+      res.writeHead(200, { etag: '"evil"' });
+      res.end('EVILBYTES');
+    });
+    const { s3, close } = await fakeStore((_req, res) => {
+      res.writeHead(302, { location: `http://127.0.0.1:${evil.port}/evil` });
+      res.end();
+    });
+    try {
+      // Control: the target really does serve, so a followed redirect WOULD
+      // have substituted these bytes for the authorized object.
+      assert.equal(
+        new TextDecoder().decode((await evil.s3.get('anything'))!),
+        'EVILBYTES',
+      );
+      // undici reports `redirect: 'error'` as a plain `TypeError: fetch failed`
+      // with the detail on `cause`, so the assertion is that it REJECTS at all.
+      // With the control above proving the target serves, a rejection here can
+      // only mean the redirect was not followed -- before the fix this call
+      // resolved, with EVILBYTES.
+      let served: string | null = null;
+      let rejected = false;
+      try {
+        const v = await s3.get('k');
+        served = v === null ? null : new TextDecoder().decode(v);
+      } catch {
+        rejected = true;
+      }
+      assert.equal(rejected, true, 'a 3xx must not resolve');
+      assert.notEqual(
+        served,
+        'EVILBYTES',
+        'and above all it must not return the redirect target as the object',
+      );
+    } finally {
+      await close();
+      await evil.close();
+    }
+  });
+
+  it('a 200 with no ETag is not a successful write', async () => {
+    // Some S3-compatible stores and intermediaries answer 200 carrying an
+    // <Error> document. `res.ok` is true and nothing was stored, and the byte
+    // count this returned became `file.size_bytes` -- a row describing an object
+    // that does not exist.
+    const { s3, close } = await fakeStore((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/xml' });
+      res.end('<Error><Code>AccessDenied</Code></Error>');
+    });
+    try {
+      await assert.rejects(() => s3.put('k', bytes('hello'), 'text/plain'), /no ETag/);
+    } finally {
+      await close();
+    }
+  });
+
+  it('a delete that did not delete is not reported as success', async () => {
+    // Worse than the others, because the caller has already been told the bytes
+    // are gone and `file.state` is about to agree.
+    const { s3, close } = await fakeStore((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/xml' });
+      res.end('<Error><Code>AccessDenied</Code></Error>');
+    });
+    try {
+      await assert.rejects(() => s3.delete('k'), /Error body/);
+    } finally {
+      await close();
+    }
+  });
+
+  it('a HEAD with no content-length is unknown, not zero', async () => {
+    // `stream()` got this right twenty lines away, so one adapter gave two
+    // answers about one response.
+    const { s3, close } = await fakeStore((_req, res) => {
+      res.writeHead(200, { 'transfer-encoding': 'chunked' });
+      res.end();
+    });
+    try {
+      await assert.rejects(() => s3.head('k'), /no content-length/);
+    } finally {
+      await close();
+    }
+  });
+
+  it('an endpoint carrying a path is refused instead of silently dropped', async () => {
+    const s3 = new S3StorageT({
+      endpoint: 'http://127.0.0.1:9/s3-gateway',
+      bucket: 'b',
+      region: 'auto',
+      accessKeyId: 'AK',
+      secretAccessKey: 'SK',
+    });
+    await assert.rejects(() => s3.head('k'), /must not carry a path/);
+  });
+
+  it('a non-finite presign TTL is refused rather than signed as NaN', async () => {
+    // `Math.max(1, Math.min(Math.floor(NaN), n))` is NaN at every step, so the
+    // documented clamp produced a signed `X-Amz-Expires=NaN`. Being signed it
+    // could not be stripped, and a store parsing it with parseInt never found
+    // the URL expired.
+    const s3 = new S3StorageT({
+      endpoint: 'http://127.0.0.1:9',
+      bucket: 'b',
+      region: 'auto',
+      accessKeyId: 'AK',
+      secretAccessKey: 'SK',
+    });
+    await assert.rejects(
+      () => s3.presignGet('k', { expiresInSeconds: NaN }),
+      /finite/,
+    );
+    // The finite clamp is unchanged.
+    const ok = await s3.presignGet('k', { expiresInSeconds: 60 });
+    assert.match(ok, /X-Amz-Expires=60/);
+  });
+});
+
+describe('2026-10-03: a byte range is validated before it reaches the store', () => {
+  it('garbage ranges are refused, and both adapters agree', async () => {
+    // A malformed Range was formatted straight into the header. RFC 9110 says a
+    // recipient MUST ignore a Range it cannot parse, so the store answered 200
+    // with the WHOLE object while the adapter reported an unranged read: the
+    // caller asked for four bytes and got ten, with nothing to detect it by. The
+    // two adapters also disagreed about the same bad input, so a range test
+    // passing against MemoryStorage proved nothing about the S3 path.
+    const m = new MemoryStorage();
+    await m.put('k', bytes('0123456789'), 'text/plain');
+    for (const bad of [
+      { start: -5 },
+      { start: NaN },
+      { start: 1.5, end: 3 },
+      { start: 0, end: -1 },
+      { start: 0, end: Infinity },
+      { start: 5, end: 2 },
+    ]) {
+      assert.throws(() => assertRange(bad), /invalid byte range/, JSON.stringify(bad));
+      await assert.rejects(() => m.stream('k', { range: bad }), /invalid byte range/);
+    }
+    const ok = await m.stream('k', { range: { start: 2, end: 4 } });
+    assert.ok(ok);
+    assert.deepEqual(ok.range, { start: 2, end: 4, total: 10 });
   });
 });

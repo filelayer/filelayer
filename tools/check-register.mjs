@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * GATE 13 — REGISTER DENSITY ON THE PUBLIC SURFACES
+ * REGISTER DENSITY ON THE PUBLIC SURFACES
  *
  * WHY THIS EXISTS. On 3 October 2026 we measured the homepage and found one em
  * dash every 67 words of prose, and ten "X rather than Y" / "X, not Y" mirror

@@ -1,6 +1,6 @@
 {
   "name": "@filelayer/core",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Multi-tenant file authorization middleware and lifecycle for Postgres: a single decision point for public and private files, revocable URLs, delegated share links and a hash-chained audit trail.",
   "license": "Apache-2.0",
   "type": "module",
@@ -69,7 +69,8 @@
     "prepack": "npm run build",
     "test": "node --test --experimental-strip-types \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm test && npm run build"
+    "verify": "npm run typecheck && npm test && npm run build",
+    "test:contention": "FILELAYER_TEST_CONTENTION=1 node --test --experimental-strip-types \"test/contention.test.ts\""
   },
   "peerDependencies": {
     "@electric-sql/pglite": "^0.3.11"
@@ -81,7 +82,10 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.11",
-    "typescript": "^5.7.0",
-    "@types/node": "^22.10.0"
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "pg": "^8.23.1",
+    "typescript": "^5.7.0"
   }
 }

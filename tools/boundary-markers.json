@@ -159,6 +159,12 @@
       "path": "web/styles.css",
       "contains": "margin",
       "why": "the CSS box-model property, which a stylesheet cannot avoid naming. It collides with the money-modelling sense the content digests keep out, and the collision is total: every occurrence in this file is `margin:`, `margin-top:` or `margin-inline:`. The economics sense stays blocked everywhere, including here, by the `prose` rule above, which matches `gross margin` and `contribution margin` as phrases rather than the bare word. Scoped to this one file on purpose: index.html uses the .t1-.t6 utility classes instead of inline styling, and tools/make-og.py names its variable `pad`, so this is the only place in the repository that needs it."
+    },
+    {
+      "path": "tools/check-register.mjs",
+      "contains": "GATE 13",
+      "why": "A HISTORICAL OCCURRENCE ONLY, in commit 9cad3e1, which is already pushed. The file at HEAD says 'REGISTER DENSITY ON THE PUBLIC SURFACES' instead. 'Gate 13' numbered this check against a private list of repository checks that no reader of the published repository can resolve, which is exactly what this rule is for, and the rule caught it one commit late rather than never. Rewriting a pushed history to erase a stale comment is a worse trade than recording it here. `historyOnly` is what makes that trade safe: the entry covers past blobs and nothing else, so writing the term into the working tree again fails the scan. That flag was added in the same commit, because the first version of this justification claimed the narrow behaviour and the checker did not have it.",
+      "historyOnly": true
     }
   ]
 }
