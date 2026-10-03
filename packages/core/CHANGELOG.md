@@ -131,6 +131,15 @@ Consistency is not accuracy.
 gate reads that and fails if the record is missing or older than the code. The
 numbers on all four surfaces come from a run.
 
+It failed on its own first CI run, which is worth recording: the wrapper did not
+pin `--test-reporter`, and Node's default differs by version. The machine it was
+written on emitted `# tests 405` and the runner emitted `ℹ tests 405`, so no
+local test could have caught it. The reporter is pinned now, the parser reads
+either prefix, and `node tools/run-suite.mjs --self-test` checks it against
+captured output from both -- the fixtures are copied from the failing run rather
+than written from memory, because a fixture built to confirm a fix will confirm
+it.
+
 ### Fixed — six gates existed and CI did not run them
 
 `check:copies`, `check:versions`, `check:web`, `check:web-samples`,

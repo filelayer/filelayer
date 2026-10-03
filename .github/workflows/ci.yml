@@ -225,6 +225,13 @@ jobs:
         working-directory: packages/core
         run: npm ci
 
+      # The parser, against captured output from BOTH reporters plus a
+      # negative control. This job failed on its first run because the file
+      # did not pin --test-reporter: the sandbox it was written in emitted TAP
+      # and this runner emitted spec, so no local test could have caught it.
+      - name: The counts parser reads both reporter formats
+        run: node tools/run-suite.mjs --self-test
+
       - name: Run the suite and record what it counted
         run: npm run test:counted
 
