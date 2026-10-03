@@ -105,6 +105,22 @@ const CLAIMS = [
   // --- suite-count claims: must agree with each other ---
   { file: 'ARCHITECTURE-PROGRESSIVE.md', kind: 'suites',
     re: /passing\*\* across (\d+) suites/g },
+
+  // --- the website's trust table ---------------------------------------------
+  //
+  // THE SURFACE A SCEPTIC READS FIRST, and the one this gate was not watching.
+  // On 3 October 2026 the homepage table still said `0.8.0 — alpha` and
+  // `375 across 94 suites` while the package was 0.9.0 and the suite ran 405
+  // across 100. `check:web` reported clean throughout, because it verifies the
+  // JSON-LD `softwareVersion` and never looked at the table a human reads. The
+  // machine-readable claim and the human-readable one were different numbers on
+  // the same page, and only one of them was checked.
+  { file: 'web/index.html', kind: 'version',
+    re: /<li><span>Version<\/span><span class="v">([\d.]+) — alpha<\/span><\/li>/g },
+  { file: 'web/index.html', kind: 'tests',
+    re: /every commit<\/span><span class="v">(\d+) across \d+ suites<\/span>/g },
+  { file: 'web/index.html', kind: 'suites',
+    re: /every commit<\/span><span class="v">\d+ across (\d+) suites<\/span>/g },
 ];
 
 function scan(claims) {

@@ -11,8 +11,9 @@ and worth having. It cannot prove anything about the counterparty: TLS, real IAM
 evaluation, R2's divergences from S3, AWS's checksum requirements, throttling and
 retry behaviour, read-after-write visibility, or the exact error codes a real
 store returns. Those are what break a storage adapter in production, and this is
-the code path every single download goes through. Until the suite has run
-against a real bucket, the adapter is *wire-correct*, not *proven*.
+the code path every single download goes through. A harness that recomputes
+every signature cannot stand in for the counterparty, which is why this suite
+runs against both R2 and AWS rather than against either one.
 
 **Cost.** One bucket, a few hundred kilobytes written and deleted per run, and
 about ~11 MB more on the nightly run when the multipart test is enabled. On
@@ -122,7 +123,7 @@ There are **two** live jobs and they are deliberately independent:
 | Job | Secret prefix | Status |
 | --- | --- | --- |
 | `s3-live` — Cloudflare R2 | `FILELAYER_TEST_S3_…` | configured, runs on every commit |
-| `s3-live-aws` — AWS S3 itself | `FILELAYER_TEST_AWS_S3_…` | **not configured yet** |
+| `s3-live-aws` — AWS S3 itself | `FILELAYER_TEST_AWS_S3_…` | configured 3 October 2026, runs on every commit |
 
 The AWS job is a copy of the R2 one, down to the guard that fails the build if
 the credentials are present and the suite skips itself anyway. Add the five

@@ -21,7 +21,30 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed — the storage adapter now runs against AWS S3, and the documents say so
+
+The `s3-live-aws` CI job was written on 30 September and skipped itself for
+three days for want of credentials, announcing that fact in every run summary so
+a green tick could not be mistaken for coverage. On 3 October a bucket in
+`eu-north-1`, a least-privilege IAM user and the five repository secrets turned
+it on: **12 tests against a real AWS bucket, on every commit**, alongside the
+same twelve against Cloudflare R2.
+
+Six public surfaces said "never run against AWS S3" and no longer do: README
+(three places, and its shipped copy), TRUST.md, llms.txt, SEMANTICS.md,
+docs/LIVE-S3-TESTS.md and the homepage. The replacement text is narrower than
+"proven" on purpose, and says what is still unexercised: one region, one bucket
+configuration, no load, and nothing about S3 Express One Zone, requester pays,
+object lock, cross-region replication or a stricter bucket policy.
+
+### Fixed — the website's trust table drifted where no gate was looking
+
+The homepage said `0.8.0 — alpha` and `375 across 94 suites` while the package
+was 0.9.0 and the suite ran 405 across 100. `check:web` reported clean the whole
+time: it verifies the JSON-LD `softwareVersion` and never read the table a human
+reads, so the machine-readable claim and the human-readable one were different
+numbers on the same page and only one was checked. Those three values are now
+claims in `check-version-claims`, which measures them against a real run.
 
 ---
 

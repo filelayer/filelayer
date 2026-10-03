@@ -30,9 +30,12 @@
 > adapter runs against **live Cloudflare R2 on every commit**: 12 tests,
 > including a presigned URL the store actually honours, one that expires for
 > real, and an 11 MB multipart upload reassembled byte-exactly on the nightly
-> run. It has **never run against AWS S3**: R2 is S3-compatible, not S3, so AWS's
-> checksum requirements, IAM evaluation and error codes are still covered only by
-> a local harness that verifies SigV4 signatures. On AWS you are the first.
+> Since 3 October 2026 the same twelve tests also run against **AWS S3 itself**,
+> in `eu-north-1`, against a bucket with a least-privilege IAM user: R2 is
+> S3-compatible, not S3, and AWS's checksum requirements, IAM evaluation,
+> virtual-hosted addressing and error codes are a different counterparty. Both
+> providers run on every commit. What is still unmeasured on either is traffic:
+> nobody has pointed real load at this.
 >
 > **What may break.** Nobody has deployed this. There is no production usage, no
 > hosted service, no CLI, and no operational track record, so the failure modes
@@ -124,8 +127,9 @@ an inaccurate README wastes your time and ours.
 - The storage adapter runs against **live Cloudflare R2 on every commit**
   (`packages/core/test/s3-live.test.ts`, 12 tests) and against a
   **signature-verifying local S3 implementation**
-  (`packages/core/test/storage.test.ts`). It has **never run against AWS S3**.
-  R2 is S3-compatible, not S3.
+  (`packages/core/test/storage.test.ts`), and since 3 October 2026 against
+  **live AWS S3** as well (12 tests, `eu-north-1`, virtual-hosted addressing).
+  R2 is S3-compatible, not S3, which is why both run.
 - There is no hosted service and no CLI. You run it against your own Postgres.
 - Versioning is pre-1.0: see [Versioning](#versioning) below and
   [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md).
@@ -372,11 +376,12 @@ Restated here so they are not only in an appendix. Each one is current as of
    and `org.external_id` are scoped to a project (one customer application). Two
    orgs inside one project cannot both have a user called `alice` meaning
    different people.
-6. **The storage adapter has never run against AWS S3.** It runs against live
-   Cloudflare R2 in CI on every commit, and R2 is S3-compatible, but compatible
-   is not identical. AWS's checksum requirements, IAM evaluation and error codes
-   are covered only by a local implementation that verifies SigV4 signatures,
-   which is not the same thing.
+6. **The storage adapter has run against AWS S3 since 3 October 2026, and only
+   in one region.** Twelve tests against a real bucket in `eu-north-1`, on every
+   commit, alongside the same twelve against Cloudflare R2. What that does not
+   cover: other regions and their endpoint quirks, S3 Express One Zone, requester
+   pays, object lock, cross-region replication, and any bucket policy more
+   restrictive than the least-privilege IAM user the tests use.
 7. **Unauthenticated callers can still append denial events to the audit chain
    of a tenant inside a project they can reach.** That is P5 working as designed.
    Denials are the events worth recording, but it is a load-bearing reason to

@@ -23,7 +23,7 @@ that records denials. It was first published on **6 September 2026**.
 | Runtime dependencies | **0** |
 | Licence | Apache-2.0 |
 | Storage adapter against live Cloudflare R2 | 12 tests, every commit |
-| Storage adapter against live AWS S3 | **never run** — the CI job is written and waiting on credentials |
+| Storage adapter against live AWS S3 | 12 tests, every commit, `eu-north-1` only |
 
 If any row in that table is disqualifying for you, it should be, and you can stop
 reading. We would rather you decline today for accurate reasons than adopt on a
@@ -62,13 +62,19 @@ whole `Filelayer` lifecycle end to end on top of it.
 Before that it had never run against anything but a local harness, and this page
 said so for three weeks.
 
-**It has still never run against AWS S3.** R2 is S3-compatible, not S3. AWS's
-checksum requirements, IAM evaluation, virtual-hosted addressing and its own
-error codes are exercised only against the local harness that recomputes every
-SigV4 signature — which found nine real bugs, including one where a key
-containing `#` silently collided with a different object and returned the wrong
-file's bytes. A faithful harness is not the counterparty. If you are on AWS, you
-are still the first.
+**Since 3 October 2026 the same twelve tests also run against AWS S3 itself**,
+on every commit, against a bucket in `eu-north-1` reached through a
+least-privilege IAM user. R2 is S3-compatible, not S3, which is the whole reason
+for running both: AWS has its own checksum requirements, real IAM evaluation,
+virtual-hosted addressing and its own error codes. Until that day those were
+exercised only against the local harness that recomputes every SigV4 signature —
+a harness that found nine real bugs, including one where a key containing `#`
+silently collided with a different object and returned the wrong file's bytes,
+but which is not the counterparty.
+
+What that still does not say: one region, one bucket configuration, and no
+traffic. The tests write a handful of objects and an 11 MB multipart upload on
+the nightly run. Nobody has put load on this on either provider.
 
 The job fails, rather than passing quietly, if the credentials are present and
 the suite skips itself — the one failure mode that looks exactly like success.

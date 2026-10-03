@@ -635,9 +635,17 @@ Bucket permissions: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`,
 `s3:ListBucket`, `s3:AbortMultipartUpload` (+
 `s3:ListBucketMultipartUploads` if multipart is enabled).
 
-**Until that suite has run green against a real bucket, the S3 adapter is
-"wire-correct", not "proven".** See the report accompanying this change for the
-explicit list of what remains unverified.
+Since 3 October 2026 that suite runs on every commit against **both** live
+Cloudflare R2 and **live AWS S3** (`eu-north-1`, virtual-hosted addressing,
+least-privilege IAM user). Before that the adapter was *wire-correct* rather
+than *proven*: a harness that recomputes every signature cannot tell you what
+the counterparty does with it.
+
+**What that still does not cover**, because "proven" is a word worth spending
+carefully: one AWS region, one bucket configuration, and no load. Other regions
+and their endpoint quirks, S3 Express One Zone, requester pays, object lock,
+cross-region replication, throttling under real traffic, and any bucket policy
+more restrictive than the IAM user these tests use are all unexercised.
 
 ### `FsStorage`, and what one file per object buys
 
