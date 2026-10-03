@@ -13,7 +13,24 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+
+    // THE STARTER LIVES AT THE REPOSITORY ROOT AND IMPORTS BARE SPECIFIERS,
+    // the way the application a reader copies it into will. Node resolves
+    // `node_modules` by walking UP from the importing file, and
+    // `examples/starter/` is two directories above `packages/core/`, so
+    // `packages/core/node_modules` is not on its path: `import { Pool } from
+    // 'pg'` and `import { Filelayer } from '@filelayer/core'` were both
+    // TS2307, which turned `npm run typecheck` red the moment that file
+    // landed. Excluding the example from the typecheck would have been the
+    // cheap fix and the wrong one -- it is the file a newcomer copies, so it
+    // is the one that most needs to compile. These two mappings point the
+    // specifiers at what an installed consumer would get.
+    "baseUrl": ".",
+    "paths": {
+      "@filelayer/core": ["./src/index.ts"],
+      "pg": ["./node_modules/@types/pg/index.d.ts"]
+    }
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "../../examples/**/*.ts"]
 }

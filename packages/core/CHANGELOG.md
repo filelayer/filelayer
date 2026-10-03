@@ -21,7 +21,126 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
-Nothing yet.
+**`FsStorage`: bytes on a local disk, and three rewrites of how it writes them.**
+
+### Added — `FsStorage`, the adapter between a Map and a bucket
+
+Until now this package shipped two: `MemoryStorage`, which dies with the
+process, and `S3Storage`, which needs a bucket and real credentials. Everything
+between them -- a laptop, a single VM, a container with a volume, a CI job, or
+anyone evaluating this before creating an IAM user -- had nothing. We know the
+size of that gap because we measured it: an agent integrating this library from
+npm, reading only the published documentation, hit exactly one hard stop before
+its first stored byte, and wrote sixty lines of this adapter itself.
+
+`new FsStorage('./data')`. Keys are hashed, so traversal, absolute paths, NULs
+and length limits are all the same non-problem. `presignGet` is deliberately
+absent -- a presigned URL promises that some other server will serve the bytes,
+and a directory has no other server -- so `canPresign()` reports false and
+redirect delivery is unavailable rather than broken.
+
+**The format is one file per object: a JSON header line, then the bytes.** That
+is not the obvious design and it is the third one we tried. The obvious design
+keeps the bytes in one file and the metadata in another, and it cannot work,
+because two files cannot be replaced atomically. Each ordering was written,
+measured, and thrown away:
+
+- bytes in place, metadata after: `writeFile` opens `O_TRUNC`, so every
+  overwrite passes through a zero-length metadata file, and a concurrent
+  `list()` read an empty one on the first round of every run;
+- both through temp+rename, bytes first: a crash between the renames left bytes
+  that `list()` could never report, because it walks metadata -- storage nothing
+  could ever reclaim;
+- both through temp+rename, metadata first: no unreclaimable bytes, but a reader
+  landing between the renames got the new etag over the old bytes. 7 bad reads
+  in 480 under load; 0 on an idle machine.
+
+One file is one `rename`, and `rename(2)` is atomic within a filesystem. **Then
+the same defect reappeared one layer down**: a reader that opened the file twice
+-- once for the header, once for the payload -- straddled that rename anyway, at
+5 bad reads in 480. `stream()` now opens once and reads the payload from the
+descriptor the header came from, because a descriptor refers to the inode and no
+rename can move it.
+
+Also in the adapter, each found by an adversarial sweep and each with a test that
+fails without the fix: `list()` skips a file it cannot read a header from instead
+of throwing out of the whole walk; `list()` raises `EACCES` rather than
+reporting an unreadable store as an empty one; a failed `put` cleans up its temp
+file; a ranged `stream()` reads the range rather than the object (a 10-byte range
+on a 100 MiB file used to cost 200 MiB of resident memory); the `limit` ceiling
+is 1,000, as on the other two adapters, not 10,000; and neither adapter can hide
+the empty key from every page of a listing.
+
+### Changed — a share link refuses capabilities beyond `read` with a 400
+
+`grant_link_read_only` has refused the row since 0.5.1, so the rule was never
+missing -- only the path to it. The only way to reach it was the `INSERT`, and a
+CHECK violation arrives as a pg error: SQLSTATE 23514, the constraint name, and
+a `detail` field carrying the failing row. For `file_grant` that row contains
+`secret_hash`, so an application that logged the error logged a credential, and
+one that mapped `err.status` found there was none and answered 500 to what is a
+400.
+
+`shares.create(id, { as, capabilities })` and `share({ subject: { type: 'link' },
+capabilities })` now throw `FilelayerError(400, 'link_is_read_only')` before any
+query. **If you were matching on the SQLSTATE or on `grant_link_read_only`, match
+on the code instead.** The database constraint is unchanged and still refuses the
+row, which is the point: two independent writers are refused, not one check
+tested twice.
+
+### Added — a deployable example, and the gaps it closed
+
+`examples/starter/` is an application against a Postgres you own, with bytes
+that survive a restart: configuration in one block, the schema applied once
+under an advisory lock, `FsStorage` by default, and the route helpers mounted
+next to routes of your own. `verify.mjs` drives it over HTTP in twenty checks.
+
+An adversarial sweep then broke the example four ways, all fixed: it looked for
+a `project` table to decide whether the schema was applied, and `project` is a
+name a host application may already have (it now counts all nine tables and
+stops on a partial match); `readBody` had no ceiling, so a 400 MB upload took the
+process from 85 MB resident to 1.3 GB; path segments were not percent-decoded
+while `searchParams` were, so `POST /orgs/my%20team` and `POST /files?org=my
+team` created two different tenants; and the error handler logged raw error
+objects, which is how the `secret_hash` above would have reached a log file.
+
+### Changed — two gates that could be made to verify nothing
+
+`check-offline-reach` asked `existsSync`, so a zero-byte README passed every
+step including `npm pack`; it now has per-anchor size floors. Its second check
+read the backticked filenames out of a sentence in `llms.txt` and skipped the
+literal `this file`, so a rewording that kept the sentence and moved the list
+into plain prose left zero names to check and the gate reported clean -- on the
+exact defect it was written for. It now requires a floor of eight names and a
+named set of five.
+
+`check-register` counted U+2014 only, so replacing every em dash with an en dash
+-- one find-and-replace, visually almost identical -- took every surface to zero
+while the gate reported clean. It counts the dash family now, and its header says
+what a clean run does and does not mean.
+
+### Fixed — four public surfaces claimed a test count nobody had measured
+
+`check-version-claims` compared the test counts on the public surfaces WITH EACH
+OTHER and never with a test run. TRUST.md, ARCHITECTURE-PROGRESSIVE.md (three
+places) and PUBLISH-RUNBOOK.md all said 375 tests across 94 suites while the
+suite ran 405 across 100, and the gate reported clean because they agreed.
+Consistency is not accuracy.
+
+`npm run test:counted` now runs the suite and records what it counted, and the
+gate reads that and fails if the record is missing or older than the code. The
+numbers on all four surfaces come from a run.
+
+### Fixed — six gates existed and CI did not run them
+
+`check:copies`, `check:versions`, `check:web`, `check:web-samples`,
+`check:register` and `check:offline` were all written and all wired into
+`npm run verify`, and none of them was in the CI workflow. They therefore ran
+whenever a maintainer remembered to run the whole gate locally, which is the
+definition of a check you do not have -- and it is why the stale test count
+above survived a day of green builds. They are in the workflow now, with the
+counts check in its own job, with Postgres, so the number it verifies is the
+number from a full run.
 
 ---
 

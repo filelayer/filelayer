@@ -286,13 +286,24 @@ const controls = [
   ['a repo link to a file that does not exist', () => !existsSync(join(ROOT, 'docs/THIS-FILE-DOES-NOT-EXIST.md'))],
   ['an anchor with no matching id', () => !ids.has('there-is-no-such-section-on-this-page')],
   ['a relative link to a missing asset', () => !existsSync(join(WEB, 'no-such-asset.css'))],
-  // The exact sentence that shipped. If this ever stops being a violation, the
-  // count check above has quietly stopped working.
+  // A COUNT THAT IS WRONG BY CONSTRUCTION.
+  //
+  // This control used the exact sentence that shipped, "All five run from the
+  // repository with one command each", because five was a miscount at the time.
+  // Adding a fifth example on 3 October 2026 made that sentence TRUE, the
+  // control stopped failing, and the gate reported itself broken -- correctly,
+  // and one commit before anyone would have noticed the count check had gone
+  // quiet.
+  //
+  // A control pinned to a historical fact expires when the fact changes. One
+  // built from the current count cannot: whatever the real number is, the
+  // sentence names one more.
   [
-    'the miscount that shipped',
+    'a count that does not match the repository',
     () => {
+      const wrong = exampleScripts.length + 1;
       const m = /\b(?:all|every)\s+(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:of\s+them\s+)?run\b/i.exec(
-        'All five run from the repository with one command each',
+        `All ${wrong} run from the repository with one command each`,
       );
       return m !== null && (WORD_NUMBERS[m[1].toLowerCase()] ?? Number(m[1])) !== exampleScripts.length;
     },

@@ -1499,6 +1499,28 @@ export class Filelayer {
       throw new FilelayerError(400, 'password_requires_link_subject');
     }
 
+    // A LINK CARRIES `read` AND NOTHING ELSE, and this is where you find that
+    // out. `grant_link_read_only` in schema.sql has refused the row since
+    // 0.5.1, which is the right place for the rule to live -- but the only
+    // path to it was the INSERT, so `shares.create(id, { as, capabilities:
+    // ['read', 'delete'] })` surfaced as a raw SQLSTATE 23514 with the
+    // constraint name in it. Two costs, both measured in the starter: there is
+    // no status on it, so an HTTP layer that maps `FilelayerError.status`
+    // returned 500 for what is a 400; and a pg error carries `detail` with the
+    // failing row, which for `file_grant` includes `secret_hash`, so a server
+    // that logged the error logged a credential. The check belongs in front of
+    // the database as well as in it.
+    if (input.subject.type === 'link') {
+      const extra = capabilities.filter((c) => c !== 'read');
+      if (extra.length > 0) {
+        throw new FilelayerError(
+          400,
+          'link_is_read_only',
+          `link_capabilities:${extra.join(',')}`,
+        );
+      }
+    }
+
     const decision = await authorizeShare(store, principal, fileId, capabilities, {
       subjectType: input.subject.type,
     });

@@ -57,7 +57,12 @@
  *    collectable.
  */
 
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
+import { Readable } from 'node:stream';
+import { join } from 'node:path';
 
 // -----------------------------------------------------------------------------
 // The interface
@@ -224,6 +229,460 @@ export function bytesToStream(body: Uint8Array): ReadableStream<Uint8Array> {
 }
 
 // -----------------------------------------------------------------------------
+// Filesystem adapter (a real disk, no bucket)
+// -----------------------------------------------------------------------------
+
+/**
+ * BYTES ON A LOCAL DISK, because the gap between the two adapters was a wall.
+ *
+ * Until 0.9.0 this package shipped exactly two: `MemoryStorage`, which is a Map
+ * that dies with the process, and `S3Storage`, which needs a bucket and real
+ * credentials. Everything in between -- a laptop, a single VM, a container with
+ * a volume, a CI job that wants persistence, anyone evaluating this before they
+ * are willing to create an IAM user -- fell into the gap.
+ *
+ * We know the size of that gap because we measured it. An agent integrating this
+ * library from npm, reading only the published documentation, hit exactly one
+ * hard stop before its first stored byte: it needed persistent storage without a
+ * bucket, found nothing, and wrote sixty lines of this itself from the type
+ * definitions. That is sixty lines every reader was paying.
+ *
+ * WHAT IT IS FOR: local development, single-node deployments, evaluation, and
+ * tests that need bytes to survive a restart.
+ *
+ * WHAT IT IS NOT FOR: more than one process or machine. There is no locking
+ * across writers, no replication, and no durability story beyond whatever the
+ * filesystem gives you. If two application servers share a bucket today, they
+ * cannot share a directory tomorrow without a shared filesystem, and a shared
+ * filesystem is not a thing this adapter makes safe.
+ *
+ * `presignGet` is deliberately absent, which is the honest answer rather than a
+ * limitation: a presigned URL is a promise that some OTHER server will serve
+ * bytes without asking us, and a local directory has no such server. Redirect
+ * delivery is therefore unavailable here, and `canPresign()` reports that
+ * correctly instead of failing at request time.
+ */
+/** The JSON line at the top of every object file written by `FsStorage`. */
+interface FsHeader {
+  key: string;
+  contentType: string;
+  etag: string;
+  bytes: number;
+  at: string;
+}
+
+/**
+ * How far in we look for the header's newline before deciding the file is not
+ * one of ours. Keys can be long -- a 400-character key is a test in this
+ * repository -- and a truncated header has no newline at all, so a ceiling is
+ * what keeps a stray file from being read into memory looking for one.
+ */
+const FS_HEADER_MAX = 1024 * 1024;
+
+function isFsHeader(v: unknown): v is FsHeader {
+  if (typeof v !== 'object' || v === null) return false;
+  const h = v as Record<string, unknown>;
+  return (
+    typeof h['key'] === 'string' &&
+    typeof h['bytes'] === 'number' &&
+    Number.isFinite(h['bytes']) &&
+    h['bytes'] >= 0 &&
+    (typeof h['contentType'] === 'string' || h['contentType'] === null) &&
+    (typeof h['etag'] === 'string' || h['etag'] === null)
+  );
+}
+
+export class FsStorage implements StorageAdapter {
+  readonly provider: string;
+  readonly #root: string;
+
+  /**
+   * @param root      directory to store objects under. Created if absent.
+   * @param provider  value written to `file.storage_provider`. It is part of an
+   *                  object's identity, so changing it on an existing
+   *                  deployment points every row at a store that has nothing.
+   */
+  constructor(root: string, opts: { provider?: string } = {}) {
+    this.#root = root;
+    this.provider = opts.provider ?? 'fs';
+  }
+
+  /**
+   * A KEY IS NOT A PATH, and treating it as one is the defect this method
+   * exists to avoid.
+   *
+   * Filelayer's own keys are `<orgUuid>/<fileUuid>`, which are safe. This
+   * adapter is public, so it can be handed anything: `../`, an absolute path, a
+   * NUL, a name that means something else on Windows. Hashing the key gives a
+   * fixed-shape path with no traversal, no case-folding surprise and no length
+   * limit, at the cost of a directory you cannot read with `ls`. The key is
+   * stored in the object's own header so the mapping stays inspectable.
+   */
+  #paths(key: string): { dir: string; obj: string } {
+    const h = createHash('sha256').update(key, 'utf8').digest('hex');
+    const dir = join(this.#root, h.slice(0, 2), h.slice(2, 4));
+    return { dir, obj: join(dir, `${h}.obj`) };
+  }
+
+  /**
+   * ONE FILE PER OBJECT: a JSON header line, a newline, then the bytes.
+   *
+   * THIS IS THE SECOND DESIGN, and the first one is why. It kept the bytes in
+   * `<hash>.bin` and the metadata in `<hash>.json`, which is the obvious shape
+   * and is wrong for one reason: TWO FILES CANNOT BE REPLACED ATOMICALLY. Every
+   * variant of the ordering was tried and measured, and each one just moves the
+   * window:
+   *
+   *   - Blob written in place, sidecar after: `writeFile` opens O_TRUNC, so
+   *     every overwrite passed through a zero-length sidecar and a concurrent
+   *     `list()` read an empty file. It reproduced on the first round of every
+   *     run.
+   *   - Both through temp+rename, blob renamed first: a crash between the two
+   *     renames left bytes on disk that `list()` -- which walks headers,
+   *     because the key is only recoverable from them -- could never report, so
+   *     the orphan collector could never reclaim them.
+   *   - Both through temp+rename, sidecar renamed first: no unreclaimable
+   *     bytes, but a reader landing between the renames got the NEW header over
+   *     the OLD bytes. `head()` returned an etag and a size describing content
+   *     that was not in the file, which is the one error a caller cannot detect
+   *     -- it is exactly what a validator is for. Measured at 7 bad reads in
+   *     480 under load, and 0 when the machine was idle, which is the worst
+   *     possible shape for a defect.
+   *
+   * One file has one rename, and `rename(2)` within a filesystem is atomic. A
+   * reader sees the whole old object or the whole new one. There is no third
+   * state to find, and no ordering to get right.
+   *
+   * The cost is that `cat` on the file shows a line of JSON before the bytes.
+   * The key is already a SHA-256, so nobody was finding these files by name
+   * anyway, and `head -1` on one now tells you which key it holds.
+   */
+  #encode(meta: FsHeader, bytes: Uint8Array): Uint8Array {
+    const header = new TextEncoder().encode(`${JSON.stringify(meta)}\n`);
+    const out = new Uint8Array(header.byteLength + bytes.byteLength);
+    out.set(header, 0);
+    out.set(bytes, header.byteLength);
+    return out;
+  }
+
+  /**
+   * OPEN ONCE, AND HAND THE OPEN DESCRIPTOR BACK.
+   *
+   * This returns the handle on purpose, and that is the second correction to
+   * this adapter's concurrency. Putting the header and the payload in one file
+   * made `put` a single atomic `rename`, but a READER that opened the file twice
+   * -- once to read the header, once to read the bytes -- could still straddle
+   * that rename and serve v1's etag with v2's bytes. Measured at 5 bad reads in
+   * 480 with the rest of the suite running, and 0 on an idle machine.
+   *
+   * A descriptor on Unix refers to the INODE, not the name. Once this `open`
+   * returns, a rename or an unlink of the path cannot change what the caller is
+   * reading, so every read taken from this handle sees one version of the
+   * object. That is what makes `stream()`'s etag, its `size` and its bytes the
+   * same version, which is the only consistency guarantee an object store
+   * actually makes -- and the one `Content-Length` and a validator depend on.
+   *
+   * CLOSING IS THE CALLER'S JOB. `stream()` hands the handle to a read stream
+   * with `autoClose`, so a drained or destroyed body releases it; every other
+   * caller closes it in a `finally`.
+   *
+   * It reads in 8 KiB steps until it finds the newline, because the header
+   * contains the key and a key can be long -- a 400-character key is a test in
+   * this repository. The ceiling stops a file that is not one of ours, or one
+   * truncated mid-header, from being read into memory in the hope of finding a
+   * newline that is not there.
+   */
+  async #open(
+    path: string,
+  ): Promise<{ fh: FileHandle; meta: FsHeader; offset: number; stat: Stats } | null> {
+    let fh: FileHandle;
+    try {
+      fh = await open(path, 'r');
+    } catch (e) {
+      if ((e as { code?: string }).code === 'ENOENT') return null;
+      throw e;
+    }
+    let ok = false;
+    try {
+      // From the HANDLE, not the path: the same inode the bytes come from.
+      const st = await fh.stat();
+      const chunks: Buffer[] = [];
+      let total = 0;
+      for (;;) {
+        const buf = Buffer.allocUnsafe(8192);
+        const { bytesRead } = await fh.read(buf, 0, buf.byteLength, total);
+        if (bytesRead === 0) return null; // no newline anywhere: not an object
+        chunks.push(buf.subarray(0, bytesRead));
+        const joined = Buffer.concat(chunks);
+        const nl = joined.indexOf(0x0a);
+        if (nl !== -1) {
+          let meta: unknown;
+          try {
+            meta = JSON.parse(joined.subarray(0, nl).toString('utf8'));
+          } catch {
+            return null;
+          }
+          if (!isFsHeader(meta)) return null;
+          ok = true;
+          return { fh, meta, offset: nl + 1, stat: st };
+        }
+        total = joined.byteLength;
+        if (total > FS_HEADER_MAX) return null;
+      }
+    } finally {
+      // Every path that does NOT hand the handle out closes it here.
+      if (!ok) await fh.close().catch(() => {});
+    }
+  }
+
+  async put(
+    key: string,
+    body: PutBody,
+    contentType: string,
+    _opts: StoragePutOptions = {},
+  ): Promise<StoragePutResult> {
+    const bytes = body instanceof Uint8Array ? body : await collectStream(body);
+    const { dir, obj } = this.#paths(key);
+    await mkdir(dir, { recursive: true });
+    const etag = `"${createHash('md5').update(bytes).digest('hex')}"`;
+    const tmp = `${obj}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(
+        tmp,
+        this.#encode(
+          { key, contentType, etag, bytes: bytes.byteLength, at: new Date().toISOString() },
+          bytes,
+        ),
+      );
+      await rename(tmp, obj);
+    } finally {
+      // A PARTLY WRITTEN TEMP FILE IS NOT GARBAGE SOMEONE ELSE COLLECTS. There
+      // was no cleanup here at all: a put that failed on a full disk left a
+      // `.tmp` that `list()` never reports, so `collectStorageOrphans` could
+      // not reclaim it either. Verified against a real write failure.
+      await rm(tmp, { force: true }).catch(() => {});
+    }
+    return { bytes: bytes.byteLength, etag };
+  }
+
+  async get(key: string): Promise<Uint8Array | null> {
+    const { obj } = this.#paths(key);
+    let whole: Buffer;
+    try {
+      whole = await readFile(obj);
+    } catch (e) {
+      if ((e as { code?: string }).code === 'ENOENT') return null;
+      throw e;
+    }
+    const nl = whole.indexOf(0x0a);
+    if (nl === -1) return null;
+    return new Uint8Array(whole.subarray(nl + 1));
+  }
+
+  async head(key: string): Promise<ObjectHead | null> {
+    const h = await this.#open(this.#paths(key).obj);
+    if (!h) return null;
+    try {
+      return {
+        // THE SIZE, THE ETAG AND THE MTIME ALL COME FROM ONE OPEN DESCRIPTOR,
+        // which is the whole reason for the single-file format and for `#open`
+        // handing the handle back: there is no way for these to describe
+        // different versions of the object.
+        size: h.meta.bytes,
+        contentType: h.meta.contentType,
+        etag: h.meta.etag,
+        lastModified: h.stat.mtime,
+      };
+    } finally {
+      await h.fh.close().catch(() => {});
+    }
+  }
+
+  /**
+   * A REAL STREAM, FROM THE DESCRIPTOR THE HEADER WAS READ FROM.
+   *
+   * The first version called `head()` for the size and then `get()` for the
+   * bytes. A delete between the two returned `{ size: 65536, body: 0 bytes }`
+   * -- a response claiming 64 KiB and sending none, undetectable by any HTTP
+   * layer that trusts `ObjectStream.size`. And a ranged read buffered the WHOLE
+   * object before slicing: a 10-byte range on a 100 MiB file grew resident
+   * memory by 200 MiB, twice the object, because the slice copies.
+   *
+   * `fh.createReadStream({ start, end })` reads only the requested bytes from
+   * the handle `#open` already holds. One descriptor for the header and the
+   * payload is what makes the etag, the size and the bytes one version; reading
+   * only the range is what keeps a 10-byte read a 10-byte read. The payload
+   * offset comes from the header, so the caller's range is translated once,
+   * here.
+   */
+  async stream(key: string, opts: { range?: ByteRange } = {}): Promise<ObjectStream | null> {
+    // `assertRange` first: a garbage range must be refused before anything is
+    // opened, so a bad call cannot leak a descriptor.
+    if (opts.range) assertRange(opts.range);
+
+    const h = await this.#open(this.#paths(key).obj);
+    if (!h) return null;
+
+    let closed = false;
+    const close = async (): Promise<void> => {
+      if (!closed) {
+        closed = true;
+        await h.fh.close().catch(() => {});
+      }
+    };
+
+    try {
+      const total = h.meta.bytes;
+      let start = 0;
+      let end = total - 1;
+      let ranged = false;
+      if (opts.range) {
+        start = opts.range.start;
+        end = Math.min(opts.range.end ?? total - 1, total - 1);
+        // Past the end is unsatisfiable, which is the answer S3 gives and which
+        // the delivery layer turns into a 404.
+        if (start > end) {
+          await close();
+          return null;
+        }
+        ranged = true;
+      }
+
+      const empty = total === 0 || end < start;
+      let body: ReadableStream<Uint8Array>;
+      if (empty) {
+        await close();
+        body = bytesToStream(new Uint8Array(0));
+      } else {
+        // autoClose releases the descriptor when the body is drained OR
+        // destroyed, which covers a client that hangs up mid-download.
+        const rs = h.fh.createReadStream({
+          start: h.offset + start,
+          end: h.offset + end,
+          autoClose: true,
+        });
+        rs.on('close', () => {
+          closed = true;
+        });
+        body = Readable.toWeb(rs) as ReadableStream<Uint8Array>;
+      }
+
+      const out: ObjectStream = {
+        body,
+        size: empty ? 0 : end - start + 1,
+        contentType: h.meta.contentType,
+        etag: h.meta.etag,
+      };
+      if (ranged) out.range = { start, end, total };
+      return out;
+    } catch (e) {
+      await close();
+      throw e;
+    }
+  }
+
+  async delete(key: string): Promise<void> {
+    try {
+      await rm(this.#paths(key).obj);
+    } catch (e) {
+      // Deleting what is not there is success, as it is on S3.
+      if ((e as { code?: string }).code !== 'ENOENT') throw e;
+    }
+  }
+
+  /**
+   * Present, so `collectStorageOrphans()` works here too. It reads each
+   * object's header rather than its bytes, because the key is only recoverable
+   * from the header and the payload is irrelevant to a listing.
+   *
+   * TWO THINGS HERE ARE DEFENSIVE ON PURPOSE, both of them measured.
+   *
+   * A FILE IT CANNOT READ A HEADER FROM SKIPS ITSELF AND NOTHING ELSE. The
+   * first version did a bare `JSON.parse` on each sidecar, so one unreadable
+   * file threw out of the whole walk: `collectStorageOrphans()` could then
+   * enumerate nothing at all, and every object in the store became
+   * unreclaimable because of one. It did not take corruption to produce --
+   * ordinary concurrent writers did it -- and a listing that one bad file can
+   * disable is wrong whatever wrote the file. `skipped` is reported rather than
+   * hidden, so a caller can tell "nothing here" from "I could not read four of
+   * these".
+   *
+   * AN UNREADABLE DIRECTORY THROWS INSTEAD OF READING EMPTY. The first version
+   * caught every `readdir` error and returned, so a root with no read
+   * permission produced `{ entries: [] }` -- indistinguishable from an empty
+   * store. The caller is the orphan collector, and "nothing is stored" is the
+   * one answer that makes it delete database rows for files that do exist.
+   * ENOENT alone is benign, because a store nobody has written to yet has no
+   * directory.
+   */
+  async list(
+    prefix: string,
+    opts: { limit?: number; cursor?: string | null } = {},
+  ): Promise<{ entries: ListEntry[]; cursor: string | null; skipped?: number }> {
+    // 1,000 is the ceiling on the other two adapters. It was 10,000 here, which
+    // meant a caller that passed `limit: 5000` silently got a different page
+    // size from a directory than from a bucket -- and for the orphan collector,
+    // a short page it believes is complete is rows deleted for files that exist.
+    const limit = Math.max(1, Math.min(opts.limit ?? 1000, 1000));
+    const found: ListEntry[] = [];
+    let skipped = 0;
+    const walk = async (dir: string): Promise<void> => {
+      let names: string[];
+      try {
+        names = await readdir(dir);
+      } catch (e) {
+        if ((e as { code?: string }).code === 'ENOENT') return;
+        // EACCES, ENOTDIR, EMFILE and friends are not "this directory is
+        // empty". Hiding them is how a listing lies to the orphan collector.
+        throw e;
+      }
+      for (const n of names.sort()) {
+        const full = join(dir, n);
+        const s = await stat(full).catch(() => null);
+        if (s === null) continue;
+        if (s.isDirectory()) {
+          await walk(full);
+          continue;
+        }
+        if (!n.endsWith('.obj')) continue;
+        const h = await this.#open(full).catch(() => null);
+        if (!h) {
+          skipped++;
+          continue;
+        }
+        await h.fh.close().catch(() => {});
+        if (!h.meta.key.startsWith(prefix)) continue;
+        found.push({
+          key: h.meta.key,
+          // THE LENGTH ON DISK, not the length the header claims. They agree
+          // for anything this adapter wrote; they disagree for a file that was
+          // truncated after the fact, and the orphan collector is better served
+          // by what is there than by what was intended.
+          size: Math.max(0, h.stat.size - h.offset),
+          lastModified: s.mtime,
+        });
+      }
+    };
+    await walk(this.#root);
+    found.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    const after = opts.cursor ?? null;
+    const start = after === null ? 0 : found.findIndex((e) => e.key > after);
+    const slice = start < 0 ? [] : found.slice(start, start + limit);
+    const last = slice[slice.length - 1];
+    const out: { entries: ListEntry[]; cursor: string | null; skipped?: number } = {
+      entries: slice,
+      // A CURSOR MUST NEVER BE `''`. The empty key is a legal key here, and
+      // handing back `''` as the cursor ended an idiomatic `while (cursor)`
+      // loop on its first iteration -- so a caller paging a store whose
+      // alphabetically first object had the empty key saw one page and stopped.
+      cursor: last && last.key !== '' && start + limit < found.length ? last.key : null,
+    };
+    if (skipped > 0) out.skipped = skipped;
+    return out;
+  }
+}
+
+// -----------------------------------------------------------------------------
 // In-memory adapter (tests, local dev)
 // -----------------------------------------------------------------------------
 
@@ -287,9 +746,14 @@ export class MemoryStorage implements StorageAdapter {
     opts: { limit?: number; cursor?: string | null } = {},
   ): Promise<{ entries: ListEntry[]; cursor: string | null }> {
     const limit = Math.max(1, Math.min(opts.limit ?? 1000, 1000));
-    const after = opts.cursor ?? '';
+    // `?? ''` here instead of `?? null` hid the key `''` from every page,
+    // because `'' > ''` is false: with no cursor the first page already
+    // excluded it, so an object stored under the empty key could be listed by
+    // no call at all and `collectStorageOrphans()` could never reclaim it. The
+    // empty key is reachable -- the adapter is exported and takes any string.
+    const after = opts.cursor ?? null;
     const all = [...this.objects.entries()]
-      .filter(([k]) => k.startsWith(prefix) && k > after)
+      .filter(([k]) => k.startsWith(prefix) && (after === null || k > after))
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     const page = all.slice(0, limit);
     return {

@@ -639,6 +639,45 @@ Bucket permissions: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`,
 "wire-correct", not "proven".** See the report accompanying this change for the
 explicit list of what remains unverified.
 
+### `FsStorage`, and what one file per object buys
+
+`FsStorage` keeps **one file per object**: a JSON header line, a newline, then
+the bytes. That is not the obvious layout and the obvious layout -- bytes in one
+file, metadata in a second -- is wrong for a reason worth writing down, because
+anyone implementing a `StorageAdapter` over a filesystem will meet it.
+
+Two files cannot be replaced atomically. Whichever order you choose, a reader
+can land between the two writes:
+
+| order | what a reader can see |
+|---|---|
+| bytes in place, metadata after | `writeFile` opens `O_TRUNC`, so a listing reads a zero-length metadata file |
+| temp+rename both, bytes first | a crash leaves bytes no listing can name, so nothing can reclaim them |
+| temp+rename both, metadata first | the new etag over the old bytes |
+
+The third is the dangerous one, because an etag that does not describe the bytes
+is precisely the error a validator exists to prevent, and no caller can detect
+it. One file is one `rename(2)`, which is atomic within a filesystem.
+
+The same defect then exists one layer down, in the READER: opening the file once
+for the header and once for the payload straddles the rename anyway. `stream()`
+therefore opens once and reads the payload from the descriptor the header came
+from. A descriptor refers to the inode, so no rename or unlink can move it.
+
+**The guarantee is per call.** `head()` followed by `get()` is two calls, and a
+write between them gives you one version's metadata and another's bytes -- here,
+and on S3, and in every object store. What holds is that a single call is
+internally consistent: `stream()`'s etag, its `size` and its bytes are one
+version, which is what `Content-Length` and a validator depend on.
+
+`list()` reports `skipped` when it could not read an object's header, rather
+than throwing out of the walk: one unreadable file must not make a whole store
+unenumerable, because an unenumerable store is one `collectStorageOrphans()`
+cannot reclaim anything from. It raises `EACCES` rather than reporting an
+unreadable directory as an empty one, for the opposite reason: "nothing is
+stored" is the one answer that makes the orphan collector delete rows for files
+that exist.
+
 ---
 
 ## 11. Control-plane operations
@@ -680,6 +719,7 @@ Internally we record precisely why access was denied. Externally:
 | condition | response |
 |---|---|
 | absent / not yours / no standing / dead grant | `404 not_found` |
+| **holding standing but not the capability** | `404 insufficient_role` |
 | file expired | `410 gone` |
 | deletion blocked by retention | `409 retention_hold` |
 | share link needs a password | `401 password_required` |
@@ -687,8 +727,20 @@ Internally we record precisely why access was denied. Externally:
 
 `404` covers everything that would otherwise confirm existence. `410` and `409`
 are reachable only by a caller who already proved they may perform the
-operation. `403` is answered only to a caller who has already established
-standing.
+operation.
+
+**`403` is narrower than "the caller has standing", and the row above is the one
+people get wrong.** A plain `member` of an org who calls `setRole` or `audit` has
+standing in that org and still receives `404 insufficient_role`, the same answer a
+stranger receives. `403` is for a caller who DOES hold the capability and is
+asking for something the rules forbid anyway: promoting above their own role,
+touching someone who outranks them, removing the last owner, or widening a
+delegated grant. Measured against 0.8.0 on 3 October 2026, after an integration
+review found this sentence promising a 403 that the API does not send.
+
+An application rendering "you need admin rights" must branch on its own session
+rather than on the status code, because the status code deliberately refuses to
+distinguish the two cases.
 
 ---
 

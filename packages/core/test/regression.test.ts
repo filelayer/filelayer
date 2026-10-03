@@ -1310,3 +1310,58 @@ describe('2026-10-03: a byte range is validated before it reaches the store', ()
     assert.deepEqual(ok.range, { start: 2, end: 4, total: 10 });
   });
 });
+
+describe('2026-10-03: a share link refuses anything beyond read, before the database does', () => {
+  it('names the capability, with a status, and without the failing row', async () => {
+    // `grant_link_read_only` has refused this row since 0.5.1, so the rule was
+    // never missing -- only the path to it. The sole way to reach it was the
+    // INSERT, and a CHECK violation arrives as a pg error: SQLSTATE 23514, the
+    // constraint name, and `detail` carrying the FAILING ROW. For `file_grant`
+    // that row includes `secret_hash`, so an application that logged the error
+    // logged a credential, and one that mapped `err.status` found there was
+    // none and answered 500 to a 400. Both were measured against the starter.
+    const { db } = await createTestDb();
+    const fl = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://x' });
+    const f = await fl.files.put(bytes('CONTRACT'), { org: 'acme', owner: 'alice' });
+
+    for (const caps of [['read', 'delete'], ['delete'], ['write'], ['share'], ['read', 'share']]) {
+      const err = await fl.shares
+        .create(f.id, { as: 'alice', capabilities: caps as Capability[] })
+        .then(
+          () => null,
+          (e: Error & { status?: number; code?: string; reason?: string; detail?: string }) => e,
+        );
+      assert.ok(err, `capabilities ${JSON.stringify(caps)} minted a link anyway`);
+      assert.equal(err.status, 400, 'a caller error, not a 500');
+      assert.equal(err.code, 'link_is_read_only');
+      // `reason` is the internal field: logged for the operator, never
+      // serialized to an untrusted caller. That is where the capability name
+      // belongs, because the caller already knows what it asked for.
+      assert.match(
+        String(err.reason),
+        /^link_capabilities:/,
+        'the operator-facing reason names which capability was refused',
+      );
+      assert.doesNotMatch(
+        JSON.stringify(err, Object.getOwnPropertyNames(err)),
+        /secret_hash/,
+        'and the error does not carry the failing row, which contains a credential',
+      );
+    }
+
+    // `read` alone, and the default, are unchanged.
+    const plain = await fl.shares.create(f.id, { as: 'alice' });
+    assert.ok(plain.secret);
+    const explicit = await fl.shares.create(f.id, { as: 'alice', capabilities: ['read'] });
+    assert.ok(explicit.secret);
+
+    // And a NAMED subject still gets the capabilities it asks for: the rule is
+    // about links, not about delegation.
+    const toBob = await fl.shares.create(f.id, {
+      as: 'alice',
+      withUser: 'bob',
+      capabilities: ['read', 'delete'],
+    });
+    assert.equal(toBob.secret, undefined, 'a named subject has no secret to hand out');
+  });
+});

@@ -45,7 +45,7 @@
  * means adding it to CLAIMS below, in the same commit.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 
@@ -172,6 +172,78 @@ for (const kind of ['tests', 'suites']) {
       `public surfaces disagree on the ${kind} count: ${values.join(' vs ')}\n` +
         group.map((c) => `      ${c.file}:${c.line}  ${c.value}  > ${c.text}`).join('\n'),
     );
+  }
+}
+
+// --- the counts, against a RUN rather than against each other ---------------
+//
+// WHAT THIS BLOCK IS FOR. Everything above compares the public surfaces WITH
+// EACH OTHER. On 3 October 2026 the suite ran 405 tests across 100 suites while
+// TRUST.md, ARCHITECTURE-PROGRESSIVE.md (three places) and PUBLISH-RUNBOOK.md
+// all said 375 across 94 -- and this gate reported clean, because they agreed.
+// Four public surfaces carried the same wrong number and the check whose whole
+// job is version drift could not see it. Consistency is not accuracy, and a
+// number nobody measured is not evidence.
+//
+// `tools/run-suite.mjs` runs the suite and writes what it counted. This reads
+// that, and FAILS when the file is missing or older than the code, rather than
+// skipping the comparison and still printing "clean" -- the failure mode that
+// made the defect above invisible for a day.
+const COUNTS = join(ROOT, '.measured/suite-counts.json');
+let recorded = null;
+try {
+  recorded = JSON.parse(readFileSync(COUNTS, 'utf8'));
+} catch {
+  violations.push(
+    'the test counts have not been measured. `.measured/suite-counts.json` is ' +
+      'missing, so the counts on the public surfaces were compared only with each ' +
+      'other.\n      Run `npm run test:counted` (or `npm run verify`, which does) ' +
+      'and try again.',
+  );
+}
+
+if (recorded) {
+  // STALE IS THE SAME AS ABSENT. A counts file from before the last change to
+  // src/ or test/ describes a suite that no longer exists.
+  const newest = (() => {
+    let t = 0;
+    const walk = (d) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const full = join(d, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (/\.(ts|sql)$/.test(e.name)) t = Math.max(t, statSync(full).mtimeMs);
+      }
+    };
+    for (const d of ['packages/core/src', 'packages/core/test']) walk(join(ROOT, d));
+    return t;
+  })();
+  const at = Date.parse(recorded.at ?? '');
+  if (!Number.isFinite(at) || at < newest) {
+    violations.push(
+      `the recorded test counts are older than the code they describe ` +
+        `(${recorded.at ?? 'no timestamp'} vs a source file touched ` +
+        `${new Date(newest).toISOString()}). Re-run \`npm run test:counted\`.`,
+    );
+  } else {
+    for (const [kind, actual] of [
+      ['tests', recorded.tests],
+      ['suites', recorded.suites],
+    ]) {
+      for (const c of claims.filter((x) => x.kind === kind)) {
+        if (Number(c.value) !== actual) {
+          violations.push(
+            `${c.file}:${c.line} claims ${c.value} ${kind}; the suite counted ${actual}.\n` +
+              `      > ${c.text}`,
+          );
+        }
+      }
+    }
+    if (recorded.fail > 0) {
+      violations.push(
+        `the recorded run had ${recorded.fail} failing test(s). No count on a public ` +
+          'surface should be published from a red suite.',
+      );
+    }
   }
 }
 

@@ -30,6 +30,21 @@
  * and table rows are stripped first, because a dash in `| Version | 0.7.0 — alpha |`
  * is a column separator and a dash in a `- [Doc](url) — gloss` list is a
  * convention, and neither is anybody's writing voice.
+ *
+ * It counts the WHOLE DASH FAMILY, not the em dash. It used to match U+2014
+ * alone, and an adversarial sweep on 3 October 2026 pointed out that replacing
+ * every em dash with an en dash -- a single find-and-replace, visually almost
+ * identical, rhythmically identical -- took every surface to zero while this
+ * gate reported clean. The construction is the parenthetical break; which
+ * codepoint draws it is not the thing being measured. The spaced ASCII forms
+ * are in there for the same reason.
+ *
+ * WHAT A CLEAN RUN DOES NOT MEAN. This measures the density of two habits on
+ * six named files. A document written entirely by a model that happens to use
+ * neither habit scores 0/0 and passes, and a document nobody has added to this
+ * list is not measured at all. It is a drift detector on surfaces we already
+ * care about, not a judgement about authorship -- that still takes a person
+ * reading the page.
  */
 
 import { readFileSync } from 'node:fs';
@@ -83,7 +98,7 @@ function prose(raw, file) {
     .split('\n')
     .filter((l) => !l.trim().startsWith('|'))
     // `- [Title](url) — one line gloss` is a README convention, not prose rhythm.
-    .map((l) => (/^\s*[-*]\s*\[/.test(l) ? l.replace(/—/g, ' ') : l))
+    .map((l) => (/^\s*[-*]\s*\[/.test(l) ? l.replace(/[\u2012\u2013\u2014\u2015]/g, ' ') : l))
     .join('\n');
   // Markdown headings carry titles, not sentences.
   t = t.replace(/^#{1,6}\s.*$/gm, ' ');
@@ -106,7 +121,13 @@ for (const s of SURFACES) {
   }
   const t = prose(raw, s.file);
   const words = t.split(/\s+/).filter(Boolean).length;
-  const dashes = (t.match(/—/g) ?? []).length;
+  // U+2014 em, U+2013 en, U+2015 horizontal bar, U+2012 figure dash, and the
+  // two spaced ASCII forms that do the same job in plain text.
+  // The ASCII forms use [ \t] rather than \s on purpose: \s matches a newline,
+  // which made every markdown bullet (`\n- item`) look like a mid-sentence
+  // dash and tripled the count on three surfaces. A dash construction is
+  // inside a line, by definition.
+  const dashes = (t.match(/[\u2012\u2013\u2014\u2015]|[ \t]--[ \t]|\S[ \t]-[ \t]\S/g) ?? []).length;
   const mirrors = MIRRORS.reduce((n, re) => n + (t.match(re) ?? []).length, 0);
 
   const perDash = dashes === 0 ? Infinity : Math.floor(words / dashes);
@@ -114,7 +135,7 @@ for (const s of SURFACES) {
 
   const bad = [];
   if (perDash < s.minWordsPerDash) {
-    bad.push(`one em dash every ${perDash} words (floor ${s.minWordsPerDash}, ${dashes} in ${words})`);
+    bad.push(`one dash every ${perDash} words (floor ${s.minWordsPerDash}, ${dashes} in ${words})`);
   }
   if (perMirror < s.minWordsPerMirror) {
     bad.push(

@@ -1493,14 +1493,22 @@ describe('PROPERTY 15: delegation cannot amplify or outlive the permission it ca
         /grant_link_read_only/,
       );
     }
-    // The API surface cannot smuggle it past either.
+    // THE API REFUSES IT TOO, AND SEPARATELY. Until 3 October 2026 the INSERT
+    // above was the only thing standing in the way, so this call surfaced the
+    // constraint violation raw: SQLSTATE 23514, no `status` for an HTTP layer to
+    // map, and a `detail` field carrying the failing row -- which for
+    // `file_grant` includes `secret_hash`. `share()` now checks first and throws
+    // a 400. The raw INSERTs above still prove the database is the backstop, and
+    // they have to: this assertion and those ones are two independent writers
+    // being refused, which is the property, rather than one check tested twice.
     await assert.rejects(
       () =>
         s.fl.share(P(s.alice), s.fileA.id, {
           subject: { type: 'link' },
           capabilities: ['read', 'delete'],
         }),
-      /grant_link_read_only/,
+      (e: { status?: number; code?: string }) =>
+        e.status === 400 && e.code === 'link_is_read_only',
     );
     // Positive control, so the constraint is not vacuous.
     const ok = await s.fl.share(P(s.alice), s.fileA.id, {

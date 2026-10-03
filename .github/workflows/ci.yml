@@ -153,6 +153,84 @@ jobs:
       - name: Every documented code sample runs
         run: npm run check:docs
 
+      # ---------------------------------------------------------------------
+      # FIVE GATES THAT EXISTED AND DID NOT RUN HERE.
+      #
+      # check:copies, check:versions, check:web, check:web-samples,
+      # check:register and check:offline were all written, all wired into
+      # `npm run verify`, and none of them was in this workflow. So they ran
+      # whenever a maintainer remembered to run the whole gate locally, which
+      # is the definition of a check you do not have. Found on 3 October 2026,
+      # by which time check:versions would have caught four public surfaces
+      # claiming a test count that was 30 tests out of date.
+      # ---------------------------------------------------------------------
+
+      # The shipped copies under packages/core must be byte-identical to the
+      # repository root. Two sources of truth for one document drift, and the
+      # one a reader sees is whichever we forgot.
+      - name: The shipped copies match the repository root
+        run: npm run check:copies
+
+      # Everything a documented reader is told to open must be in the tarball,
+      # with bytes in it. `llms.txt` once sent an offline reader to QUICKSTART,
+      # which was not shipped.
+      - name: Everything the documentation points at is reachable offline
+        run: npm run check:offline
+
+      # The website is a public surface and drifts like any other.
+      - name: The website's claims and references hold
+        run: |
+          npm run check:web
+          npm run check:web-samples
+
+      # Register density on the public prose. See tools/check-register.mjs for
+      # what it measures and what a clean run does not mean.
+      - name: Register density on the public surfaces
+        run: npm run check:register
+
+  # ---------------------------------------------------------------------------
+  # The counts on the public surfaces, against a run rather than against each
+  # other. Its own job because it needs the suite to have run first, and
+  # `tools/run-suite.mjs` is what records what the suite counted.
+  # ---------------------------------------------------------------------------
+  measured-claims:
+    name: measured claims
+    runs-on: ubuntu-latest
+    services:
+      # The contention tests need two backends. Without this the suite counts 8
+      # fewer tests than it does in a full run, and the claim would be wrong in
+      # the other direction.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: filelayer_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      FILELAYER_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/filelayer_test
+      FILELAYER_TEST_CONTENTION: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        working-directory: packages/core
+        run: npm ci
+
+      - name: Run the suite and record what it counted
+        run: npm run test:counted
+
+      - name: Every published test count came from that run
+        run: npm run check:versions
+
   # ---------------------------------------------------------------------------
   # Pack the tarball and install it into a clean directory, from nothing.
   #

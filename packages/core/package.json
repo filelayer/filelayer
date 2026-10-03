@@ -24,6 +24,8 @@
     "dist",
     "src",
     "test",
+    "examples",
+    "docs",
     "schema.sql",
     "tsconfig.json",
     "tsconfig.build.json",

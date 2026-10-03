@@ -132,6 +132,35 @@ const COPIES = [
     why: 'the machine-readable shape of the API, for the same reader',
     versionStamp: /"version":\s*"(\d+\.\d+\.\d+)"/,
   },
+  {
+    // AT docs/ ON BOTH SIDES, so the link in llms.txt and the file on disk are
+    // the same path as well as the same bytes.
+    file: 'docs/QUICKSTART.md',
+    why:
+      'the install-to-first-file document. An agent integrating this package was ' +
+      'told by llms.txt to start here, found it was the one Start-here file not ' +
+      'in the tarball, and had to fetch it over the network. Measured 3 October 2026.',
+    versionStamp: null,
+  },
+  ...[
+    'examples/tier1-avatar/app.ts',
+    'examples/tier1-avatar/package.json',
+    'examples/tier2-user-files/app.ts',
+    'examples/tier2-user-files/package.json',
+    'examples/tier3-org-roles/app.ts',
+    'examples/tier3-org-roles/package.json',
+    'examples/vault/server.ts',
+    'examples/vault/package.json',
+    'examples/starter/server.ts',
+    'examples/starter/verify.mjs',
+    'examples/starter/README.md',
+    'examples/starter/package.json',
+    'examples/starter/.env.example',
+  ].map((file) => ({
+    file,
+    why: 'a runnable example the documentation points at; shipping it is what makes it readable offline',
+    versionStamp: null,
+  })),
 ];
 
 const problems = [];
@@ -245,7 +274,19 @@ if (process.argv.includes('--self-test')) {
 
 const corePkg = JSON.parse(readFileSync(join(ROOT, PKG_DIR, 'package.json'), 'utf8'));
 const VERSION = corePkg.version;
-const shipped = new Set(corePkg.files ?? []);
+const shippedEntries = corePkg.files ?? [];
+
+/**
+ * npm's `files` SHIPS A DIRECTORY WHOLE, so `"examples"` publishes everything
+ * under it and a membership test against the literal path is the wrong question.
+ *
+ * The first version of this check asked exactly that question, and the answer it
+ * gave was "add examples/vault/package.json to files" for each of nine paths.
+ * A checker that demands a verbose list where npm accepts a short one teaches
+ * people to work around the checker.
+ */
+const isShipped = (relPath) =>
+  shippedEntries.some((e) => relPath === e || relPath.startsWith(`${e.replace(/\/+$/, '')}/`));
 
 let tracked;
 try {
@@ -305,7 +346,7 @@ for (const { file, why, versionStamp } of COPIES) {
     );
   }
 
-  if (!shipped.has(file)) {
+  if (!isShipped(file)) {
     fail(
       `${PKG_DIR}/package.json`,
       `"files" does not list "${file}", so the verified copy is not published. Add it in ` +

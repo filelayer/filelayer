@@ -80,7 +80,15 @@ scratch/
 outputs/
 tmp/
 .doccheck/
+.measured/
 *.log
+
+# `.measured/` holds what `tools/run-suite.mjs` counted, for
+# tools/check-version-claims.mjs to compare the published numbers against. It
+# is NOT inside `.doccheck/`, which check-doc-samples.mjs removes and recreates
+# on every run -- the counts file lived there for about ten minutes and the doc
+# checker deleted it, which made the counts look unmeasured rather than wrong.
+# Two tools, one scratch directory, one of them with an rm.
 
 # --- local environment -------------------------------------------------------
 .env
