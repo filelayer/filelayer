@@ -365,14 +365,23 @@ describe('contention: the audit chain', () => {
         body: bytes('X'),
       });
 
-      // Twenty reads from eight connections, all writing allow events onto the
-      // same per-org chain at once. Before `audit_append` took
-      // `pg_advisory_xact_lock`, two writers read the same predecessor hash and
-      // the chain forked; replay then reports a mismatch at the fork point.
-      const conns = await Promise.all(Array.from({ length: 8 }, () => w.real.connect()));
+      // TWENTY CONNECTIONS FOR TWENTY READS, one each.
+      //
+      // The first version used eight connections for twenty reads, which looks
+      // equivalent and is not: node-postgres QUEUES concurrent queries on one
+      // client, so two or three of those reads were serialised before they ever
+      // reached a backend. CI said so out loud -- "Calling client.query() when
+      // the client is already executing a query is deprecated" -- and a
+      // contention test that quietly serialises a third of its own load is
+      // measuring less than it claims.
+      //
+      // Before `audit_append` took `pg_advisory_xact_lock`, two writers read the
+      // same predecessor hash and the chain forked; replay then reports a
+      // mismatch at the fork point.
+      const conns = await Promise.all(Array.from({ length: 20 }, () => w.real.connect()));
       try {
-        const work = Array.from({ length: 20 }, (_, i) =>
-          onConnection(conns[i % conns.length]!.q, w.storage).read({ actorId: alice }, file.id),
+        const work = conns.map((c) =>
+          onConnection(c.q, w.storage).read({ actorId: alice }, file.id),
         );
         const settled = await Promise.allSettled(work);
         assert.equal(
@@ -471,20 +480,35 @@ describe('contention: isolation does not degrade under load', () => {
         name: 'b.txt', contentType: 'text/plain', body: bytes('B SECRET'),
       });
 
-      const conns = await Promise.all(Array.from({ length: 6 }, () => w.real.connect()));
+      // One connection per concurrent job, for the reason given in the audit
+      // chain test above: sharing a client queues the queries and quietly
+      // removes the contention this file exists to create.
+      const conns = await Promise.all(Array.from({ length: 20 }, () => w.real.connect()));
       try {
-        const jobs: Promise<unknown>[] = [];
-        for (let i = 0; i < 30; i++) {
-          const fl = onConnection(conns[i % conns.length]!.q, w.storage);
-          // Legitimate traffic in both tenants, plus each actor reaching for the
-          // other's file, all at once.
-          jobs.push(fl.read({ actorId: a }, fA.id));
-          jobs.push(fl.read({ actorId: b }, fB.id));
-          jobs.push(fl.read({ actorId: a }, fB.id).then(() => 'LEAK', () => 'denied'));
-          jobs.push(fl.read({ actorId: b }, fA.id).then(() => 'LEAK', () => 'denied'));
-        }
+        // ONE JOB PER CONNECTION. Pushing four jobs onto each connection would
+        // read as four times the load and would be the opposite: node-postgres
+        // queues them, so three of every four would wait their turn on the
+        // client instead of colliding at the server.
+        //
+        // Four access patterns, interleaved across the twenty: legitimate
+        // traffic in each tenant, and each actor reaching for the other's file.
+        const jobs = conns.map((c, i) => {
+          const fl = onConnection(c.q, w.storage);
+          switch (i % 4) {
+            case 0:
+              return fl.read({ actorId: a }, fA.id).then(() => 'ok');
+            case 1:
+              return fl.read({ actorId: b }, fB.id).then(() => 'ok');
+            case 2:
+              return fl.read({ actorId: a }, fB.id).then(() => 'LEAK', () => 'denied');
+            default:
+              return fl.read({ actorId: b }, fA.id).then(() => 'LEAK', () => 'denied');
+          }
+        });
         const out = await Promise.all(jobs);
         assert.equal(out.filter((x) => x === 'LEAK').length, 0, 'no cross-tenant read, at any point');
+        assert.equal(out.filter((x) => x === 'denied').length, 10, 'and half the load was hostile');
+        assert.equal(out.filter((x) => x === 'ok').length, 10, 'while the legitimate half succeeded');
       } finally {
         conns.forEach((c) => c.release());
       }

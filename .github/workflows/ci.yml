@@ -377,11 +377,33 @@ jobs:
       # THE SAME GUARD THE R2 JOB NEEDED, for the same reason. A suite that
       # skips itself reports success, and that is the one failure mode
       # indistinguishable from the real thing. We shipped it once already.
+      # REPORTER-AGNOSTIC, and this repository had already learned why.
+      #
+      # `node --test` writes its tally as `# pass 8` under the TAP reporter and
+      # `<U+2139> pass 8` under the spec reporter, and which one you get depends on the
+      # Node version and on whether stdout is a TTY. The live-storage job below
+      # was written with a `^# pass` prefix match, that exact assumption broke on
+      # its first real execution, and the comment explaining it is forty lines
+      # down in this same file.
+      #
+      # This guard was then written with the same prefix match, and failed the
+      # build on ITS first real execution -- 3 October 2026, run #53 -- while the
+      # suite underneath it had passed 8 of 8 against a real PostgreSQL. Matching
+      # on the last two fields instead of a prefix survives either format. A test
+      # NAMED "pass 3" cannot collide: the tally line has exactly two fields after
+      # any marker and the second is all digits.
       - name: Refuse a silent skip
         run: |
-          pass=$(awk '/^# pass/ {print $3}' /tmp/contention.log)
-          fail=$(awk '/^# fail/ {print $3}' /tmp/contention.log)
-          skip=$(awk '/^# skipped/ {print $3}' /tmp/contention.log)
+          log=/tmp/contention.log
+          tally() { awk -v k="$1" '$(NF-1) == k && $NF ~ /^[0-9]+$/ { n = $NF } END { print n }' "$log"; }
+          pass=$(tally pass)
+          fail=$(tally fail)
+          skip=$(tally skipped)
+          if [ -z "$pass" ]; then
+            echo "::error::No tally in the runner output. Either nothing ran, or the reporter format changed again and this parse needs updating. Last 20 lines:"
+            tail -20 "$log"
+            exit 1
+          fi
           echo "pass=$pass fail=$fail skipped=$skip"
           if [ "${skip:-0}" != "0" ]; then
             echo "::error::The contention suite skipped ${skip} test(s) with a server configured."
