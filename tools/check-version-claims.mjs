@@ -73,8 +73,12 @@ const CLAIMS = [
   // written -- so it sat at 0.4.3 through the whole of 0.4.4. Added 0.5.0.
   { file: 'TRUST.md', kind: 'version',
     re: /\|\s*Version\s*\|\s*([\d.]+) — alpha\s*\|/g },
+  // The row now says "405, of which 397 on Node 22 / 24 / 26", because 405 do
+  // NOT all run on the three-Node matrix: the eight contention tests need a
+  // real PostgreSQL and skip there. The gate watches the FIRST number, which is
+  // the suite's size; the second is a property of the matrix, not of the suite.
   { file: 'TRUST.md', kind: 'tests',
-    re: /\|\s*Tests\s*\|\s*(\d+), on Node/g },
+    re: /\|\s*Tests\s*\|\s*(\d+), of which \d+ on Node/g },
   { file: 'packages/core/llms.txt', kind: 'version',
     re: /developer preview, version ([\d.]+), Apache-2\.0/g },
   { file: 'ARCHITECTURE-PROGRESSIVE.md', kind: 'version',

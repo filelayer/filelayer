@@ -106,7 +106,7 @@
 <!-- ======================= 1 · HERO ======================================= -->
 <div class="wrap">
   <section class="hero">
-    <p class="eyebrow">Open-source Node library &middot; Apache-2.0 &middot; v0.7.0 alpha</p>
+    <p class="eyebrow">Open-source Node library &middot; Apache-2.0 &middot; v0.9.0 alpha</p>
 
     <h1>The file layer for SaaS&nbsp;applications.</h1>
 
@@ -127,7 +127,7 @@
     <p><code class="install">npm install @filelayer/core</code></p>
 
     <p class="alpha-line" role="note">
-      <b>Alpha. Developer preview.</b> v0.7.0. The schema can still change in any 0.x release.
+      <b>Alpha. Developer preview.</b> v0.9.0. The schema can still change in any 0.x release.
       <a href="#trust">Every number behind that word →</a>
     </p>
   </section>
@@ -391,8 +391,11 @@ anonymous file.read     <span class="c-deny">deny:grant_revoked</span>       boa
           makes npm refuse the tree with <code>ERESOLVE</code>. This is the most likely first-run
           failure, so it is on the page and not in a footnote.
         </p>
-        <p>Production is three configuration steps and is not hidden: your Postgres, your bucket,
-          and confirming the bucket is private.
+        <p>Production is three configuration steps and is not hidden: your Postgres, somewhere for
+          the bytes &mdash; a local directory with <code>FsStorage</code>, no bucket and no IAM user,
+          or your S3/R2 bucket &mdash; and, if you chose a bucket, confirming it is private.
+          <a href="https://github.com/filelayer/filelayer/tree/main/examples/starter">examples/starter &rarr;</a>
+          is all three in one file you can copy.
           <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md#7-going-to-production">Quickstart §7 →</a>
         </p>
       </div>
@@ -442,7 +445,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
       </div>
       <div class="card">
         <h3>The tests ship in the tarball</h3>
-        <p>375 tests across 94 suites travel with the package, so every behavioural claim on this
+        <p>405 tests across 100 suites travel with the package, so every behavioural claim on this
           page is checkable from what you installed.</p>
       </div>
     </div>
@@ -484,7 +487,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
           <li>One decision point for every file access that goes through the library.</li>
           <li>Cross-tenant grants cannot be written: a composite foreign key, binding every writer including <code>psql</code>.</li>
           <li>Delegation cannot amplify authority: a database trigger, binding raw SQL too.</li>
-          <li>A signed URL is re-validated on every request, so revocation beats a live link.</li>
+          <li>Every request is re-authorized, so revocation beats a live URL.</li>
           <li>Every decision is recorded, including denials, hash-chained and append-only.</li>
         </ul>
       </div>

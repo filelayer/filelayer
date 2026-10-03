@@ -189,6 +189,48 @@ jobs:
         run: npm run check:register
 
   # ---------------------------------------------------------------------------
+  # IS THE PAGE THE WORLD READS THE PAGE WE THINK WE WROTE?
+  #
+  # Every other gate here reads the working tree. Nothing had ever made an HTTP
+  # request to the site this repository describes, so a deploy that silently
+  # stopped, served a cached copy, or published the wrong branch would have
+  # looked exactly like success. See the header of tools/check-live-site.mjs,
+  # including the misreading that produced it.
+  #
+  # Schedule and manual dispatch only: a push legitimately precedes the deploy
+  # by a minute or two, and failing a build for that teaches people to ignore it.
+  # ---------------------------------------------------------------------------
+  live-site:
+    name: the deployed site matches this tree
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        working-directory: packages/core
+        run: npm ci
+
+      # The extractors, against the markup that actually drifted and against the
+      # file as it stands. A pattern that matches nothing reports "not found"
+      # rather than passing, which is the failure mode this kind of gate has.
+      - name: The extractors still match
+        run: node tools/check-live-site.mjs --self-test
+
+      # The counts come from a run, not from a number typed by hand.
+      - name: Record what the suite counts
+        run: npm run test:counted
+
+      - name: The deployed page carries this tree's numbers
+        run: npm run check:live
+
+  # ---------------------------------------------------------------------------
   # The counts on the public surfaces, against a run rather than against each
   # other. Its own job because it needs the suite to have run first, and
   # `tools/run-suite.mjs` is what records what the suite counted.

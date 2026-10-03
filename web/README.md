@@ -8,6 +8,7 @@ web/
   styles.css    one stylesheet, no preprocessor
   robots.txt    deliberately permissive, including to AI crawlers
   sitemap.xml
+  og.png        the Open Graph card, 1200×630 — check-web.mjs enforces both
 ```
 
 Open `web/index.html` in a browser. That is the whole development loop.
@@ -51,7 +52,7 @@ saying so, and nothing else on the page depends on them.
 **Every factual claim is not.** Version numbers, test counts, what Filelayer
 guarantees and what it does not, the private-bucket requirement, and the
 middleware-not-RLS distinction are checked against the published package. If a
-claim on the page is not true of `@filelayer/core@0.5.0`, that is a bug, not a
+claim on the page is not true of the version in `packages/core/package.json`, that is a bug, not a
 copy preference.
 
 The claims most easily broken by a well-meaning edit, all of which have cost us
@@ -88,8 +89,14 @@ deliberately refuses JSON-LD containing `aggregateRating`, `review` or `offers`:
 we have no ratings, no reviews and no price, and inventing them would destroy
 the one argument this page makes.
 
-**It does not check whether the copy is true.** Nothing automated can. That is
-what review is for.
+**It does not check every claim.** `check-version-claims.mjs` measures the
+version and the test counts in the trust table against a recorded run, §5 above
+checks the counts attached to the examples, and `check-live-site.mjs` asks the
+same questions of the DEPLOYED page. A number stated anywhere else in the prose
+is unguarded — the page carried `v0.7.0` in two places and `375 across 94` in a
+third while the table beneath them was correct. Adding a number to this page
+means adding it to `CLAIMS` in `check-version-claims.mjs` in the same commit.
+Whether the prose is TRUE is still what review is for.
 
 ---
 
@@ -108,10 +115,16 @@ cp llms.txt openapi.yaml openapi.json <publish-dir>/
 
 Until that is wired, the page links to them on GitHub, which is accurate today.
 
-**The domain `filelayer.dev` is assumed, not confirmed.** It appears in
-`canonical`, the Open Graph tags, `robots.txt` and `sitemap.xml`. Confirm it
-before the first deploy, or change those four places together.
+**The domain `filelayer.dev` is live**, and the deploy tracks `main`: on
+4 October 2026 the served page was byte-identical to `git show HEAD:web/index.html`.
+The domain appears in `canonical`, the Open Graph tags, `robots.txt` and
+`sitemap.xml`; `tools/check-web.mjs` fails if those four disagree.
 
-**`og.png` does not exist yet.** The Open Graph tags reference it. Social
-previews will fall back to no image until one is added at `web/og.png`
-(1200×630). Not a broken page, but the first shared link will look plain.
+`npm run check:live` fetches the served page and compares its version and test
+counts with this tree. Nothing else here makes an HTTP request to the site it
+describes, so without it a deploy that stopped, cached or published the wrong
+branch would look exactly like success. It runs nightly, not on push: a push
+legitimately precedes the deploy by a minute or two.
+
+**`og.png` is in place** at 1200×630. `tools/check-web.mjs` fails the build if
+it goes missing or changes dimensions, so this is not a thing to remember.

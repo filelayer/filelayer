@@ -5,7 +5,7 @@ numbers, instead of inferring it from what a README doesn't say.
 
 Filelayer is a file layer for SaaS applications: files with owners, orgs and
 roles, share links that expire and can be revoked, lifecycle, and an audit trail
-that records denials. It was first published on **6 September 2026**.
+that records denials. It was first published on **5 September 2026**.
 
 ---
 
@@ -17,7 +17,7 @@ that records denials. It was first published on **6 September 2026**.
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
-| Tests | 405, on Node 22 / 24 / 26, every commit |
+| Tests | 405, of which 397 on Node 22 / 24 / 26 and all 405 against a real PostgreSQL, every commit |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
@@ -52,7 +52,8 @@ mistakes people actually make:
 ## What runs against a real object store, and what still does not
 
 **Since 30 September 2026 the storage adapter runs against live Cloudflare R2
-on every commit.** Twelve tests, in CI, against a real bucket: put/get/head/
+on every commit.** Eleven tests per commit and a twelfth nightly, in CI,
+against a real bucket: put/get/head/
 delete, ranged reads, prefix listing, keys containing characters that break
 naive URL construction, a presigned GET the store actually honours, a presigned
 URL expiring for real, a tampered one refused, and — on the nightly run and on
@@ -129,7 +130,9 @@ sceptical engineer say yes, in the order they matter:
 1. **Production deployments that are not ours.** One, then three, then ten. This
    is the only item on the list we cannot manufacture, and it is the one that
    matters most. Everything else is work; this is evidence.
-2. **The storage adapter proven against live R2 and S3 in CI**, on every commit.
+2. **The storage adapter under real load, and in more than one region and
+   bucket configuration.** It runs against live R2 and live AWS S3 on every
+   commit; what no test here has produced is traffic.
 3. **An independent security review** of `schema.sql` and `authz.ts`, published
    in full including whatever it finds. The property suite is self-asserted, and
    cross-tenant isolation is exactly the claim that needs an adversary who is not

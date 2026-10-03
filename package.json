@@ -48,6 +48,7 @@
     "check:register": "node tools/check-register.mjs",
     "check:offline": "node tools/check-offline-reach.mjs",
     "example:starter": "node --experimental-strip-types examples/starter/server.ts",
-    "test:counted": "node tools/run-suite.mjs"
+    "test:counted": "node tools/run-suite.mjs",
+    "check:live": "node tools/check-live-site.mjs"
   }
 }

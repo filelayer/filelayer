@@ -115,7 +115,7 @@ const errorResponse = (description, codes, extra = {}) => ({
 });
 
 const notFound = errorResponse(
-  'Not found — and deliberately indistinguishable from "denied". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, and an `as:` naming an identity the project has never seen.',
+  'Not found — and deliberately indistinguishable from "denied". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, an `as:` naming an identity the project has never seen, a file whose row is deleted, and a file still in `pending` state.',
   ['not_found'],
 );
 
@@ -289,6 +289,18 @@ const spec = {
               'Redirect delivery. Only emitted when the instance was configured with `redirectDelivery` AND the verbatim acknowledgement string was supplied; by default only anonymous (published) grants are eligible. Revocation is immediate at decision time plus up to `ttlSeconds` of in-flight window, and `ttlSeconds` is clamped to 300.',
             headers: REDIRECT_HEADERS,
           },
+          // THE 400 THIS DOCUMENT USED TO OMIT. `/f/{fileId}` refuses a
+          // credential in the query string exactly as `/d/{secret}` does, and
+          // a client generated from the old document treated it as an
+          // undocumented failure on the main read route. Note the code is NOT
+          // the same on the two routes -- `credential_in_query_string` here,
+          // `credential_in_query` on `/d/` -- and that inconsistency is in the
+          // library, not in this description. Changing it is a breaking change
+          // to a public error code, so it is written down rather than hidden.
+          400: errorResponse(
+            'A credential appeared in the query string. The refused keys, matched case-insensitively, are `password`, `pw`, `pass`, `passwd`, `token`, `secret` and `key`. Refused before any work and without consuming a download.',
+            ['credential_in_query_string'],
+          ),
           404: notFound,
           410: gone,
           500: internal,
@@ -447,6 +459,7 @@ const spec = {
               'gone',
               'password_required',
               'credential_in_query',
+              'credential_in_query_string',
               'bad_request',
               'payload_too_large',
               'internal',

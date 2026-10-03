@@ -231,10 +231,28 @@ const { url: avatarUrl } = await fl2.files.put(bytes, { public: true });
 ```
 
 `quickstart()` is **ephemeral**: everything is lost when the process exits.
-Production is three configuration steps and is not hidden. The third is
-confirming your bucket is private:
+
+### Where the bytes go
+
+Three adapters, and the one you want depends on whether you have a bucket:
+
+| | |
+|---|---|
+| `new MemoryStorage()` | A Map. Dies with the process. For tests. |
+| `new FsStorage('./data')` | A real directory. Survives a restart, needs no bucket and no IAM user. One process on one disk: no locking between writers, and no `presignGet`, so redirect delivery is unavailable and `canPresign()` says so before a request rather than during one. |
+| `new S3Storage({ endpoint, bucket, region, accessKeyId, secretAccessKey })` | S3 or R2. The one to use the moment you run two application servers. |
+
+`FsStorage` exists because we measured the gap: an agent integrating the
+published package, reading only the published documentation, wanted bytes that
+survive a restart without creating a bucket, found nothing between a Map and
+IAM credentials, and wrote the adapter itself from the type definitions.
+
+Production is three configuration steps and is not hidden: your Postgres,
+somewhere for the bytes, and — if you chose a bucket — confirming it is private.
+[`examples/starter/`](https://github.com/filelayer/filelayer/tree/main/examples/starter)
+is all three in one file you can copy, and
 [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md)
-§7.
+§7 is the prose version.
 
 ### Running the suite
 
@@ -247,11 +265,12 @@ running in-process, so there is no daemon and no Docker:
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 330 tests
+npm test                 # the security property suite, 405 tests
 npm run typecheck
 npm run verify           # typecheck + tests + build + doc and language checks
 npm run example:tier1    # a public avatar, on :3000
 npm run example:vault    # the full Vault app, on :8787
+npm run example:starter  # a deployable server against your own Postgres
 ```
 
 ---
@@ -286,6 +305,7 @@ namespaces). It is written up, with the SQL, as the first entry in
 | `packages/core/dev/` | Diagnostic scripts. Not published. |
 | `examples/tier1-avatar` … `tier3-org-roles` | One runnable example per tier |
 | `examples/vault` | A full B2B document workspace over HTTP |
+| `examples/starter` | A deployable server: your Postgres, `FsStorage`, route helpers mounted |
 
 ## Documents
 
@@ -300,9 +320,9 @@ namespaces). It is written up, with the SQL, as the first entry in
 
 Every link above points at GitHub, and an installed consumer may have no network
 and no browser. The npm package therefore carries the same files on disk, under
-`node_modules/@filelayer/core/`: this README, `llms.txt`, `openapi.json`,
-`schema.sql`, `SEMANTICS.md`, `MIGRATIONS.md`, `CHANGELOG.md`, `LICENSE` and
-`NOTICE`, alongside `src/` and `test/`. Three of them also resolve as subpath
+`node_modules/@filelayer/core/`: this README, `docs/QUICKSTART.md`, `llms.txt`,
+`openapi.json`, `schema.sql`, `SEMANTICS.md`, `MIGRATIONS.md`, `CHANGELOG.md`,
+`LICENSE` and `NOTICE`, alongside `src/`, `test/` and `examples/`. Three of them also resolve as subpath
 imports: `@filelayer/core/llms.txt`, `@filelayer/core/openapi.json` and
 `@filelayer/core/schema.sql`, so a reader does not have to guess at the layout
 of `node_modules`.
@@ -327,11 +347,13 @@ tarball, so the grant travels with the artifact rather than only with the
 repository. There are no per-file licence headers. The grant is carried by
 `LICENSE`, `NOTICE` and the `license` field of every `package.json`.
 
-**Dependencies.** Filelayer has **no runtime dependencies**. Its one third-party
-package, [`@electric-sql/pglite`](https://github.com/electric-sql/pglite)
-(Apache-2.0), is a `devDependency` and an *optional peer dependency*: the test
-suite and `quickstart()` run on it, and a production install does not contain
-it. It is installed from the registry rather than vendored, ships no `NOTICE`
+**Dependencies.** Filelayer has **no runtime dependencies**, and a job in CI
+fails the build if one appears. Its third-party packages are all
+`devDependencies`: [`@electric-sql/pglite`](https://github.com/electric-sql/pglite)
+(Apache-2.0), which is also an *optional peer dependency* and is what
+`quickstart()` and most of the suite run on, plus `pg` and `embedded-postgres`
+for the eight contention tests that need a server with two real backends. A
+production install contains none of them. It is installed from the registry rather than vendored, ships no `NOTICE`
 file of its own, and is recorded in ours for convenience. No third-party code is
 copied or embedded anywhere in this repository.
 

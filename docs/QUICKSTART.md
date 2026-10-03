@@ -9,7 +9,8 @@ this page is extracted and **executed** by `tools/check-doc-samples.mjs`, which
 runs in CI on every push. Two blocks are marked as skipped in the markdown
 source, each with a stated reason. Runnable examples of the same shapes live in
 `examples/tier1-avatar/`, `examples/tier2-user-files/`,
-`examples/tier3-org-roles/` and `examples/vault/`. If a snippet here disagrees
+`examples/tier3-org-roles/` and `examples/vault/`, and `examples/starter/` is a
+deployable server against your own Postgres. If a snippet here disagrees
 with the test suite, the test suite is right and this page is a bug.
 
 **Contents**
@@ -269,8 +270,10 @@ const share = await fl.shares.create(fileId, {
 with tries to share onward and gets a `404`, because what they hold says `read`
 and nothing else.
 
-**A LINK can only ever carry `read`.** That is a database constraint
-(`grant_link_read_only`), not a policy you can argue with: a bearer secret that
+**A LINK can only ever carry `read`.** `shares.create` refuses anything else
+with `400 link_is_read_only` before any query, and the `grant_link_read_only`
+constraint refuses the row even from a `psql` session. Not a policy you can
+argue with: a bearer secret that
 can mint further authority is a bearer secret that escapes. So delegation is
 granted to a NAMED user:
 
@@ -764,6 +767,7 @@ catch (e) {
 | 410 | `gone` | The file itself has expired. |
 | 400 | `credential_in_query` | A credential appeared in the query string. Move it to the body. |
 | 400 | `link_principal_cannot_list` | A share-link credential was used to call `listFiles`. |
+| 400 | `link_is_read_only` | A share link was asked for a capability beyond `read`. Name an actor or an org as the subject instead. |
 
 **Never serialize `e.reason` to an untrusted caller.** It carries the internal
 deny reason (`no_membership`, `grant_revoked`, `bad_link_secret`…), which is

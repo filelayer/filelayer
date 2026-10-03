@@ -137,7 +137,7 @@ that is what the adapter and the test file read.
 **R2 and AWS are not the same test.** R2 is S3-compatible, which is not the same
 as being S3: AWS has its own checksum requirements, real IAM evaluation,
 virtual-hosted addressing and its own error codes. "Storage adapter against live
-AWS S3: never run" is a row on the public trust page, and these five secrets are
+"AWS S3: never run" WAS a row on the public trust page; these five secrets are what
 what retires it.
 
 **Repository secrets** — *Settings → Secrets and variables → Actions → Secrets*.
@@ -195,7 +195,7 @@ requires path-style.
 
 5. Re-run the workflow. The job summary says `RUNNING` and reports the bucket.
 
-Cost is a rounding error: twelve small objects per commit, deleted by the suite,
+Cost is a rounding error: about a dozen small objects per commit, deleted by the suite,
 plus one 11 MB multipart upload on the nightly run only.
 
 The multipart test (~11 MB per run) is controlled by

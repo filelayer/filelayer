@@ -497,7 +497,7 @@ them would leave that path scanning.
 `subject_type` on a file with many link grants.
 
 No API change. No behavioural change. `test/performance.test.ts` fails against
-the 0.5.0 schema — five of its nine tests — which is how we know the assertions
+the 0.5.0 schema — five of its ten tests — which is how we know the assertions
 are load-bearing rather than decorative.
 
 #### The migration

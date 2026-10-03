@@ -12,9 +12,11 @@ Read this before you decide how much to trust us.
   anyone**, including us.
 - The authorization core is covered by a property suite and an adversarial
   suite, both of which run in CI on every change.
-- **The S3/R2 storage adapter has never been executed against live AWS or
-  Cloudflare credentials.** It is exercised against a local, signature-verifying
-  S3 implementation. That is not the same thing and we do not claim it is.
+- The S3/R2 storage adapter **runs against live Cloudflare R2 and live AWS S3 in
+  CI on every commit** — 11 tests each, a twelfth on the nightly run — in
+  addition to a local, signature-verifying S3 implementation. What is still
+  unmeasured is load, and anything outside one region and one bucket
+  configuration per provider.
 - The database schema may still change before 1.0.
 
 The complete, current list of things we know are missing or weak is the

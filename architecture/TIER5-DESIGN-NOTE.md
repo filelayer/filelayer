@@ -51,7 +51,7 @@ buffers. Two things did **not** land and are still open:
 
 - the tiered facade `fl.files.put()` still takes a `Uint8Array`, so the most
   ergonomic entry point is still the one that holds the whole object in memory;
-- there is still **no multipart and no resumable upload**. A failed large upload
+- there is still **no resumable upload**. A failed large upload
   restarts from zero, and a single `PUT` of a multi-gigabyte object is at the
   mercy of one TCP connection.
 
@@ -74,7 +74,7 @@ already supports it (`capabilities` includes `write`); no change needed.
 
 ### 1.2 Streaming reads — **does not break. LANDED.**
 
-`StorageAdapter.stream()` exists and is implemented on both adapters, alongside
+`StorageAdapter.stream()` exists and is implemented on all three adapters, alongside
 `head()` and an optional `list()`. Delivery can stream rather than buffer, and
 `toStreamResponse()` returns a streaming WHATWG `Response`.
 
@@ -87,7 +87,7 @@ correct answer is a bounded response, not a re-check per chunk. It is stated in
 ### 1.3 Range requests — **the largest single piece of work. Half landed.**
 
 **LANDED:** `StorageAdapter.stream(key, { start, end })` and a `ByteRange` type;
-the S3/R2 adapter issues a ranged `GET` and the in-memory adapter slices. The
+the S3/R2 adapter issues a ranged `GET`, `FsStorage` reads the range off an open descriptor, and the in-memory adapter slices. The
 delivery API can be handed a range.
 
 **NOT landed, and this is the part a browser cares about:** the shipped HTTP

@@ -3,8 +3,10 @@
 What deletion, expiry, revocation and metering mean — precisely enough to
 predict behaviour without reading the code.
 
-Every rule here is enforced in `schema.sql` or `src/authz.ts` and asserted in
-`test/semantics.test.ts`. Where a rule was a judgement call, the call and the
+Every rule here is enforced in `schema.sql`, `src/authz.ts`, `src/delivery.ts`
+or `src/storage.ts`, and asserted in the suite: `test/semantics.test.ts` for the
+authorization and lifecycle rules, `test/storage.test.ts`,
+`test/fs-storage.test.ts` and `test/s3-live.test.ts` for the storage ones. Where a rule was a judgement call, the call and the
 reasoning are stated. Nothing here is aspirational.
 
 ---
@@ -215,8 +217,10 @@ is re-issued.
 
 ### Hard deletes
 
-Not part of the model. `ON DELETE CASCADE` on `org` reaches `audit_event`, so a
-hard org delete destroys that tenant's chain. Use soft delete.
+Not part of the model, and not reachable either. `audit_event.org_id` is
+`ON DELETE CASCADE`, but the `audit_no_delete` rule rewrites the cascade to
+nothing, so `DELETE FROM org` fails its own referential-integrity check and the
+org row survives with its chain intact. Use soft delete.
 
 ---
 
@@ -536,7 +540,7 @@ ample).
 - An object is collected only when **nothing** references `(provider, key)`.
   Soft-deleted files still have rows, so a file under a retention hold whose
   bytes were never removed is never collected.
-- Needs a `list()`-capable adapter. `MemoryStorage` and `S3Storage` have one.
+- Needs a `list()`-capable adapter. All three — `MemoryStorage`, `FsStorage` and `S3Storage` — have one.
 - Sweeps are audited to the system chain as `storage.gc`.
 
 ### Delivery modes
@@ -729,7 +733,7 @@ Internally we record precisely why access was denied. Externally:
 | condition | response |
 |---|---|
 | absent / not yours / no standing / dead grant | `404 not_found` |
-| **holding standing but not the capability** | `404 insufficient_role` |
+| **holding standing but not the capability** | `404 not_found` (internal reason `insufficient_role`) |
 | file expired | `410 gone` |
 | deletion blocked by retention | `409 retention_hold` |
 | share link needs a password | `401 password_required` |

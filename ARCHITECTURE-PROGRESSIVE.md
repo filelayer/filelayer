@@ -475,9 +475,11 @@ against `0.9.0`.
    rather than *requests* — see §6 and the note in
    `architecture/TIER5-DESIGN-NOTE.md` §1.3.
 
-9. **Anything that needs the S3/R2 adapter to be proven.** It has never been run
-   against live AWS or Cloudflare credentials. It is exercised against a local
-   implementation that verifies SigV4 signatures, which is not the same thing.
+9. **Anything that needs the S3/R2 adapter proven beyond one region.** Eleven
+   tests run against live Cloudflare R2 and live AWS S3 on every commit, and a
+   twelfth on the nightly run. Other regions, S3 Express One Zone, requester
+   pays, object lock, cross-region replication and bucket policies stricter than
+   the least-privilege user these tests use are all unexercised.
 
 **The honest summary:** Filelayer is worth its overhead when files are private,
 multi-tenant, and their permissions change over time. It is not worth it when

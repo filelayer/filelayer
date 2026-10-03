@@ -189,8 +189,56 @@
               }
             }
           },
+          "400": {
+            "description": "A credential appeared in the query string. The refused keys, matched case-insensitively, are `password`, `pw`, `pass`, `passwd`, `token`, `secret` and `key`. Refused before any work and without consuming a download.",
+            "headers": {
+              "Content-Type": {
+                "description": "Always `application/json`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Always `private, no-store, no-cache, must-revalidate, max-age=0`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Always `no-cache`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "description": "Always `no-referrer`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "Always `nosniff`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "credential_in_query_string"
+                }
+              }
+            },
+            "x-codes": [
+              "credential_in_query_string"
+            ]
+          },
           "404": {
-            "description": "Not found — and deliberately indistinguishable from \"denied\". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, and an `as:` naming an identity the project has never seen.",
+            "description": "Not found — and deliberately indistinguishable from \"denied\". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, an `as:` naming an identity the project has never seen, a file whose row is deleted, and a file still in `pending` state.",
             "headers": {
               "Content-Type": {
                 "description": "Always `application/json`.",
@@ -592,7 +640,7 @@
             ]
           },
           "404": {
-            "description": "Not found — and deliberately indistinguishable from \"denied\". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, and an `as:` naming an identity the project has never seen.",
+            "description": "Not found — and deliberately indistinguishable from \"denied\". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, an `as:` naming an identity the project has never seen, a file whose row is deleted, and a file still in `pending` state.",
             "headers": {
               "Content-Type": {
                 "description": "Always `application/json`.",
@@ -1012,7 +1060,7 @@
             ]
           },
           "404": {
-            "description": "Not found — and deliberately indistinguishable from \"denied\". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, and an `as:` naming an identity the project has never seen.",
+            "description": "Not found — and deliberately indistinguishable from \"denied\". Internally the exact deny reason is recorded in the audit log; externally every reason that would confirm a file exists collapses to this, so the error surface is not an enumeration oracle across tenants. Covers: no such file, no live grant, a revoked grant, an expired grant, a grant whose download cap is exhausted, an ancestor grant that is no longer live, a forged or unknown share secret, an `as:` naming an identity the project has never seen, a file whose row is deleted, and a file still in `pending` state.",
             "headers": {
               "Content-Type": {
                 "description": "Always `application/json`.",
@@ -1224,6 +1272,7 @@
               "gone",
               "password_required",
               "credential_in_query",
+              "credential_in_query_string",
               "bad_request",
               "payload_too_large",
               "internal"

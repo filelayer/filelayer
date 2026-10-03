@@ -21,6 +21,82 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### Fixed — a content audit of every public surface, and what it found
+
+Three audits over README, TRUST, SECURITY, CONTRIBUTING, QUICKSTART, SEMANTICS,
+MIGRATIONS, LIVE-S3-TESTS, ARCHITECTURE-PROGRESSIVE, TIER5, llms.txt, the
+homepage and the OpenAPI generator. Every finding below carries the file and
+line in the code that contradicted the sentence; several were settled by
+executing the behaviour rather than reading it.
+
+**Claims that were simply false.**
+
+- `SECURITY.md` — "The S3/R2 storage adapter has never been executed against
+  live AWS or Cloudflare credentials." False in both halves since 30 September
+  and 3 October respectively, on the page a reviewer reads first.
+- `ARCHITECTURE-PROGRESSIVE.md` §5 — the same claim, in a list whose own header
+  says every item was re-checked against 0.9.0.
+- `SEMANTICS.md` — "a hard org delete destroys that tenant's chain". Executed:
+  `DELETE FROM org` fails its own referential-integrity check, because
+  `audit_no_delete` rewrites the cascade to nothing. The org and its chain
+  survive. `MIGRATIONS.md` had it right; SEMANTICS did not.
+- `SEMANTICS.md` — `404 insufficient_role` listed as what a caller sees.
+  `toPublicError()` has no case for it; the response is `404 not_found` and
+  `insufficient_role` is the internal reason. A reader branching on `e.code`
+  never matched.
+- The homepage — "A signed URL is re-validated on every request". The default
+  URL is not signed at all (`/f/<id>`, an opaque id), and the one URL Filelayer
+  does sign is the presigned redirect, which is the opposite of re-validated.
+  The true claim is stronger: every request is re-authorized.
+- `TIER5-DESIGN-NOTE.md` — "no multipart and no resumable upload", while
+  `S3Storage.putStream` has used S3 multipart above the part threshold all
+  along, and a live test uploads 11 MB through it. The same file named the
+  multipart path as the thing that had to change, two paragraphs earlier.
+- `TRUST.md` — listed "the storage adapter proven against live R2 and S3" as an
+  outstanding requirement, twelve rows below the two rows saying it was done.
+- `web/README.md` — said `og.png` does not exist. It has existed since the
+  commit that introduced the sentence, and `check-web.mjs` fails without it.
+
+**Counts that had drifted.** README's runnable block said 330 tests (405).
+TRUST said 405 run on Node 22/24/26 (397 do; the eight contention tests need a
+real PostgreSQL). TRUST's prose said twelve live-storage tests per commit while
+its own table said eleven. MIGRATIONS said nine performance tests (ten). The
+homepage said `v0.7.0` in the eyebrow and the alpha banner, and `375 tests
+across 94 suites` in the prose, while the trust table beneath them said 0.9.0
+and 405/100 — three unguarded numbers on a page whose table was watched.
+
+**Things 0.9.0 added that nothing told anyone about.** `FsStorage` and
+`examples/starter` appeared ZERO times in README, `llms.txt` and the homepage.
+`llms.txt` is the file an AI agent reads to choose a storage adapter, and the
+changelog entry below records that an agent in exactly that position wrote
+`FsStorage` by hand because nothing offered it one. It now names all three
+adapters, says which to pick, and links the starter. README gains a "where the
+bytes go" table; the homepage's production checklist no longer requires a
+bucket, because `FsStorage` made that false.
+
+**Also corrected.** `llms.txt` gains the share-link capability rule and the fact
+that BOTH byte routes refuse a credential in the query string, with the two
+different codes they use. QUICKSTART's error table gains `link_is_read_only`.
+The OpenAPI generator declares the 400 that `/f/{fileId}` really returns, and
+its error enum gains `credential_in_query_string`, which a generated client was
+rejecting as an undocumented response. SECURITY's supported-versions table, the
+examples lists, the offline file list, the dependency sentence, and the
+`npm run verify` enumeration in CONTRIBUTING all now match the tree.
+
+### Added — `check:live`, which asks whether the deployed page is the page we wrote
+
+Every gate here reads the working tree. Nothing had ever made an HTTP request to
+the site this repository describes, so a deploy that stopped, cached, or
+published the wrong branch would have looked exactly like success.
+
+It exists because of a mistake worth recording. A cached `fetch` of the site
+came back as the 0.7.0 page and was reported as "the deployed site is two
+releases behind". A no-cache fetch, diffed against `git show HEAD:web/index.html`,
+came back byte-identical: the deploy tracks `main` and always had. What was
+stale was the FILE. Neither a human nor an agent reading through a cache can
+tell "the site is behind" from "my fetch is"; this can. It runs nightly and on
+manual dispatch, not on push, because a push legitimately precedes the deploy.
+
 ### Changed — the storage adapter now runs against AWS S3, and the documents say so
 
 The `s3-live-aws` CI job was written on 30 September and skipped itself for
