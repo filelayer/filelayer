@@ -30,6 +30,7 @@ const DOCS = [
   'README.md',
   'docs/QUICKSTART.md',
   'docs/LIVE-S3-TESTS.md',
+  'docs/guides/expiring-and-revocable-file-links.md',
   'packages/core/SEMANTICS.md',
   'SECURITY.md',
   'TRUST.md',

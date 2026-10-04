@@ -142,6 +142,22 @@ const COPIES = [
       'in the tarball, and had to fetch it over the network. Measured 3 October 2026.',
     versionStamp: null,
   },
+  {
+    file: 'docs/guides/expiring-and-revocable-file-links.proof.mjs',
+    why:
+      'the script that produced the numbers in the guide beside it. It ships for ' +
+      'the same reason the tests do: a measurement nobody can re-run is an ' +
+      'assertion with a confident voice.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/expiring-and-revocable-file-links.md',
+    why:
+      'the first of the guides: the answer to a question whose usual answer is ' +
+      'wrong. It ships because the reader we most want is an agent with an ' +
+      'install and no browser, and because llms.txt names it.',
+    versionStamp: null,
+  },
   ...[
     'examples/tier1-avatar/app.ts',
     'examples/tier1-avatar/package.json',

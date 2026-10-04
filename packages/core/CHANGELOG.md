@@ -21,6 +21,46 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### Added — `docs/guides/`, starting with the one whose usual answer is wrong
+
+A search for the problem this library exists to solve returns Multer tutorials
+and a composed answer that says "write a table, make an IAM user, use presigned
+URLs". That is the incumbent, and it wins unopposed because nothing better is
+reachable. The guides are the attempt to be reachable, and the rule for them is
+that they have to be useful to a reader who never installs this.
+
+The first one is [expiring and revocable file
+links](https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.md).
+It was chosen because the common answer is not merely incomplete, it is wrong: a
+presigned URL **cannot be revoked individually**. You can delete the object,
+change the bucket policy, or deactivate the credential — which kills every URL
+that credential ever signed. AWS says so; the guide cites it.
+
+It gives the schema, the four real options with what each costs, the HTTP
+headers people leave out, and the one query that is easy to write wrong. The
+measurements in it are not assertions: `expiring-and-revocable-file-links.proof.mjs`
+ships beside it, starts a real PostgreSQL as an ordinary user process, and
+reproduces all four in about twenty seconds.
+
+What it measured, against two real backends with a cap of one:
+
+| | Served | Counter |
+|---|---|---|
+| read-decide-write, no `CHECK` | **2** | 2 |
+| read-decide-write, with the `CHECK` | 1 | 1, the loser gets SQLSTATE `23514` |
+| one `UPDATE ... WHERE ... RETURNING` | 1 | 1 |
+| the same, under `REPEATABLE READ` | 1 | 1, the loser gets `40001` and must retry |
+
+The last two rows are why the guide exists in this form: the right answer is one
+statement, the constraint is a backstop rather than a fix, and the isolation
+level changes which of those two things happens to you.
+
+The TypeScript block in the guide is executed by `npm run check:docs` on every
+commit, so if revocation stopped taking effect on the next request the page would
+fail the build rather than quietly become untrue. `llms.txt` names the guides,
+and they ship in the tarball, so an agent with an install and no browser has
+them on disk.
+
 ### Changed — the homepage no longer leads with the numbers sitting at zero
 
 The trust section opened on a table whose second, third and fourth rows were

@@ -317,6 +317,11 @@
           <h3>4 · Files shared outside the org</h3>
           <p>An expiry, a password and a download cap on one call. Then the link goes somewhere it
             should not have, and you take it back. It stops working on the next request.</p>
+
+      <p class="note">Why a presigned URL cannot do this, and what to write if you would rather
+        build it yourself:
+        <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.md">Expiring and revocable file links &rarr;</a>
+      </p>
         </div>
         <figure>
 <pre><code><span class="c-key">const</span> share = <span class="c-key">await</span> fl.shares.create(id, {
@@ -549,6 +554,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
         <ul>
           <li><a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Quickstart</a></li>
           <li><a href="https://github.com/filelayer/filelayer/tree/main/examples">Examples</a></li>
+          <li><a href="https://github.com/filelayer/filelayer/tree/main/docs/guides">Guides</a></li>
           <li><a href="https://www.npmjs.com/package/@filelayer/core">npm</a></li>
         </ul>
       </div>

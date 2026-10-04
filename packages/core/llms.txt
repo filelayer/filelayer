@@ -8,7 +8,7 @@ Status: alpha / developer preview, version 0.9.0, Apache-2.0. Never deployed in 
 
 This file is for an agent writing an integration. It is ordered by what you need to get right, not by what is interesting.
 
-Every link below points at GitHub. If you are reading this out of an install you may have neither network nor browser, and you do not need them: the same files are on disk under `node_modules/@filelayer/core/` — `README.md`, `docs/QUICKSTART.md`, `llms.txt` (this file), `openapi.json`, `schema.sql`, `SEMANTICS.md`, `MIGRATIONS.md`, `CHANGELOG.md`, `LICENSE`, `NOTICE`, plus `src/`, `test/` and `examples/`. Three resolve as subpath imports: `@filelayer/core/llms.txt`, `@filelayer/core/openapi.json`, `@filelayer/core/schema.sql`. The copies are byte-identical to the ones GitHub shows; a repository check fails the build if they diverge.
+Every link below points at GitHub. If you are reading this out of an install you may have neither network nor browser, and you do not need them: the same files are on disk under `node_modules/@filelayer/core/` — `README.md`, `docs/QUICKSTART.md`, `docs/guides/`, `llms.txt` (this file), `openapi.json`, `schema.sql`, `SEMANTICS.md`, `MIGRATIONS.md`, `CHANGELOG.md`, `LICENSE`, `NOTICE`, plus `src/`, `test/` and `examples/`. Three resolve as subpath imports: `@filelayer/core/llms.txt`, `@filelayer/core/openapi.json`, `@filelayer/core/schema.sql`. The copies are byte-identical to the ones GitHub shows; a repository check fails the build if they diverge.
 
 ## Start here
 
@@ -58,6 +58,12 @@ Everything is an in-process method call. There is no REST API to call over the n
 - [authz.ts](https://github.com/filelayer/filelayer/blob/main/packages/core/src/authz.ts): the decision engine. Two functions, one core. `toPublicError()` is the deny-reason to HTTP-status mapping.
 - [MIGRATIONS](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md): how schema changes are delivered, with the SQL for each break.
 - [CHANGELOG](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md): the real history, including security defects found internally.
+
+## Guides
+
+Answers to questions people actually ask, written to be useful whether or not you use this library. The code in them is executed by `npm run check:docs` on every commit.
+
+- [Expiring and revocable file links](https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.md): why a presigned URL cannot be revoked, the four things you can do instead, and the one query that is easy to write wrong — with the schema and the SQL to copy. Read this before designing any share feature on presigned URLs.
 
 ## Runnable references
 

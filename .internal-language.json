@@ -53,7 +53,8 @@
     "packages/core/examples/**/*.md",
     "packages/core/examples/**/*.mjs",
     "examples/**/.env.example",
-    "packages/core/examples/**/.env.example"
+    "packages/core/examples/**/.env.example",
+    "packages/core/docs/**/*.mjs"
   ],
   "includeNote": [
     "`include` is the surface a stranger reads: everything in the npm tarball,",

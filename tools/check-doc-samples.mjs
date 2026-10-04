@@ -51,7 +51,15 @@ const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..');
 const OUT = join(ROOT, '.doccheck');
 const CORE_SRC = join(ROOT, 'packages/core/src/index.ts');
 
-const DOCS = ['README.md', 'docs/QUICKSTART.md'];
+const DOCS = [
+  'README.md',
+  'docs/QUICKSTART.md',
+  // The guides answer a question somebody actually asks, and the reason they
+  // are worth more than a blog post on the same subject is that the code in
+  // them runs here. A guide whose sample has rotted is worse than no guide:
+  // the reader trusted it enough to paste it.
+  'docs/guides/expiring-and-revocable-file-links.md',
+];
 
 // -----------------------------------------------------------------------------
 // Parse
