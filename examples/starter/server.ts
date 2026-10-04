@@ -287,13 +287,54 @@ const shareRoute = shareDownloadRoute(fl, { prefix: '/d' });
 const publicRoute = fileDownloadRoute(fl, {
   prefix: '/f',
   disposition: 'inline',
-  principal: () => ({ actorId: null }),
+  // `{ as: null }` is an EXPLICITLY anonymous caller. `{ actorId: null }` means
+  // the same thing and is what this line used to say; the two forms are written
+  // next to each other here so the pair below reads as one decision.
+  principal: () => ({ as: null }),
+});
+
+/**
+ * THE SAME HELPER, MOUNTED A SECOND TIME, AS WHOEVER IS CALLING.
+ *
+ * This is the route this file could not have before `0.13.0`. `principal` had
+ * to return `Principal.actorId`, an INTERNAL uuid, and an application that
+ * knows its users as `alice` has no way to produce one -- so this file hand-wrote
+ * its own `GET /files/:id`:
+ *
+ *     const f = await fl.files.get(seg[1], { as: user });
+ *     res.writeHead(200, f.headers);
+ *     res.end(f.body);
+ *
+ * Three lines, and every one of this helper's properties missing from them. It
+ * read the whole object into this process before writing a byte, so a 2 GB
+ * video was a 2 GB allocation; it ignored `Range`, so a browser could not seek
+ * in that video and a resumed download started over; it answered `GET` and
+ * 404'd `HEAD`; and it stripped the redirect mode, so an S3 deployment proxied
+ * bytes it could have handed to the bucket.
+ *
+ * `{ as: userOf(req) }` is the whole fix. `userOf` already returns
+ * `string | null`, so a request with no session falls through to the anonymous
+ * principal above and resolves published files only -- which is why this mount
+ * can be a plain expression rather than a branch.
+ *
+ * An `x-user` this project has never seen is a 404 and the attempt is recorded,
+ * NOT a silent downgrade to anonymous. That is deliberate: a typo in a session
+ * lookup must not turn into a read of every published file.
+ */
+const myFilesRoute = fileDownloadRoute(fl, {
+  prefix: '/files',
+  principal: (req) => ({ as: userOf(req) }),
 });
 
 const server = createServer(async (req, res) => {
   try {
     if (await shareRoute(req, res)) return;
     if (await publicRoute(req, res)) return;
+    // Ordered before the router below, and safe there: the helper claims only
+    // GET and HEAD on exactly `/files/<one-segment>`, and returns false for
+    // everything else -- so `POST /files`, `GET /files` and
+    // `POST /files/:id/share` all fall through to their own handlers.
+    if (await myFilesRoute(req, res)) return;
 
     const url = new URL(req.url ?? '/', BASE_URL);
     const user = userOf(req);
@@ -339,12 +380,35 @@ const server = createServer(async (req, res) => {
       return json(res, 201, { id: file.id });
     }
 
-    // GET /files/:id          read it back, as yourself
-    if (req.method === 'GET' && seg[0] === 'files' && seg.length === 2) {
+    // GET /files?org=&cursor= the listing screen
+    //
+    // SELECT THE FIELDS. `json(res, 200, page)` would work, and would publish
+    // `storageKey` and `storageProvider` to every caller: the object's path
+    // inside your bucket, and `ownerId`, which is a Filelayer-internal uuid.
+    // None of the three is a secret that protects anything -- `authorize()`
+    // does that -- but a bucket layout in a client payload is a gift to
+    // somebody enumerating your storage, and an internal id in your public API
+    // is a shape you will be asked to keep.
+    //
+    // `nextCursor` IS opaque and is meant to be handed back verbatim.
+    if (req.method === 'GET' && seg[0] === 'files' && seg.length === 1) {
       if (!user) return json(res, 401, { error: 'no_session' });
-      const f = await fl.files.get(seg[1]!, { as: user });
-      res.writeHead(200, f.headers);
-      return void res.end(f.body);
+      const page = await fl.files.list({
+        as: user,
+        ...(url.searchParams.get('org') ? { org: url.searchParams.get('org')! } : {}),
+        limit: 50,
+        cursor: url.searchParams.get('cursor'),
+      });
+      return json(res, 200, {
+        files: page.files.map((f) => ({
+          id: f.id,
+          name: f.name,
+          contentType: f.contentType,
+          sizeBytes: f.sizeBytes,
+          createdAt: f.createdAt,
+        })),
+        nextCursor: page.nextCursor,
+      });
     }
 
     // POST /files/:id/share   a link that expires and can be taken back

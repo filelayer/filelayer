@@ -32,7 +32,8 @@ handler with the wrong arity.
 |---|---|
 | `POST /orgs/:org` | create a tenant, with you as its owner |
 | `POST /files?org=&name=` | upload, owned by you |
-| `GET /files/:id` | read it back, as you |
+| `GET /files?org=&cursor=` | the listing screen, paginated |
+| `GET /files/:id` | read it back, as you. Streams, supports `Range`, answers `HEAD`. Mounted from the library. |
 | `POST /files/:id/share` | a link that expires in an hour and allows three downloads |
 | `DELETE /shares/:grantId` | revoke it; the next request fails |
 | `GET /orgs/:org/audit` | the access log, denials included |
@@ -41,6 +42,20 @@ handler with the wrong arity.
 
 Identity comes from an `X-User` header so that `curl` is enough to try it. In a
 real application that line reads your session.
+
+`GET /files/:id` is **not** hand-written: it is `fileDownloadRoute` mounted a
+second time, with `principal: (req) => ({ as: userOf(req) })`. Before `0.13.0`
+that callback had to return a Filelayer-internal uuid, so this file could not
+use its own library's route and copied bytes through the process instead. Two
+consequences worth knowing before you copy it:
+
+* **No session is a `404`, not a `401`.** The route has no concept of a missing
+  header; no session is the anonymous caller, and an unpublished file does not
+  exist for them. `GET /files` still answers `401`, because a listing cannot be
+  anonymous at all.
+* **An `X-User` this project has never seen is a `404`, and the attempt is
+  recorded.** It is never quietly treated as anonymous, which would turn a
+  broken session lookup into a read of every published file.
 
 Uploads are capped at `MAX_UPLOAD_BYTES` (25 MB by default) and the cap is
 counted as the body arrives, because `content-length` is a suggestion and a

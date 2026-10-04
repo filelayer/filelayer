@@ -50,8 +50,54 @@ check('the owner reads the bytes back', mine.status === 200 && (await mine.text(
 const theirs = await fetch(`${BASE}/files/${id}`, as('mallory'));
 check('a stranger gets 404, never 403', theirs.status === 404, `status=${theirs.status}`);
 
+// NO SESSION IS 404, AND IT USED TO BE 401. `GET /files/:id` is now the
+// library's own `fileDownloadRoute` rather than a hand-written handler, and the
+// route has no concept of "you forgot the header": no session is the anonymous
+// caller, for whom an unpublished file does not exist. The 401 is still there
+// on `GET /files`, which cannot be answered anonymously at all.
 const anon = await fetch(`${BASE}/files/${id}`);
-check('no session is 401', anon.status === 401, `status=${anon.status}`);
+check('no session is 404, not 401', anon.status === 404, `status=${anon.status}`);
+
+const bogus = await fetch(`${BASE}/files/${id}`, as('no-such-user-anywhere'));
+check(
+  'an unknown session is 404, not a downgrade to anonymous',
+  bogus.status === 404,
+  `status=${bogus.status}`,
+);
+
+// 2b. the listing screen, and the range request -- the two things the
+// hand-written handler could not do.
+const listed = await fetch(`${BASE}/files?org=acme`, as('alice'));
+const page = await listed.json();
+check(
+  'the owner lists what they may read',
+  listed.status === 200 && page.files.some((f) => f.id === id),
+  `files=${page.files?.length}`,
+);
+check(
+  'the listing leaks no storage key and no internal id',
+  page.files.every((f) => !('storageKey' in f) && !('ownerId' in f)),
+);
+
+// A STRANGER GETS NOTHING, AND WHICH "NOTHING" DEPENDS ON WHETHER THIS PROJECT
+// HAS EVER SEEN THEM. `mallory` has uploaded nothing, so she is an unresolvable
+// `as` and the listing is a 404. Had she uploaded once, she would be a known
+// actor outside `acme` and would get a 200 with an empty page. Both are the
+// same answer; neither is somebody else's file.
+const strangerList = await fetch(`${BASE}/files?org=acme`, as('mallory'));
+const strangerFiles = strangerList.status === 200 ? (await strangerList.json()).files : [];
+check(
+  'a stranger to the tenant lists nothing',
+  strangerFiles.length === 0,
+  `status=${strangerList.status}`,
+);
+
+const ranged = await fetch(`${BASE}/files/${id}`, as('alice', { headers: { range: 'bytes=0-4' } }));
+check(
+  'a range request is 206 with the right five bytes',
+  ranged.status === 206 && (await ranged.text()) === 'BOARD',
+  `status=${ranged.status} content-range=${ranged.headers.get('content-range')}`,
+);
 
 // 3. a share link, capped at three downloads
 const sh = await fetch(`${BASE}/files/${id}/share`, as('alice', { method: 'POST' }));

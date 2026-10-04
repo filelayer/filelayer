@@ -25,6 +25,68 @@ Nothing yet.
 
 ---
 
+## [0.13.1] — 2026-10-04
+
+No library code changed. This release exists because `examples/` ships inside
+the tarball, so a correction to the starter only reaches a reader through npm.
+
+### Changed — the starter uses the route it is advertising
+
+`0.13.0` added `{ as }` to `deliveryHandler` so an application holding its own
+user ids could mount the library's route for authenticated reads. The starter
+shipped in that same tarball still hand-wrote its own:
+
+```ts
+const f = await fl.files.get(id, { as: user });
+res.writeHead(200, f.headers);
+res.end(f.body);
+```
+
+Three lines, and every property of the real route missing from them. It read
+the whole object into the process before writing a byte, so a 2 GB video was a
+2 GB allocation; it ignored `Range`, so a browser could not seek and a resumed
+download started over; it answered `GET` and 404'd `HEAD`; and it dropped
+redirect delivery, so an S3 deployment proxied bytes it could have handed to
+the bucket. `GET /files/:id` is now `fileDownloadRoute` mounted a second time,
+with `principal: (req) => ({ as: userOf(req) })`.
+
+**Two status codes moved in the example.** No session is now `404` rather than
+`401` -- the route has no concept of a missing header; no session is the
+anonymous caller, for whom an unpublished file does not exist. `GET /files` is
+new and still answers `401`, because a listing cannot be anonymous at all.
+
+### Added — a listing endpoint in the starter, and the field selection it needs
+
+`GET /files?org=&cursor=` uses `fl.files.list()`. It selects fields rather than
+echoing the page, and the comment says why: `FileRecord` carries `storageKey`,
+`storageProvider` and `ownerId`, so `json(res, 200, page)` would publish your
+bucket layout and a Filelayer-internal uuid to every caller. Neither is a
+secret that protects anything -- `authorize()` does that -- but a bucket layout
+in a client payload is a gift to anyone enumerating your storage.
+
+### Fixed — `examples/starter/verify.mjs` was a test suite with no runner
+
+It shipped on 3 October 2026 opening with "a claim about this repository is
+supposed to be executable", and until today **nothing executed it**. The one
+artifact a reader is told to copy was the only one no job touched.
+
+`tools/drive-starter.mjs` (`npm run verify:starter`) packs the package,
+installs the tarball into a temporary directory, copies the starter in, boots
+it over HTTP against a real PostgreSQL and drives `verify.mjs` against it. It
+runs in CI inside the `release-gate` job, reusing that job's Postgres service.
+`verify:release` proves the library works from an empty directory; this proves
+the example does, which is where route mounting, status codes, `Range`,
+streaming and the fall-through order between the library's routes and an
+application's own are exercised. Three of October's defects were in exactly
+that layer.
+
+Calibrated rather than assumed: the harness was run against three deliberate
+breaks (a principal that drops the session, a listing that echoes the page
+whole, a server that throws on boot) and each one turned it red. 25 checks,
+0 failures against the published `0.13.0` tarball.
+
+---
+
 ## [0.13.0] — 2026-10-04
 
 **Your own identifiers now reach the whole API, including the HTTP routes.**

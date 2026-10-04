@@ -440,6 +440,20 @@ jobs:
           # A SCRATCH database: the gate drops and recreates its `public` schema.
           FILELAYER_VERIFY_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/filelayer_verify
 
+      # THE EXAMPLE, NOT THE LIBRARY. The step above proves the API works for
+      # someone who has only run `npm install`. This boots `examples/starter`
+      # over HTTP against the same Postgres and drives its own `verify.mjs`,
+      # which is the only place in CI where route mounting, status codes,
+      # `Range`, streaming and the fall-through order between the library's
+      # routes and an application's own are exercised at all.
+      #
+      # `verify.mjs` shipped on 3 October 2026 and nothing ran it until this
+      # step existed. The starter is the artifact readers are told to copy.
+      - name: Boot the starter over HTTP and drive it
+        run: npm run verify:starter
+        env:
+          FILELAYER_STARTER_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/filelayer_verify
+
   # ---------------------------------------------------------------------------
   # CONTENTION. The properties that only exist when two backends collide.
   #
