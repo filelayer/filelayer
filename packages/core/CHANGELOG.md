@@ -21,6 +21,21 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+Nothing yet.
+
+---
+
+## [0.10.0] — 2026-10-04
+
+Three capabilities and four defects. Two of the defects were found by the work
+on the capabilities rather than by a review, and one was found by a test
+asserting the wrong status code for the right reason.
+
+**If you query `usage_daily`, read the metering entry below before upgrading**:
+`bytes_egressed` and `bytes_stored` both change meaning, and
+[`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md)
+Entry 8 has the schema SQL and the one behaviour change outside it.
+
 ### Added — pre-authorized direct browser upload. Opt-in, S3/R2 only
 
 `createUpload()` authorizes the caller, reserves a `pending` file row, and

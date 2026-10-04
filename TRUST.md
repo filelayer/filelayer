@@ -13,7 +13,7 @@ that records denials. It was first published on **5 September 2026**.
 
 | | |
 |---|---|
-| Version | 0.9.0 — alpha |
+| Version | 0.10.0 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |

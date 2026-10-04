@@ -8,7 +8,7 @@ rather hear about one from you than from a customer.
 
 Read this before you decide how much to trust us.
 
-- Filelayer is **pre-1.0 (`0.9.0`) and has never been run in production by
+- Filelayer is **pre-1.0 (`0.10.0`) and has never been run in production by
   anyone**, including us.
 - The authorization core is covered by a property suite and an adversarial
   suite, both of which run in CI on every change.
@@ -126,7 +126,8 @@ support branch and no backporting. See
 
 | Version | Supported |
 |---|---|
-| `0.9.x` | Yes |
+| `0.10.x` | Yes |
+| `0.9.x` | No |
 | `0.8.x` | No |
 | `0.7.x` | No |
 | `0.6.x` | No |

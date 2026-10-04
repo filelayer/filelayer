@@ -4,10 +4,16 @@ The exact commands to make this repository public and to publish
 `@filelayer/core` to npm.
 
 > **This runbook was written for the first public release, `0.3.0`.** The
-> repository is public and the current published version is `0.4.3`. Version
-> strings in the worked examples below are from that first run and are kept as
-> the record of what was actually done; substitute the version you are
-> publishing. Everything else — the gate, the checks, the rollback — is current.
+> repository is public and the version being published is **`0.10.0`**. Steps 0,
+> 3, 4 and 6 have been updated to that version so the commands are
+> copy-pasteable; steps 1 and 2 are the one-time org and repository setup and
+> are kept as the record of what was done. Everything else — the gate, the
+> checks, the rollback — is current.
+>
+> One rule learned the hard way: **do not paste a `#` comment onto a command
+> line.** An interactive zsh does not treat `#` as a comment, so the comment
+> becomes an argument and `npm publish` fails with `EUSAGE`. Every command below
+> stands alone.
 
 **Audience:** one human, at a terminal, already logged in to GitHub in a
 browser. You will need to run `npm login` at the terminal in step 3.
@@ -64,7 +70,7 @@ node -p "require('./packages/core/package.json').version"     # -> the version y
 node -p "require('./packages/core/package.json').name"        # -> @filelayer/core
 
 npm view @filelayer/core version 2>&1 | head -3
-# Expected: the version currently on the registry (0.4.3 at the time of writing).
+# Expected: the version currently on the registry (0.9.0 before this release).
 # On the very first publish this was an E404; it will not be one again.
 # Anything else unexpected -- stop.
 ```
@@ -90,12 +96,13 @@ do not have to. If one of them is missing from the listing, the copy is missing
 from git, and `node tools/check-package-copies.mjs` says which.
 
 One last independent check on the artifact rather than on the source tree. The
-tarball is 69 files; the non-`dist/` half is short enough to read in full:
+tarball is 100 files as of `0.10.0`; the non-`dist/` half is short enough to
+read in full:
 
 ```bash
 cd packages/core && npm pack --pack-destination /tmp && cd ../..
-tar -tzf /tmp/filelayer-core-0.3.0.tgz | grep -v '^package/dist/' | sort
-rm -f /tmp/filelayer-core-0.3.0.tgz
+tar -tzf /tmp/filelayer-core-0.10.0.tgz | grep -v '^package/dist/' | sort
+rm -f /tmp/filelayer-core-0.10.0.tgz
 ```
 
 Read that list. Every entry must be one you can justify to a stranger who
@@ -228,7 +235,7 @@ npm publish --dry-run --access public --tag latest
 
 # The real thing.
 npm publish --access public --tag latest
-npm dist-tag add @filelayer/core@0.4.3 alpha
+npm dist-tag add @filelayer/core@0.10.0 alpha
 
 cd ../..
 ```
@@ -281,7 +288,7 @@ Notes on that invocation, because each flag is load-bearing:
 
 ```bash
 npm view @filelayer/core
-npm view @filelayer/core dist-tags       # -> { latest: '0.4.3', alpha: '0.4.3' }
+npm view @filelayer/core dist-tags       # -> { latest: '0.10.0', alpha: '0.10.0' }
 npm view @filelayer/core license         # -> Apache-2.0
 npm view @filelayer/core files
 ```
@@ -455,8 +462,8 @@ npm deprecate @filelayer/core@0.3.0 "Use @filelayer/core@0.3.1; 0.3.0 shipped a 
 
 ```bash
 # Tag the released commit and push the tag.
-git tag -a v0.3.0 -m "@filelayer/core 0.3.0 — first public release (alpha)"
-git push origin v0.3.0
+git tag -a v0.10.0 -m "@filelayer/core 0.10.0 — Range, direct upload (alpha)"
+git push origin v0.10.0
 
 # Confirm the tree is still clean: `prepack` copies README/LICENSE/NOTICE into
 # packages/core, and .gitignore excludes those copies. `git status` proves the
@@ -464,6 +471,6 @@ git push origin v0.3.0
 git status
 ```
 
-Then, on GitHub, create a release from the `v0.3.0` tag and paste the `0.3.0`
+Then, on GitHub, create a release from the `v0.10.0` tag and paste the `0.10.0`
 section of `packages/core/CHANGELOG.md` into it. Mark it as a **pre-release** —
 the dist-tag says alpha and the release should agree.
