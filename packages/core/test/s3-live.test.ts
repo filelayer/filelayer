@@ -213,10 +213,28 @@ describe('S3Storage against LIVE object storage', { skip }, () => {
   it('a presigned URL expires, and a tampered one is refused', async () => {
     const k = key('expiring.txt');
     await store.put(k, enc('x'), 'text/plain');
-    const url = await store.presignGet(k, { expiresInSeconds: 1 });
-    assert.equal((await fetch(url)).status, 200);
-    await new Promise((r) => setTimeout(r, 2000));
-    assert.equal((await fetch(url)).status, 403, 'the real store must enforce the expiry');
+
+    // TWO URLS, NOT ONE, AND THE REASON IS A RACE THIS TEST USED TO LOSE.
+    //
+    // It presigned with `expiresInSeconds: 1` and then asserted 200 on the very
+    // next line. AWS measures the window from `X-Amz-Date`, which is a whole
+    // second, so a URL signed at .950 is already dead by .100 of the next one --
+    // and a first request to S3 from a cold runner spends more than 150 ms on
+    // DNS and TLS alone. The assertion was a coin flip on where in the wall
+    // clock second the signing landed. It came up heads for runs 70 and 71 and
+    // tails for 72, on a commit that changed nothing in this path.
+    //
+    // The test was asserting two independent facts through one URL. Split, each
+    // gets a window it cannot lose: a generous TTL for "a fresh URL works", and
+    // a 1-second TTL slept well past for "an expired URL is refused". Waiting
+    // longer can only make the second more true, so there is no race left in
+    // either direction.
+    const live = await store.presignGet(k, { expiresInSeconds: 60 });
+    assert.equal((await fetch(live)).status, 200, 'a fresh presigned URL must work');
+
+    const shortLived = await store.presignGet(k, { expiresInSeconds: 1 });
+    await new Promise((r) => setTimeout(r, 3000));
+    assert.equal((await fetch(shortLived)).status, 403, 'the real store must enforce the expiry');
 
     const fresh = await store.presignGet(k, { expiresInSeconds: 60 });
     const tampered = fresh.replace('expiring.txt', 'something-else.txt');

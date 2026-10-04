@@ -275,8 +275,18 @@ describe('S3Storage against a signature-verifying local S3', () => {
 
   it('a presigned URL expires', async () => {
     await store.put('org/expiring.txt', enc('x'), 'text/plain');
+
+    // Two URLs for two facts, for the reason spelled out in `s3-live.test.ts`:
+    // the expiry window is measured from `X-Amz-Date` in whole seconds, so
+    // asserting 200 on a 1-second URL is a bet on where in the wall-clock
+    // second the signing landed. Against this local harness the request takes
+    // under a millisecond so the bet almost always wins -- which is what makes
+    // it worth removing here too. The same shape lost against live AWS in run
+    // 72, on a commit that changed nothing in this path.
+    const live = await store.presignGet('org/expiring.txt', { expiresInSeconds: 60 });
+    assert.equal((await fetch(live)).status, 200);
+
     const url = await store.presignGet('org/expiring.txt', { expiresInSeconds: 1 });
-    assert.equal((await fetch(url)).status, 200);
     await new Promise((r) => setTimeout(r, 1100));
     const late = await fetch(url);
     assert.equal(late.status, 403);
