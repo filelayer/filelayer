@@ -724,6 +724,28 @@ as storage after.
 
 ---
 
+### Run `ANALYZE file_grant` after any bulk load
+
+Not a migration, and the only reason it is here is that this is the page you are
+reading when you bulk-load grants.
+
+Immediately after a bulk import -- a migration from another system, a seed, a
+restore -- authorized reads are an **order of magnitude slower** until
+autovacuum analyzes `file_grant`. Measured on 100 000 grants: 23.0 ms per read
+before `ANALYZE`, 1.82 ms after, same query and same rows. With stale statistics
+the planner prefers `(file_id, subject_type)` and applies both `subject_id` and
+the `COST 100` `grant_is_live(id)` as a filter over every actor grant on the
+file; with current ones it picks `(subject_id)` and reads five rows.
+
+```sql
+ANALYZE file_grant;
+```
+
+at the end of the load, rather than waiting for autovacuum to get there.
+`benchmark/load/RESULTS.md` has the measurement.
+
+---
+
 ## 4. What is not covered here
 
 - **Data migration between storage adapters.** Moving objects from one bucket to

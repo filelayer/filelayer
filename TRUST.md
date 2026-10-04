@@ -17,6 +17,7 @@ that records denials. It was first published on **5 September 2026**.
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
+| Load measured | First run 4 October 2026, `benchmark/load/RESULTS.md`. One machine, no network, no object store, seconds per cell |
 | Tests | 482, of which 474 on Node 22 / 24 / 26 and all 482 against a real PostgreSQL, every commit |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |

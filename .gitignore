@@ -64,6 +64,12 @@
 !/benchmark/count-decisions.mjs
 !/benchmark/count-loc.mjs
 !/benchmark/count-tiers.mjs
+# The load benchmark's method and its recorded run are public, because TRUST.md
+# links to them and a trust page that cites a file nobody can open is worse than
+# one that cites nothing. `results.json` stays out: it is the raw artefact of
+# whichever machine ran last, and committing it would make every re-run a diff.
+!/benchmark/load/
+/benchmark/load/results.json
 !/benchmark/decisions.json
 !/benchmark/loc.manifest.json
 

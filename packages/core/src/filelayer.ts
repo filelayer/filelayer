@@ -1405,11 +1405,21 @@ export class Filelayer {
    * `listGrants` reports and a compliance screen asks for. That makes every
    * grant-authorized delivery a row UPDATE holding a row lock -- and for a
    * TIER-1 PUBLIC ASSET, where one anonymous grant row serves every request,
-   * that single row becomes a write hotspot under load. It is a scalability
-   * problem, not a correctness one, and the fix (skip the write when no
-   * ancestor has a cap, and meter deliveries elsewhere) trades away the
-   * per-grant download count. Not taken here because that count is a shipped
-   * feature; flagged so the trade is made deliberately when volume forces it.
+   * that single row is PREDICTED to become a write hotspot under load.
+   *
+   * PREDICTED, AND NOT YET REPRODUCED. This paragraph used to assert the
+   * hotspot as a property. It was argued rather than measured, and the first
+   * measurement did not find it: `benchmark/load/RESULTS.md` H3 drives every
+   * request through one anonymous grant row and sees it scale the same way the
+   * actor-grant path does, up to concurrency 64. Lock contention on a single
+   * row needs far more concurrent writers than that to show a knee, so the
+   * honest state is "unconfirmed at 64", not "false".
+   *
+   * It is a scalability concern, not a correctness one, and the fix (skip the
+   * write when no ancestor has a cap, and meter deliveries elsewhere) trades
+   * away the per-grant download count. Not taken here because that count is a
+   * shipped feature; flagged so the trade is made deliberately when a
+   * measurement, rather than an argument, forces it.
    */
   async #reserve(
     tx: Tx,
