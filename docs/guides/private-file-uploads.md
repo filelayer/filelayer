@@ -11,10 +11,10 @@ three gigabytes. That is not a misconfiguration, it is what a presigned PUT is,
 and the fix is a different kind of presigned request that almost none of those
 tutorials mention.
 
-This guide is written to be useful whether or not you use Filelayer. It is also
-the guide where Filelayer is **not** the answer to the main question: we do not
-do direct browser-to-storage uploads, deliberately, and the last section says
-what to use instead.
+This guide is written to be useful whether or not you use Filelayer. The
+section on signing the length into a PUT exists because we needed it ourselves
+and could not find it written down anywhere; it works with the AWS SDK and no
+Filelayer, which is the test every section here has to pass.
 
 ---
 
@@ -40,9 +40,16 @@ The URL signs the method, the key and the expiry. **It does not constrain the
 body.** A client handed a PUT URL for a 200 KB avatar can send three gigabytes
 instead, and S3 accepts it — up to the 5 GB single-`PUT` ceiling.
 
-The obvious defence does not work either: you can include `Content-Length` as a
-signed header, and S3 still does not enforce it server-side for a `PUT`. The
-client declares a length and then sends whatever it likes.
+The obvious defence does not work *as usually written*: passing a length to the
+signer is not the same as signing it. If `content-length` does not appear in
+`X-Amz-SignedHeaders`, the signature does not cover it, the client declares
+whatever it likes, and S3 has nothing to compare against. Most SDK presign
+helpers produce exactly that URL.
+
+Signing it properly does work, and it is the third option below — put it in
+`X-Amz-SignedHeaders` and the signature covers its value. That distinction is
+the whole of this section: the hole is not in the presigned PUT, it is in which
+headers people sign.
 
 So what you have published is an authenticated, unmetered write into a bucket you
 pay for. A hostile client does not need to break anything; it just uses the URL
@@ -85,6 +92,56 @@ Two conditions beyond the size are worth setting while you are there:
 The trade is that POST is more work on the client than `fetch(url, { method:
 'PUT', body: file })`, which is most of why the tutorials teach PUT. It is the
 right amount of work.
+
+### Or sign the length INTO the PUT, which nobody writes down
+
+There is a third option, and we only went looking for it because the second one
+was unavailable to us: **put `content-length` in the signed headers of the
+presigned PUT.**
+
+SigV4 covers every header named in `X-Amz-SignedHeaders`. Sign the length and
+the store recomputes the signature from the headers it actually received, so a
+client issued a URL for 204,800 bytes and sending three gigabytes produces a
+different canonical request, a different signature, and a 403 with nothing
+stored. Sign `content-type` the same way and the stored type is the one your
+application chose rather than the one the uploader declared.
+
+```js
+// A hand-rolled SigV4 presign. Most SDKs will do this if you pass the length
+// when you sign AND the signer is told to include it; check what ends up in
+// X-Amz-SignedHeaders, because that string is the whole mechanism.
+const signedHeaders = 'content-length;content-type;host';
+const canonicalRequest = [
+  'PUT',
+  canonicalUri,
+  canonicalQueryString(query),       // query includes X-Amz-SignedHeaders above
+  `content-length:${size}\ncontent-type:${type}\nhost:${host}\n`,
+  signedHeaders,
+  'UNSIGNED-PAYLOAD',                // correct: the body is not known at signing
+].join('\n');
+```
+
+The client must then send both headers verbatim. That is the cost, and it is
+smaller than switching to `multipart/form-data`.
+
+**This is stricter than the POST policy, not weaker.** `content-length-range` is
+a range; a signed `content-length` is an exact value. You lose the ability to
+say "anything between 1 byte and 2 MiB", which matters if you genuinely do not
+know the size — but a browser always does (`file.size`), so in practice you are
+trading a range you did not need for a pin.
+
+**Two reasons to reach for it.** The first is that it works where POST does not:
+**Cloudflare R2 does not implement presigned POST** — it is absent from R2's own
+S3-compatibility tables, and attempts come back `InvalidArgument`. If your
+bucket is R2, the POST policy above is not available to you and this is the only
+way to bound the body. The second is that `UNSIGNED-PAYLOAD` is doing less work
+than people assume: it means the body's *hash* is not signed, which is
+unavoidable for a URL minted before the body exists. The *length* can still be,
+and conflating the two is how the hole survives.
+
+What it does not give you: `starts-with` conditions, policy expiry independent
+of the URL, or any constraint on a header you did not sign. If you need those
+and you are on AWS, use POST.
 
 ---
 
@@ -168,12 +225,24 @@ gigabytes, it is not.
 
 Be clear about what this does and does not cover.
 
-**Filelayer does not do direct browser-to-storage uploads.** Bytes go through
-your server. If presigned POST uploads straight from the browser are what you
-need, use the SDK directly with the policy above — that is the right tool and we
-are not it.
+[Filelayer](https://github.com/filelayer/filelayer) does direct
+browser-to-storage upload as of `0.10.0`, using exactly the signed-length PUT
+described above. `createUpload()` authorizes the caller, reserves a `pending`
+file row, and returns a presigned PUT with `content-length` and `content-type`
+in the signed headers; `completeUpload()` asks the store what actually arrived
+and promotes the row. A reservation whose bytes never turn up is unreadable
+rather than broken, because a `pending` file refuses `read` — and a job you
+schedule reclaims it.
 
-What [Filelayer](https://github.com/filelayer/filelayer) does is everything after
+**What it still does not do:** presigned POST, for the R2 reason above; resumable
+or multipart direct upload, so one PUT is one object; and anything at all on the
+filesystem adapter, which cannot sign. It is off until you pass a verbatim
+acknowledgement string and a size ceiling, because handing the data path to the
+object store is a property you give up rather than a setting you tune. If you
+want `starts-with` policy conditions or a resumable upload, use the SDK
+directly — that is still the right tool and we are still not it.
+
+The rest of what Filelayer does is everything after
 the bytes land: ownership, org and role access, share links that expire and can
 be revoked, lifecycle, and an audit trail that records refusals as well as reads.
 It sniffs the content type from the magic bytes when you do not supply one, and

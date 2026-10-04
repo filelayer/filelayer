@@ -27,9 +27,9 @@
 > as a stranger would.
 >
 > **What runs against a real object store.** Since 30 September 2026 the storage
-> adapter runs against **live Cloudflare R2 on every commit**: 11 tests,
+> adapter runs against **live Cloudflare R2 on every commit**: 12 tests,
 > including a presigned URL the store actually honours and one that expires for
-> real, plus a twelfth on the nightly run and on manual dispatch, an 11 MB
+> real, plus a thirteenth on the nightly run and on manual dispatch, an 11 MB
 > multipart upload reassembled byte-exactly. Since 3 October 2026 the same tests
 > also run against **AWS S3 itself**, in `eu-north-1`, against a bucket reached
 > through a least-privilege IAM user: R2 is S3-compatible, not S3, and AWS's
@@ -127,7 +127,7 @@ what this project has not earned yet, is on
   tamper-evidence and the full role matrix, plus a differential test that
   asserts the set query and the point check agree exactly.
 - The storage adapter runs against **live Cloudflare R2 on every commit**
-  (`packages/core/test/s3-live.test.ts`, 11 tests per commit and a twelfth
+  (`packages/core/test/s3-live.test.ts`, 12 tests per commit and a thirteenth
   nightly) and against a
   **signature-verifying local S3 implementation**
   (`packages/core/test/storage.test.ts`), and since 3 October 2026 against
@@ -151,7 +151,7 @@ attachments, exports, anything with a share link you might later want back.
 |---|---|---|
 | Public images at CDN volume | a CDN-backed bucket | Default delivery proxies every byte. Redirect delivery (below) removes the proxy but is opt-in and narrow. |
 | Video or audio at scale | a CDN / media service | Seeking works — the shipped routes answer `Range` with `206`. But default delivery proxies every byte through your server, and there is no CDN on that path. |
-| Direct browser → storage upload | Supabase / presigned S3 | Uploads go through your server. |
+| Direct browser → storage upload on the filesystem adapter | presigned S3 directly | `createUpload()` needs an adapter that can sign, so it works on S3 and R2 and not on `FsStorage`. |
 | Thumbnails, transforms, format negotiation | Cloudinary / imgix | We have none. |
 
 We publish the full comparison, including the cases we lose, in
@@ -403,7 +403,24 @@ Restated here so they are not only in an appendix. Each one is current as of
 2. **The tiered facade `fl.files.put()` takes a `Uint8Array`**, so a file put
    through it is fully resident in memory. The core `fl.upload()` accepts a
    `ReadableStream`; use that above a few tens of megabytes.
-3. **No direct browser → storage upload.** Upload bytes go through your server.
+3. **Direct browser → storage upload is opt-in, and S3/R2 only.**
+   `createUpload()` reserves a `pending` file row and returns a presigned PUT
+   whose `content-length` and `content-type` are in the SIGNED HEADERS, so the
+   object store rejects a body of the wrong size or type before accepting it —
+   which is the hole in the usual "just issue a presigned PUT" answer. It
+   requires the verbatim `DIRECT_UPLOAD_ACKNOWLEDGEMENT` and a
+   `maxUploadBytes` you choose, because an exact pin to whatever the client
+   asked for is not a bound.
+
+   What it does not do: **presigned POST** (Cloudflare R2 does not implement
+   it, and R2 is the default store, so the POST policy's `content-length-range`
+   is not available to us — the signed-header pin is stricter anyway);
+   **`FsStorage`**, which cannot sign anything and answers
+   `direct_upload_unsupported`; and **resumable or multipart direct upload**,
+   so one PUT is one object. `collectUploadReservations()` is a job you must
+   schedule, or abandoned reservations accumulate as invisible `pending` rows.
+   Plain `upload()` is unchanged and still the default: bytes through your
+   server, no acknowledgement, every adapter.
 4. **Org admins and owners can read `private` files.** Deliberate, since retention
    and legal hold are their responsibility. But if you need to exclude the
    operator, you need envelope encryption and we do not have it.
@@ -413,7 +430,7 @@ Restated here so they are not only in an appendix. Each one is current as of
    different people.
 6. **The storage adapter has run against AWS S3 since 3 October 2026, and only
    in one region.** Eleven tests against a real bucket in `eu-north-1` on every
-   commit and a twelfth on the nightly run, alongside the same against
+   commit and a thirteenth on the nightly run, alongside the same against
    Cloudflare R2. What that does not
    cover: other regions and their endpoint quirks, S3 Express One Zone, requester
    pays, object lock, cross-region replication, and any bucket policy more

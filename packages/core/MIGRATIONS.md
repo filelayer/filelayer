@@ -648,6 +648,82 @@ Two independent writers refused, not one check moved.
 
 ---
 
+### Entry 8 — `0.9.0` → `0.10.0`: two columns, an index and a constraint
+
+#### What changed in the schema
+
+Pre-authorized direct upload needs to remember two things about a reservation
+between the moment it is issued and the moment the bytes arrive. Both columns
+are nullable and both are NULL for every file created by the ordinary
+`upload()`, so **existing rows need no backfill**.
+
+```sql
+ALTER TABLE file
+    ADD COLUMN upload_expires_at     timestamptz,
+    ADD COLUMN upload_expected_bytes bigint
+        CHECK (upload_expected_bytes IS NULL OR upload_expected_bytes >= 0);
+
+ALTER TABLE file
+    ADD CONSTRAINT file_upload_reservation_complete
+        CHECK ((upload_expires_at IS NULL) = (upload_expected_bytes IS NULL));
+
+CREATE INDEX file_upload_deadline_idx ON file (upload_expires_at)
+    WHERE state = 'pending' AND upload_expires_at IS NOT NULL;
+```
+
+On a large `file` table, `CREATE INDEX CONCURRENTLY` instead — it cannot run
+inside a transaction, so it goes in its own migration step:
+
+```sql
+CREATE INDEX CONCURRENTLY file_upload_deadline_idx ON file (upload_expires_at)
+    WHERE state = 'pending' AND upload_expires_at IS NOT NULL;
+```
+
+Both `ADD COLUMN`s are metadata-only on PostgreSQL 11 and later (a nullable
+column with no default rewrites nothing). The two `CHECK`s are validated against
+existing rows, which for `file_upload_reservation_complete` is a full scan —
+every existing row satisfies it trivially, since both sides are NULL, but the
+scan still takes an `ACCESS EXCLUSIVE` lock. On a table large enough for that to
+matter, add it `NOT VALID` and validate separately:
+
+```sql
+ALTER TABLE file ADD CONSTRAINT file_upload_reservation_complete
+    CHECK ((upload_expires_at IS NULL) = (upload_expected_bytes IS NULL)) NOT VALID;
+ALTER TABLE file VALIDATE CONSTRAINT file_upload_reservation_complete;
+```
+
+**A database running the `0.9.0` schema does NOT run `0.10.0` unaltered** if you
+call `createUpload()`: the INSERT names both columns. Every other code path is
+unaffected, so a deployment that never turns direct upload on can apply this
+whenever it likes.
+
+#### Why `expires_at` was not reused
+
+`expires_at` means "the file stops being readable". `upload_expires_at` means
+"the upload credential stops working". Conflating them would make a file unable
+to outlive the window it was uploaded in, which is not a lifecycle anybody
+wants.
+
+#### Why the claimed size is a column and not `size_bytes`
+
+While a reservation is pending, `size_bytes` is NULL and
+`upload_expected_bytes` holds the size that was signed into the credential. The
+cheaper design — put the claim in `size_bytes` and overwrite it on completion —
+would make one column mean "measured by the adapter" on one path and "asserted
+by a browser" on another. That is the shape of the `max_downloads` defect
+described in `schema.sql`, and once was enough.
+
+#### One behaviour change outside the schema
+
+`recordUsage()` now writes upload bytes to `usage_daily.bytes_stored` instead of
+`usage_daily.bytes_egressed`. If you query those columns, the numbers change
+meaning: `bytes_egressed` becomes bytes actually delivered, and `bytes_stored`
+stops being zero for every org on every day. Historical rows are not rewritten,
+so a series that spans the upgrade has uploads counted as egress before it and
+as storage after.
+
+---
+
 ## 4. What is not covered here
 
 - **Data migration between storage adapters.** Moving objects from one bucket to

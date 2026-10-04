@@ -1092,14 +1092,50 @@ export class PostgresStore implements AuthzDeps {
 
   // --- Metering -------------------------------------------------------------
 
+  /**
+   * BYTES GO TO THE COLUMN THAT MEANS WHAT THEY ARE.
+   *
+   * THE DEFECT. Every caller's bytes went to `bytes_egressed`, including an
+   * UPLOAD's. So the column whose name means "bytes we sent out, and paid a
+   * per-gigabyte egress charge on" was incremented by bytes arriving, and
+   * `bytes_stored` -- declared in `schema.sql` since the beginning -- was
+   * written by nothing at all and was therefore zero for every org on every
+   * day.
+   *
+   * Both halves matter and they fail in opposite directions. Object stores
+   * charge for stored bytes per month and for egressed bytes per transfer, at
+   * different rates, so the two quantities are not interchangeable. A table
+   * that reports one of them too high and the other as nothing cannot answer
+   * the question it exists to answer. That makes this a correctness defect in
+   * the metering, not a cosmetic one.
+   *
+   * Found while adding the second write-path caller (`completeUpload`). Nothing
+   * reads either column yet, which is why it survived: a number nobody has
+   * looked at is indistinguishable from a right one.
+   *
+   * `authz` carries no bytes and now says so by passing none, rather than
+   * adding a zero to a byte counter.
+   */
   async recordUsage(orgId: string, kind: 'authz' | 'read' | 'write', bytes = 0): Promise<void> {
     const col = kind === 'authz' ? 'authz_checks' : kind === 'read' ? 'file_reads' : 'file_writes';
+    // A read sends bytes OUT. A write puts bytes IN. An authz check moves none.
+    const byteCol = kind === 'read' ? 'bytes_egressed' : kind === 'write' ? 'bytes_stored' : null;
+    if (byteCol === null) {
+      await this.db.query(
+        `INSERT INTO usage_daily (org_id, day, ${col})
+         VALUES ($1, current_date, 1)
+         ON CONFLICT (org_id, day) DO UPDATE
+           SET ${col} = usage_daily.${col} + 1`,
+        [orgId],
+      );
+      return;
+    }
     await this.db.query(
-      `INSERT INTO usage_daily (org_id, day, ${col}, bytes_egressed)
+      `INSERT INTO usage_daily (org_id, day, ${col}, ${byteCol})
        VALUES ($1, current_date, 1, $2)
        ON CONFLICT (org_id, day) DO UPDATE
          SET ${col} = usage_daily.${col} + 1,
-             bytes_egressed = usage_daily.bytes_egressed + EXCLUDED.bytes_egressed`,
+             ${byteCol} = usage_daily.${byteCol} + EXCLUDED.${byteCol}`,
       [orgId, bytes],
     );
   }

@@ -21,6 +21,97 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### Added — pre-authorized direct browser upload. Opt-in, S3/R2 only
+
+`createUpload()` authorizes the caller, reserves a `pending` file row, and
+returns a presigned PUT the browser uses directly. `completeUpload()` asks the
+object store what actually arrived and promotes the row to `ready`.
+`collectUploadReservations()` reclaims the ones nobody redeemed.
+
+Requires the verbatim `DIRECT_UPLOAD_ACKNOWLEDGEMENT` and a `maxUploadBytes` you
+choose, because the thing being accepted is not obvious from the feature's name:
+with direct upload the DECISION still happens here, but the BYTES do not, so
+Filelayer can no longer measure them or reject them on content.
+
+**The size is signed into the credential, which is the part the usual answer
+gets wrong.** `content-length` and `content-type` go in
+`X-Amz-SignedHeaders`, so SigV4 covers their values and the store recomputes the
+signature from the headers it received. A client issued a URL for 204,800 bytes
+and sending three gigabytes produces a different signature and a 403 with
+nothing stored.
+
+Verified against our signature-verifying local harness, and a test for it ships
+in the **live AWS S3** lane as well — because the harness builds the canonical
+request the same way the adapter does, so agreement between those two would
+prove nothing. The live result is what makes this claim load-bearing rather than
+self-consistent; it lands with the first CI run on this commit.
+
+**Not presigned POST**, which is what the write-ups recommend and what our own
+guide recommended: **Cloudflare R2 does not implement it**, and R2 is the
+documented default store. The signed-header pin is stricter anyway — an exact
+value rather than a range.
+
+**`pending` is what makes the reversed ordering safe.** Everywhere else this
+library writes bytes before it commits a row, so that a crash leaves an
+unreferenced object rather than a row pointing at nothing. A reservation cannot
+do that: the bytes arrive later, from someone else. It is safe because
+`lifecycleDenial()` has refused `read` on a `pending` file since the schema was
+written, so a reservation whose bytes never arrive is invisible rather than
+broken. It is visible in a `write`-authorized listing, which is how an
+application shows an upload in progress.
+
+**The collector deletes the ROW first, atomically, and the object only for a row
+it removed.** The dangerous interleaving is: deadline passes, the job selects the
+reservation, the client completes at the last moment, the job deletes the
+object — a `ready` file with no bytes. So `completeUpload()` refuses a
+reservation past its deadline, the collector's grace period is floored at 60
+seconds, and the DELETE repeats `state = 'pending'`. It hard-deletes rather than
+soft-deletes: a tombstone still references its key, so `collectStorageOrphans()`
+would skip it forever and any late bytes would be billed indefinitely.
+
+Also: one `head()` on completion rather than trusting the client, a
+`upload_size_mismatch` refusal whose only job is to catch a store that verifies
+less than it claims to, and metering at completion so a reservation nobody
+redeems is never billed.
+
+Still missing: resumable and multipart direct upload (one PUT is one object),
+`starts-with` policy conditions, and anything at all on `FsStorage`, which
+cannot sign and answers `direct_upload_unsupported`.
+
+### Fixed — upload bytes were counted as egress, and `bytes_stored` was always zero
+
+`recordUsage()` put every caller's bytes in `usage_daily.bytes_egressed`,
+including an upload's. So the column whose name means "bytes we sent out and paid
+a transfer charge on" was incremented by bytes arriving, and `bytes_stored` —
+in `schema.sql` since the beginning — was written by nothing and was zero for
+every org on every day.
+
+The two fail in opposite directions, which is what makes it worth a changelog
+entry rather than a one-line fix: stores charge for stored bytes per month and
+egressed bytes per transfer, at different rates. A table that reports one too
+high and the other as nothing cannot answer the question it exists to answer.
+
+Found while adding the second write-path caller. Nothing reads either column
+yet, which is why it survived: a number nobody has looked at is
+indistinguishable from a right one. If you query them, see `MIGRATIONS.md`
+Entry 8 — historical rows are not rewritten, so a series spanning the upgrade
+counts uploads as egress before it and as storage after.
+
+### Changed — the private-uploads guide no longer says we are not the answer
+
+It said Filelayer does not do direct browser-to-storage upload and pointed the
+reader at the AWS SDK. That became false with this release, so it was rewritten —
+but the useful half went the other way: the guide now documents **signing
+`content-length` into a presigned PUT**, which we went looking for only because
+R2 left us no presigned POST, and which we could not find written down anywhere.
+It works with the AWS SDK and no Filelayer, which is the test every section in
+those guides has to pass.
+
+One sentence in it was also wrong: "you can include `Content-Length` as a signed
+header, and S3 still does not enforce it server-side for a `PUT`". That is true
+of a length passed to a signer that does not put it in `X-Amz-SignedHeaders`,
+and false once it does. The new live-AWS test is what settles it.
+
 ### Added — `Range` requests, answered by the shipped routes
 
 Everything below the route layer already handled byte ranges: all three storage

@@ -1067,11 +1067,25 @@ describe('every public method that names a resource also names a principal', () 
       'softDeleteActor', 'restoreActor',
       'softDeleteProject', 'restoreProject',
       'collectStorageOrphans',
+      // Same justification as `collectStorageOrphans`: a scheduled maintenance
+      // job that operates on the whole deployment, not a resource accessor
+      // acting for somebody. It authorizes nothing because there is nobody to
+      // authorize -- which is exactly why it must never be reachable from a
+      // request handler.
+      'collectUploadReservations',
     ]);
     const PRINCIPAL_FIRST = new Set([
       'upload', 'read', 'readStream', 'stat', 'listFiles', 'delete',
       'share', 'revoke', 'listGrants', 'auditLog', 'verifyAuditChain',
       'addMember', 'removeMember',
+      // Direct upload. Both belong here rather than in CONTROL_PLANE, and the
+      // distinction is the whole security story of the feature: `createUpload`
+      // takes a principal and asks `create_file` of the engine BEFORE any
+      // credential exists, which is what "pre-authorized" means, and
+      // `completeUpload` authorizes `write` on the file it is promoting. An
+      // upload credential that could be minted without a principal would be
+      // ambient authority over the bucket.
+      'createUpload', 'completeUpload',
     ]);
     // `redeem`/`redeemStream` take a link SECRET, which IS the credential.
     const CREDENTIAL_BEARING = new Set(['redeem', 'redeemStream']);

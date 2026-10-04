@@ -298,6 +298,31 @@ CREATE TABLE file (
     updated_at      timestamptz NOT NULL DEFAULT now(),
     deleted_at      timestamptz,
 
+    -- PRE-AUTHORIZED DIRECT UPLOAD. Both NULL for a file created by the
+    -- ordinary `upload()`, which writes bytes before it inserts and therefore
+    -- never has a reservation to describe.
+    --
+    -- `upload_expires_at` is the deadline on the RESERVATION, and it is not
+    -- `expires_at`: one is "the upload credential stops working", the other is
+    -- "the file stops being readable". Conflating them would mean a file could
+    -- not outlive the window in which it was uploaded.
+    --
+    -- `upload_expected_bytes` is the size that was SIGNED INTO the upload
+    -- credential. It is kept rather than compared-and-discarded so that
+    -- `completeUpload()` can check the object the store actually accepted
+    -- against the size the store was told to enforce. On AWS and R2 that check
+    -- is redundant -- SigV4 covers `content-length`, so a wrong length never
+    -- gets a 200 -- and that is exactly why it is worth keeping: it is the
+    -- assertion that fires if an S3-compatible store verifies less than it
+    -- claims to. A redundant check whose only job is to catch a broken
+    -- dependency is not redundant.
+    --
+    -- Both are left in place after completion. They record HOW the file was
+    -- created, which the audit chain also records but which a `SELECT` on this
+    -- row should not have to join to discover.
+    upload_expires_at     timestamptz,
+    upload_expected_bytes bigint CHECK (upload_expected_bytes IS NULL OR upload_expected_bytes >= 0),
+
     metadata        jsonb NOT NULL DEFAULT '{}'::jsonb,
 
     -- P3: this composite unique is what makes cross-tenant grants
@@ -315,7 +340,14 @@ CREATE TABLE file (
     FOREIGN KEY (owner_id, project_id) REFERENCES actor (id, project_id) ON DELETE SET NULL (owner_id),
 
     CONSTRAINT file_retention_before_expiry
-        CHECK (retain_until IS NULL OR expires_at IS NULL OR retain_until <= expires_at)
+        CHECK (retain_until IS NULL OR expires_at IS NULL OR retain_until <= expires_at),
+
+    -- A reservation is both halves or neither. Half a reservation is a row the
+    -- collector below cannot reason about: a deadline with no expected size
+    -- cannot be verified on completion, and an expected size with no deadline
+    -- is a `pending` row nothing will ever reclaim.
+    CONSTRAINT file_upload_reservation_complete
+        CHECK ((upload_expires_at IS NULL) = (upload_expected_bytes IS NULL))
 );
 
 CREATE TRIGGER file_project
@@ -326,6 +358,12 @@ CREATE INDEX file_org_idx      ON file (org_id) WHERE deleted_at IS NULL;
 CREATE INDEX file_owner_idx    ON file (owner_id) WHERE deleted_at IS NULL;
 CREATE INDEX file_expiry_idx   ON file (expires_at) WHERE deleted_at IS NULL AND expires_at IS NOT NULL;
 CREATE UNIQUE INDEX file_storage_key_idx ON file (storage_provider, storage_key);
+-- The collector's index. Narrow on purpose: it must find ONLY abandoned upload
+-- reservations, never an ordinary `pending` row that arrived some other way.
+-- `upload_expires_at IS NOT NULL` is what makes "this row is a reservation"
+-- explicit rather than inferred from the state alone.
+CREATE INDEX file_upload_deadline_idx ON file (upload_expires_at)
+    WHERE state = 'pending' AND upload_expires_at IS NOT NULL;
 
 -- -----------------------------------------------------------------------------
 -- GRANTS -- the core of the product

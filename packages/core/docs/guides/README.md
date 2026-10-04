@@ -40,8 +40,9 @@ that does constrain it, the content-type trap that becomes stored XSS, why the
 object key is not access control, and why the upload happening outside your
 transaction leaves orphans.
 
-*This is the guide where Filelayer is not the answer.* We do not do direct
-browser-to-storage uploads; it says what to use instead.
+It also documents the option we could not find written down anywhere and ended
+up needing: **sign `content-length` into the PUT**, which pins the body to an
+exact size and works on Cloudflare R2, where presigned POST does not exist.
 
 ### [Multi-tenant file access control](multi-tenant-file-access.md)
 

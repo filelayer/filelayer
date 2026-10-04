@@ -119,6 +119,76 @@ export interface ObjectHead {
   lastModified: Date | null;
 }
 
+/**
+ * What a pre-authorized upload needs pinned, and why each one is REQUIRED
+ * rather than optional.
+ *
+ * The usual answer to direct browser uploads -- "issue a presigned PUT" -- has
+ * a hole in it that is widely reproduced and rarely stated: **a presigned PUT
+ * does not constrain the body.** Sign a URL for a 200 KB avatar and it accepts
+ * three gigabytes, because size was never part of what was signed. Every
+ * tutorial that signs only the key and the content type ships that hole.
+ *
+ * The usual fix is presigned POST, whose policy carries a
+ * `content-length-range` the store enforces before accepting a byte. We cannot
+ * take it: **Cloudflare R2 does not implement presigned POST at all** -- it is
+ * absent from R2's own S3-compatibility tables -- and R2 is the documented
+ * default store. A feature that works on AWS and not on the adapter we tell
+ * people to use is not a feature.
+ *
+ * So: a presigned PUT with `content-length` and `content-type` in the SIGNED
+ * HEADERS. SigV4 covers every header named in `X-Amz-SignedHeaders`, so a
+ * client that sends a different length fails the signature check at the store,
+ * before the body is accepted. That is stricter than the POST policy, not
+ * weaker -- an exact pin rather than a range -- and it works on both S3 and R2.
+ *
+ * `contentType` is signed for the same reason `presignGet` pins
+ * `responseContentType`: the stored type must be the one the application
+ * decided, not one the uploader chose. An uploader who can store
+ * `text/html` has stored XSS on your origin.
+ */
+export interface PresignPutOptions {
+  /** Seconds. The adapter clamps, exactly as `presignGet` does. */
+  expiresInSeconds: number;
+  /**
+   * REQUIRED, and signed. The body must be EXACTLY this many bytes or the
+   * store rejects the request. There is no "unknown length" form, because that
+   * form is the defect.
+   */
+  contentLength: number;
+  /** REQUIRED, and signed, so the uploader cannot choose the stored type. */
+  contentType: string;
+}
+
+/**
+ * A pre-authorized upload target.
+ *
+ * `via` is the honest label and it is not decoration. `'storage'` means the
+ * bytes go straight to the object store and never touch the application --
+ * which is the entire point of the feature. `'server'` means they do not: the
+ * adapter could not mint a store-side credential and the URL points back at
+ * the application, which then writes them. The filesystem adapter is the
+ * `'server'` case, and it exists so that the same client code runs in
+ * development.
+ *
+ * It is surfaced rather than hidden because the difference is the product
+ * claim. A developer who builds against a `'server'` target in development and
+ * concludes their server is out of the data path would deploy on that
+ * assumption.
+ */
+export interface PresignedUpload {
+  url: string;
+  method: 'PUT';
+  /**
+   * Must be sent VERBATIM and in full. These are not suggestions: they are
+   * covered by the signature, so omitting or altering one is a 403 at the
+   * store rather than a surprise later.
+   */
+  headers: Record<string, string>;
+  /** Where the bytes actually go. See the note above. */
+  via: 'storage' | 'server';
+}
+
 export interface ObjectStream {
   body: ReadableStream<Uint8Array>;
   /** Bytes in THIS response (the range length for a ranged read). */
@@ -163,6 +233,13 @@ export interface StorageAdapter {
 
   /** Optional. Present => this adapter can support redirect delivery. */
   presignGet?(key: string, opts: PresignOptions): Promise<string>;
+  /**
+   * Optional. Present => this adapter can support pre-authorized direct
+   * upload. Optionality is load-bearing in the same way `presignGet`'s is: an
+   * adapter that cannot mint an upload credential says so by not having this
+   * method, rather than by having one that fakes it.
+   */
+  presignPut?(key: string, opts: PresignPutOptions): Promise<PresignedUpload>;
   /** Optional. Present => orphan collection can run against this adapter. */
   list?(
     prefix: string,
@@ -175,6 +252,12 @@ export function canPresign(
   s: StorageAdapter,
 ): s is StorageAdapter & Required<Pick<StorageAdapter, 'presignGet'>> {
   return typeof s.presignGet === 'function';
+}
+
+export function canPresignPut(
+  s: StorageAdapter,
+): s is StorageAdapter & Required<Pick<StorageAdapter, 'presignPut'>> {
+  return typeof s.presignPut === 'function';
 }
 
 export function canList(
@@ -1223,6 +1306,91 @@ export class S3Storage implements StorageAdapter {
     const signature = this.sign(dateStamp, amzDate, scope, canonicalRequest);
     query['X-Amz-Signature'] = signature;
     return `${url.origin}${canonicalUri}?${canonicalQueryString(query)}`;
+  }
+
+  /**
+   * A pre-authorized upload straight to the store, with the body size PINNED.
+   *
+   * See `PresignPutOptions` for why the size is signed rather than merely
+   * documented, and why this is a PUT and not the POST policy every write-up
+   * recommends.
+   *
+   * The mechanism is one line of SigV4 and it is the whole feature:
+   * `X-Amz-SignedHeaders` names `content-length;content-type;host`, so those
+   * three header VALUES are folded into the string that was signed. The store
+   * recomputes the signature from the headers it actually received. A client
+   * that was issued a URL for 204,800 bytes and sends 3 GB produces a different
+   * `content-length`, therefore a different canonical request, therefore a
+   * different signature, and the store answers 403 having accepted nothing.
+   *
+   * The ordering of the canonical headers block is not cosmetic -- SigV4
+   * requires the signed headers sorted by lowercase name, and
+   * `content-length` < `content-type` < `host` happens to be that order.
+   */
+  async presignPut(key: string, opts: PresignPutOptions): Promise<PresignedUpload> {
+    // Same NaN guard as `presignGet`, same reason: a signed `X-Amz-Expires=NaN`
+    // cannot be stripped by anyone and never parses as expired.
+    if (!Number.isFinite(opts.expiresInSeconds)) {
+      throw new Error('presign failed: expiresInSeconds must be a finite number');
+    }
+    // A size that is not an exact non-negative integer cannot be pinned. Refuse
+    // rather than sign a value the store will compare against something else:
+    // `Content-Length: 1.5` or `1e21` would fail at the store as a signature
+    // mismatch, which is a confusing way to report a caller's bad argument.
+    if (!Number.isSafeInteger(opts.contentLength) || opts.contentLength < 0) {
+      throw new Error(
+        `presign failed: contentLength must be a non-negative safe integer, got ${opts.contentLength}`,
+      );
+    }
+    // A header value with a newline in it would let a caller inject extra lines
+    // into the canonical request -- and, worse, into the request the browser
+    // sends. Refused here rather than sanitised, because there is no legitimate
+    // content type containing one.
+    if (opts.contentType === '' || /[\r\n]/.test(opts.contentType)) {
+      throw new Error('presign failed: contentType must be non-empty and single-line');
+    }
+
+    const expires = Math.max(1, Math.min(Math.floor(opts.expiresInSeconds), this.cfg.maxPresignSeconds));
+    const now = new Date();
+    const amzDate = amzDateOf(now);
+    const dateStamp = amzDate.slice(0, 8);
+    const scope = `${dateStamp}/${this.cfg.region}/s3/aws4_request`;
+    const { url, canonicalUri } = this.objectUrl(key);
+
+    const contentLength = String(opts.contentLength);
+    const signedHeaders = 'content-length;content-type;host';
+
+    const query: Record<string, string> = {
+      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+      'X-Amz-Credential': `${this.cfg.accessKeyId}/${scope}`,
+      'X-Amz-Date': amzDate,
+      'X-Amz-Expires': String(expires),
+      'X-Amz-SignedHeaders': signedHeaders,
+    };
+    if (this.cfg.sessionToken) query['X-Amz-Security-Token'] = this.cfg.sessionToken;
+
+    const canonicalRequest = [
+      'PUT',
+      canonicalUri,
+      canonicalQueryString(query),
+      `content-length:${contentLength}\ncontent-type:${opts.contentType}\nhost:${url.host}\n`,
+      signedHeaders,
+      // Correct for a presigned URL: the body is not available at signing time,
+      // so its hash cannot be part of the signature. The LENGTH still is, which
+      // is the point -- an unbounded body is the defect, an unhashed one is not.
+      'UNSIGNED-PAYLOAD',
+    ].join('\n');
+    query['X-Amz-Signature'] = this.sign(dateStamp, amzDate, scope, canonicalRequest);
+
+    return {
+      url: `${url.origin}${canonicalUri}?${canonicalQueryString(query)}`,
+      method: 'PUT',
+      headers: {
+        'content-length': contentLength,
+        'content-type': opts.contentType,
+      },
+      via: 'storage',
+    };
   }
 
   // --- signing --------------------------------------------------------------

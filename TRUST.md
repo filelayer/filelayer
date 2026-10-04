@@ -17,13 +17,13 @@ that records denials. It was first published on **5 September 2026**.
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
-| Tests | 435, of which 427 on Node 22 / 24 / 26 and all 435 against a real PostgreSQL, every commit |
+| Tests | 470, of which 462 on Node 22 / 24 / 26 and all 470 against a real PostgreSQL, every commit |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
 | Licence | Apache-2.0 |
-| Storage adapter against live Cloudflare R2 | 11 tests every commit, 12 nightly |
-| Storage adapter against live AWS S3 | 11 tests every commit, 12 nightly, `eu-north-1` only |
+| Storage adapter against live Cloudflare R2 | 12 tests every commit, 13 nightly |
+| Storage adapter against live AWS S3 | 12 tests every commit, 13 nightly, `eu-north-1` only |
 
 If any row in that table is disqualifying for you, it should be, and you can stop
 reading. We would rather you decline today for accurate reasons than adopt on a
@@ -52,7 +52,7 @@ mistakes people actually make:
 ## What runs against a real object store, and what still does not
 
 **Since 30 September 2026 the storage adapter runs against live Cloudflare R2
-on every commit.** Eleven tests per commit and a twelfth nightly, in CI,
+on every commit.** Twelve tests per commit and a thirteenth nightly, in CI,
 against a real bucket: put/get/head/
 delete, ranged reads, prefix listing, keys containing characters that break
 naive URL construction, a presigned GET the store actually honours, a presigned
@@ -99,7 +99,12 @@ matter:
   gives the reasoning for each.
 - No thumbnails, transformations or format negotiation. Bytes go in and the same
   bytes come out.
-- No direct browser-to-storage upload. Upload bytes travel through your server.
+- Direct browser-to-storage upload exists as of `0.10.0` but is opt-in, S3/R2
+  only, and single-PUT: no presigned POST (R2 does not implement it), nothing on
+  `FsStorage`, and no resumable or multipart direct upload. Abandoned
+  reservations are reclaimed by a job you schedule, not automatically. Plain
+  `upload()`, where the bytes travel through your server, is still the default
+  and is unchanged.
 - Org admins and owners can read `private` files. Deliberate — retention and
   legal hold are useless if the people accountable for them cannot see what they
   are holding — but it is a policy decision, so it belongs on this page.

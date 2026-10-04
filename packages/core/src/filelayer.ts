@@ -65,8 +65,10 @@ import {
 import {
   canList,
   canPresign,
+  canPresignPut,
   collectStream,
   type ObjectStream,
+  type PresignedUpload,
   type PutBody,
   type StorageAdapter,
 } from './storage.ts';
@@ -282,6 +284,93 @@ export interface FilelayerOptions {
    * acknowledgement string says what you are accepting.
    */
   redirectDelivery?: RedirectDeliveryConfig;
+
+  /**
+   * OPT-IN PRE-AUTHORIZED DIRECT UPLOAD. Absent means `createUpload()` refuses,
+   * and every byte entering the system goes through `upload()` and therefore
+   * through your process.
+   *
+   * It is opt-in for the same reason `redirectDelivery` is, and the reason is
+   * not squeamishness: turning it on GIVES UP A PROPERTY. With direct upload
+   * the decision still happens here -- that is what "pre-authorized" means, and
+   * it is why this is not a hole -- but the BYTES do not. Filelayer no longer
+   * sees them, so it cannot measure them, cannot reject them on content, and
+   * learns an upload happened only when something tells it. See
+   * `DIRECT_UPLOAD_ACKNOWLEDGEMENT`, which says that out loud.
+   */
+  directUpload?: DirectUploadConfig;
+}
+
+/**
+ * The string you have to type to turn direct upload on.
+ *
+ * It exists because the thing being accepted is not obvious from the feature's
+ * name. "Direct upload" sounds like a performance setting. What it actually
+ * changes is that a file row can exist before its bytes do, and that the size
+ * and the arrival of those bytes are enforced by the object store rather than
+ * by this library.
+ */
+export const DIRECT_UPLOAD_ACKNOWLEDGEMENT =
+  'I accept that upload bytes bypass my application and are enforced by the object store';
+
+/** Our ceiling on how long an upload credential may live. */
+export const MAX_UPLOAD_TTL_SECONDS = 3600;
+export const DEFAULT_UPLOAD_TTL_SECONDS = 900;
+
+export interface DirectUploadConfig {
+  /** Must be exactly `DIRECT_UPLOAD_ACKNOWLEDGEMENT`. Checked at runtime too. */
+  acknowledgeBytesBypassApplication: typeof DIRECT_UPLOAD_ACKNOWLEDGEMENT;
+  /** Clamped to [60, MAX_UPLOAD_TTL_SECONDS]. */
+  ttlSeconds?: number;
+  /**
+   * The largest `size` `createUpload()` will sign. REQUIRED, and there is no
+   * default.
+   *
+   * A presigned PUT whose `content-length` is signed is pinned to an exact
+   * size -- but the caller chooses that size, and the caller is your
+   * application acting on a number from a browser. Without a ceiling here,
+   * "pinned exactly" means "pinned to whatever the client asked for", and the
+   * bill is the same as if nothing had been pinned at all. This is the only
+   * place that bound can live, because it is the only place that knows your
+   * intent rather than the request's.
+   */
+  maxUploadBytes: number;
+}
+
+export interface ResolvedDirectUploadConfig {
+  ttlSeconds: number;
+  maxUploadBytes: number;
+}
+
+export function resolveDirectUploadConfig(cfg: DirectUploadConfig): ResolvedDirectUploadConfig {
+  if (cfg.acknowledgeBytesBypassApplication !== DIRECT_UPLOAD_ACKNOWLEDGEMENT) {
+    throw new FilelayerError(
+      500,
+      'direct_upload_not_acknowledged',
+      'direct upload requires the verbatim DIRECT_UPLOAD_ACKNOWLEDGEMENT string',
+    );
+  }
+  if (!Number.isSafeInteger(cfg.maxUploadBytes) || cfg.maxUploadBytes < 1) {
+    throw new FilelayerError(
+      500,
+      'direct_upload_bad_max',
+      'maxUploadBytes must be a positive integer; there is deliberately no default',
+    );
+  }
+  const requested = cfg.ttlSeconds ?? DEFAULT_UPLOAD_TTL_SECONDS;
+  if (!Number.isFinite(requested) || requested < 60) {
+    throw new FilelayerError(
+      500,
+      'direct_upload_bad_ttl',
+      'ttlSeconds must be >= 60: a shorter window fails real uploads on real networks',
+    );
+  }
+  return {
+    // Clamped rather than rejected, exactly as the redirect TTL is: a config
+    // asking for a week gets an hour and keeps working.
+    ttlSeconds: Math.min(Math.floor(requested), MAX_UPLOAD_TTL_SECONDS),
+    maxUploadBytes: cfg.maxUploadBytes,
+  };
 }
 
 export class Filelayer {
@@ -298,6 +387,9 @@ export class Filelayer {
   /** Null unless redirect delivery was configured AND acknowledged. */
   private readonly redirect: ResolvedRedirectConfig | null;
 
+  /** Null unless direct upload was configured AND acknowledged. */
+  private readonly directUpload: ResolvedDirectUploadConfig | null;
+
   constructor(db: Queryable, storage: StorageAdapter, opts: FilelayerOptions = {}) {
     this.db = db;
     this.storage = storage;
@@ -313,6 +405,7 @@ export class Filelayer {
       ...(opts.projectId !== undefined ? { projectId: opts.projectId } : {}),
     });
     this.redirect = opts.redirectDelivery ? resolveRedirectConfig(opts.redirectDelivery) : null;
+    this.directUpload = opts.directUpload ? resolveDirectUploadConfig(opts.directUpload) : null;
   }
 
   /**
@@ -839,6 +932,330 @@ export class Filelayer {
       // the only place a new owner can appear, so it is the only place this can
       // be recorded.
       await store.recordFileOwner(orgId, uploaderId);
+      return toFileRecord(rows[0]!);
+    });
+  }
+
+  /**
+   * RESERVE a file, and hand back a credential the browser can upload to
+   * directly.
+   *
+   * This is the other half of `upload()` and it runs the ordering BACKWARDS, on
+   * purpose. `upload()` writes bytes and then commits a row, because a crash
+   * between them should leave an unreferenced object (recoverable, costs money)
+   * rather than a row pointing at nothing (not recoverable, user-visible). It
+   * cannot do that here: the bytes arrive later, from someone else, so the row
+   * has to exist first.
+   *
+   * WHAT MAKES THAT SAFE IS `pending`, and it was already in the schema before
+   * this method existed. `lifecycleDenial()` refuses `read` on a pending file
+   * with `file_not_ready`, so a row whose bytes never arrived is not a broken
+   * file anybody can see -- it is invisible. The failure mode `upload()` works
+   * so hard to avoid is the one state this feature cannot produce. A
+   * reservation that is never redeemed is a row nothing can read and
+   * `collectUploadReservations()` reclaims.
+   *
+   * WHAT IS AUTHORIZED, AND WHEN. The decision happens HERE, before any
+   * credential exists -- that is what "pre-authorized" means. `create_file` in
+   * this org, asked of the engine, exactly as `upload()` asks it. The returned
+   * URL is not authority over Filelayer; it is authority over ONE object key
+   * that no row yet references, for one size, for one content type, for a
+   * bounded time. Nothing about the file's visibility, ownership or grants can
+   * be influenced by whoever holds it.
+   *
+   * WHAT THE CALLER CANNOT GET WRONG, because it is not a parameter:
+   *
+   *  - the object key. Derived here as `${orgId}/${randomUUID()}`, same as
+   *    `upload()`. A client that could choose it could aim an upload at another
+   *    tenant's key, so it is not an input.
+   *  - the owner. Taken from the authorized principal, never from the request.
+   *    This is the defect `upload()`'s signature change fixed, and repeating
+   *    that signature here is why it cannot come back.
+   *  - the stored content type. Signed into the credential, so an uploader
+   *    cannot store `text/html` under a key your app will later serve.
+   *
+   * WHAT THE CALLER MUST GET RIGHT: `size`, which is signed. It is required and
+   * exact. The browser knows it (`file.size`), and `maxUploadBytes` from the
+   * instance config bounds it -- because "pinned to exactly what the client
+   * asked for" is not a bound.
+   */
+  async createUpload(
+    principal: Principal,
+    orgId: string,
+    input: {
+      name: string;
+      contentType: string;
+      /** REQUIRED and EXACT. Signed into the credential; the store enforces it. */
+      size: number;
+      visibility?: FileVisibility;
+      expiresIn?: number;
+      retainFor?: number;
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<{ file: FileRecord; upload: PresignedUpload & { expiresAt: Date } }> {
+    const cfg = this.directUpload;
+    if (cfg === null) {
+      throw new FilelayerError(
+        501,
+        'direct_upload_not_enabled',
+        'set `directUpload` with DIRECT_UPLOAD_ACKNOWLEDGEMENT to enable this',
+      );
+    }
+    const storage = this.storage;
+    if (!canPresignPut(storage)) {
+      // Structurally unavailable rather than faked. The adapter says it cannot
+      // mint an upload credential by not having the method, and the honest
+      // answer is to say so with the provider named -- a 501 with no detail
+      // sends the reader to the wrong layer.
+      throw new FilelayerError(
+        501,
+        'direct_upload_unsupported',
+        `storage_provider:${storage.provider}`,
+      );
+    }
+
+    // VALIDATED BEFORE THE DECISION IS ASKED FOR, because a 400 must not cost
+    // an audit event that claims someone tried to create a file.
+    if (!Number.isSafeInteger(input.size) || input.size < 0) {
+      throw new FilelayerError(400, 'invalid_argument', 'size_must_be_a_non_negative_integer');
+    }
+    if (input.size > cfg.maxUploadBytes) {
+      throw new FilelayerError(
+        413,
+        'payload_too_large',
+        `size:${input.size}>max:${cfg.maxUploadBytes}`,
+      );
+    }
+
+    const decision = await authorizeOrg(this.store, principal, orgId, 'create_file', {
+      action: 'file.create',
+      emitAllow: false, // emitted below, with the file id on it
+    });
+    this.#raise(decision);
+    const uploaderId = principal.actorId!;
+
+    const id = randomUUID();
+    const storageKey = `${orgId}/${id}`;
+    const now = Date.now();
+    const expiresAt = secondsFromNow(input.expiresIn, now, 'expiresIn');
+    const retainUntil = secondsFromNow(input.retainFor, now, 'retainFor');
+    // The same cross-field check `upload()` makes, and for the same reason: the
+    // constraint fires on the INSERT, which here is before any credential is
+    // minted, so a caller would otherwise get a raw SQLSTATE instead of a 400.
+    if (expiresAt && retainUntil && retainUntil > expiresAt) {
+      throw new FilelayerError(400, 'invalid_argument', 'retain_for_exceeds_expires_in');
+    }
+    const uploadExpiresAt = new Date(now + cfg.ttlSeconds * 1000);
+    const visibility: FileVisibility = input.visibility ?? 'private';
+
+    // THE ROW IS COMMITTED BEFORE THE CREDENTIAL IS MINTED.
+    //
+    // The other order is tempting and wrong. Minting first and crashing before
+    // the INSERT leaves a signed, live upload URL for a key no row references:
+    // somebody can put bytes in your bucket that nothing will ever reclaim,
+    // because `collectStorageOrphans()` works from rows and there is no row.
+    // Committing first means the worst case is a reservation nobody redeems,
+    // which has a deadline and a collector.
+    const file = await this.#transaction(async (tx, store) => {
+      const { rows } = await tx.query<Record<string, unknown>>(
+        `INSERT INTO file
+           (id, org_id, owner_id, name, content_type, size_bytes, storage_provider,
+            storage_key, state, visibility, expires_at, retain_until, metadata,
+            upload_expires_at, upload_expected_bytes)
+         VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,'pending',$8,$9,$10,$11::jsonb,$12,$13)
+         RETURNING id, org_id, owner_id, name, content_type, size_bytes,
+                   storage_provider, storage_key, state, visibility, expires_at,
+                   retain_until, created_at`,
+        [
+          id,
+          orgId,
+          uploaderId,
+          input.name,
+          input.contentType,
+          this.storage.provider,
+          storageKey,
+          visibility,
+          expiresAt?.toISOString() ?? null,
+          retainUntil?.toISOString() ?? null,
+          JSON.stringify(input.metadata ?? {}),
+          uploadExpiresAt.toISOString(),
+          input.size,
+        ],
+      );
+      // `size_bytes` is deliberately NULL on a reservation. The claimed size
+      // lives in `upload_expected_bytes`, where it is labelled as a claim.
+      // Putting it in `size_bytes` would have saved a column and made that
+      // column mean "measured" on one path and "asserted by a browser" on
+      // another -- the precise shape of defect `maxDownloads` already was.
+      await store.audit({
+        orgId,
+        action: 'file.create',
+        decision: 'allow',
+        actorId: uploaderId,
+        fileId: id,
+        context: {
+          visibility,
+          storageProvider: this.storage.provider,
+          method: 'direct',
+          expectedBytes: input.size,
+          uploadExpiresAt: uploadExpiresAt.toISOString(),
+        },
+      });
+      await store.recordFileOwner(orgId, uploaderId);
+      return toFileRecord(rows[0]!);
+    });
+
+    // Minted outside the transaction: it is local HMAC for the S3 adapter, but
+    // an adapter for which it is not must not hold a pooled connection open,
+    // and a mint that fails must not roll back a reservation the caller can
+    // simply ask for again.
+    const upload = await storage.presignPut(storageKey, {
+      expiresInSeconds: cfg.ttlSeconds,
+      contentLength: input.size,
+      contentType: input.contentType,
+    });
+
+    return { file, upload: { ...upload, expiresAt: uploadExpiresAt } };
+  }
+
+  /**
+   * Turn a redeemed reservation into a readable file: `pending` -> `ready`.
+   *
+   * THE CLIENT'S WORD IS NOT EVIDENCE. This method does not take a size, an
+   * etag or a "success" flag, and it would be wrong to: the only thing that
+   * knows whether bytes arrived is the object store, so it is asked. The size
+   * written to `size_bytes` is the one the store reports, exactly as it is on
+   * the `upload()` path where the adapter -- not the caller -- reports what it
+   * wrote.
+   *
+   * IDEMPOTENT, because the network makes it so whether we like it or not. A
+   * client that uploads, calls this, and loses the response will call it again.
+   * The second call returns the same record rather than a 409, since "it is
+   * ready" is the true answer to "please make it ready".
+   *
+   * `authorize(..., 'write')` is the gate, and `pending` does not block
+   * `write` -- `lifecycleDenial()` scopes the pending gate to `read` alone.
+   * That scoping predates this method and is what makes it expressible.
+   */
+  async completeUpload(principal: Principal, fileId: string): Promise<FileRecord> {
+    const existing = await this.#transaction(async (tx, store) => {
+      const decision = await authorize(store, principal, fileId, 'write');
+      this.#raise(decision);
+      const f = await getFileRecord(tx, this.projectId, fileId);
+      if (!f) throw new FilelayerError(404, 'not_found');
+      return f;
+    });
+
+    // Already done. See the note on idempotency above.
+    if (existing.state === 'ready') return existing;
+    if (existing.state !== 'pending') throw new FilelayerError(404, 'not_found', 'file_deleted');
+
+    // ASKED OF THE STORE, OUTSIDE THE TRANSACTION. A HEAD against a remote
+    // store is network I/O; holding a connection open across it is how a pool
+    // dies, and the same reasoning keeps `#fetchDelivery` outside too.
+    const head = await this.storage.head(existing.storageKey);
+    if (!head) {
+      // The reservation is intact and the deadline still applies, so this is
+      // retryable rather than terminal: the client may still upload and call
+      // again. 409 rather than 404 precisely because the file DOES exist -- it
+      // is the bytes that do not, and collapsing the two would send the caller
+      // looking for a lost id.
+      throw new FilelayerError(409, 'upload_not_received', `storage_key:${existing.storageKey}`);
+    }
+
+    return this.#transaction(async (tx, store) => {
+      // THE REDUNDANT CHECK THAT IS NOT REDUNDANT.
+      //
+      // On AWS and R2 this cannot fire: `content-length` is in the signed
+      // headers, so a body of the wrong size never got a 200 in the first
+      // place. It is here for the case where that assumption is false -- an
+      // S3-compatible store that verifies the signature but not the headers it
+      // covers. Without this, such a store would silently convert "the size is
+      // enforced by the object store" into "the size is whatever arrived", and
+      // the acknowledgement string tells the operator we rely on that
+      // enforcement. An assertion whose only job is to catch a broken
+      // dependency earns its keep the first time the dependency breaks.
+      const { rows: claim } = await tx.query<{
+        upload_expected_bytes: string | null;
+        expired: boolean;
+      }>(
+        `SELECT upload_expected_bytes,
+                (upload_expires_at IS NOT NULL AND upload_expires_at <= now()) AS expired
+           FROM file WHERE id = $1`,
+        [fileId],
+      );
+      // THE DEADLINE BINDS, and it is what makes
+      // `collectUploadReservations()` safe to run at all. If a completion could
+      // succeed after the deadline, the collector could delete the bytes of a
+      // file that had just become `ready` -- a readable row with nothing behind
+      // it, which is the one failure this library is arranged to never produce.
+      // Refusing here is what turns "the collector races the client" into "the
+      // collector cannot lose".
+      //
+      // Evaluated by POSTGRES, against the same clock that wrote
+      // `upload_expires_at`. It is NOT the same clock the collector computes
+      // its cutoff with -- that one is the job's -- and the collector's grace
+      // period, floored at 60 seconds, is precisely what covers the difference.
+      // Two clocks are fine as long as the gap between them is smaller than the
+      // window, which is why the floor is not configurable to zero.
+      if (claim[0]?.expired === true) {
+        throw new FilelayerError(
+          410,
+          'upload_reservation_expired',
+          'the upload window closed; reserve again',
+        );
+      }
+      const expected = claim[0]?.upload_expected_bytes;
+      if (expected != null && Number(expected) !== head.size) {
+        await store.audit({
+          orgId: existing.orgId,
+          action: 'file.upload_complete',
+          decision: 'deny',
+          reason: 'upload_size_mismatch',
+          actorId: principal.actorId,
+          fileId,
+          context: { expectedBytes: Number(expected), actualBytes: head.size },
+        });
+        throw new FilelayerError(
+          409,
+          'upload_size_mismatch',
+          `expected:${expected} actual:${head.size}`,
+        );
+      }
+
+      // `state = 'pending'` in the WHERE is the concurrency guard. Two
+      // completions racing: one updates a row, the other matches nothing and
+      // falls through to re-reading a row that is already ready. Under READ
+      // COMMITTED the second statement re-evaluates the predicate after the
+      // first commits, so it sees 'ready' and matches zero rows -- which is the
+      // answer we want, not an error.
+      const { rows } = await tx.query<Record<string, unknown>>(
+        `UPDATE file
+            SET state = 'ready', size_bytes = $2, updated_at = now()
+          WHERE id = $1 AND state = 'pending'
+         RETURNING id, org_id, owner_id, name, content_type, size_bytes,
+                   storage_provider, storage_key, state, visibility, expires_at,
+                   retain_until, created_at`,
+        [fileId, head.size],
+      );
+      if (rows.length === 0) {
+        const again = await getFileRecord(tx, this.projectId, fileId);
+        if (!again) throw new FilelayerError(404, 'not_found');
+        return again;
+      }
+
+      await store.audit({
+        orgId: existing.orgId,
+        action: 'file.upload_complete',
+        decision: 'allow',
+        actorId: principal.actorId,
+        fileId,
+        context: { bytes: head.size, storageProvider: this.storage.provider },
+      });
+      // Metered HERE and not at reservation, because this is the first moment
+      // anything knows how many bytes exist. A reservation that is never
+      // redeemed is never billed, which is correct: nothing was stored.
+      await store.recordUsage(existing.orgId, 'write', head.size);
       return toFileRecord(rows[0]!);
     });
   }
@@ -1455,6 +1872,107 @@ export class Filelayer {
    * Control plane: it takes no principal for the same reason the other
    * lifecycle operations do not (see above). `dryRun` is the default.
    */
+  /**
+   * Reclaim upload reservations whose deadline passed without the bytes
+   * arriving. A job you schedule, exactly like `collectStorageOrphans()`.
+   *
+   * Without it, `createUpload()` ships a slow leak: a `pending` row per
+   * abandoned upload, invisible to every read path and therefore to anybody
+   * who might notice.
+   *
+   * THE ORDERING, AND THE RACE THAT DECIDES IT.
+   *
+   * The dangerous interleaving is: the deadline passes, this job selects the
+   * reservation, the client completes it at the last moment, and the job then
+   * deletes the object. The result is a `ready` file with no bytes --
+   * permanent, customer-visible data loss, and the exact failure every other
+   * ordering decision in this library is arranged to avoid.
+   *
+   * So the ROW DELETION IS THE CLAIM, and it is atomic. One statement deletes
+   * the row only if it is still `pending` and still past the cutoff, and
+   * returns the key. The object is deleted only for a row this job actually
+   * removed, so a reservation that completed first keeps its bytes and simply
+   * is not collected. A crash between the two leaves an unreferenced object,
+   * which `collectStorageOrphans()` reclaims -- the recoverable direction.
+   *
+   * The grace period is the second half. `completeUpload()` refuses a
+   * reservation past its deadline, so a completion that succeeded happened
+   * before it; waiting a further `graceSeconds` puts real separation between
+   * the two rather than relying on two clocks agreeing. Floored at 60 seconds
+   * for the same reason the orphan collector's is.
+   *
+   * SOFT DELETION WOULD BE WRONG HERE, and it is worth saying why: a row with
+   * `deleted_at` set still references its key, so `collectStorageOrphans()`
+   * skips it forever. Any bytes that did arrive late would be stranded and
+   * billed indefinitely. This is the one place in the schema where a hard
+   * delete is the correct answer -- the row describes a file that never
+   * existed, and `audit_event.file_id` carries no foreign key precisely so
+   * that the record of it survives the row.
+   */
+  async collectUploadReservations(
+    opts: { graceSeconds?: number; limit?: number; dryRun?: boolean } = {},
+  ): Promise<{ scanned: number; collected: number; dryRun: boolean }> {
+    const dryRun = opts.dryRun ?? true;
+    const grace = Math.max(60, Math.floor(opts.graceSeconds ?? 3600));
+    const limit = Math.max(1, Math.min(Math.floor(opts.limit ?? 100), 1000));
+    const cutoff = new Date(Date.now() - grace * 1000);
+
+    const { rows: candidates } = await this.db.query<{ id: string; org_id: string; storage_key: string }>(
+      `SELECT id, org_id, storage_key
+         FROM file
+        WHERE state = 'pending'
+          -- Redundant against the comparison below, which already excludes
+          -- NULL by three-valued logic, and kept for the reader rather than for
+          -- the planner: it is what says "a reservation" instead of "any
+          -- pending row". Recorded as redundant because a mutation removing it
+          -- survives the suite, and a guard no test can kill is a guard whose
+          -- real job is documentation.
+          AND upload_expires_at IS NOT NULL
+          AND upload_expires_at < $1::timestamptz
+          AND ($3::uuid IS NULL OR project_id = $3::uuid)
+        ORDER BY upload_expires_at ASC
+        LIMIT $2`,
+      [cutoff.toISOString(), limit, this.projectId],
+    );
+
+    if (dryRun) return { scanned: candidates.length, collected: 0, dryRun: true };
+
+    let collected = 0;
+    for (const c of candidates) {
+      // THE ATOMIC CLAIM. The predicates are repeated here rather than trusted
+      // from the SELECT: between the two statements a client may have
+      // completed, and this is the only place that can notice.
+      const claimed = await this.#transaction(async (tx, store) => {
+        const { rows } = await tx.query<{ storage_key: string }>(
+          `DELETE FROM file
+             WHERE id = $1
+               AND state = 'pending'
+               AND upload_expires_at IS NOT NULL
+               AND upload_expires_at < $2::timestamptz
+           RETURNING storage_key`,
+          [c.id, cutoff.toISOString()],
+        );
+        if (rows.length === 0) return null;
+        await store.audit({
+          orgId: c.org_id,
+          action: 'file.upload_abandoned',
+          decision: 'allow',
+          actorId: null,
+          fileId: c.id,
+          context: { storageKey: c.storage_key, collector: true },
+        });
+        return rows[0]!.storage_key;
+      });
+      if (claimed === null) continue;
+
+      // Only now, and only for a row we removed. A failure here is an orphan,
+      // not a loss: the row is already gone, so nothing points at these bytes.
+      await this.storage.delete(claimed).catch(() => {});
+      collected++;
+    }
+    return { scanned: candidates.length, collected, dryRun: false };
+  }
+
   async collectStorageOrphans(
     opts: {
       prefix?: string;

@@ -241,6 +241,63 @@ describe('S3Storage against LIVE object storage', { skip }, () => {
     assert.ok([403, 404].includes((await fetch(tampered)).status));
   });
 
+  it('a presigned PUT with a signed content-length is enforced by the real store', async () => {
+    // THE ONE CLAIM IN THIS LIBRARY THAT CANNOT BE VERIFIED AGAINST OUR OWN
+    // HARNESS, AND THE REASON IS CIRCULARITY.
+    //
+    // `test/local-s3.mjs` recomputes the signature using the same canonical
+    // request construction `S3Storage` uses. If both got it wrong in the same
+    // way they would agree, and the agreement would prove nothing. Direct
+    // upload's entire safety argument is "the object store rejects a body of
+    // the wrong size", so the store doing the rejecting has to be a real one.
+    //
+    // It also settles a disagreement in our own documentation. The private
+    // uploads guide said S3 does not enforce `Content-Length` on a PUT. That is
+    // true of a DECLARED length on a URL that did not sign it, and false once
+    // the header is in `X-Amz-SignedHeaders` -- the signature then covers its
+    // value. This test is which of those two sentences gets to stay.
+    const k = key('signed-length.bin');
+    const body = enc('exactly twenty bytes');
+    const up = await store.presignPut(k, {
+      expiresInSeconds: 120,
+      contentLength: body.byteLength,
+      contentType: 'application/octet-stream',
+    });
+    assert.equal(up.via, 'storage');
+
+    // The honest upload succeeds.
+    const ok = await fetch(up.url, { method: 'PUT', headers: up.headers, body });
+    assert.equal(ok.status, 200, await ok.text());
+    const head = await store.head(k);
+    assert.equal(head?.size, body.byteLength);
+    assert.equal(head?.contentType, 'application/octet-stream');
+
+    // THE ATTACK. The client does not repeat the signed length; it sends a much
+    // larger body with the real one. Against a presigned PUT that signed only
+    // the key, this is accepted and billed.
+    const huge = new Uint8Array(32 * 1024);
+    const refused = await fetch(up.url, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: huge,
+    });
+    assert.equal(refused.status, 403, 'the real store accepted an unsigned body size');
+    assert.match(await refused.text(), /SignatureDoesNotMatch|AccessDenied/);
+
+    // And the object is still the honest one, not the big one.
+    assert.equal((await store.head(k))?.size, body.byteLength);
+
+    // Swapping the content type is refused the same way, which is what stops an
+    // uploader storing text/html under a key the application will serve.
+    const asHtml = await fetch(up.url, {
+      method: 'PUT',
+      headers: { 'content-length': String(body.byteLength), 'content-type': 'text/html' },
+      body,
+    });
+    assert.equal(asHtml.status, 403);
+    assert.equal((await store.head(k))?.contentType, 'application/octet-stream');
+  });
+
   it('surfaces a real error code rather than a bare status', async () => {
     const bad = new S3Storage({
       endpoint: env['FILELAYER_TEST_S3_ENDPOINT']!,
