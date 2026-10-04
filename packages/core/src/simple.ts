@@ -57,6 +57,7 @@
 import {
   FilelayerError,
   type Filelayer,
+  type FileListPage,
   type FileRecord,
   type ShareResult,
   type ShareSubject,
@@ -269,6 +270,49 @@ class Identities {
   }
 
   /** Read-only lookup. Returns null for an unknown id -- callers must fail closed. */
+  /**
+   * An org's internal id, or null. LOOKUP ONLY: it never creates one, which is
+   * what separates it from `org()` above.
+   */
+  async findOrg(externalId: string): Promise<string | null> {
+    const { rows } = await this.fl.store.db.query<{ id: string }>(
+      `SELECT o.id FROM org o
+         JOIN project p ON p.id = o.project_id
+        WHERE o.external_id = $1
+          AND o.project_id = $2
+          AND o.deleted_at IS NULL
+          AND p.deleted_at IS NULL`,
+      [externalId, this.project],
+    );
+    return rows[0]?.id ?? null;
+  }
+
+  /**
+   * The same, but a miss DENIES AND IS RECORDED.
+   *
+   * Two classes carried an identical copy of this query and of the audit write
+   * beside it, under two different method names -- `requireOrg` and
+   * `requireOrgId` -- which is how a duplication survives a search for one.
+   * One copy is one place to get the project scoping wrong.
+   */
+  async requireOrg(externalId: string): Promise<string> {
+    const id = await this.findOrg(externalId);
+    if (id) return id;
+    // See `resolveActorOrDeny`: an org-name sweep was equally invisible, and
+    // the org cannot be charged for the event because the org is what could
+    // not be resolved.
+    await this.fl.store.audit({
+      orgId: null,
+      action: 'org.access',
+      decision: 'deny',
+      reason: 'unknown_org',
+      actorId: null,
+      fileId: null,
+      context: { org: String(externalId).slice(0, 128) },
+    });
+    throw new FilelayerError(404, 'not_found', 'unknown_org');
+  }
+
   async findActor(externalId: string): Promise<string | null> {
     const { rows } = await this.fl.store.db.query<{ id: string }>(
       `SELECT id FROM actor
@@ -476,6 +520,55 @@ export class FilesApi {
   }
 
   /**
+   * "Which files may this caller see?", keyed on YOUR identifiers.
+   *
+   * -------------------------------------------------------------------------
+   * WHY THIS METHOD EXISTS
+   * -------------------------------------------------------------------------
+   *
+   * It did not, and its absence was the most expensive hole in this facade.
+   * The core `fl.listFiles(principal, orgId, …)` takes an INTERNAL actor uuid
+   * and an INTERNAL org uuid, while every other call a developer makes takes
+   * their own string ids. So a listing screen -- the single most ordinary
+   * screen in a file product -- was the one feature that forced you out of
+   * this facade and into managing Filelayer's internal identifiers yourself.
+   *
+   * Three separate agents given an integration task hit it and worked around
+   * it the same way: keep a `Map` from your user id to an internal one, and
+   * harvest the values out of `FileRecord.ownerId` and
+   * `GrantSummary.subjectId`, because those are the only two places the
+   * public API lets them escape. One of them observed the consequence
+   * precisely: a listing is then **impossible for any identity the library
+   * auto-provisioned**, because there is no call that recovers its id.
+   *
+   * That is what this method removes. `fl.ids` (see `IdsApi`) exists for the
+   * cases that genuinely need the internal value, so the escape hatch is a
+   * documented method rather than a trick with two other calls.
+   *
+   * `org` defaults to the workspace, so tier 1 and tier 2 never name one.
+   */
+  async list(
+    opts: AsOption & {
+      /** Your own tenant id. Defaults to the workspace. Must already exist. */
+      org?: string;
+      /** Which capability the caller must hold. Default `read`. */
+      capability?: Capability;
+      limit?: number;
+      cursor?: string | null;
+    } = {},
+  ): Promise<FileListPage> {
+    const principal = await this.principal(opts);
+    // `requireOrg`, not `org()`: a listing must not CREATE a tenant as a side
+    // effect of somebody mistyping one. The miss denies, and is recorded.
+    const orgId = await this.ids.requireOrg(opts.org ?? DEFAULT_WORKSPACE);
+    return this.fl.listFiles(principal, orgId, {
+      ...(opts.capability ? { capability: opts.capability } : {}),
+      ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
+      ...(opts.cursor !== undefined ? { cursor: opts.cursor } : {}),
+    });
+  }
+
+  /**
    * External user id -> Principal.
    *
    * FAILS CLOSED. An `as:` we cannot resolve is 404, never a silent demotion to
@@ -563,6 +656,85 @@ async function resolveActorOrDeny(
     context: { as: String(as).slice(0, 128) },
   });
   throw new FilelayerError(404, 'not_found', 'unknown_actor');
+}
+
+/**
+ * ids.* -- YOUR identifiers to Filelayer's, and back.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY IT IS PUBLIC NOW
+ * ---------------------------------------------------------------------------
+ *
+ * Everything in `fl.files`, `fl.orgs` and `fl.shares` speaks your id space.
+ * The core API speaks internal uuids. Until `0.13.0` there was no bridge, and
+ * `docs/QUICKSTART.md` said so in one line about one method -- while the gap
+ * actually bit on two others, including mounting the library's own HTTP route
+ * for authenticated reads, which simply could not be done without one.
+ *
+ * Measured rather than assumed: four integration tasks were given to agents
+ * holding only the published tarball, and three of them hit this and invented
+ * the same workaround -- a `Map`, filled by harvesting ids out of
+ * `FileRecord.ownerId` and `GrantSummary.subjectId`, the only two places the
+ * public API let an internal id escape. One noted the consequence exactly: an
+ * identity the library auto-provisioned has an id that **cannot be recovered
+ * at all**.
+ *
+ * ---------------------------------------------------------------------------
+ * IT IS NOT A SECURITY BOUNDARY, AND NEVER WAS
+ * ---------------------------------------------------------------------------
+ *
+ * Withholding it protected nothing. These are in-process calls in your own
+ * application, resolving ids YOU chose, in a database you own. The internal
+ * uuid is not a credential: P2 says it is not an input to any decision, which
+ * is the same reason a file id is safe to put in a URL. What stops a caller
+ * reading somebody else's file is `authorize()`, not the obscurity of a
+ * primary key.
+ *
+ * What it DID protect against is a developer wiring their own SQL around the
+ * engine. That risk is unchanged and is answered where it belongs: in the
+ * warning that queries you write yourself run no authorization and write no
+ * audit event.
+ *
+ * PREFER NOT TO NEED IT. `fl.files.list()` and the `{ as }` form of
+ * `deliveryHandler`'s principal both landed in `0.13.0` precisely so the
+ * common cases do not.
+ */
+export class IdsApi {
+  private readonly ids: Identities;
+
+  constructor(fl: Core) {
+    this.ids = new Identities(fl);
+  }
+
+  /**
+   * Your user id -> internal actor id, or **null** if this project has never
+   * seen it. Lookup only: it creates nothing.
+   */
+  async actorId(externalId: string): Promise<string | null> {
+    return this.ids.findActor(externalId);
+  }
+
+  /** Your tenant id -> internal org id, or null. Lookup only. */
+  async orgId(externalId: string): Promise<string | null> {
+    return this.ids.findOrg(externalId);
+  }
+
+  /**
+   * Your user id -> internal actor id, CREATING the identity if this project
+   * has not seen it.
+   *
+   * Separate from `actorId()` and named for what it does, because "resolve"
+   * and "provision" are different operations and a method that silently did
+   * both would be the wrong default for a read path. It creates an identity
+   * and no permission: a bare actor row grants nothing anywhere.
+   *
+   * Idempotent -- it is an upsert. `Filelayer.createActor()` on the core API is
+   * a bare insert and throws on a second call, which is why that method is the
+   * wrong one to build an id cache on.
+   */
+  async ensureActor(externalId: string): Promise<string> {
+    return this.ids.actor(externalId);
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -672,32 +844,7 @@ export class OrgsApi {
   }
 
   private async requireOrg(externalId: string): Promise<string> {
-    const { rows } = await this.fl.store.db.query<{ id: string }>(
-      `SELECT o.id FROM org o
-         JOIN project p ON p.id = o.project_id
-        WHERE o.external_id = $1
-          AND o.project_id = $2
-          AND o.deleted_at IS NULL
-          AND p.deleted_at IS NULL`,
-      [externalId, this.fl.projectId ?? DEFAULT_PROJECT_ID],
-    );
-    if (!rows[0]) {
-      // RECORDED, for the reason `resolveActorOrDeny` explains at length: an
-      // org-name sweep is the same attack in the other id space, and it was
-      // equally invisible. The org cannot be charged for the event because the
-      // org is what could not be resolved, so it goes to the system chain.
-      await this.fl.store.audit({
-        orgId: null,
-        action: 'org.access',
-        decision: 'deny',
-        reason: 'unknown_org',
-        actorId: null,
-        fileId: null,
-        context: { org: String(externalId).slice(0, 128) },
-      });
-      throw new FilelayerError(404, 'not_found', 'unknown_org');
-    }
-    return rows[0].id;
+    return this.ids.requireOrg(externalId);
   }
 
   private async requirePrincipal(as: string): Promise<Principal> {
@@ -856,31 +1003,6 @@ export class SharesApi {
    * fail-closed, exactly like `Identities.findActor`.
    */
   private async requireOrgId(externalId: string): Promise<string> {
-    const { rows } = await this.fl.store.db.query<{ id: string }>(
-      `SELECT o.id FROM org o
-         JOIN project p ON p.id = o.project_id
-        WHERE o.external_id = $1
-          AND o.project_id = $2
-          AND o.deleted_at IS NULL
-          AND p.deleted_at IS NULL`,
-      [externalId, this.fl.projectId ?? DEFAULT_PROJECT_ID],
-    );
-    if (!rows[0]) {
-      // RECORDED, for the reason `resolveActorOrDeny` explains at length: an
-      // org-name sweep is the same attack in the other id space, and it was
-      // equally invisible. The org cannot be charged for the event because the
-      // org is what could not be resolved, so it goes to the system chain.
-      await this.fl.store.audit({
-        orgId: null,
-        action: 'org.access',
-        decision: 'deny',
-        reason: 'unknown_org',
-        actorId: null,
-        fileId: null,
-        context: { org: String(externalId).slice(0, 128) },
-      });
-      throw new FilelayerError(404, 'not_found', 'unknown_org');
-    }
-    return rows[0].id;
+    return this.ids.requireOrg(externalId);
   }
 }

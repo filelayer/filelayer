@@ -456,12 +456,23 @@ build.
 
 Notes on the signature:
 
-- It takes **resolved internal ids**, not the external ids the `fl.files` facade
-  takes. There is no public resolver from an external id to an internal one
-  today — the identity mapping is internal to the facade — so read them off a
-  `FileRecord` (`stat()`, or anything that returns one) or keep them from your
-  own request routing, as `examples/vault/server.ts` does. A `fl.files.list()`
-  on the tiered facade is not implemented; this is the listing API.
+- It takes **resolved internal ids**. If you are holding your own user ids,
+  use **`fl.files.list({ as, org })`** on the facade instead — same engine,
+  same guarantees, your identifiers:
+
+  ```ts
+  const page = await fl.files.list({ as: 'user_123', org: 'acme', limit: 50 });
+  ```
+
+  That method and `fl.ids` landed in `0.13.0`. Until then this core call was
+  the only listing API and there was no public way to resolve an external id,
+  so a listing screen was the one feature that forced you out of the facade --
+  and it was **impossible** for any identity the library auto-provisioned,
+  because nothing returned its id. Three agents given an integration task hit
+  that and each invented the same workaround. If you genuinely need the
+  internal value, `fl.ids.actorId('user_123')` and `fl.ids.orgId('acme')`
+  return it or `null`; `fl.ids.ensureActor()` creates the identity if it does
+  not exist.
 - `limit` is clamped to `[1, 200]`. An out-of-range value is clamped, not
   rejected.
 - An empty page is a valid answer. A caller with no standing sees nothing, and
@@ -498,9 +509,10 @@ const publicRoute = fileDownloadRoute(fl, {
 });
 
 // Authenticated reads: you supply identity, we supply everything else.
+// `{ as }` is YOUR user id -- the same string you pass to fl.files.get().
 const authedRoute = fileDownloadRoute(fl, {
   prefix: '/files',
-  principal: (req) => ({ actorId: yourSession(req)?.userId ?? null }),
+  principal: (req) => ({ as: yourSession(req)?.userId ?? null }),
 });
 
 // Share links.
@@ -529,41 +541,43 @@ createServer(async (req, res) => {
 
 `deliveryHandler(fl)` is the same three, pre-mounted, if you want one line.
 
-**`principal` must return Filelayer's own actor id, not yours.** The snippet
-above assumes `yourSession(req).userId` already holds it, which is true only if
-you stored it at signup. If your session holds your own user id, resolve it
-first and keep the mapping in your users table:
+**`principal` returns YOUR user id, as `{ as }`.** The same string you pass
+everywhere else. An id this project has never seen is a `404` and the attempt is
+recorded -- never a silent downgrade to anonymous, which would turn a typo in a
+session lookup into a read of every published file.
+
+Until `0.13.0` the callback had to return Filelayer's **internal** actor uuid,
+and there was no public way to get one. That made the library's own route for
+authenticated reads unmountable by any application with its own user ids, and
+the snippet on this page passed `yourSession(req).userId` into `actorId`, which
+could not have worked. Of four integration tasks given to agents holding only
+the published tarball, three hit it and each invented the same workaround.
+
+If you already hold an internal id -- or you want to pass `ip` / `userAgent`
+through to the audit log -- the `Principal` form still works:
 
 <!-- doccheck-setup
-const yourUserId = 'user_from_your_own_table';
-const yourDb = { query: async (_sql: string, _params: unknown[]) => undefined };
-const sessionOf = (_req: unknown): { filelayerActorId: string } | null => null;
+const sessionOf = (_req: unknown): { filelayerActorId: string; ip: string } | null => null;
 -->
 
 ```ts
-// Once, when the user is created: keep the mapping in your own users table.
-const { id: actorId } = await fl.createActor(yourUserId);
-await yourDb.query('UPDATE users SET filelayer_actor_id = $1 WHERE id = $2', [
-  actorId,
-  yourUserId,
-]);
-
-// Then every request is a lookup you were already doing.
 const mappedRoute = fileDownloadRoute(fl, {
   prefix: '/files',
-  principal: (req) => ({ actorId: sessionOf(req)?.filelayerActorId ?? null }),
+  principal: (req) => {
+    const s = sessionOf(req);
+    return s ? { actorId: s.filelayerActorId, ip: s.ip } : { actorId: null };
+  },
 });
+
+// And `fl.ids` is the bridge when you need the value itself:
+const actorId = await fl.ids.actorId('user_123');   // string | null, creates nothing
+const orgId = await fl.ids.orgId('acme');           // string | null
+await fl.ids.ensureActor('user_123');               // creates if absent; idempotent
 ```
 
-There is no public call that takes `'alice'` and hands back its actor id, so
-store it when you create the actor. One narrow path exists and is worth knowing
-because the listing example above uses it: `fl.files.stat(fileId, { as })`
-returns a `FileRecord`, and `rec.ownerId` is the resolved actor id of that
-file's OWNER. That covers "who owns this file" and nothing else -- there is no
-way to go from an arbitrary external id to its actor id, which is why the
-mapping above is a column in your own table. The tiered API (`fl.files`, `fl.orgs`,
-`fl.shares`) resolves external ids for you and needs none of this; the route
-helpers sit below it, where identity is already resolved.
+`fl.files.stat(fileId, { as })` is also still worth knowing: `rec.ownerId` on
+the returned `FileRecord` is the resolved actor id of that file's owner, which
+is how the listing example above gets one without a lookup.
 
 Every response carries `nosniff`, an explicit `Content-Disposition`, a sandbox
 CSP, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. None of these

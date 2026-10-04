@@ -72,7 +72,7 @@ import {
   type PutBody,
   type StorageAdapter,
 } from './storage.ts';
-import { FilesApi, OrgsApi, SharesApi } from './simple.ts';
+import { FilesApi, IdsApi, OrgsApi, SharesApi } from './simple.ts';
 import {
   contentDisposition,
   deliveryHeaders,
@@ -383,6 +383,7 @@ export class Filelayer {
   private _files?: FilesApi;
   private _orgs?: OrgsApi;
   private _shares?: SharesApi;
+  private _ids?: IdsApi;
 
   /** Null unless redirect delivery was configured AND acknowledged. */
   private readonly redirect: ResolvedRedirectConfig | null;
@@ -487,6 +488,14 @@ export class Filelayer {
 
   get shares(): SharesApi {
     return (this._shares ??= new SharesApi(this));
+  }
+
+  /**
+   * Your identifiers to internal ones. See `IdsApi` for why it is public and
+   * why you probably do not need it.
+   */
+  get ids(): IdsApi {
+    return (this._ids ??= new IdsApi(this));
   }
 
   // ---------------------------------------------------------------------------

@@ -25,6 +25,86 @@ Nothing yet.
 
 ---
 
+## [0.13.0] — 2026-10-04
+
+**Your own identifiers now reach the whole API, including the HTTP routes.**
+Nothing is removed and nothing changes shape; three things were missing and one
+of them made the library's own route unmountable.
+
+### Added — `fl.files.list({ as, org })`
+
+The facade had no listing. `fl.listFiles(principal, orgId, …)` on the core API
+takes an internal actor uuid and an internal org uuid, so a listing screen — the
+most ordinary screen in a file product — was the one feature that forced you out
+of the facade and into managing Filelayer's internal identifiers by hand.
+
+Worse: it was **impossible** for any identity the library auto-provisioned.
+`put({ owner: 'alice' })` registers `alice` itself, so the application never saw
+an internal id for her, and no public call returned one.
+
+```ts
+const page = await fl.files.list({ as: 'user_123', org: 'acme', limit: 50 });
+```
+
+Same engine, same `listFiles`/`authorize()` set-equality guarantee. It uses
+`requireOrg` rather than the get-or-create resolver, so a mistyped tenant is a
+`404` rather than a new tenant created by a read.
+
+### Added — `deliveryHandler`'s principal takes `{ as }`
+
+```ts
+deliveryHandler(fl, { principal: (req) => ({ as: yourUserId(req) }) })
+```
+
+The callback had to return `Principal.actorId`, an internal uuid. **So the
+library's own HTTP route for authenticated reads could not be mounted** by an
+application holding its own user ids — and the snippet in `QUICKSTART` §6 passed
+`yourSession(req).userId` straight into `actorId`, which could not have worked.
+`examples/vault/server.ts` sidesteps it by taking the uuid in a header, which is
+not an answer for a real application.
+
+An `as` this project has never seen is a `404` and the attempt is **recorded**,
+never a silent downgrade to anonymous — that would turn a typo in a session
+lookup into a read of every published file. `{ as: null }` is an explicitly
+anonymous caller. The `Principal` form is unchanged and is still right when you
+hold an internal id or want `ip`/`userAgent` in the audit log.
+
+### Added — `fl.ids`, the escape hatch, documented rather than secret
+
+`fl.ids.actorId(external)` and `fl.ids.orgId(external)` return the internal uuid
+or `null` and create nothing. `fl.ids.ensureActor(external)` creates if absent
+and is **idempotent** — unlike the core `createActor()`, which is a bare insert
+and throws on a second call, which is why it was the wrong thing to build an id
+cache on.
+
+Withholding this protected nothing. These are in-process calls resolving ids you
+chose, in a database you own, and P2 says the internal uuid is not an input to
+any decision — the same reason a file id is safe in a URL. What stops a caller
+reading somebody else's file is `authorize()`, not the obscurity of a primary
+key. Prefer not to need it: the two additions above exist so the common cases
+do not.
+
+### How the gap was found, and how big it was
+
+Four integration tasks were given to agents holding only the published `0.12.0`
+tarball — no repository, no access to this codebase. **Three of the four hit
+this**, and all three invented the same workaround: a `Map` from their user id to
+an internal one, filled by harvesting values out of `FileRecord.ownerId` and
+`GrantSummary.subjectId`, the only two places the public API let an internal id
+escape. One stated the consequence exactly, which is the sentence that made this
+release: *"a listing screen for anyone who is not a file's owner is impossible
+unless you called `fl.createActor()` for that user yourself and kept the row."*
+
+### Fixed — one query in two places under two names
+
+`requireOrg` and `requireOrgId`, identical bodies on two different classes,
+which is how a duplication survives a search for one of them. Both delegate to
+`Identities.requireOrg` now. One copy is one place to get the project scoping
+wrong, and a mutation dropping the project filter from the surviving copy
+reached the suite before `fl.ids.orgId`'s project test existed.
+
+---
+
 ## [0.12.0] — 2026-10-04
 
 Two security fixes and four documents that were sending readers the wrong way.

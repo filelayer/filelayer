@@ -847,7 +847,7 @@ export interface FileRouteOptions {
   /** See `ShareRouteOptions.mode`. */
   mode?: 'proxy' | 'auto';
   /** The application's own authentication. Filelayer never guesses identity. */
-  principal: (req: IncomingMessage) => Principal | Promise<Principal>;
+  principal: (req: IncomingMessage) => RouteCaller | Promise<RouteCaller>;
 }
 
 /**
@@ -903,7 +903,7 @@ export function fileDownloadRoute(
       // a reason to refuse the request. See `parseRangeHeader`.
       const range = parseRangeHeader(req.headers['range']);
       const delivery = await fl.readStream(
-        await opts.principal(req),
+        await resolveCaller(fl, await opts.principal(req)),
         safeDecode(segments[prefixSegments.length]!) ?? '',
         {
           ...(opts.disposition ? { disposition: opts.disposition } : {}),
@@ -920,6 +920,65 @@ export function fileDownloadRoute(
     }
     return true;
   };
+}
+
+/**
+ * Who the caller is, in whichever id space you have to hand.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THE SECOND FORM EXISTS
+ * ---------------------------------------------------------------------------
+ *
+ * `Principal.actorId` is an INTERNAL uuid. Until `0.13.0` that was the only
+ * thing these routes accepted, and the tiered facade -- `fl.files.get(id, { as:
+ * 'alice' })` and every other call a developer makes -- speaks their own id
+ * space and keeps the mapping private. So **the library's own HTTP route for
+ * authenticated reads could not be mounted** by an application with its own
+ * user ids without first inventing a way to get internal ones.
+ *
+ * Measured, not supposed: of four integration tasks handed to agents holding
+ * only the published tarball, three hit this and invented the same workaround
+ * -- a `Map` filled by harvesting ids out of `FileRecord.ownerId` and
+ * `GrantSummary.subjectId`, the only two places the public API let one escape.
+ * The shipped `examples/vault/server.ts` sidesteps it by taking the internal
+ * uuid in an `X-Actor` header, which is not an answer for a real application.
+ *
+ * So: return `{ as: yourUserId }` and the route resolves it the way the facade
+ * does, including the part that matters -- an id this project has never seen
+ * DENIES and is recorded. It is never a silent downgrade to anonymous, because
+ * that would turn a typo in a session lookup into a read of every public file.
+ * `{ as: null }` is an explicitly anonymous caller.
+ *
+ * The `Principal` form is unchanged and is still right when you already hold
+ * an internal id, or when you need to pass `ip` / `userAgent` for the audit
+ * log.
+ */
+export type RouteCaller = Principal | { as: string | null };
+
+/**
+ * Resolve whichever form the application returned.
+ *
+ * The `{ as }` branch goes through `fl.ids.actorId()` and then refuses a miss
+ * by hand rather than calling the facade, because the facade's resolver is
+ * tied to its own `AsOption` shape. The refusal is the same one: 404, with the
+ * attempt recorded, so a sweep of user ids against this route is visible in
+ * the audit log exactly as it is through `fl.files.get()`.
+ */
+async function resolveCaller(fl: Filelayer, caller: RouteCaller): Promise<Principal> {
+  if (!('as' in caller)) return caller;
+  if (caller.as === null) return { actorId: null };
+  const actorId = await fl.ids.actorId(caller.as);
+  if (actorId) return { actorId };
+  await fl.store.audit({
+    orgId: null,
+    action: 'file.access',
+    decision: 'deny',
+    reason: 'unknown_actor',
+    actorId: null,
+    fileId: null,
+    context: { as: String(caller.as).slice(0, 128) },
+  });
+  throw new FilelayerError(404, 'not_found', 'unknown_actor');
 }
 
 export interface LocalUploadRouteOptions {
@@ -1038,7 +1097,7 @@ export interface DeliveryHandlerOptions {
    * reach a file carrying an explicit `anonymous` grant (P1). It is not a
    * "public mode"; there is no public mode.
    */
-  principal?: (req: IncomingMessage) => Principal | Promise<Principal>;
+  principal?: (req: IncomingMessage) => RouteCaller | Promise<RouteCaller>;
 }
 
 /**
