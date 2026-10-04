@@ -20,10 +20,47 @@
  */
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..');
+
+/**
+ * WHAT GIT TRACKS, WHICH IS NOT WHAT IS ON THE DISK.
+ *
+ * On 5 October 2026 this check passed locally and failed in CI on six dead
+ * self-links to `LIMITATIONS.md` and `ROADMAP.md`. Both files existed on the
+ * author's disk and neither was in the commit: `.gitignore` is a top-level
+ * allow-list, deny-by-default, and `git add -A` says nothing about a file it
+ * is ignoring.
+ *
+ * The allow-list did its job. This check did not, and it is the fourth time
+ * today the same shape has appeared: a gate that reads the filesystem it
+ * happens to be standing in rather than the artifact a reader gets. CI was
+ * right and ten minutes late, and the cost of late is a red build on a push
+ * rather than a message before the commit.
+ *
+ * So a repository self-link now has to resolve to a TRACKED path. An untracked
+ * file is a dead link for everybody except the person who wrote it.
+ */
+const TRACKED = (() => {
+  try {
+    return new Set(
+      execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+        .split('\n')
+        .filter(Boolean),
+    );
+  } catch {
+    return null; // Not a checkout. Fall back to the filesystem below.
+  }
+})();
+
+/** Tracked, or a tracked file underneath it when the target is a directory. */
+const isTracked = (p) => {
+  if (TRACKED === null) return existsSync(join(ROOT, p));
+  return TRACKED.has(p) || [...TRACKED].some((f) => f.startsWith(`${p}/`));
+};
 
 /** Docs we ship, and where a relative link from each one is resolved. */
 const DOCS = [
@@ -130,6 +167,16 @@ for (const doc of DOCS) {
         const p = decodeURIComponent(self[1]).replace(/\/$/, '');
         if (!existsSync(join(ROOT, p))) {
           fail(doc, n, `dead absolute self-link: ${target} (no such path: ${p})`);
+        } else if (!isTracked(p)) {
+          // ON THE DISK AND NOT IN THE COMMIT. See the note on TRACKED: this is
+          // the case that passed here and failed in CI.
+          fail(
+            doc,
+            n,
+            `self-link to an UNTRACKED path: ${target}\n      ${p} exists on this disk and ` +
+              `git is not tracking it, so the link is dead for every other reader. ` +
+              `.gitignore at the root is an allow-list: add a line for it, in this commit.`,
+          );
         }
         continue;
       }
