@@ -97,7 +97,13 @@ await fl.files.put(bytes, { org: 'acme', owner: 'user_123' });
 const share = await fl.shares.create(id, {
   as: 'user_123', expiresIn: 3600, maxDownloads: 3, password: 'hunter2',
 });
-await fl.shares.revoke(share.grantId, { as: 'user_123' });   // takes effect now
+await fl.shares.revoke(share.grantId, { as: 'user_123' });   // this link, now
+
+// Shared with a named user, and taken back. `unshare` is the one you want for
+// a person: `create()` is not idempotent, so revoking a single grant id you
+// happen to be holding can leave an earlier one live.
+await fl.shares.create(id, { as: 'user_123', withUser: 'user_456' });
+await fl.shares.unshare(id, { as: 'user_123', user: 'user_456' });   // all of it
 ```
 
 **Start at whichever line matches your problem.** Complexity is incremental:
@@ -384,7 +390,7 @@ README says is the most valuable thing you can send us.
 ## Limitations
 
 Restated here so they are not only in an appendix. Each one is current as of
-`0.10.0`; where a limitation has been lifted since an earlier release, the
+`0.11.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **`Range` is answered, with three documented edges.** The shipped routes
@@ -400,10 +406,20 @@ Restated here so they are not only in an appendix. Each one is current as of
    dropped when a download cap binds**, served whole under a `200` with
    `Accept-Ranges: none`, because charging a capped grant per seek would make
    `maxDownloads: 3` mean "three seeks".
-2. **The tiered facade `fl.files.put()` takes a `Uint8Array`**, so a file put
+2. **`shares.create()` is not idempotent, so a grant id is not a person's
+   access.** Every call inserts a grant row. Use
+   `shares.unshare(fileId, { as, user })` to remove a named user's access and
+   `revoke(grantId)` only for a link whose secret you handed out. The engine
+   has no dedupe: two calls with an `expiresIn` are two legitimately different
+   windows, and it cannot tell those from a double-clicked button. There is
+   also no bound on how many live grants one subject may hold on one file, and
+   the cost of an authorized read is linear in that number --
+   [`benchmark/load/RESULTS.md`](https://github.com/filelayer/filelayer/blob/main/benchmark/load/RESULTS.md)
+   H4b measures 4.3 ms at five grants and 5.9 s at a hundred thousand.
+3. **The tiered facade `fl.files.put()` takes a `Uint8Array`**, so a file put
    through it is fully resident in memory. The core `fl.upload()` accepts a
    `ReadableStream`; use that above a few tens of megabytes.
-3. **Direct browser → storage upload is opt-in, and only S3/R2 bypass your server.**
+4. **Direct browser → storage upload is opt-in, and only S3/R2 bypass your server.**
    `createUpload()` reserves a `pending` file row and returns a presigned PUT
    whose `content-length` and `content-type` are in the SIGNED HEADERS, so the
    object store rejects a body of the wrong size or type before accepting it —
@@ -428,33 +444,33 @@ Restated here so they are not only in an appendix. Each one is current as of
    reservations accumulate as invisible `pending` rows. Plain `upload()` is
    unchanged and still the default: bytes through your server, no
    acknowledgement, every adapter.
-4. **Org admins and owners can read `private` files.** Deliberate, since retention
+5. **Org admins and owners can read `private` files.** Deliberate, since retention
    and legal hold are their responsibility. But if you need to exclude the
    operator, you need envelope encryption and we do not have it.
-5. **Identifiers are unique per *project*, not per org.** `actor.external_id`
+6. **Identifiers are unique per *project*, not per org.** `actor.external_id`
    and `org.external_id` are scoped to a project (one customer application). Two
    orgs inside one project cannot both have a user called `alice` meaning
    different people.
-6. **The storage adapter has run against AWS S3 since 3 October 2026, and only
+7. **The storage adapter has run against AWS S3 since 3 October 2026, and only
    in one region.** Eleven tests against a real bucket in `eu-north-1` on every
    commit and a thirteenth on the nightly run, alongside the same against
    Cloudflare R2. What that does not
    cover: other regions and their endpoint quirks, S3 Express One Zone, requester
    pays, object lock, cross-region replication, and any bucket policy more
    restrictive than the least-privilege IAM user the tests use.
-7. **Unauthenticated callers can still append denial events to the audit chain
+8. **Unauthenticated callers can still append denial events to the audit chain
    of a tenant inside a project they can reach.** That is P5 working as designed.
    Denials are the events worth recording, but it is a load-bearing reason to
    rate-limit at ingest. `orgExists` is project-scoped, so the reach is bounded
    to a project the caller is already authenticated for.
-8. **Orphan collection is a job you have to run.** Bytes are written before the
+9. **Orphan collection is a job you have to run.** Bytes are written before the
    metadata commits, so a crash in between leaves an unreferenced object.
    `collectStorageOrphans()` cleans them up and nothing calls it for you.
-9. **Redirect delivery has a revocation window.** If you enable it, a presigned
+10. **Redirect delivery has a revocation window.** If you enable it, a presigned
    URL stays valid for up to its TTL after the grant is revoked. It is off by
    default, defaults to anonymous grants only, and requires passing a verbatim
    acknowledgement string. That string is the point.
-10. **The audit chain does not detect truncation of its most recent events.**
+11. **The audit chain does not detect truncation of its most recent events.**
    Replay catches any edit to a recorded event, the removal of one from the
    middle, and the removal of the first. It cannot catch the removal of the last
    *n*: nothing in the table records where the chain was supposed to end, so what
@@ -464,9 +480,9 @@ Restated here so they are not only in an appendix. Each one is current as of
    somewhere outside your database and compare it on the next run; doing that is
    your job, not ours. `UPDATE`, `DELETE` and `TRUNCATE` are refused at the
    database, but by a rule and a trigger the table's owner can drop.
-11. **There is no retention trimming for the audit log.** `audit_event` grows
+12. **There is no retention trimming for the audit log.** `audit_event` grows
    without bound, and erasing a tenant's history is not a supported operation.
-12. **A proxied delivery is audited at the decision, not at the last byte.** The
+13. **A proxied delivery is audited at the decision, not at the last byte.** The
    allow event and the download-cap charge happen before any bytes move, so a
    transfer that dies mid-stream is recorded as an allowed read and still spends
    the cap. "Every access on the record" means every authorization decision. On

@@ -535,6 +535,29 @@ export class PostgresStore implements AuthzDeps {
   }
 
   /**
+   * The same rows WITHOUT the liveness predicate, for explaining a refusal.
+   *
+   * `file_grant` DIRECTLY, not `live_grant`, which is the entire point: the
+   * engine cannot say "your grant is spent" about a row the view has already
+   * filtered away. Reads nothing a caller could use as authority -- every
+   * consumer of this method is on the deny path and the result reaches only
+   * `DenyReason` and the audit log.
+   *
+   * `revoked_at IS NULL` is NOT applied either, because a revoked grant is one
+   * of the answers worth giving.
+   */
+  async getActorGrantsIncludingDead(fileId: string, actorId: string): Promise<GrantRow[]> {
+    if (!isUuid(fileId) || !isUuid(actorId)) return [];
+    const { rows } = await this.db.query<DbGrant>(
+      `SELECT * FROM file_grant
+        WHERE file_id = $1 AND subject_type = 'actor' AND subject_id = $2
+        ORDER BY created_at ASC, id ASC`,
+      [fileId, actorId],
+    );
+    return rows.map(toGrantRow);
+  }
+
+  /**
    * live_grant only. THE GROUP-GRANT PATH (RFC-001).
    *
    * ONE JOIN. Not a fan-out table, not a cached member list, not a

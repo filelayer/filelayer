@@ -2369,6 +2369,98 @@ export class Filelayer {
    * ancestor chain, so every grant ever delegated from this one dies in the
    * same instant, at any depth, with no second write to get wrong (P4).
    */
+  /**
+   * REVOKE EVERY LIVE GRANT ON THIS FILE WHOSE SUBJECT IS THIS ONE. The
+   * operation a developer actually means by "stop sharing this with Bob", and
+   * it did not exist until a measurement found out what its absence cost.
+   *
+   * -------------------------------------------------------------------------
+   * THE DEFECT THIS METHOD CLOSES
+   * -------------------------------------------------------------------------
+   *
+   * `share()` is not idempotent: every call inserts a grant row. Nothing in the
+   * schema or the API prevented two live grants with the same subject on the
+   * same file, and `revoke(grantId)` revokes exactly one row -- correctly, and
+   * uselessly, because the developer's model is "Bob's access" and the API's
+   * unit is "a grant".
+   *
+   * So the natural implementation of a share endpoint -- keep the `grantId` the
+   * last call returned, revoke that when asked to unshare -- SILENTLY LEAVES
+   * THE EARLIER GRANT LIVE. The owner is told the revocation succeeded. The
+   * recipient keeps reading. Reproduced against the published `0.10.0`:
+   *
+   *     share(file, {withUser: 'bob'})   -> grant A
+   *     share(file, {withUser: 'bob'})   -> grant B        (two live rows)
+   *     revoke(B)                        -> success
+   *     read(file, as: 'bob')            -> 200
+   *
+   * Two `share()` calls also doubled an effective `maxDownloads: 3` to six
+   * deliveries, for the same reason.
+   *
+   * Reachable by pressing a Share button twice, by a retry after a timeout, or
+   * by any endpoint that does not deduplicate. "Revocation is immediate" is the
+   * property this library is sold on, and the headline example in the README
+   * taught the pattern that loses it.
+   *
+   * -------------------------------------------------------------------------
+   * IT IS NOT A NEW IDEA, WHICH IS THE EMBARRASSING PART
+   * -------------------------------------------------------------------------
+   *
+   * `unpublish()` has always done exactly this for anonymous grants: list,
+   * revoke every live one, return a count. The plural was understood and solved
+   * for the one subject type where the API has no id to hand back. For a named
+   * user, where there IS an id, the id became the interface and the plural
+   * stopped being considered. `unpublish()` now delegates here, so there is one
+   * implementation rather than two.
+   *
+   * ALL-OR-NOTHING, in one transaction. A partial unshare is the defect in a
+   * smaller form: the caller would be told how many of N succeeded and have no
+   * way to find the rest.
+   */
+  async revokeFor(
+    principal: Principal,
+    fileId: string,
+    subject:
+      | { type: 'actor'; actorId: string }
+      | { type: 'anonymous' }
+      | { type: 'org'; orgId: string }
+      | { type: 'role'; orgId: string; minRole: OrgRole },
+  ): Promise<{ revoked: string[] }> {
+    const grants = await this.listGrants(principal, fileId);
+    const matches = grants.filter((g) => {
+      if (!g.live) return false;
+      switch (subject.type) {
+        case 'actor':
+          return g.subjectType === 'actor' && g.subjectId === subject.actorId;
+        case 'anonymous':
+          return g.subjectType === 'anonymous';
+        case 'org':
+          return g.subjectType === 'org' && g.subjectOrgId === subject.orgId;
+        case 'role':
+          return (
+            g.subjectType === 'role' &&
+            g.subjectOrgId === subject.orgId &&
+            g.subjectMinRole === subject.minRole
+          );
+      }
+    });
+    // Nothing to do is success, not an error. "Make sure Bob cannot read this"
+    // is satisfied by Bob already not being able to, and a caller retrying an
+    // unshare must not get a failure for having already succeeded.
+    if (matches.length === 0) return { revoked: [] };
+
+    // Revoking a CHILD grant cascades liveness to its descendants anyway, but
+    // the order is still oldest-first so that a crash midway leaves the
+    // longest-lived authority gone rather than the newest.
+    const ordered = [...matches].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    await this.#transaction(async (tx, store) => {
+      for (const g of ordered) {
+        await this.#revokeOne(tx, store, principal, g.id);
+      }
+    });
+    return { revoked: ordered.map((g) => g.id) };
+  }
+
   async revoke(principal: Principal, grantId: string): Promise<void> {
     if (!isUuid(grantId)) throw new FilelayerError(404, 'not_found');
     // Revocation is the operation the product is sold on, so the state change
@@ -2392,34 +2484,52 @@ export class Filelayer {
     // the UPDATE is `WHERE revoked_at IS NULL`, so a concurrent revoke is
     // idempotent rather than a lost update.
     await this.#transaction(async (tx, store) => {
-      const { rows } = await tx.query<{ file_id: string; org_id: string }>(
-        `SELECT file_id, org_id FROM file_grant WHERE id = $1`,
-        [grantId],
-      );
-      const g = rows[0];
-      // Unknown grant and "not yours" are the same answer, for the same reason
-      // file ids are: otherwise this endpoint is a grant-id oracle.
-      if (!g) throw new FilelayerError(404, 'not_found');
+      await this.#revokeOne(tx, store, principal, grantId);
+    });
+  }
 
-      const decision = await authorizeRevoke(store, principal, {
-        id: grantId,
-        fileId: g.file_id,
-        orgId: g.org_id,
-      });
-      this.#raise(decision);
+  /**
+   * One revocation, inside a caller-supplied transaction.
+   *
+   * Extracted from `revoke()` so that `revokeFor()` can revoke several grants
+   * ATOMICALLY rather than by calling `revoke()` in a loop. A loop would open
+   * one transaction per grant, and a failure partway would leave some of a
+   * person's access removed and the rest live -- the same defect `revokeFor`
+   * exists to fix, in a smaller form and harder to notice.
+   */
+  async #revokeOne(
+    tx: Tx,
+    store: PostgresStore,
+    principal: Principal,
+    grantId: string,
+  ): Promise<void> {
+    const { rows } = await tx.query<{ file_id: string; org_id: string }>(
+      `SELECT file_id, org_id FROM file_grant WHERE id = $1`,
+      [grantId],
+    );
+    const g = rows[0];
+    // Unknown grant and "not yours" are the same answer, for the same reason
+    // file ids are: otherwise this endpoint is a grant-id oracle.
+    if (!g) throw new FilelayerError(404, 'not_found');
 
-      await tx.query(
-        `UPDATE file_grant SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`,
-        [grantId],
-      );
-      await store.audit({
-        orgId: g.org_id,
-        action: 'grant.revoke',
-        decision: 'allow',
-        actorId: principal.actorId,
-        fileId: g.file_id,
-        grantId,
-      });
+    const decision = await authorizeRevoke(store, principal, {
+      id: grantId,
+      fileId: g.file_id,
+      orgId: g.org_id,
+    });
+    this.#raise(decision);
+
+    await tx.query(
+      `UPDATE file_grant SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`,
+      [grantId],
+    );
+    await store.audit({
+      orgId: g.org_id,
+      action: 'grant.revoke',
+      decision: 'allow',
+      actorId: principal.actorId,
+      fileId: g.file_id,
+      grantId,
     });
   }
 

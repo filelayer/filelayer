@@ -1086,6 +1086,11 @@ describe('every public method that names a resource also names a principal', () 
       // upload credential that could be minted without a principal would be
       // ambient authority over the bucket.
       'createUpload', 'completeUpload',
+      // `revokeFor` authorizes through `listGrants` (which requires `share` on
+      // the file) and then through `authorizeRevoke` per grant. It belongs here
+      // and not in CONTROL_PLANE precisely because it removes somebody's
+      // access: an unauthenticated path to it would be a way to strip grants.
+      'revokeFor',
     ]);
     // `redeem`/`redeemStream` take a link SECRET, which IS the credential.
     const CREDENTIAL_BEARING = new Set(['redeem', 'redeemStream']);

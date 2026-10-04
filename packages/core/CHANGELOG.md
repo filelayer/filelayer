@@ -25,6 +25,114 @@ Nothing yet.
 
 ---
 
+## [0.11.0] — 2026-10-04
+
+> ### ⚠️ Read this if you are on `0.10.0` or earlier and you share files with named users
+>
+> **`shares.revoke(grantId)` could report success and leave the person's access
+> working.** If your share endpoint ever ran twice for the same file and the same
+> recipient — a double-clicked button, a retry after a timeout, a sync job — then
+> two live grants existed and revoking the id you were holding left the other
+> one. The owner was told the revocation succeeded. The recipient kept reading.
+>
+> **Upgrade and use `shares.unshare(fileId, { as, user })`** to remove a named
+> user's access. To audit what you already have:
+>
+> ```sql
+> SELECT file_id, subject_id, count(*)
+>   FROM file_grant
+>  WHERE subject_type = 'actor' AND revoked_at IS NULL
+>  GROUP BY file_id, subject_id HAVING count(*) > 1;
+> ```
+>
+> Any row there is a file where a single `revoke()` would not have been enough.
+> There is no advisory: it needs the `share` capability, it affects one reader at
+> a time, and it reverses the moment the duplicates are revoked. It is here
+> rather than in a GHSA because it is a defect in the shape of our API, not an
+> attack somebody can mount.
+
+### Fixed — a grant id is not a person's access
+
+`share()` is not idempotent: every call inserts a grant row. `revoke(grantId)`
+revokes exactly one row. Both are right in isolation and the combination lost
+the property this library is sold on, because the natural implementation of a
+share endpoint — keep the id the last call returned, revoke that — leaves the
+earlier grant live. Two calls also doubled an effective `maxDownloads: 3` into
+six deliveries.
+
+**`Filelayer.revokeFor(principal, fileId, subject)`** and
+**`shares.unshare(fileId, { as, user })`** revoke every live grant naming that
+subject, in ONE transaction. All-or-nothing: a partial unshare is the same
+defect in a smaller form. Idempotent, so a retry is safe, and an unknown user is
+`{ revoked: 0 }` rather than a 404, which would have made it an identity oracle.
+
+`unpublish()` now delegates to it. **That is the embarrassing part**: `unpublish`
+had done exactly this for anonymous grants since the beginning — list, revoke
+every live one, return a count. The plural was understood for the one subject
+type that has no id to hand back. For a named user the id became the interface
+and the plural stopped being considered, for eight releases.
+
+**`revoke(grantId)` is unchanged**, and is still correct for a share link whose
+secret you handed out. The README's headline example used to teach it for a
+named user; it now shows `unshare` for that case.
+
+### Fixed — a spent grant reported `no_membership`
+
+`getActorGrants` reads `live_grant`, so an exhausted, expired or revoked actor
+grant was invisible to the engine and the refusal got attributed to the
+fallback: `insufficient_role`, or `no_membership` for a recipient who never was
+a member. **That reason is what reached the audit log**, so a compliance reader
+asking why access was refused was told the person was not in the org — true, and
+not the reason.
+
+The deny path now consults dead grants and classifies them with
+`deadGrantReason`, which the link path has always used. One extra query, on the
+deny path only. The response is unchanged — still an opaque `404 not_found`,
+because the reason must not become an oracle.
+
+### How both were found
+
+Not by a review. By handing an integration task to an agent that had **only the
+published `0.10.0` tarball** — no repository, no access to this codebase,
+nothing but what `npm install` provides — and reading what it got stuck on. It
+grepped for `idempot`, found that `orgs.create` and `completeUpload` are
+documented as idempotent and `share` is not mentioned either way, wrote a probe,
+and reported `BOB STILL READS AFTER REVOKING s2`.
+
+That is now how this project looks for defects in the shape of its own API,
+because the people and agents who will hit them have exactly that much context
+and no more.
+
+### Added — a concurrent measurement, which found the other half
+
+`npm run bench:load`, and
+[`benchmark/load/RESULTS.md`](https://github.com/filelayer/filelayer/blob/main/benchmark/load/RESULTS.md).
+The first concurrent measurement in this repository, against a real native
+PostgreSQL with a real pool. It tests four claims `src/` already made about
+itself; one was true, one was unconfirmed and had been stated as a property, and
+one was false in a way nothing had noticed:
+
+- **The cost of an authorized read is linear in the live grants that subject
+  holds on that file**: 4.3 ms at five, 55 ms at a thousand, 5.9 s at a hundred
+  thousand, while an owner read stays at 2.3 ms. `live_grant` evaluates
+  `grant_is_live(id)` — a recursive function declared `COST 100` — once per
+  matching row, and nothing bounds the row count. Not fixed in this release;
+  `unshare` gives you the tool to keep the number small, and the README
+  limitation says so.
+- **The predicted write hotspot on a shared anonymous grant row did not
+  appear** up to concurrency 64. The comment in `#reserve` asserted it as a
+  property and now says "predicted and unconfirmed".
+- **Table size does not matter**: 100 to 100 000 grants costs a read 3–8%.
+
+And the harness got it wrong first, which is recorded in `RESULTS.md` rather
+than quietly fixed: it bulk-inserted without `ANALYZE` and reported a read going
+from 12 ms to 6 seconds, which was 12.6× of stale planner statistics and would
+have been a false architectural finding. `MIGRATIONS.md` now says to run
+`ANALYZE file_grant` after any bulk grant load, because that part is a real
+operational hazard.
+
+---
+
 ## [0.10.0] — 2026-10-04
 
 Three capabilities and four defects. Two of the defects were found by the work

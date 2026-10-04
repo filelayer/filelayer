@@ -285,6 +285,20 @@ export interface AuthzDeps {
   /** Live grants only: the store must apply the `live_grant` predicate. */
   getActorGrants(fileId: string, actorId: string): Promise<GrantRow[]>;
   /**
+   * The same grants WITHOUT the liveness predicate. Called on the DENY PATH
+   * ONLY, to explain a refusal, and never to grant anything.
+   *
+   * It exists because a dead grant is invisible to the engine: `getActorGrants`
+   * reads `live_grant`, so an exhausted or expired grant simply is not there
+   * and the denial gets attributed to whatever the fallback says -- which for a
+   * non-member is `no_membership`. Measured on the published `0.10.0`: a
+   * recipient whose three downloads were spent was refused with
+   * `reason: no_membership`, and that is what went into the audit log. A
+   * compliance reader asking why the refusal happened was told the person was
+   * not in the org, which is true and is not the reason.
+   */
+  getActorGrantsIncludingDead(fileId: string, actorId: string): Promise<GrantRow[]>;
+  /**
    * Live GROUP grants ('org' / 'role') on this file that this actor matches
    * through a live membership (RFC-001).
    *
@@ -523,11 +537,50 @@ async function resolveStanding(
   return settled();
 }
 
-/** The reason to report when a principal has no standing on a file at all. */
-function noStandingReason(principal: Principal, role: OrgRole | null): DenyReason {
+/**
+ * The reason to report when a principal has no standing on a file at all.
+ *
+ * `deadGrant` is consulted FIRST when present, because a grant that was spent,
+ * expired or revoked is a better explanation of a refusal than the absence of a
+ * membership the caller never had. The link path has always done this (see
+ * `deadGrantReason`); the actor path did not, and reported `no_membership` for
+ * a recipient whose download cap was exhausted.
+ */
+function noStandingReason(
+  principal: Principal,
+  role: OrgRole | null,
+  deadGrant?: DenyReason | null,
+): DenyReason {
+  if (deadGrant) return deadGrant;
   if (principal.actorId) return role ? 'insufficient_role' : 'no_membership';
   if (principal.linkSecret) return 'bad_link_secret';
   return 'no_grant';
+}
+
+/**
+ * Why this actor's grants, if they have any, do not help them.
+ *
+ * ONE QUERY, ON THE DENY PATH ONLY, and it grants nothing: it runs after the
+ * engine has already decided to refuse, and its output goes to the audit log
+ * and the internal `reason`. The most specific explanation wins, in the order
+ * `deadGrantReason` defines -- a revoked grant is a better answer than an
+ * exhausted one, which is a better answer than a dead ancestor.
+ */
+async function deadActorGrantReason(
+  deps: AuthzDeps,
+  fileId: string,
+  actorId: string,
+  now: Date,
+): Promise<DenyReason | null> {
+  const all = await deps.getActorGrantsIncludingDead(fileId, actorId);
+  if (all.length === 0) return null;
+  const rank: DenyReason[] = ['grant_revoked', 'grant_expired', 'grant_exhausted', 'grant_ancestor_dead'];
+  let best: DenyReason | null = null;
+  for (const g of all) {
+    const r = deadGrantReason(g, now);
+    if (best === null || rank.indexOf(r) < rank.indexOf(best)) best = r;
+  }
+  return best;
 }
 
 /**
@@ -624,6 +677,11 @@ async function decideFile(
     );
   }
   if (!standing.recognised) {
+    // A dead grant explains the refusal better than a missing membership, and
+    // only the deny path pays for finding out.
+    const dead = principal.actorId
+      ? await deadActorGrantReason(deps, fileId, principal.actorId, now)
+      : null;
     return out(
       await deny(
         deps,
@@ -631,7 +689,7 @@ async function decideFile(
         principal,
         fileId,
         capability,
-        noStandingReason(principal, standing.role),
+        noStandingReason(principal, standing.role, dead),
       ),
     );
   }

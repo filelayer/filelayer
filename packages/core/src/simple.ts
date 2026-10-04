@@ -440,14 +440,13 @@ export class FilesApi {
    */
   async unpublish(fileId: string, opts: AsOption = {}): Promise<{ revoked: number }> {
     const principal = await this.principal(opts, { orSystem: true });
-    const grants = await this.fl.listGrants(principal, fileId);
-    let revoked = 0;
-    for (const g of grants) {
-      if (g.subjectType !== 'anonymous' || !g.live) continue;
-      await this.fl.revoke(principal, g.id);
-      revoked++;
-    }
-    return { revoked };
+    // DELEGATES NOW, and used to carry its own loop. The loop was correct and
+    // it was the only place in the library that knew "stop this access" means
+    // revoking every grant that grants it, rather than one row. That knowledge
+    // belonged in the engine; keeping it here is why the named-user case went
+    // without it for eight releases. See `Filelayer.revokeFor`.
+    const { revoked } = await this.fl.revokeFor(principal, fileId, { type: 'anonymous' });
+    return { revoked: revoked.length };
   }
 
   /**
@@ -716,10 +715,50 @@ export class SharesApi {
     });
   }
 
+  /**
+   * Revoke ONE grant, by the id `create()` returned.
+   *
+   * Correct, and usually not what you want. A grant id is not a person's
+   * access: `create()` is not idempotent, so two calls for the same file and
+   * the same recipient leave two live grants, and revoking the id you were
+   * handed last leaves the other one working while telling you it succeeded.
+   *
+   * Use `unshare()` to remove a named user's access. Use this when you are
+   * revoking a specific share link whose secret you handed out.
+   */
   async revoke(grantId: string, opts: { as: string }) {
     const actorId = await this.ids.findActor(opts.as);
     if (!actorId) throw new FilelayerError(404, 'not_found', 'unknown_actor');
     return this.fl.revoke({ actorId }, grantId);
+  }
+
+  /**
+   * STOP SHARING THIS FILE WITH THIS USER. Every live grant naming them, in one
+   * transaction, however many `create()` calls produced them.
+   *
+   * This is the operation a share endpoint needs and the one that was missing.
+   * See `Filelayer.revokeFor` for what its absence cost and how it was found.
+   *
+   * Idempotent: unsharing from somebody who already cannot read it returns
+   * `{ revoked: 0 }` rather than failing, so a retried unshare is safe.
+   *
+   * An unknown `user` is `{ revoked: 0 }` too, and deliberately not a 404 --
+   * "make sure this person cannot read it" is satisfied by their not existing,
+   * and answering 404 would turn this into an identity oracle.
+   */
+  async unshare(
+    fileId: string,
+    opts: { as: string; user: string },
+  ): Promise<{ revoked: number }> {
+    const actorId = await this.ids.findActor(opts.as);
+    if (!actorId) throw new FilelayerError(404, 'not_found', 'unknown_actor');
+    const target = await this.ids.findActor(opts.user);
+    if (!target) return { revoked: 0 };
+    const { revoked } = await this.fl.revokeFor({ actorId }, fileId, {
+      type: 'actor',
+      actorId: target,
+    });
+    return { revoked: revoked.length };
   }
 
   async list(fileId: string, opts: { as: string }) {
