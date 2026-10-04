@@ -143,6 +143,21 @@ const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/guides/README.md',
+    why: 'the index. With three guides this is a destination rather than loose files.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/multi-tenant-file-access.md',
+    why: 'the third guide: RLS filters reads and does not stop a cross-tenant write.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/multi-tenant-file-access.proof.mjs',
+    why: 'the script that demonstrates it, against a real PostgreSQL.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/private-file-uploads.md',
     why:
       'the second guide. It is the one where this library is NOT the answer to ' +

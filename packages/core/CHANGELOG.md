@@ -91,6 +91,38 @@ The executable block in it asserts the two things we do claim: the content type
 is decided from the magic bytes rather than from what the client declared, and
 `nosniff` plus `attachment` are on the read path and not optional.
 
+### Added — the third guide, and `docs/guides/` becomes a destination
+
+"How do I do multi-tenant file access control?" The usual answer — `tenant_id`,
+Row-Level Security, a session variable per request, `FORCE ROW LEVEL SECURITY`,
+no `BYPASSRLS` on the application role, composite indexes — is good, and the
+guide says so rather than inventing a weakness.
+
+It argues with the conclusion people draw from it. **RLS decides which rows a
+session may SEE. It does not decide which rows may EXIST.** Measured against a
+real PostgreSQL:
+
+| | |
+|---|---|
+| A tenant reads its own files only | isolated, as advertised |
+| The same session writes a grant joining another tenant's FILE to its own ORG | **`INSERTED`** |
+| The same write with `FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id)` | `REFUSED` 23503 |
+| The same write from a role with `BYPASSRLS` and no tenant variable | reads all rows, still `REFUSED` 23503 |
+
+Both policies are satisfied by that second row, and correctly: its `org_id` *is*
+the session's tenant. RLS compared the row to the session; nothing compared the
+row to the file it points at. The composite foreign key does, in standard SQL,
+with no trigger and no extension — and it holds where a policy cannot, because a
+policy is advice to a session and a constraint is a property of the data.
+
+The guide also covers the second thing files have that ordinary rows do not: the
+bytes are in a bucket, where none of your policies run.
+
+`docs/guides/README.md` is now the index, with the rule these pages are written
+to: a guide has to be useful to somebody who never installs this, the code in it
+is executed on every commit, and where it states a number a script beside it
+reproduces that number.
+
 ### Changed — the homepage no longer leads with the numbers sitting at zero
 
 The trust section opened on a table whose second, third and fourth rows were

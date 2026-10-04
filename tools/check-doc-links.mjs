@@ -32,6 +32,8 @@ const DOCS = [
   'docs/LIVE-S3-TESTS.md',
   'docs/guides/expiring-and-revocable-file-links.md',
   'docs/guides/private-file-uploads.md',
+  'docs/guides/multi-tenant-file-access.md',
+  'docs/guides/README.md',
   'packages/core/SEMANTICS.md',
   'SECURITY.md',
   'TRUST.md',

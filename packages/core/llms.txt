@@ -61,10 +61,11 @@ Everything is an in-process method call. There is no REST API to call over the n
 
 ## Guides
 
-Answers to questions people actually ask, written to be useful whether or not you use this library. The code in them is executed by `npm run check:docs` on every commit.
+Answers to questions people actually ask, written to be useful whether or not you use this library. The code in them is executed by `npm run check:docs` on every commit, and where a guide states a number, a script beside it reproduces that number against a real PostgreSQL. Index: [docs/guides/](https://github.com/filelayer/filelayer/blob/main/docs/guides/README.md).
 
 - [Expiring and revocable file links](https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.md): why a presigned URL cannot be revoked, the four things you can do instead, and the one query that is easy to write wrong — with the schema and the SQL to copy. Read this before designing any share feature on presigned URLs.
 - [Private file uploads](https://github.com/filelayer/filelayer/blob/main/docs/guides/private-file-uploads.md): a presigned PUT does not limit the size of the body — a URL issued for a 200 KB avatar accepts three gigabytes — and the presigned POST policy that does. Plus the content-type trap, why the object key is not access control, and why the upload happening outside your transaction leaves orphans. NOTE: Filelayer does not do direct browser-to-storage uploads; that guide says what to use instead.
+- [Multi-tenant file access control](https://github.com/filelayer/filelayer/blob/main/docs/guides/multi-tenant-file-access.md): Row-Level Security filters which rows a session may READ and does not stop it WRITING a grant that joins two tenants — demonstrated, and refused by a composite foreign key that holds even against a role with BYPASSRLS. Plus why the bytes in your bucket are outside every policy you wrote.
 
 ## Runnable references
 
