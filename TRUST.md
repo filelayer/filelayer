@@ -13,12 +13,12 @@ that records denials. It was first published on **5 September 2026**.
 
 | | |
 |---|---|
-| Version | 0.11.0 — alpha |
+| Version | 0.12.0 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
 | Load measured | First run 4 October 2026, `benchmark/load/RESULTS.md`. One machine, no network, no object store, seconds per cell |
-| Tests | 497, of which 489 on Node 22 / 24 / 26 and all 497 against a real PostgreSQL, every commit |
+| Tests | 509, of which 501 on Node 22 / 24 / 26 and all 509 against a real PostgreSQL, every commit |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |

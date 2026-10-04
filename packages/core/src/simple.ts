@@ -490,10 +490,79 @@ export class FilesApi {
       // the default workspace, performed by the service identity that owns it.
       return { actorId: await this.ids.actor(SYSTEM_ACTOR) };
     }
-    const actorId = await this.ids.findActor(opts.as);
-    if (!actorId) throw new FilelayerError(404, 'not_found', 'unknown_actor');
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'file.access');
     return { actorId };
   }
+}
+
+/**
+ * Resolve an external `as:` to an internal actor id, or DENY AND RECORD IT.
+ *
+ * ---------------------------------------------------------------------------
+ * THE DEFECT THIS CLOSES
+ * ---------------------------------------------------------------------------
+ *
+ * Six places in this file did `findActor()` and threw `404 unknown_actor` when
+ * it came back null. The status was right and the refusal was right. What was
+ * missing is that the throw happened BEFORE the engine ran, so **no audit event
+ * was written** -- while the same refusal on the core API writes one.
+ *
+ * Measured on the published `0.11.0`:
+ *
+ *     facade, unknown external id  -> 404 unknown_actor   deny events 0 -> 0
+ *     core, well-formed actor uuid -> 404 no_membership   deny events 0 -> 1
+ *
+ * `schema.sql` is explicit that this is a defect, in a comment on the very
+ * column that makes the fix possible. It explains that `audit_event.actor_id`
+ * carries NO foreign key precisely so that "a caller presenting a WELL-FORMED
+ * BUT UNREGISTERED actor id" is still recorded, and calls the alternative "a
+ * serious defect in two directions at once". The engine was changed to honour
+ * that. The facade -- the API everybody actually uses -- reopened the same hole
+ * one level up, for EXTERNAL ids, which is the id space an attacker sweeps
+ * because it is the one they can guess.
+ *
+ * So an actor-id sweep against a known file id left nothing an administrator
+ * could read, on the surface where it was easiest to mount.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THE EVENT LOOKS THE WAY IT DOES
+ * ---------------------------------------------------------------------------
+ *
+ *  - **The system chain** (`orgId: null`). No tenant can be confirmed: we have
+ *    a file id at most, and resolving it to an org before authorizing anybody
+ *    would be a tenant oracle. `authorizeOrg` already routes an unconfirmable
+ *    org here for the same reason.
+ *  - **`reason: 'unknown_actor'` is kept.** Returning a random uuid and letting
+ *    the engine audit it would also have recorded the attempt, and would have
+ *    recorded it as `no_membership` -- losing the one fact that matters, which
+ *    is that the id does not exist.
+ *  - **The presented id goes in `context.as`**, because "which ids were tried"
+ *    is the whole value of the record. It is the caller's own id space, the
+ *    same treatment `rawFileId` already gets on the NUL-probe path.
+ *  - **Outside a transaction.** It is a lone deny event with no mutation to be
+ *    atomic with; `audit_append()` holds its own advisory lock. `upload()`
+ *    documents this exact case.
+ *  - **The response is unchanged**: still an opaque `404 not_found`.
+ */
+async function resolveActorOrDeny(
+  fl: Core,
+  ids: Identities,
+  as: string,
+  action: string,
+  fileId: string | null = null,
+): Promise<string> {
+  const actorId = await ids.findActor(as);
+  if (actorId) return actorId;
+  await fl.store.audit({
+    orgId: null,
+    action,
+    decision: 'deny',
+    reason: 'unknown_actor',
+    actorId: null,
+    fileId,
+    context: { as: String(as).slice(0, 128) },
+  });
+  throw new FilelayerError(404, 'not_found', 'unknown_actor');
 }
 
 // -----------------------------------------------------------------------------
@@ -612,13 +681,27 @@ export class OrgsApi {
           AND p.deleted_at IS NULL`,
       [externalId, this.fl.projectId ?? DEFAULT_PROJECT_ID],
     );
-    if (!rows[0]) throw new FilelayerError(404, 'not_found', 'unknown_org');
+    if (!rows[0]) {
+      // RECORDED, for the reason `resolveActorOrDeny` explains at length: an
+      // org-name sweep is the same attack in the other id space, and it was
+      // equally invisible. The org cannot be charged for the event because the
+      // org is what could not be resolved, so it goes to the system chain.
+      await this.fl.store.audit({
+        orgId: null,
+        action: 'org.access',
+        decision: 'deny',
+        reason: 'unknown_org',
+        actorId: null,
+        fileId: null,
+        context: { org: String(externalId).slice(0, 128) },
+      });
+      throw new FilelayerError(404, 'not_found', 'unknown_org');
+    }
     return rows[0].id;
   }
 
   private async requirePrincipal(as: string): Promise<Principal> {
-    const actorId = await this.ids.findActor(as);
-    if (!actorId) throw new FilelayerError(404, 'not_found', 'unknown_actor');
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, as, 'org.access');
     return { actorId };
   }
 }
@@ -686,8 +769,7 @@ export class SharesApi {
   ): Promise<ShareResult & { secret: string }>;
   async create(fileId: string, opts: ShareOptions): Promise<ShareResult>;
   async create(fileId: string, opts: ShareOptions): Promise<ShareResult> {
-    const actorId = await this.ids.findActor(opts.as);
-    if (!actorId) throw new FilelayerError(404, 'not_found', 'unknown_actor');
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.create', fileId);
     if (opts.withUser && opts.withOrg) {
       throw new FilelayerError(400, 'ambiguous_subject', 'withUser_and_withOrg');
     }
@@ -727,8 +809,7 @@ export class SharesApi {
    * revoking a specific share link whose secret you handed out.
    */
   async revoke(grantId: string, opts: { as: string }) {
-    const actorId = await this.ids.findActor(opts.as);
-    if (!actorId) throw new FilelayerError(404, 'not_found', 'unknown_actor');
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.revoke');
     return this.fl.revoke({ actorId }, grantId);
   }
 
@@ -750,8 +831,7 @@ export class SharesApi {
     fileId: string,
     opts: { as: string; user: string },
   ): Promise<{ revoked: number }> {
-    const actorId = await this.ids.findActor(opts.as);
-    if (!actorId) throw new FilelayerError(404, 'not_found', 'unknown_actor');
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.revoke', fileId);
     const target = await this.ids.findActor(opts.user);
     if (!target) return { revoked: 0 };
     const { revoked } = await this.fl.revokeFor({ actorId }, fileId, {
@@ -762,8 +842,7 @@ export class SharesApi {
   }
 
   async list(fileId: string, opts: { as: string }) {
-    const actorId = await this.ids.findActor(opts.as);
-    if (!actorId) throw new FilelayerError(404, 'not_found', 'unknown_actor');
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.list', fileId);
     return this.fl.listGrants({ actorId }, fileId);
   }
 
@@ -786,7 +865,22 @@ export class SharesApi {
           AND p.deleted_at IS NULL`,
       [externalId, this.fl.projectId ?? DEFAULT_PROJECT_ID],
     );
-    if (!rows[0]) throw new FilelayerError(404, 'not_found', 'unknown_org');
+    if (!rows[0]) {
+      // RECORDED, for the reason `resolveActorOrDeny` explains at length: an
+      // org-name sweep is the same attack in the other id space, and it was
+      // equally invisible. The org cannot be charged for the event because the
+      // org is what could not be resolved, so it goes to the system chain.
+      await this.fl.store.audit({
+        orgId: null,
+        action: 'org.access',
+        decision: 'deny',
+        reason: 'unknown_org',
+        actorId: null,
+        fileId: null,
+        context: { org: String(externalId).slice(0, 128) },
+      });
+      throw new FilelayerError(404, 'not_found', 'unknown_org');
+    }
     return rows[0].id;
   }
 }

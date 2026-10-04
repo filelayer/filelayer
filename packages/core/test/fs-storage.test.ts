@@ -17,8 +17,9 @@
 
 import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { FsStorage, MemoryStorage, canPresign, canList } from '../src/storage.ts';
 import { Filelayer } from '../src/filelayer.ts';
@@ -638,3 +639,102 @@ describe('FsStorage', () => {
 async function rejects404(fn: () => Promise<unknown>): Promise<void> {
   await assert.rejects(fn, (e: { status?: number }) => e.status === 404);
 }
+
+describe('the bytes on disk are owner-only', () => {
+  // QUICKSTART calls confirming the bucket is private "the one
+  // security-sensitive decision Filelayer cannot make for you" and gives
+  // concrete R2 and S3 instructions. It said nothing for THIS adapter -- the
+  // one recommended for a single node and the one `examples/starter/` defaults
+  // to -- and the default was 0755/0644. Object keys are `orgId/fileId` and P2
+  // states they are not secrets, so a world-readable data directory is a public
+  // bucket on local disk.
+  //
+  // Unlike a bucket ACL, this one the library CAN make, so it does. Found by an
+  // agent deploying the published 0.11.0 with only the tarball to read.
+  const mode = async (p: string) => (await stat(p)).mode.toString(8).slice(-4);
+
+  /** The three levels FsStorage creates, plus the object. */
+  async function levels(root: string): Promise<string[]> {
+    const a = (await readdir(root))[0]!;
+    const b = (await readdir(join(root, a)))[0]!;
+    const f = (await readdir(join(root, a, b)))[0]!;
+    return [
+      await mode(root),
+      await mode(join(root, a)),
+      await mode(join(root, a, b)),
+      await mode(join(root, a, b, f)),
+    ];
+  }
+
+  it('creates its own directories 0700 and its objects 0600', async () => {
+    const root = join(await mkdtemp(join(tmpdir(), 'fl-mode-')), 'data');
+    const s = new FsStorage(root);
+    await s.put('org/file', bytes('payroll'), 'text/plain');
+    assert.deepEqual(await levels(root), ['0700', '0700', '0700', '0600']);
+  });
+
+  it('TIGHTENS a directory the operator pre-created world-readable', async () => {
+    // The case that actually happens: a deploy script makes the data directory
+    // under the default umask of 022, so it is 0755 before we ever see it.
+    const root = join(await mkdtemp(join(tmpdir(), 'fl-mode-')), 'data');
+    await mkdir(root, { recursive: true, mode: 0o755 });
+    await chmod(root, 0o755);
+    assert.equal(await mode(root), '0755', 'fixture did not reproduce the umask case');
+
+    const s = new FsStorage(root);
+    await s.put('org/file', bytes('payroll'), 'text/plain');
+    assert.deepEqual(await levels(root), ['0700', '0700', '0700', '0600']);
+  });
+
+  it('is not relying on the process umask to get there', async () => {
+    // `mkdir`'s mode is masked by the umask, so a permissive umask would
+    // silently widen it if the mode were the only mechanism.
+    const previous = process.umask(0o000);
+    try {
+      const root = join(await mkdtemp(join(tmpdir(), 'fl-mode-')), 'data');
+      const s = new FsStorage(root);
+      await s.put('org/file', bytes('payroll'), 'text/plain');
+      assert.deepEqual(await levels(root), ['0700', '0700', '0700', '0600']);
+    } finally {
+      process.umask(previous);
+    }
+  });
+
+  it('removes group and other bits WITHOUT granting the owner anything new', async () => {
+    // The precise property, and the one a flat `chmod 0o700` would break while
+    // still passing every test above: 0550 must become 0500, not 0700. The
+    // owner deliberately has no write bit and the library must not hand itself
+    // one -- it only ever takes bits away.
+    //
+    // A mutation changing `chmod(path, owner)` to `chmod(path, 0o700)` survived
+    // the suite until this test existed, because the only other directory
+    // fixture was 0500, where the guard short-circuits before the argument
+    // matters.
+    if (process.getuid?.() === 0) return; // mode bits do not bind root
+    const root = join(await mkdtemp(join(tmpdir(), 'fl-mode-')), 'data');
+    const s = new FsStorage(root);
+    // A first put, so the directory exists and the root stays writable. If the
+    // ROOT were the one at 0550, `mkdir` would fail for want of a write bit
+    // before the mode logic ran at all -- which is what a first draft of this
+    // test got wrong.
+    await s.put('org/file', bytes('payroll'), 'text/plain');
+    const h = createHash('sha256').update('org/file', 'utf8').digest('hex');
+    const leaf = join(root, h.slice(0, 2), h.slice(2, 4));
+
+    // Group-readable AND owner-read-only. `current & 0o700` is 0500; a flat
+    // 0700 would hand the owner a write bit it does not have.
+    await chmod(leaf, 0o550);
+    await s.put('org/file', bytes('again'), 'text/plain').catch(() => {});
+    assert.equal(await mode(leaf), '0500', 'the owner was granted a bit it did not have');
+  });
+
+  it('still reads back what it wrote', async () => {
+    // The permission is worth nothing if it locks out the owning process.
+    const root = join(await mkdtemp(join(tmpdir(), 'fl-mode-')), 'data');
+    const s = new FsStorage(root);
+    await s.put('org/file', bytes('payroll'), 'text/plain');
+    assert.equal(text((await s.get('org/file'))!), 'payroll');
+    const listed = await s.list('');
+    assert.equal(listed.entries.length, 1);
+  });
+});

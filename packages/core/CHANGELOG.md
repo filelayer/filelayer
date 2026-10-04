@@ -25,6 +25,116 @@ Nothing yet.
 
 ---
 
+## [0.12.0] — 2026-10-04
+
+Two security fixes and four documents that were sending readers the wrong way.
+Every one of them was found the same way, and not by a review: four integration
+tasks were handed to agents that had **only the published `0.11.0` tarball** —
+no repository, no access to this codebase — and what they got stuck on was read
+as the deliverable. Each finding below was then reproduced here before it was
+fixed.
+
+> ### ⚠️ If you run `FsStorage` on `0.11.0` or earlier, fix the permissions
+>
+> The data directory was created `0755` and objects `0644`. On a shared host
+> that is **a public bucket on local disk**: object keys are `orgId/fileId` and
+> are explicitly not secrets, so any local user could read every tenant's files.
+>
+> ```bash
+> chmod -R go-rwx /path/to/your/filelayer-data
+> ```
+>
+> No advisory: it needs local shell access on the machine running your
+> application, and no deployments are known. But it is a one-line fix and
+> leaving it undone costs you the privacy of every file.
+
+### Fixed — `FsStorage` wrote world-readable bytes
+
+Directories are now `0700` and objects `0600`, and the mode is set explicitly
+rather than left to `mkdir`'s argument, which the umask masks.
+
+**It only ever removes bits.** The first version chmod'd each level to a flat
+`0700`, which tightened `0755` correctly and also **widened** anything
+stricter — a test that locks a directory to `0500` to prove a failed write
+leaves the previous object intact started passing the write instead, because the
+library had silently re-granted itself permission an operator had deliberately
+removed. The mode is now `current & 0o700`: group and other lose everything, the
+owner keeps exactly what was set.
+
+QUICKSTART §7 calls confirming the bucket is private "the one security-sensitive
+decision Filelayer cannot make for you" and gives concrete R2 and S3
+instructions. It said nothing for `FsStorage` — the adapter recommended for a
+single node and the one `examples/starter/` defaults to. It does now, and notes
+the one part that is still yours: who **owns** the directory.
+
+### Fixed — the facade did not audit an unknown identifier
+
+Six places resolved `as:` and threw `404 unknown_actor` before the engine ran,
+so **nothing was recorded**. The same refusal through the core API writes an
+event. Measured on the published `0.11.0`:
+
+```
+facade, unknown external id  -> 404 unknown_actor   deny events 0 -> 0
+core, well-formed actor uuid -> 404 no_membership   deny events 0 -> 1
+```
+
+`schema.sql` says, in a comment on the very column that makes the fix possible,
+that `audit_event.actor_id` carries no foreign key **precisely** so a caller
+presenting an unregistered id is still recorded, and calls the alternative "a
+serious defect in two directions at once". The engine honours that. The
+facade — the surface everybody uses — reopened the hole one level up, in the id
+space an attacker actually sweeps, because it is the one they can guess. An
+unknown **org** name was equally invisible; both are recorded now.
+
+The event goes to the system chain (no tenant can be confirmed without building
+a tenant oracle), keeps `unknown_actor` as its reason rather than degrading to
+`no_membership`, and carries the presented id in `context`, truncated. The
+response is unchanged: still an opaque `404`.
+
+### Fixed — four documents that sent readers the wrong way
+
+Worse than a gap, because a gap makes you look while an instruction makes you
+act:
+
+- **`llms.txt` said `put({ owner })` auto-registers that user as a member.**
+  False since `0.6.0` for an org that already exists: it is `403
+  no_membership`. The agent building a multi-tenant integration hit it, and
+  nothing in the package explained it — the behaviour change is in the
+  changelog and in a source comment, and the two documents an agent reads first
+  were never updated.
+- **Three places said direct upload was S3/R2-only and `FsStorage` "cannot
+  sign".** False since `0.10.0`. The agent asked to build a browser upload
+  nearly reported the task impossible, because the guide `llms.txt` points at
+  says it cannot be done.
+- **`examples/starter/` mounted the anonymous route at `/public` and advertised
+  `GET /public/:id`**, while `publicUrl()` builds `/f` unconditionally. The
+  example got away with it only because it never called `publish()`; the moment
+  you do, the URL the library hands your user 404s against your own server. The
+  example now agrees with the library.
+- **QUICKSTART said "two operational jobs are yours to schedule."** There are
+  four, and the list now also names the thing no job reclaims: an expired file
+  keeps its row, the row keeps referencing its key, and `collectStorageOrphans()`
+  skips any key a row references — so expired bytes are paid for indefinitely
+  unless you sweep them yourself.
+
+### Still open, recorded rather than fixed
+
+The same exercise named two gaps that are design work rather than patches, and
+they are in the README limitations:
+
+- **No public resolver from an external id to an internal `actorId`**, while
+  `deliveryHandler`'s `principal` callback requires one. Our own authenticated
+  read route cannot be mounted without harvesting ids from `FileRecord.ownerId`
+  and `GrantSummary.subjectId`. `createActor()` is a bare insert and throws on a
+  second call, so an auto-provisioned identity's id cannot be recovered at all.
+- **"Send these headers verbatim" is unimplementable in a browser** for
+  `content-length`: it is a forbidden header name and `fetch` computes it. The
+  pin still holds, because the computed value is the honest one, but the
+  instruction as written cannot be followed by the client the feature exists
+  for.
+
+---
+
 ## [0.11.0] — 2026-10-04
 
 > ### ⚠️ Read this if you are on `0.10.0` or earlier and you share files with named users

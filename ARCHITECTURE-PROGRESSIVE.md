@@ -2,12 +2,12 @@
 
 **Does the Filelayer primitive scale DOWN as well as up?**
 
-Current as of `@filelayer/core` **0.11.0**. Everything below is measured against
+Current as of `@filelayer/core` **0.12.0**. Everything below is measured against
 code in this repository, from the repository root. Reproduce with:
 
 ```bash
 npm run bootstrap                  # npm ci in packages/core
-npm test                     # 497 tests, 0 failures
+npm test                     # 509 tests, 0 failures
 npm run dev:fracture               # the four §2 experiments
 npm run loc:tiers                  # LOC per tier (§4.2)
 node benchmark/count-loc.mjs       # LOC for the full-vault implementations
@@ -15,7 +15,7 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **497 / 497 passing** across 120 suites:
+**Test status.** `npm test` is **509 / 509 passing** across 122 suites:
 
 | Suite | Tests |
 |---|---|
@@ -24,11 +24,12 @@ npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 | `test/range.test.ts` — byte ranges, 206/416, and the download-cap rule | 30 |
 | `test/direct-upload.test.ts` — pre-authorized direct upload, against real SigV4 | 47 |
 | `test/revocation-plural.test.ts` — a grant id is not a person's access | 15 |
+| `test/facade-blind-spots.test.ts` — an unknown identifier is refused AND recorded | 7 |
 | everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 329 |
-| **total** | **497** |
+| **total** | **509** |
 
-Eight of the 497 are the contention tests, which need a real PostgreSQL with
-two backends. CI provides one, so all 497 run there; on a machine without one
+Eight of the 509 are the contention tests, which need a real PostgreSQL with
+two backends. CI provides one, so all 509 run there; on a machine without one
 they skip and you will see **397 passing, 8 skipped**. Two further suites — the
 live S3 ones — skip unless the five `FILELAYER_TEST_S3_*` variables are set.
 
@@ -414,7 +415,7 @@ the developer to decide who may read a file, at any tier.
 
 Written by the people who built it. This section is meant to be quoted against
 Filelayer, and it is kept current on purpose: every item below was re-checked
-against `0.11.0`.
+against `0.12.0`.
 
 1. **Public, high-volume, cacheable media — avatars, marketing images, product
    photos, anything a CDN should serve.** The default byte path proxies every

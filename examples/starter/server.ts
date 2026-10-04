@@ -269,9 +269,23 @@ async function readBody(req: IncomingMessage): Promise<Uint8Array> {
  */
 const shareRoute = shareDownloadRoute(fl, { prefix: '/d' });
 
-/** Public files, served as an anonymous caller: only published files resolve. */
+/**
+ * Public files, served as an anonymous caller: only published files resolve.
+ *
+ * MOUNTED AT `/f` AND NOT `/public`, AND THAT IS NOT A STYLE CHOICE.
+ * `files.publish()` and `publicUrl()` build their URL as `<baseUrl>/f/<id>`,
+ * unconditionally. This example mounted `/public` and advertised
+ * `GET /public/:id` in its README, and got away with it only because it never
+ * called `publish()` -- the moment you do, the URL the library hands your user
+ * 404s against your own server.
+ *
+ * Found by an engineer deploying the published `0.11.0` with nothing but the
+ * tarball: they added a publish endpoint, copied this prefix, and the type
+ * declaration on `publicUrl` was the only thing in the package that warned
+ * them. The example now agrees with the library instead of contradicting it.
+ */
 const publicRoute = fileDownloadRoute(fl, {
-  prefix: '/public',
+  prefix: '/f',
   disposition: 'inline',
   principal: () => ({ actorId: null }),
 });

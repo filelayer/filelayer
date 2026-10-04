@@ -157,7 +157,8 @@ attachments, exports, anything with a share link you might later want back.
 |---|---|---|
 | Public images at CDN volume | a CDN-backed bucket | Default delivery proxies every byte. Redirect delivery (below) removes the proxy but is opt-in and narrow. |
 | Video or audio at scale | a CDN / media service | Seeking works — the shipped routes answer `Range` with `206`. But default delivery proxies every byte through your server, and there is no CDN on that path. |
-| Direct browser → storage upload on the filesystem adapter | presigned S3 directly | `createUpload()` needs an adapter that can sign, so it works on S3 and R2 and not on `FsStorage`. |
+| Browser → storage upload with your server out of the data path, in development | a real bucket | `FsStorage` mints the credential so the client code is identical, but it receives the bytes itself and says so: `via: 'server'`. Only S3 and R2 keep your process out of the path. |
+| Resumable or multipart direct upload | presigned S3 directly / tus | One signed PUT, one object. There is no resume. |
 | Thumbnails, transforms, format negotiation | Cloudinary / imgix | We have none. |
 
 We publish the full comparison, including the cases we lose, in
@@ -390,7 +391,7 @@ README says is the most valuable thing you can send us.
 ## Limitations
 
 Restated here so they are not only in an appendix. Each one is current as of
-`0.11.0`; where a limitation has been lifted since an earlier release, the
+`0.12.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **`Range` is answered, with three documented edges.** The shipped routes

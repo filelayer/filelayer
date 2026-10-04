@@ -58,11 +58,11 @@
  */
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { Readable } from 'node:stream';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 // -----------------------------------------------------------------------------
 // The interface
@@ -622,6 +622,80 @@ export class FsStorage implements StorageAdapter {
    * limit, at the cost of a directory you cannot read with `ls`. The key is
    * stored in the object's own header so the mapping stays inspectable.
    */
+  /**
+   * `mkdir -p`, with every level it creates owner-only.
+   *
+   * -------------------------------------------------------------------------
+   * THE DEFECT THIS CLOSES
+   * -------------------------------------------------------------------------
+   *
+   * `mkdir(dir, { recursive: true })` created the data root and both hash
+   * levels at **0755**, and `writeFile` created objects at **0644**. Measured
+   * on the published `0.11.0` under the default umask of 022, with `FsStorage`
+   * creating the directory itself:
+   *
+   *     data root      0755
+   *       b5/          0755
+   *         <hash>.obj 0644   <- readable by every local user
+   *
+   * QUICKSTART calls confirming the bucket is private "the one
+   * security-sensitive decision Filelayer cannot make for you", and gives
+   * concrete instructions for R2 and for S3. It says nothing for `FsStorage`,
+   * which is the adapter recommended for a single node and the one
+   * `examples/starter/` defaults to. The reasoning transfers exactly: object
+   * keys are `orgId/fileId` and P2 states they are not secrets, so a
+   * world-readable data directory is a public bucket on local disk and defeats
+   * every property on the front page.
+   *
+   * Unlike a bucket ACL, this one Filelayer CAN make, so it does.
+   *
+   * -------------------------------------------------------------------------
+   * WHY `chmod` AND NOT JUST `{ mode }`
+   * -------------------------------------------------------------------------
+   *
+   * `mkdir`'s mode is masked by the process umask: `mode & ~umask`. 0700 under
+   * 022 is still 0700, so the happy path would look fine -- and under a
+   * permissive umask it would not be, silently. A file permission that is a
+   * security property must not depend on the operator's umask, so it is set
+   * explicitly afterwards.
+   *
+   * -------------------------------------------------------------------------
+   * IT ONLY EVER REMOVES BITS
+   * -------------------------------------------------------------------------
+   *
+   * The first version of this method chmod'd every level to a flat `0o700`,
+   * which tightened 0755 correctly and also **widened** anything stricter. A
+   * test that locks a directory to `0o500` to prove a failed write leaves the
+   * previous object intact started passing the write instead: the library had
+   * silently re-granted itself permission an operator had deliberately removed.
+   * That is the same mistake as trusting the umask, in the other direction.
+   *
+   * So the mode is `current & 0o700`: group and other lose everything, the
+   * owner keeps exactly what the operator set. 0755 becomes 0700, 0500 stays
+   * 0500, and 0700 needs no syscall at all.
+   *
+   * `recursive: true` does not report which levels it created, so each level is
+   * walked. An EPERM is swallowed: a directory somebody else owns is a
+   * deployment the operator arranged, and failing a put over it would be worse
+   * than leaving a mode we did not set.
+   */
+  async #mkdirPrivate(dir: string): Promise<void> {
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    // From the root down, so a parent is tightened before a child is reachable.
+    const rel = dir.startsWith(this.#root) ? dir.slice(this.#root.length) : '';
+    let path = this.#root;
+    for (const part of ['', ...rel.split(sep).filter(Boolean)]) {
+      path = part === '' ? path : join(path, part);
+      try {
+        const current = (await stat(path)).mode & 0o777;
+        const owner = current & 0o700;
+        if (current !== owner) await chmod(path, owner);
+      } catch {
+        // Not ours to fix. See the note above.
+      }
+    }
+  }
+
   #paths(key: string): { dir: string; obj: string } {
     const h = createHash('sha256').update(key, 'utf8').digest('hex');
     const dir = join(this.#root, h.slice(0, 2), h.slice(2, 4));
@@ -747,7 +821,7 @@ export class FsStorage implements StorageAdapter {
   ): Promise<StoragePutResult> {
     const bytes = body instanceof Uint8Array ? body : await collectStream(body);
     const { dir, obj } = this.#paths(key);
-    await mkdir(dir, { recursive: true });
+    await this.#mkdirPrivate(dir);
     const etag = `"${createHash('md5').update(bytes).digest('hex')}"`;
     const tmp = `${obj}.${randomUUID()}.tmp`;
     try {
@@ -757,6 +831,19 @@ export class FsStorage implements StorageAdapter {
           { key, contentType, etag, bytes: bytes.byteLength, at: new Date().toISOString() },
           bytes,
         ),
+        // OWNER ONLY, AND SET ON THE TEMP FILE RATHER THAN AFTER THE RENAME,
+        // so the object is never momentarily world-readable at its final path.
+        // `rename(2)` preserves the mode.
+        //
+        // The mode argument is sufficient here and no `chmod` follows it. A
+        // first version added one, on the belief that a permissive umask could
+        // widen this -- which is backwards: the umask only CLEARS bits, so
+        // `0o600` is an upper bound and the worst a umask can do is make the
+        // file stricter than asked. A mutation removing that chmod survived the
+        // suite, which is how the mistaken belief was caught. Directories are
+        // the opposite case and do need work after creation, because they can
+        // already exist; see `#mkdirPrivate`.
+        { mode: 0o600 },
       );
       await rename(tmp, obj);
     } finally {

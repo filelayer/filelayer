@@ -744,13 +744,51 @@ taken on the write path and that the encoding round-trips — the multi-process
 argument rests on Postgres advisory-lock semantics, not on an executed test.
 `packages/core/SEMANTICS.md` says the same thing at more length.
 
-**Two operational jobs are yours to schedule.** Neither runs on its own:
+### The `FsStorage` equivalent of "make the bucket private"
+
+The step above tells you to confirm your bucket is private, and calls it the one
+security-sensitive decision Filelayer cannot make for you. On `FsStorage` it
+**can**, so it does: the data directory and every level under it are kept
+owner-only (`0700`), and objects are written `0600`. It only ever removes group
+and other bits -- a directory you deliberately made read-only stays read-only.
+
+Until `0.12.0` they were `0755` and `0644`, which on a shared host is a public
+bucket on local disk: object keys are `orgId/fileId` and are explicitly not
+secrets, so any local user could read every tenant's files. If you deployed an
+earlier version, fix the existing tree once:
+
+```bash
+chmod -R go-rwx /path/to/your/filelayer-data
+```
+
+What is still yours: the directory's **owner**. Run the application as a user
+nobody else can become, and do not put the data directory somewhere a backup
+agent or a log shipper reads as a different account.
+
+**Four operational jobs are yours to schedule.** None of them runs on its own,
+and this list said "two" until `0.12.0` — an engineer deploying the published
+`0.11.0` had to grep the type declarations to find out it was wrong:
 
 - `collectStorageOrphans()` — bytes are written before metadata commits, so a
-  crash in between leaves an unreferenced object.
+  crash in between leaves an unreferenced object. Defaults to `dryRun: true`.
+- `collectUploadReservations()` — only if you enabled `directUpload`. A
+  reservation nobody redeems is a `pending` row no read path can see, so nothing
+  will draw your attention to it. Also `dryRun: true` by default.
+- `verifyAuditChain(principal, orgId)`, and **pin the result somewhere outside
+  this database.** Replay detects edits and interior deletions, not truncation
+  of the most recent events; comparing `lastId`/`lastHash` against a copy you
+  keep elsewhere is what closes that. It is authorized per org and there is no
+  "verify every tenant" call, so you need the list of orgs and an admin
+  identity for each. A tenant you forget is silently unmonitored.
 - Rate limiting at ingest, per project and per source address, before a request
   reaches the engine. Denials are audited by design (P5), so an unauthenticated
   caller who can reach your API can grow a tenant's chain.
+
+**And one thing no job reclaims.** `expiresIn` is a gate on use, not a
+deletion: an expired file keeps its row, the row keeps referencing its key, and
+`collectStorageOrphans()` skips any key a row still references. So expired
+bytes are paid for indefinitely. If you set `expiresIn`, you need your own
+sweep that calls `delete()` on files past their expiry.
 
 ---
 

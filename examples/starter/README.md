@@ -37,7 +37,7 @@ handler with the wrong arity.
 | `DELETE /shares/:grantId` | revoke it; the next request fails |
 | `GET /orgs/:org/audit` | the access log, denials included |
 | `GET /d/:secret` | the share route, mounted from the library |
-| `GET /public/:id` | published files, served as an anonymous caller |
+| `GET /f/:id` | published files, served as an anonymous caller. `/f` because that is what `publicUrl()` builds; see the note in `server.ts`. |
 
 Identity comes from an `X-User` header so that `curl` is enough to try it. In a
 real application that line reads your session.
