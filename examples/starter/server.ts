@@ -34,6 +34,7 @@ import {
   FsStorage,
   S3Storage,
   loadSchemaSql,
+  schemaStatus,
   fileDownloadRoute,
   shareDownloadRoute,
   type StorageAdapter,
@@ -125,10 +126,12 @@ const storage = storageFromEnv();
 /**
  * APPLY THE SCHEMA ONCE, AND SURVIVE TWO SERVERS BOOTING AT THE SAME MOMENT.
  *
- * `schema.sql` is not idempotent: run it twice and the second run dies on
- * `relation "project" already exists`. There is no `schema_version` table and no
- * migrate command, which MIGRATIONS.md states plainly, so the check is yours to
- * write. This is what it looks like.
+ * `schema.sql` creates a database from nothing and refuses one that already has
+ * it. Since `0.15.0` `schemaStatus(db)` answers the question this function used
+ * to answer by hand -- where is this database, and what is outstanding -- so
+ * the counting below is gone and the three honest answers come from the
+ * library. Deciding what to DO about each one is still yours, because applying
+ * migrations is your runner's job and not ours.
  *
  * The advisory lock is not decoration. Without it, two processes starting
  * together both see an empty database, both apply the schema, and one of them
@@ -137,27 +140,16 @@ const storage = storageFromEnv();
  * connection until released, so the second process waits, then finds the tables
  * and does nothing.
  *
- * WHY IT COUNTS NINE TABLES INSTEAD OF LOOKING FOR ONE. The first version asked
+ * THE `partial` CASE IS WHY THIS IS NOT A ONE-LINE CHECK, and it was found
+ * here first. An earlier version of this file asked
  * `to_regclass('public.project')`, and `project` is a table name an application
- * is entirely likely to already have. Point this at the database your app
- * already uses and it prints "already applied", binds the port, and then returns
- * 500 from every route forever, because none of the OTHER eight tables exist.
- * Counting turns that into the three honest answers: none of them, so apply;
- * all of them, so do nothing; some of them, which is either a half-applied
- * schema or a name collision with your own tables, and in both cases the only
- * safe move is to stop and say which it is.
+ * is entirely likely to already have. Pointed at the database your app already
+ * uses, that printed "already applied", bound the port, and then returned 500
+ * from every route forever, because none of the OTHER eight tables existed.
+ * `schemaStatus` counts all nine for the same reason -- it made the same
+ * mistake on its first draft -- and reports `partial`, which is either a
+ * half-applied schema or a name collision and in both cases needs a human.
  */
-const SCHEMA_TABLES = [
-  'project',
-  'org',
-  'actor',
-  'membership',
-  'file',
-  'file_grant',
-  'audit_event',
-  'usage_daily',
-  'file_owning_user_daily',
-];
 
 async function applySchemaIfAbsent(pool: Pool): Promise<void> {
   const client = await pool.connect();
@@ -165,38 +157,58 @@ async function applySchemaIfAbsent(pool: Pool): Promise<void> {
     // Any constant works, as long as every process that might apply this schema
     // uses the same one. 0x F11E1A would be cute; a plain number is readable.
     await client.query('SELECT pg_advisory_lock($1)', [8451201]);
-    const { rows } = await client.query<{ name: string }>(
-      `SELECT c.relname AS name
-         FROM pg_class c
-         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public'
-          AND c.relkind = 'r'
-          AND c.relname = ANY($1::text[])`,
-      [SCHEMA_TABLES],
-    );
-    const present = rows.map((r) => r.name);
 
-    if (present.length === SCHEMA_TABLES.length) {
-      console.log('schema: already applied');
+    const status = await schemaStatus(client);
+
+    if (status.state === 'current') {
+      console.log(`schema: already at version ${status.at}`);
       return;
     }
-    if (present.length > 0) {
-      const missing = SCHEMA_TABLES.filter((tbl) => !present.includes(tbl));
-      console.error(
-        `\n  This database has ${present.length} of Filelayer's ${SCHEMA_TABLES.length} tables, ` +
-          `which is neither empty nor ready.\n\n` +
-          `  present: ${present.join(', ')}\n` +
-          `  missing: ${missing.join(', ')}\n\n` +
-          `  Two things look like this. Either the schema was applied and then\n` +
-          `  partly changed, in which case MIGRATIONS.md has the SQL -- or those\n` +
-          `  tables are YOUR application's and the names collide, in which case\n` +
-          `  give Filelayer its own schema or its own database. Applying\n` +
-          `  schema.sql now would fail halfway through either way.\n`,
-      );
-      process.exit(1);
+
+    if (status.state === 'absent') {
+      console.log('schema: applying for the first time');
+      await client.query(await loadSchemaSql());
+      return;
     }
-    console.log('schema: applying for the first time');
-    await client.query(await loadSchemaSql());
+
+    // EVERYTHING ELSE STOPS THE BOOT, and says which thing it is. A server that
+    // starts against a database it does not understand binds the port and then
+    // fails every request, which is a worse outage than not starting.
+    const explain: Record<string, string> = {
+      partial:
+        `  present: ${status.tables?.present.join(', ')}\n` +
+        `  missing: ${status.tables?.missing.join(', ')}\n\n` +
+        `  Either the schema was applied and then partly changed, in which case\n` +
+        `  MIGRATIONS.md has the SQL -- or those tables are YOUR application's and\n` +
+        `  the names collide, in which case give Filelayer its own schema or its own\n` +
+        `  database. Applying schema.sql now would fail part-way either way.`,
+      unversioned:
+        `  This database predates 0.15.0, so it has no version row. It looks like\n` +
+        `  version ${status.inferred?.version}, because: ${status.inferred?.because}.\n\n` +
+        `  ${status.inferred?.stampWith}`,
+      behind:
+        `  This database is at version ${status.at} and this build expects ` +
+        `${status.expects}.\n\n  Apply, in order:\n` +
+        status.outstanding
+          .map(
+            (m) =>
+              `    migrations/${m.file}` +
+              `${m.transactional ? '' : '   (NOT in a transaction: it uses CONCURRENTLY)'}` +
+              `${m.requiresDecision ? '   (READ IT FIRST: it makes a choice for you)' : ''}`,
+          )
+          .join('\n'),
+      ahead:
+        `  This database is at version ${status.at} and this build only understands\n` +
+        `  ${status.expects}. Upgrade @filelayer/core rather than downgrading the\n` +
+        `  database; there are no down migrations.`,
+    };
+
+    console.error(
+      `\n  Filelayer schema: ${status.state}\n\n${explain[status.state] ?? ''}\n\n` +
+        `  Nothing has been changed. Applying migrations is your migration runner's\n` +
+        `  job, not this file's -- see MIGRATIONS.md section 2.\n`,
+    );
+    process.exit(1);
   } finally {
     await client.query('SELECT pg_advisory_unlock_all()').catch(() => {});
     client.release();

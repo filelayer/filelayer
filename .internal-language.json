@@ -57,7 +57,10 @@
     "packages/core/docs/**/*.mjs",
     "TRUST.md",
     "packages/core/TRUST.md",
-    "packages/core/SECURITY.md"
+    "packages/core/SECURITY.md",
+    "packages/core/migrations/*.sql",
+    "packages/core/migrations/*.md",
+    "packages/core/migrations/*.json"
   ],
   "includeNote": [
     "`include` is the surface a stranger reads: everything in the npm tarball,",

@@ -15,12 +15,12 @@ this page said until 4 October.
 
 | | |
 |---|---|
-| Version | 0.14.0 — alpha |
+| Version | 0.15.0 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
 | Load measured | First run 4 October 2026, `benchmark/load/RESULTS.md`. One machine, no network, no object store, seconds per cell |
-| Tests | 531, of which 523 on Node 22 / 24 / 26 and all 531 against a real PostgreSQL, every commit |
+| Tests | 547, of which 539 on Node 22 / 24 / 26 and all 547 against a real PostgreSQL, every commit |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
@@ -128,8 +128,18 @@ matter:
   that has never been seen to fail is indistinguishable from one that cannot.
   What is still unproven is everything above those four properties: this is a
   floor, not a sweep.
-- The schema may change before 1.0. One breaking change has already shipped, with
-  a migration.
+- The schema may change before 1.0, and **has changed six times**, not once —
+  this line said "one breaking change" until `0.15.0` and was understating what
+  adopting us costs. `MIGRATIONS.md` has ten numbered entries, six of them with
+  forward SQL. Since `0.15.0` each of those has a runnable file under
+  `migrations/`, and CI applies it to the previous release's schema and fails
+  the build unless the result matches the next release's, on real PostgreSQL.
+  Two of the ten cannot be verified: they predate the oldest tag in the
+  repository, so there is no earlier schema to apply them to.
+- Until `0.15.0` there was no way to tell which schema version a database held.
+  `filelayer_schema_version` and `schemaStatus(db)` close that. There is still
+  **no migration runner, and there will not be one** — applying the files is
+  your runner's job, which is a product position rather than a gap.
 
 ---
 

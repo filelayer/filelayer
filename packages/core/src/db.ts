@@ -272,6 +272,256 @@ export async function loadSchemaSql(): Promise<string> {
   return readFile(SCHEMA_PATH, 'utf8');
 }
 
+/** The directory holding the migration files and their manifest. */
+export const MIGRATIONS_PATH = join(HERE, '..', 'migrations');
+
+/**
+ * The schema version this build of the library expects.
+ *
+ * It is the entry number in MIGRATIONS.md, not the package version, and it does
+ * not move when a release ships without a schema change -- which is most of
+ * them. `tools/check-migrations.mjs` fails the build if this disagrees with
+ * `migrations/manifest.json`.
+ */
+export const SCHEMA_VERSION = 10;
+
+export interface MigrationRef {
+  /** The entry number in MIGRATIONS.md. */
+  version: number;
+  /** Filename under `MIGRATIONS_PATH`. */
+  file: string;
+  title: string;
+  /** False when the file contains `CONCURRENTLY` and must not be wrapped. */
+  transactional: boolean;
+  /** True when the file makes a choice on your behalf. Read it before running. */
+  requiresDecision: boolean;
+}
+
+export interface SchemaStatus {
+  /**
+   * `current`      the database is at the version this library expects.
+   * `behind`       it is older; `outstanding` lists what to apply.
+   * `ahead`        it is newer than this library understands. Upgrade the
+   *                library rather than downgrading the database.
+   * `unversioned`  every filelayer table is there and the version table is
+   *                not, so it was created before 0.15.0. `inferred` says what
+   *                it looks like and how to stamp it.
+   * `partial`      SOME of the tables are present. Either a half-applied schema
+   *                or a name collision with your own tables; `tables` says
+   *                which. Applying `schema.sql` would fail part-way either way.
+   * `absent`       no filelayer schema here. Apply `schema.sql`.
+   */
+  state: 'current' | 'behind' | 'ahead' | 'unversioned' | 'partial' | 'absent';
+  /** `max(version)`, or null when there is no version table. */
+  at: number | null;
+  /** `SCHEMA_VERSION`. */
+  expects: number;
+  /** Migrations this library ships that the database has not recorded. */
+  outstanding: MigrationRef[];
+  /** Present only for `unversioned`. */
+  inferred?: {
+    version: number;
+    /** The object that establishes it, named so you can check the inference. */
+    because: string;
+    /** The statement that records it. Read it before you run it. */
+    stampWith: string;
+  };
+  /** Newest first. Empty unless the version table exists. */
+  history: { version: number; introducedIn: string; appliedAt: Date; note: string }[];
+  /** Which of the schema's tables are present. Populated for `partial`. */
+  tables?: { present: string[]; missing: string[] };
+}
+
+/**
+ * The tables `schema.sql` creates, excluding the version table.
+ *
+ * COUNTED, NOT PROBED ONE BY ONE, and the reason is a defect
+ * `examples/starter/server.ts` had already found and fixed before this function
+ * existed. Asking `to_regclass('project')` alone looks sufficient and is not:
+ * `project` is a table name an application is entirely likely to already have.
+ * Pointed at the database your own app uses, a single probe answers
+ * "unversioned, looks like version 1", which is wrong in the direction that
+ * does damage -- it invites you to run a migration against somebody else's
+ * tables. Counting turns it into three honest answers: none of them, all of
+ * them, or some of them, which needs a human.
+ */
+const SCHEMA_TABLES = [
+  'project',
+  'org',
+  'actor',
+  'membership',
+  'file',
+  'file_grant',
+  'audit_event',
+  'usage_daily',
+  'file_owning_user_daily',
+] as const;
+
+/**
+ * WHERE IS THIS DATABASE, AND WHAT IS OUTSTANDING. Read-only.
+ *
+ * -----------------------------------------------------------------------------
+ * WHY IT IS READ-ONLY, AND WILL STAY THAT WAY
+ * -----------------------------------------------------------------------------
+ *
+ * This function issues no DDL and never will. A library that alters the
+ * adopter's database because something imported it is exactly what a compliance
+ * reviewer refuses, and `MIGRATIONS.md` section 2 has always said the same
+ * thing for a different reason: your application owns a migration runner and
+ * ours has no business competing with it. So this answers the question and
+ * hands you the statements. Running them is yours.
+ *
+ * -----------------------------------------------------------------------------
+ * WHY IT EXISTS
+ * -----------------------------------------------------------------------------
+ *
+ * Three independent evaluations of the published package in October 2026, each
+ * given nothing but the tarball, wrote back the same sentence: there is no
+ * version table, so you cannot tell which version a database is at. One added
+ * the consequence -- "track the version yourself until the promised table
+ * lands". This is the table, and this is the read.
+ *
+ * THE `unversioned` CASE IS THE INTERESTING ONE. A database created before
+ * `0.15.0` has the tables and no version row, and its version cannot be read
+ * off it -- only inferred from which objects are present. So the inference is
+ * reported WITH the object it rests on, so you can check it, and the stamp is
+ * handed to you as SQL rather than executed.
+ */
+export async function schemaStatus(db: Queryable): Promise<SchemaStatus> {
+  const manifest = JSON.parse(
+    await readFile(join(MIGRATIONS_PATH, 'manifest.json'), 'utf8'),
+  ) as {
+    expects: number;
+    migrations: {
+      version: number;
+      file: string;
+      title: string;
+      transactional: boolean;
+      requiresDecision: boolean;
+    }[];
+  };
+  const all: MigrationRef[] = manifest.migrations.map((m) => ({
+    version: m.version,
+    file: m.file,
+    title: m.title,
+    transactional: m.transactional,
+    requiresDecision: m.requiresDecision,
+  }));
+
+  const exists = async (name: string): Promise<boolean> => {
+    const { rows } = await db.query<{ ok: boolean }>(
+      `SELECT to_regclass($1) IS NOT NULL AS ok`,
+      [name],
+    );
+    return Boolean(rows[0]?.ok);
+  };
+
+  if (!(await exists('filelayer_schema_version'))) {
+    const { rows: tableRows } = await db.query<{ name: string }>(
+      `SELECT c.relname AS name
+         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname = ANY($1::text[])`,
+      [[...SCHEMA_TABLES]],
+    );
+    const present = tableRows.map((r) => r.name).sort();
+    const missing = SCHEMA_TABLES.filter((t) => !present.includes(t));
+
+    if (present.length === 0) {
+      return { state: 'absent', at: null, expects: SCHEMA_VERSION, outstanding: [], history: [] };
+    }
+    if (missing.length > 0) {
+      return {
+        state: 'partial',
+        at: null,
+        expects: SCHEMA_VERSION,
+        outstanding: [],
+        history: [],
+        tables: { present, missing: [...missing] },
+      };
+    }
+    // THE MARKERS, newest first. Each is the object that migration created, so
+    // the highest one present is the newest migration this database has had.
+    const markers: { version: number; because: string; sql: string }[] = [
+      { version: 8, because: `constraint file_upload_reservation_complete`,
+        sql: `SELECT 1 FROM pg_constraint WHERE conname = 'file_upload_reservation_complete'` },
+      { version: 6, because: `trigger audit_no_truncate on audit_event`,
+        sql: `SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+               WHERE c.relname = 'audit_event' AND t.tgname = 'audit_no_truncate'` },
+      { version: 5, because: `index grant_file_subject_type_idx`,
+        sql: `SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+               AND indexname = 'grant_file_subject_type_idx'` },
+      { version: 3, because: `constraint grant_password_only_on_link`,
+        sql: `SELECT 1 FROM pg_constraint WHERE conname = 'grant_password_only_on_link'` },
+      { version: 1, because: `table project`, sql: `SELECT 1 FROM pg_tables
+               WHERE schemaname = 'public' AND tablename = 'project'` },
+    ];
+    let found = markers[markers.length - 1]!;
+    for (const m of markers) {
+      const { rows } = await db.query(m.sql);
+      if (rows.length > 0) {
+        found = m;
+        break;
+      }
+    }
+    return {
+      state: 'unversioned',
+      at: null,
+      expects: SCHEMA_VERSION,
+      outstanding: all.filter((m) => m.version > found.version),
+      inferred: {
+        version: found.version,
+        because: found.because,
+        // THE STAMP IS MIGRATION 010's JOB, so this points at the file rather
+        // than duplicating its SQL -- a second copy of a statement that creates
+        // a table is a second thing to keep correct.
+        stampWith:
+          `apply migrations/010-schema-version.sql, which creates the version table and ` +
+          `records version 10. It refuses unless the database is already at the 0.14.0 ` +
+          `schema, so apply anything in \`outstanding\` first.`,
+      },
+      history: [],
+    };
+  }
+
+  const { rows } = await db.query<{
+    version: number;
+    introduced_in: string;
+    applied_at: Date;
+    note: string;
+  }>(
+    `SELECT version, introduced_in, applied_at, note
+       FROM filelayer_schema_version ORDER BY version DESC`,
+  );
+  const history = rows.map((r) => ({
+    version: Number(r.version),
+    introducedIn: r.introduced_in,
+    appliedAt: r.applied_at,
+    note: r.note,
+  }));
+  const at = history.length ? Math.max(...history.map((h) => h.version)) : null;
+
+  // NO ROWS IN THE VERSION TABLE is a real state and it is not `current`. It
+  // means the table exists and nothing stamped it, which `schema.sql` cannot
+  // produce -- its INSERT is the last statement in the file and the whole file
+  // is one implicit transaction -- so somebody created the table by hand or
+  // deleted the row.
+  if (at === null) {
+    return { state: 'unversioned', at: null, expects: SCHEMA_VERSION, outstanding: all,
+      inferred: { version: 0, because: 'the version table exists and is empty',
+        stampWith: 'establish which version this database actually is before stamping anything; an empty version table is not a state schema.sql can produce.' },
+      history };
+  }
+
+  const state = at === SCHEMA_VERSION ? 'current' : at < SCHEMA_VERSION ? 'behind' : 'ahead';
+  return {
+    state,
+    at,
+    expects: SCHEMA_VERSION,
+    outstanding: all.filter((m) => m.version > at),
+    history,
+  };
+}
+
 /**
  * The one package this library needs and deliberately does not depend on.
  *

@@ -36,35 +36,164 @@ There is no migration framework and there is not going to be one. Filelayer
 owns a schema; your application owns a migration runner. Wrapping ours in a tool
 that competes with yours would be the wrong kind of opinionated.
 
-What we ship instead:
+That position has not changed. What changed on 4 October 2026 is that the
+things it leaves you to do are now artifacts you can run and read, rather than
+prose you have to transcribe.
 
-1. **`schema.sql` is the whole, current, canonical schema.** It is idempotent
-   only in the sense that it creates a database from nothing. It is not a
-   sequence of migrations and it will not upgrade an existing database.
-   Programmatic access, so a runner does not hardcode a path:
+### What we ship
+
+1. **`schema.sql` is the whole, current, canonical schema.** It creates a
+   database from nothing. It is not a sequence of migrations and will not
+   upgrade an existing one — and since `0.15.0` it **refuses, on its first
+   statement, with the version it found**, instead of dying part-way on
+   `relation "project" already exists`. Programmatic access, so a runner does
+   not hardcode a path:
 
    ```ts
    import { SCHEMA_PATH, loadSchemaSql } from '@filelayer/core';
    ```
 
-2. **Every breaking schema change gets a numbered entry in this file** with the
-   forward SQL, written to be pasted into your own migration tool, plus what it
-   costs and what it breaks in the API.
+2. **`migrations/` holds one `.sql` file per schema change**, numbered by its
+   entry in this document, each with exactly one runnable path and a
+   precondition guard that refuses if the database is not in the state it
+   expects. `migrations/manifest.json` is machine-readable so your runner can
+   enumerate them, and carries the two flags that matter: `transactional`
+   (false where the file needs `CREATE INDEX CONCURRENTLY`, which Postgres
+   refuses inside a transaction) and `requiresDecision` (true where the file
+   makes a choice on your behalf and you should read it first).
 
-3. **The version in `package.json` is the contract.** If your installed schema
-   was applied from `0.3.x`, entries above `0.3` apply to you in order.
+3. **`schemaStatus(db)` tells you where a database is**, what this library
+   expects, and which files are outstanding. It is read-only and will stay that
+   way; see §2a.
 
-### Recording which version your database is at
+4. **Every numbered entry below is still here, with its reasoning**, which is
+   what the files do not carry: what the defect was, what it cost, and what it
+   breaks in the API.
 
-There is no `schema_version` table today, and that is a gap we are naming rather
-than hiding: right now you have to know which release you applied. If you have
-just deployed, record it yourself:
+### What the prose promised and did not deliver
+
+Until `0.15.0` this section said every entry carried "the forward SQL, written
+to be pasted into your own migration tool". **That was not true of the thirteen
+fenced SQL blocks in this file**, and it is recorded here because the honest
+version of a migration document is one that says which of its scripts have been
+run:
+
+* **Entry 3 pasted verbatim does both things.** Its forward block carries
+  `2a. Revoke them (recommended)` **and** `2b. ...keep them open and drop the
+  inert hash` as consecutive `UPDATE`s. A runner executes both — revoking every
+  password-bearing grant and then stripping the hashes off what it just revoked.
+* **Entry 8 pasted verbatim creates the same index twice.** Three of its four
+  blocks are three formulations of the same change, offered so you could pick
+  by table size, not three steps.
+* **Entry 6's second block carries a `<your_app_role>` placeholder** and is a
+  privilege recommendation rather than part of the migration.
+* **Entries 1, 4 and 5 are not complete scripts.** Entry 1 ends by telling you
+  to copy three blocks "verbatim from `schema.sql`" at a version this tree no
+  longer contains. Entry 4 has no forward DDL at all; its only block is a
+  detection `SELECT`. Entry 5's second block is an `EXPLAIN`.
+* **Entries 5 and 8 need `CREATE INDEX CONCURRENTLY`**, so a runner that wraps
+  each file in a transaction — most do, by default — fails on them.
+
+Nothing in that was false sentence by sentence. Every block is labelled where it
+sits. The trap was the instruction plus the shape, and nobody had walked into it
+only because **nobody has ever run these migrations: there are no installs.**
+
+### The files have been executed
+
+`npm run check:migrations` creates a real PostgreSQL, applies `schema.sql` as it
+was at the previous release, applies the migration file, and compares the
+resulting structure — columns, every constraint definition, every index
+definition, enum labels in order, triggers, rules, function signatures — against
+the next release's `schema.sql` applied fresh. A file that does not reproduce
+the next schema fails the build. It also applies each file twice and requires
+the second run to be refused by the file's own guard.
+
+Real PostgreSQL rather than the WASM engine the rest of the suite uses, because
+`CONCURRENTLY` needs more than one backend.
+
+| | from | to | verified |
+|---|---|---|---|
+| `003-password-only-on-link.sql` | `v0.4.4` | `v0.5.0` | yes |
+| `005-grant-indexes.sql` | `v0.5.0` | `v0.5.1` | yes |
+| `006-audit-no-truncate.sql` | `v0.6.0` | `v0.7.0` | yes |
+| `008-upload-reservation.sql` | `v0.9.0` | `v0.10.0` | yes |
+| `010-schema-version.sql` | `v0.14.0` | current | yes |
+
+**Entries 1 and 2 have no file and cannot be verified.** They predate `v0.4.4`,
+the oldest tag in the repository, so there is no previous schema to apply them
+to. Entries 4, 7 and 9 changed no schema. The gaps in the numbering are the
+entries that cost you nothing.
+
+---
+
+## 2a. Recording which version your database is at
+
+`filelayer_schema_version` lands in `0.15.0`. This section used to say "there is
+no `schema_version` table today, and that is a gap we are naming rather than
+hiding", and told you to write `COMMENT ON SCHEMA public` yourself. Three
+independent evaluations of the published package, each holding nothing but the
+tarball, named that gap back at us. Here is the table.
 
 ```sql
-COMMENT ON SCHEMA public IS 'filelayer schema 0.3.0';
+CREATE TABLE filelayer_schema_version (
+    version         integer PRIMARY KEY,
+    introduced_in   text NOT NULL,
+    applied_at      timestamptz NOT NULL DEFAULT now(),
+    note            text NOT NULL
+);
 ```
 
-A real version table lands before 1.0.
+**One row per applied change, not a single mutable value.** `max(version)` is
+where the database is; the rows below it are how it got there, which is the
+question an operator has during an incident.
+
+**`version` is the entry number in this document**, deliberately, rather than a
+second numbering nobody asked for. **`introduced_in` is the release that
+introduced that schema version**, not the release you installed, so it does not
+move when a later release ships without a schema change — which is most of them.
+
+A database created from `schema.sql` carries **one row**, noting that it was
+created whole and never ran migrations 1 through 9. Writing nine rows with
+invented `applied_at` timestamps would be a fabricated history in the one table
+whose entire value is being believed.
+
+### Asking
+
+```ts
+import { schemaStatus } from '@filelayer/core';
+
+const s = await schemaStatus(pool);
+// { state: 'behind', at: 6, expects: 10,
+//   outstanding: [ { version: 8, file: '008-upload-reservation.sql', ... }, ... ],
+//   history: [ { version: 6, introducedIn: '0.7.0', appliedAt: ..., note: ... } ] }
+```
+
+`state` is one of:
+
+| | |
+|---|---|
+| `current` | at the version this library expects |
+| `behind` | older; `outstanding` lists the files to apply, in order |
+| `ahead` | newer than this library understands. Upgrade the library rather than downgrading the database |
+| `unversioned` | the tables are there and the version table is not, so it predates `0.15.0`. `inferred` says which version it looks like **and names the object that establishes it**, so you can check the inference rather than trust it |
+| `absent` | no filelayer schema. Apply `schema.sql` |
+
+**`schemaStatus()` issues no DDL and never will.** A library that alters your
+database because something called a status function is what a compliance
+reviewer refuses, and it would contradict the first sentence of §2. It answers
+the question and hands you the statements; running them is yours. There is a
+test that records every statement it issues and fails on any write.
+
+### Upgrading a database created before `0.15.0`
+
+`schemaStatus()` will report `unversioned` and infer a version from the objects
+present. Apply anything in `outstanding` before `010-schema-version.sql`, which
+refuses unless the database is already at the `0.14.0` schema — because a
+database stamped `10` that is actually missing migration `008` would then be
+skipped by every later check, and the next upgrade would fail somewhere
+unrelated.
+
+---
 
 ### The order that is safe
 
@@ -780,6 +909,57 @@ On a sound chain the number is identical, so a caller that only reads `checked`
 when `valid` is true needs no change. A caller using it as a row count for a
 tenant should query `audit_event` for that instead; `checked` now means what its
 name says.
+
+---
+
+### Entry 10 — `0.14.0` → `0.15.0`: the schema version table
+
+#### What changed in the schema
+
+One table, and nothing else touched.
+
+```sql
+CREATE TABLE filelayer_schema_version (
+    version         integer PRIMARY KEY,
+    introduced_in   text NOT NULL,
+    applied_at      timestamptz NOT NULL DEFAULT now(),
+    note            text NOT NULL
+);
+```
+
+`schema.sql` creates it and stamps it as its last statement, so **a new install
+needs nothing from this entry.** The file at `migrations/010-schema-version.sql`
+is for a database created before `0.15.0`, and it refuses unless that database is
+already at the `0.14.0` schema.
+
+Full reasoning in §2a. In short: §2a used to say there was no version table and
+call it a gap it was naming rather than hiding; three evaluations of the
+published package named it back; this is the table.
+
+#### What you do have to change
+
+Nothing in your code. `schemaStatus(db)` is new and additive, nothing was
+removed, and no existing call changes shape.
+
+Two behaviours moved, and both are improvements you may be relying on the old
+version of:
+
+* **`schema.sql` now refuses a database that already has it**, on the first
+  statement, with the version it found and a pointer to `migrations/`. It used
+  to get as far as `CREATE TABLE project` and fail there. If your first-boot
+  code catches the duplicate-table error by SQLSTATE, `42P07` is still what it
+  gets. If it matches on the MESSAGE, that message has changed.
+* **A pre-`0.15.0` database gets a different refusal** — the tables are present
+  and the version table is not — telling you to call `schemaStatus(db)` rather
+  than rerun the file.
+
+#### The one thing worth doing by hand
+
+Nothing requires it, but it is cheap and it is what the table is for: after
+stamping, record the head somewhere outside this database on a schedule, the
+same way the README's limitations section asks you to pin the audit chain head.
+A version row in the database you are migrating is evidence about that database
+held by that database.
 
 ---
 

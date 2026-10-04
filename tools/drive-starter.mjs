@@ -232,6 +232,15 @@ try {
   if (!up) die('boot', `nothing answered on ${base} after 20s\n\n${log.join('')}`);
   console.log('ok');
 
+  // WHAT THE SERVER SAID ABOUT THE SCHEMA, on success as well as on failure.
+  // The rest of its output is suppressed unless something breaks, and that was
+  // right until the schema decision moved into `schemaStatus()`: hiding the one
+  // line that says which branch first boot took makes this harness unable to
+  // show the thing it is now verifying.
+  for (const line of log.join('').split('\n')) {
+    if (/^schema:|^storage:/.test(line.trim())) console.log(`    ${line.trim()}`);
+  }
+
   // ---------------------------------------------------------------------------
   // 4. Drive it.
   // ---------------------------------------------------------------------------

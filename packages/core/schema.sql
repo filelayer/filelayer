@@ -98,7 +98,80 @@
 -- rules, advisory locks and transactional semantics).
 -- =============================================================================
 
+-- -----------------------------------------------------------------------------
+-- REFUSE TO RUN AGAINST A DATABASE THAT ALREADY HAS THIS SCHEMA
+-- -----------------------------------------------------------------------------
+--
+-- This file creates a database from nothing. It is NOT a sequence of migrations
+-- and it will not upgrade an existing one -- a position MIGRATIONS.md states and
+-- this project is keeping, because your application already owns a migration
+-- runner and ours has no business competing with it.
+--
+-- What changed on 4 October 2026 is the failure mode. Running this file against
+-- a database that already had it died in the middle, on
+-- `relation "project" already exists`, which tells an operator that something is
+-- duplicated but not what to do, and leaves them reading a 2,000-line file to
+-- find out how far it got. Three independent evaluators holding only the
+-- published package wrote the same sentence: there is no version table, so you
+-- cannot tell which version a database is at.
+--
+-- So: two guards, and they fail on the FIRST statement with the answer in the
+-- message. Postgres wraps a multi-statement simple query in one implicit
+-- transaction, so a refusal here leaves the database exactly as it was.
+DO $$
+DECLARE at_version integer;
+BEGIN
+    IF to_regclass('filelayer_schema_version') IS NOT NULL THEN
+        SELECT max(version) INTO at_version FROM filelayer_schema_version;
+        RAISE EXCEPTION
+            'filelayer: this database is already at schema version %. schema.sql creates a database from nothing and will not upgrade one -- apply the files under migrations/ with your own runner (see MIGRATIONS.md section 2), or point this at an empty database.',
+            at_version
+            USING ERRCODE = 'duplicate_table';
+    END IF;
+
+    -- THE TABLES WITHOUT THE VERSION TABLE means a database created before
+    -- 0.14.0, which is the one case that needs a human decision rather than a
+    -- rerun: which version it is at cannot be read off the database, only
+    -- inferred from which columns and constraints are present.
+    IF to_regclass('project') IS NOT NULL THEN
+        RAISE EXCEPTION
+            'filelayer: this database has the filelayer tables but no filelayer_schema_version table, so it was created before 0.15.0. Call schemaStatus(db) to see which version it looks like and the one statement that stamps it; do not rerun schema.sql.'
+            USING ERRCODE = 'duplicate_table';
+    END IF;
+END $$;
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- -----------------------------------------------------------------------------
+-- SCHEMA VERSION -- which release's schema this database is holding
+-- -----------------------------------------------------------------------------
+--
+-- MIGRATIONS.md promised this table "before 1.0" and named its absence as a gap
+-- rather than hiding it. Three evaluations in a row named the same gap back, so
+-- here it is.
+--
+-- ONE ROW PER APPLIED CHANGE, not a single mutable value. `max(version)` is
+-- where the database is; the rows below it are how it got there, which is the
+-- question an operator actually has during an incident.
+--
+-- `version` IS THE ENTRY NUMBER IN MIGRATIONS.md, deliberately, rather than a
+-- second numbering nobody asked for. Entries that changed no schema (7 and 9)
+-- have no file and no row, so the gaps in this table are the entries that cost
+-- you nothing -- which is easier to verify than a renumbering would be.
+--
+-- `introduced_in` is the `@filelayer/core` release that introduced that schema
+-- version, NOT the release you installed. It does not change when a later
+-- release ships without a schema change, which is why this file can carry it
+-- literally and a version-stamp gate does not have to rewrite it every week.
+CREATE TABLE filelayer_schema_version (
+    version         integer PRIMARY KEY,
+    introduced_in   text NOT NULL,
+    applied_at      timestamptz NOT NULL DEFAULT now(),
+    -- How this row came to exist, in words, because "applied by a migration" and
+    -- "created whole from schema.sql" are different facts about the same version
+    -- and an operator reading a chain of them deserves to know which.
+    note            text NOT NULL
+);
 
 -- -----------------------------------------------------------------------------
 -- PROJECT -- the customer's application (P8)
@@ -1350,3 +1423,19 @@ CREATE TABLE file_owning_user_daily (
     actor_id        uuid NOT NULL REFERENCES actor(id) ON DELETE CASCADE,
     PRIMARY KEY (org_id, day, actor_id)
 );
+
+-- -----------------------------------------------------------------------------
+-- THE STAMP, LAST
+-- -----------------------------------------------------------------------------
+--
+-- Deliberately the final statement in this file. If anything above it fails,
+-- there is no version row, and `schemaStatus()` reports "tables present, no
+-- version" -- which is true -- rather than a version the database never
+-- reached.
+--
+-- ONE ROW, NOT TEN. A database created from this file never ran migrations 1
+-- through 9, and writing nine rows with invented `applied_at` timestamps would
+-- be a fabricated history in a table whose whole purpose is to be believed. The
+-- note says which it is.
+INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
+    (10, '0.15.0', 'created whole from schema.sql at this version; migrations 1-9 were never run against this database because it never held an earlier schema');

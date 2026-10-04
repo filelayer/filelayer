@@ -1,0 +1,105 @@
+{
+  "$comment": [
+    "Machine-readable so your migration runner can enumerate these instead of a",
+    "human transcribing SQL out of a Markdown file. Nothing here applies",
+    "anything: `MIGRATIONS.md` section 2's position is unchanged, which is that",
+    "your application owns the runner.",
+    "",
+    "`version` is the entry number in MIGRATIONS.md. Entries 1 and 2 predate the",
+    "oldest tag in the repository, so there is no previous schema to apply them",
+    "to and no way to verify them; they have no file. Entries 4, 7 and 9 changed",
+    "no schema. The gaps are the entries that cost you nothing."
+  ],
+  "expects": 10,
+  "migrations": [
+    {
+      "version": 3,
+      "file": "003-password-only-on-link.sql",
+      "from": "0.4.x",
+      "to": "0.5.0",
+      "title": "a password is refused where it was never enforced",
+      "transactional": true,
+      "requiresDecision": true,
+      "decision": "This file REVOKES grants whose password never protected anything, which is the recommended answer. The alternative -- keep them readable, drop the inert hash -- is commented at the bottom of the file. MIGRATIONS.md Entry 3 presents both as consecutive statements; running that block does both.",
+      "verifiedAgainst": {
+        "from": "v0.4.4",
+        "to": "v0.5.0"
+      }
+    },
+    {
+      "version": 5,
+      "file": "005-grant-indexes.sql",
+      "from": "0.5.0",
+      "to": "0.5.1",
+      "title": "every index on file_grant becomes reachable",
+      "transactional": false,
+      "requiresDecision": false,
+      "note": "CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY cannot run inside a transaction. A runner that wraps each file in one must not wrap this.",
+      "verifiedAgainst": {
+        "from": "v0.5.0",
+        "to": "v0.5.1"
+      }
+    },
+    {
+      "version": 6,
+      "file": "006-audit-no-truncate.sql",
+      "from": "0.6.0",
+      "to": "0.7.0",
+      "title": "TRUNCATE on the audit log is refused",
+      "transactional": true,
+      "requiresDecision": false,
+      "note": "Entry 6's REVOKE block is a privilege recommendation with a placeholder, not part of this file. Do it anyway, in your own grants management.",
+      "verifiedAgainst": {
+        "from": "v0.6.0",
+        "to": "v0.7.0"
+      }
+    },
+    {
+      "version": 8,
+      "file": "008-upload-reservation.sql",
+      "from": "0.9.0",
+      "to": "0.10.0",
+      "title": "two columns, an index and a constraint, for pre-authorized upload",
+      "transactional": false,
+      "requiresDecision": false,
+      "note": "Nullable columns with no default, so no table rewrite and no backfill. CONCURRENTLY and NOT VALID + VALIDATE throughout, which is correct on an empty table as well as a large one.",
+      "verifiedAgainst": {
+        "from": "v0.9.0",
+        "to": "v0.10.0"
+      }
+    },
+    {
+      "version": 10,
+      "file": "010-schema-version.sql",
+      "from": "0.14.0",
+      "to": "0.15.0",
+      "title": "the schema version table",
+      "transactional": true,
+      "requiresDecision": false,
+      "note": "Only for a database created before 0.15.0. schema.sql creates and stamps this table itself.",
+      "verifiedAgainst": {
+        "from": "v0.14.0",
+        "to": "HEAD"
+      }
+    }
+  ],
+  "unverifiable": [
+    {
+      "version": 1,
+      "from": "0.2.x",
+      "to": "0.3.0",
+      "why": "predates the oldest tag (v0.4.4), so there is no previous schema to apply it to. Entry 1 is also not a complete script: it ends by telling you to copy three blocks verbatim from the 0.3.0 schema.sql, which the tree no longer contains."
+    },
+    {
+      "version": 2,
+      "from": "0.3.0",
+      "to": "0.4.0",
+      "why": "predates the oldest tag (v0.4.4)."
+    }
+  ],
+  "noSchemaChange": [
+    4,
+    7,
+    9
+  ]
+}

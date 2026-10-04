@@ -25,6 +25,140 @@ Nothing yet.
 
 ---
 
+## [0.15.0] — 2026-10-05
+
+**You can now tell which schema version a database is at, and the forward SQL
+is a file that has been executed rather than prose that never had been.**
+
+This closes the last engineering item on the list an evaluating agent produced
+on 5 September and which has driven the roadmap since: *"a committed
+schema-migration story at 1.0"*. Both of the October runs that chose Filelayer
+for the contracts scenario named it, unprompted, as the first thing to fix.
+
+### Added — `filelayer_schema_version`, and `schemaStatus(db)`
+
+`schema.sql` creates the table and stamps it as its last statement.
+`schemaStatus(db)` reports where a database is, what this build expects, and
+which files under `migrations/` are outstanding:
+
+```ts
+const s = await schemaStatus(pool);
+// { state: 'behind', at: 6, expects: 10, outstanding: [ ... ], history: [ ... ] }
+```
+
+`state` is `current`, `behind`, `ahead`, `unversioned`, `partial` or `absent`.
+
+- **`version` is the entry number in `MIGRATIONS.md`**, not the package
+  version, and `introduced_in` is the release that introduced it, so neither
+  moves when a release ships without a schema change. Most do not.
+- **One row per applied change**, not a single mutable value. `max(version)` is
+  where the database is; the rows below it are how it got there, which is the
+  question an operator has during an incident.
+- **A database created from `schema.sql` carries one row**, noting that it was
+  created whole and never ran migrations 1 through 9. Nine invented `applied_at`
+  timestamps would be a fabricated history in the one table whose entire value
+  is being believed.
+- **`schemaStatus()` issues no DDL and never will.** There is a test that
+  records every statement it issues and fails on any write. A library that
+  alters your database because something called a status function is what a
+  compliance reviewer refuses, and it would contradict the position
+  `MIGRATIONS.md` §2 has always taken: your application owns the migration
+  runner. There is still no runner here and there is not going to be one.
+
+### Added — `migrations/`, one file per change, each one executed in CI
+
+`npm run check:migrations` starts a real PostgreSQL, applies `schema.sql` as it
+was at the previous release read out of git, applies the migration file, and
+compares the result — columns, every constraint definition, every index
+definition, enum labels in order, triggers, rules, function signatures — against
+the next release's `schema.sql` applied fresh. Then it applies the file a second
+time and requires the file's own guard to refuse. Five files, five hops, all
+green: `v0.4.4`→`v0.5.0`, `v0.5.0`→`v0.5.1`, `v0.6.0`→`v0.7.0`,
+`v0.9.0`→`v0.10.0`, `v0.14.0`→current.
+
+Real PostgreSQL rather than the WASM engine the rest of the suite uses: PGlite
+has one backend and answers `CREATE INDEX CONCURRENTLY` with `tuple
+concurrently updated`, and two of the five files need it.
+
+### Fixed — the forward SQL in MIGRATIONS.md was a trap
+
+§2 promised "the forward SQL, written to be pasted into your own migration
+tool". Checked against the thirteen fenced SQL blocks in that file, it was not
+kept:
+
+- **Entry 3 pasted verbatim does both things.** Its block carries
+  `2a. Revoke them (recommended)` **and** `2b. ...keep them open and drop the
+  inert hash` as consecutive `UPDATE`s, so a runner revokes every
+  password-bearing grant and then strips the hashes off what it just revoked.
+- **Entry 8 pasted verbatim creates the same index twice.** Three of its four
+  blocks are three formulations of one change, offered so you could pick by
+  table size.
+- **Entry 6's second block carries a `<your_app_role>` placeholder.**
+- **Entries 1, 4 and 5 are not complete scripts.** Entry 1 ends by telling you
+  to copy three blocks "verbatim from `schema.sql`" at a version this tree no
+  longer contains; entry 4 has no forward DDL at all, only a detection `SELECT`;
+  entry 5's second block is an `EXPLAIN`.
+- **Entries 5 and 8 need `CONCURRENTLY`**, which Postgres refuses inside a
+  transaction, so a runner that wraps each file in one — most do — fails.
+
+Nothing in that was false sentence by sentence. Every block is labelled where it
+sits. The trap was the instruction plus the shape, and **nobody had walked into
+it only because nobody has ever run these migrations: there are no installs.**
+
+That is the third time this project has found the same defect — a claim with no
+runner behind it. `examples/starter/verify.mjs` shipped as a test suite nothing
+executed. Every documentation gate ran beside the repository rather than inside
+an install. And the forward SQL was prose that had never been SQL. The fix was
+the same all three times.
+
+§2 is rewritten to say what exists, and §2a documents the table. Entries 1 and
+2 are marked unverifiable: they predate `v0.4.4`, the oldest tag, so there is no
+earlier schema to apply them to.
+
+### Fixed — `schema.sql` refuses rather than dying part-way
+
+Two guards, on the first statement, inside the implicit transaction Postgres
+wraps a multi-statement query in, so a refusal changes nothing:
+
+- Already has the schema → names the version it found and points at
+  `migrations/`. It used to reach `CREATE TABLE project` and fail there.
+- Has the tables and no version table → says the database predates `0.15.0` and
+  to call `schemaStatus(db)`.
+
+`42P07` is still the SQLSTATE, so a first-boot check matching on that is
+unaffected. One matching on the message text is not.
+
+### Fixed — `schemaStatus` repeated a defect the starter had already fixed
+
+Its first draft decided `absent` by probing for the `project` table alone.
+`project` is a table name an application is entirely likely to already have, so
+pointed at the database your own app uses it answered "unversioned, looks like
+version 1" — which invites running a migration against somebody else's tables.
+`examples/starter/server.ts` had found and fixed exactly this, in a comment
+warning about exactly this, and the warning did not travel to the library an
+hour later. It counts all nine tables now and reports `partial`, which is either
+a half-applied schema or a name collision and in both cases needs a human.
+
+### Fixed — two public surfaces understated how often the schema has changed
+
+README and `TRUST.md` both said the schema "has already had one breaking
+change". It has changed six times; `MIGRATIONS.md` has ten numbered entries.
+Found by the outside analyst reading only the published package, and it was
+understating the cost of adopting us, which is the direction that matters.
+
+### Changed — `examples/starter` uses `schemaStatus()` for first boot
+
+The example readers copy now shows the intended pattern: ask, and act on the
+answer. `current` and `absent` proceed; `partial`, `unversioned`, `behind` and
+`ahead` stop the boot and print which one it is, with the files to apply and
+their `transactional` and `requiresDecision` flags. A server that starts against
+a database it does not understand binds the port and then fails every request,
+which is a worse outage than not starting.
+
+547 tests, 0 failures. 16 gates green.
+
+---
+
 ## [0.14.0] — 2026-10-04
 
 **Six defects, found by giving the published tarball to an outside analyst and

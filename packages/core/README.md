@@ -42,11 +42,13 @@
 > that only appear under real traffic, real object stores and real connection
 > pools are unmeasured. Expect to be the person who finds them.
 >
-> **The schema may change before 1.0.** It has already had one breaking change.
-> Any `0.x` → `0.(x+1)` may break the API, the schema, or both. Every break is
+> **The schema may change before 1.0, and has done so six times.** Any
+> `0.x` → `0.(x+1)` may break the API, the schema, or both. Every break is
 > in the [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md)
-> and every schema break ships with SQL in
-> [MIGRATIONS.md](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md),
+> and every schema break has a numbered entry in
+> [MIGRATIONS.md](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md)
+> with a runnable file under `migrations/` that CI applies to the previous
+> release's schema and checks produces the next one,
 > but there is no long-term support branch and no backporting.
 >
 > **Use it** to evaluate the model, to build something that is not yet carrying
@@ -274,7 +276,7 @@ running in-process, so there is no daemon and no Docker:
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 531 tests
+npm test                 # the security property suite, 547 tests
 npm run typecheck
 npm run verify           # typecheck + tests + build + doc and language checks
 npm run example:tier1    # a public avatar, on :3000
@@ -296,9 +298,27 @@ Pre-1.0. The version is `0.MINOR.PATCH` and the promise is deliberately narrow:
   action, no signature change.
 - There is no long-term support branch and no backporting before 1.0.
 
-The schema has already had one breaking change (per-project identifier
-namespaces). It is written up, with the SQL, as the first entry in
-[`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md).
+**The schema has changed six times**, not once. This section said "one breaking
+change (per-project identifier namespaces)" until `0.15.0`, counting the first
+and largest; `MIGRATIONS.md` has ten numbered entries of which six carry
+forward SQL. Budget an upgrade against that file, not against this paragraph —
+the discrepancy was found by an outside analyst reading only the published
+package, and it was understating the cost of adopting us.
+
+**Which version a database is at is now readable off the database.** Since
+`0.15.0` `schema.sql` creates `filelayer_schema_version` and stamps it, and
+`schemaStatus(db)` reports where a database is, what this build expects, and
+which files under `migrations/` are outstanding. It issues no DDL: your
+application owns the migration runner, which is the position
+[`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md)
+§2 has always taken and is keeping.
+
+<!-- doccheck: skip reason="takes the `pg.Pool` you own; `pg` is deliberately not a dependency of this package, so there is nothing here to construct one from" -->
+
+```ts
+import { schemaStatus } from '@filelayer/core';
+const s = await schemaStatus(pool);   // { state: 'current', at: 10, expects: 10, ... }
+```
 
 ---
 
@@ -391,7 +411,7 @@ README says is the most valuable thing you can send us.
 ## Limitations
 
 Restated here so they are not only in an appendix. Each one is current as of
-`0.14.0`; where a limitation has been lifted since an earlier release, the
+`0.15.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **`Range` is answered, with three documented edges.** The shipped routes

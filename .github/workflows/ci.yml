@@ -468,6 +468,53 @@ jobs:
           FILELAYER_STARTER_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/filelayer_verify
 
   # ---------------------------------------------------------------------------
+  # THE MIGRATION FILES, EXECUTED.
+  #
+  # `MIGRATIONS.md` promised "the forward SQL, written to be pasted into your own
+  # migration tool" and, until 5 October 2026, did not keep it: entry 3 pasted
+  # verbatim revoked every password-bearing grant AND stripped the hashes, entry
+  # 8 created the same index twice, entry 6 carried a `<placeholder>`, and three
+  # entries were not complete scripts. Nobody had noticed because nobody has
+  # ever run them -- there are no installs.
+  #
+  # This applies each file under `packages/core/migrations/` to `schema.sql` as
+  # it was at the PREVIOUS release, read out of git, and fails the build unless
+  # the result matches the NEXT release's schema structurally. Then it applies
+  # each file a second time and requires the file's own guard to refuse.
+  #
+  # `fetch-depth: 0` IS LOAD-BEARING. The harness reads historical `schema.sql`
+  # with `git show v0.4.4:packages/core/schema.sql`, and the default shallow
+  # clone has neither the tags nor the objects, so this job fails with a
+  # confusing git error rather than a migration error.
+  #
+  # Its own PostgreSQL, started by the harness rather than taken from a service
+  # container, because it creates and drops a database per hop.
+  # ---------------------------------------------------------------------------
+  migrations:
+    name: the migration files, executed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: packages/core/package-lock.json
+
+      - name: Install
+        working-directory: packages/core
+        run: npm ci
+
+      - name: The comparator can tell two schemas apart, and one from itself
+        run: npm run check:migrations -- --self-test
+
+      - name: Every migration produces the schema it claims
+        run: npm run check:migrations
+
+  # ---------------------------------------------------------------------------
   # CONTENTION. The properties that only exist when two backends collide.
   #
   # The rest of the suite runs on PGlite, which is PostgreSQL 17 compiled to
