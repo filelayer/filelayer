@@ -123,6 +123,44 @@ to: a guide has to be useful to somebody who never installs this, the code in it
 is executed on every commit, and where it states a number a script beside it
 reproduces that number.
 
+### Added — the fourth guide: deleting files and orphaned objects
+
+Chosen on evidence rather than taste. The visibility baseline taken the same day
+showed that narrow, technical phrasings land closer to our territory than broad
+category questions, so this one is as narrow as the set gets.
+
+The well-covered answer — Postgres and S3 do not share a transaction, run a
+sweeper — is right, and the guide credits it. What it adds is the two things
+after it.
+
+**Which delete goes first.** Object-then-row leaves a row pointing at nothing,
+which every read turns into an error and which cannot be repaired because the
+bytes are gone. Row-then-object leaves an orphan, which costs money and is
+reclaimable. Fail in the direction you can recover from.
+
+**The sweeper deletes on the strength of an absence**, and a partial answer is
+indistinguishable from one. Measured, with the same short listing fed to both
+natural shapes of the job:
+
+| | |
+|---|---|
+| storage-driven ("for each OBJECT, is there a row?") | deletes nothing, hides every orphan |
+| DB-driven ("for each ROW, is the object there?") | **three live files erased**, job reports success |
+
+Same bug, opposite catastrophe, depending on which way the loop runs. That
+framing came out of running both; it was not what the guide set out to say.
+
+`catch { return [] }` is how it reaches production, because it looks defensive.
+The guide notes that a storage adapter in this repository did exactly that for a
+directory it could not read, and that a review caught it rather than a test.
+
+Also measured: an upload in flight is indistinguishable from an orphan, and a
+sweeper without a grace period deletes a file while the user is creating it.
+
+The guarded version — a listing that reports completeness, errors that
+propagate, and a grace period — refuses all three broken inputs and loses
+nothing.
+
 ### Changed — the homepage no longer leads with the numbers sitting at zero
 
 The trust section opened on a table whose second, third and fourth rows were

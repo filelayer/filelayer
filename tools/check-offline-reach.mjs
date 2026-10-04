@@ -71,6 +71,7 @@ const ANCHORS = [
   { path: 'docs/guides/expiring-and-revocable-file-links.md', min: 6000, why: 'the first guide, named by llms.txt' },
   { path: 'docs/guides/private-file-uploads.md', min: 6000, why: 'the second guide, named by llms.txt' },
   { path: 'docs/guides/multi-tenant-file-access.md', min: 6000, why: 'the third guide, named by llms.txt' },
+  { path: 'docs/guides/deleting-files-and-orphaned-objects.md', min: 6000, why: 'the fourth guide, named by llms.txt' },
   { path: 'SEMANTICS.md', min: 8000, why: 'the reference for every edge case' },
   { path: 'MIGRATIONS.md', min: 2000, why: 'what a schema change costs, linked from QUICKSTART' },
   { path: 'CHANGELOG.md', min: 2000, why: 'what changed and which versions are unsafe' },

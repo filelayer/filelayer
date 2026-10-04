@@ -315,9 +315,10 @@ namespaces). It is written up, with the SQL, as the first entry in
 - [`docs/guides/`](https://github.com/filelayer/filelayer/tree/main/docs/guides) — answers to
   questions people actually ask, written to be useful whether or not you use this
   library. The code in them is executed in CI.
-  Three so far: why a presigned URL cannot be taken back, why a presigned PUT
-  does not limit what gets uploaded, and why Row-Level Security does not stop a
-  cross-tenant grant from being written.
+  Four so far: why a presigned URL cannot be taken back, why a presigned PUT
+  does not limit what gets uploaded, why Row-Level Security does not stop a
+  cross-tenant grant from being written, and why the job that reclaims orphaned
+  objects is the most dangerous one in the system.
 - [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md) — the exact behaviour of every edge: liveness, delegation, deletion, the audit chain
 - [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) — how schema changes are delivered and what the pre-1.0 compatibility promise is
 - [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) — the real history, including the security defects we found in ourselves

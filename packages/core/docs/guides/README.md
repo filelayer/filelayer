@@ -54,6 +54,18 @@ including from a role with `BYPASSRLS`.
 
 → [`multi-tenant-file-access.proof.mjs`](multi-tenant-file-access.proof.mjs)
 
+### [Deleting files and orphaned objects](deleting-files-and-orphaned-objects.md)
+
+Postgres and S3 do not share a transaction, so every delete is two deletes. The
+well-covered answer is a sweeper job. This is about what comes after: **which
+delete goes first** (the row, because an orphan is recoverable and a row
+pointing at nothing is not), and why **the sweeper is the most dangerous job
+you will write** — it deletes on the strength of an absence, and a partial
+listing is indistinguishable from one. Measured: the same short listing hides
+orphans in a storage-driven sweep and destroys live rows in a DB-driven one.
+
+→ [`deleting-files-and-orphaned-objects.proof.mjs`](deleting-files-and-orphaned-objects.proof.mjs)
+
 ---
 
 ## Running the proofs
@@ -65,6 +77,7 @@ PostgreSQL as an ordinary user process and cleans up after itself.
 npm run bootstrap        # npm ci in packages/core, once
 node docs/guides/expiring-and-revocable-file-links.proof.mjs
 node docs/guides/multi-tenant-file-access.proof.mjs
+node docs/guides/deleting-files-and-orphaned-objects.proof.mjs
 ```
 
 Each prints what it measured and exits non-zero if any number fails to

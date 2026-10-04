@@ -143,6 +143,16 @@ const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/guides/deleting-files-and-orphaned-objects.md',
+    why: 'the fourth guide: the sweeper deletes on an absence, and a partial answer is an absence.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/deleting-files-and-orphaned-objects.proof.mjs',
+    why: 'the script that demonstrates it, both directions.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/README.md',
     why: 'the index. With three guides this is a destination rather than loose files.',
     versionStamp: null,

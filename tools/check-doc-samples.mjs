@@ -61,6 +61,7 @@ const DOCS = [
   'docs/guides/expiring-and-revocable-file-links.md',
   'docs/guides/private-file-uploads.md',
   'docs/guides/multi-tenant-file-access.md',
+  'docs/guides/deleting-files-and-orphaned-objects.md',
 ];
 
 // -----------------------------------------------------------------------------
