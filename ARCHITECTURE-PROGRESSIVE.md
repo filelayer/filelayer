@@ -321,10 +321,10 @@ media, and nothing here changes that. Tier 1 exists so the architecture does not
 ```
 tier                            gross    net  imports   boot   core
 --------------------------------------------------------------------
-tier 1  public avatar             55     24        2      5     17
-tier 2  user-owned private        58     30        2      7     21
+tier 1  public avatar             56     24        2      5     17
+tier 2  user-owned private        61     30        2      7     21
 tier 3  orgs + roles              44     24        1      9     14
-tier 4  full vault, over HTTP    208    133        2      6    125
+tier 4  full vault, over HTTP    216    133        2      6    125
 ```
 
 `core` = net minus imports minus the demo boot block.

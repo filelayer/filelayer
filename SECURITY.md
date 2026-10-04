@@ -129,5 +129,5 @@ support branch and no backporting. See
 | `0.9.x` | Yes |
 | `0.8.x` | No |
 | `0.7.x` | No |
-| `0.6.x` | No — see GHSA-835c-wg3v-pv7q |
-| `< 0.5` | No |
+| `0.6.x` | No |
+| `0.5.x` and earlier | No, **and vulnerable**: `0.3.0` through `0.5.3` contain a remote unauthenticated denial of service and a tenant takeover, both fixed in `0.6.0`. See GHSA-835c-wg3v-pv7q and the [0.6.0 changelog entry](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md). Upgrade rather than patch. |

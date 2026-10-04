@@ -123,6 +123,41 @@ to: a guide has to be useful to somebody who never installs this, the code in it
 is executed on every commit, and where it states a number a script beside it
 reproduces that number.
 
+### Fixed — four findings from the content audit that were left open
+
+The audit of 4 October produced forty-six findings and the commits that followed
+applied most of them. These four were not, and three of them are the kind that
+sit quietly.
+
+**`SECURITY.md` had no row for `0.5.x`, and pointed the advisory at the release
+that fixed it.** The supported-versions table ran `0.6.x` … `< 0.5`, so a user on
+`0.5.3` found no row describing their version at all — and the one row carrying
+`GHSA-835c-wg3v-pv7q` was `0.6.x`, which is the release where the remote
+unauthenticated denial of service and the tenant takeover were *fixed*. Exactly
+backwards, on the page somebody reads when they are deciding whether they are
+exposed. The table now says `0.5.x and earlier — No, and vulnerable`, names both
+defects, and says upgrade rather than patch.
+
+**`MIGRATIONS.md` stopped at Entry 6** (`0.6.0` → `0.7.0`) while the package was
+`0.9.0`, and §1 promises an entry per MINOR. The schema coverage was in fact
+complete — `schema.sql` is untouched since the `0.7.0` commit — but nowhere said
+so, and an absent entry looks the same as a missing one to a reader deciding
+whether they are behind. Entry 7 now states that a database on the `0.7.0`
+schema runs `0.9.0` unaltered, and records the one call-site change: matching on
+SQLSTATE `23514` or on the constraint name must become matching on
+`link_is_read_only`.
+
+**A QUICKSTART sample called `yourRouter`**, which is defined nowhere in the
+document. The block is marked skip, so `check:docs` never executed it; pasted as
+written it is a `ReferenceError`. Commented out, with the fall-through it was
+illustrating left in words.
+
+**`ARCHITECTURE-PROGRESSIVE.md` §4.2 printed stale LOC numbers.** The block is
+presented as the output of `npm run loc:tiers`; the command now prints 56 / 61 /
+44 / 216 against the documented 55 / 58 / 44 / 208. The prose around it is
+unaffected — `net`, `imports`, `boot` and `core` all still match — which is
+precisely why nobody noticed.
+
 ### Added — the fourth guide: deleting files and orphaned objects
 
 Chosen on evidence rather than taste. A search-visibility measurement taken the

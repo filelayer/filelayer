@@ -522,7 +522,8 @@ createServer(async (req, res) => {
   if (await publicRoute(req, res)) return;
   if (await authedRoute(req, res)) return;
   if (await shareRoute(req, res)) return;
-  yourRouter(req, res);
+  // ...and fall through to your own router.
+  // yourRouter(req, res);
 }).listen(3000);
 ```
 

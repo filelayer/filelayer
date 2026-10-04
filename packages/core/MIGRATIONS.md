@@ -606,6 +606,48 @@ Nothing in the library needs any of the three.
 
 ---
 
+### Entry 7 — `0.7.0` → `0.9.0`: no schema change, and one call site
+
+#### What changed in the schema
+
+Nothing. `schema.sql` has not been modified since the `0.7.0` commit, whose only
+diff was the `audit_no_truncate()` trigger in Entry 6 above. **A database running
+the `0.7.0` schema runs `0.9.0` unaltered**, and there is no SQL to apply.
+
+This entry exists anyway, because §1 promises an entry per MINOR release and two
+of them have shipped. An absent entry and an entry saying "nothing to do" look
+identical to a reader deciding whether they are missing something, and only one
+of them is an answer.
+
+What those two releases contained is in the changelog: `0.8.0` was a review of
+the storage adapter and the delivery routes plus the contention suite, and
+`0.9.0` added `FsStorage` and the deployable example. Neither needed a column.
+
+#### What you do have to change, if you match on it
+
+`shares.create(id, { as, capabilities })` and `share({ subject: { type: 'link' },
+capabilities })` now refuse anything beyond `read` **before any query**, with
+`FilelayerError(400, 'link_is_read_only')`.
+
+Until `0.9.0` the only thing standing in the way was the `grant_link_read_only`
+CHECK constraint, so the refusal surfaced as a raw Postgres error: SQLSTATE
+`23514`, the constraint name, and a `detail` field carrying the failing row —
+which for `file_grant` includes `secret_hash`.
+
+```ts
+// Before 0.9.0
+catch (e) { if (e.code === '23514') … }           // or matched on the constraint name
+
+// 0.9.0 and later
+catch (e) { if (e.code === 'link_is_read_only') … }
+```
+
+The constraint is unchanged and still refuses the row, so a writer going around
+the library — a `psql` session, a migration script — is held to the same rule.
+Two independent writers refused, not one check moved.
+
+---
+
 ## 4. What is not covered here
 
 - **Data migration between storage adapters.** Moving objects from one bucket to
