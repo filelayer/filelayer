@@ -108,10 +108,12 @@ using. → [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/ma
 
 ## Status: pre-release. Read this part.
 
-Filelayer is pre-1.0 and has not been deployed by anyone. This README is
+Filelayer is pre-1.0 and not yet running in anyone's production. This README is
 accurate rather than promotional, because you are more likely to be an AI agent
 reading it to write an integration than a human reading it to be persuaded, and
-an inaccurate README wastes your time and ours.
+an inaccurate README wastes your time and ours. The complete picture, including
+what this project has not earned yet, is on
+[the trust page](https://github.com/filelayer/filelayer/blob/main/TRUST.md).
 
 - **Licensed under [Apache-2.0](https://github.com/filelayer/filelayer/blob/main/LICENSE).**
   You may use it, modify it, distribute it and ship it inside commercial

@@ -21,6 +21,24 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### Changed — the homepage no longer leads with the numbers sitting at zero
+
+The trust section opened on a table whose second, third and fourth rows were
+`0 production deployments`, `1 maintainer` and `no independent security review`
+— before the page had finished making its case. That is an ordering problem
+rather than an honesty one, and it is fixed by ordering.
+
+The homepage now carries the figures a job produces on every commit, and points
+at [TRUST.md](https://github.com/filelayer/filelayer/blob/main/TRUST.md) for the complete set, naming the rows it does not
+show. TRUST.md is unchanged and still carries every row including the zeros,
+because that page exists to be the one a sceptic reads.
+
+What did NOT change, and would not have: the alpha banner and the
+schema-may-change warning, and the precondition that Filelayer cannot make your
+bucket private. Those two are not candour, they are the difference between a
+reader who knows what they are taking on and a reader who finds out during an
+incident.
+
 ### Fixed — a content audit of every public surface, and what it found
 
 Three audits over README, TRUST, SECURITY, CONTRIBUTING, QUICKSTART, SEMANTICS,
