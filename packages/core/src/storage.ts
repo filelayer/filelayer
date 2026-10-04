@@ -57,7 +57,7 @@
  *    collectable.
  */
 
-import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
@@ -375,19 +375,240 @@ function isFsHeader(v: unknown): v is FsHeader {
   );
 }
 
+/**
+ * Enables `FsStorage.presignPut`, and the label it forces is the point.
+ *
+ * `FsStorage` cannot mint a credential to an object store, because there is no
+ * object store -- the bytes are a file on a disk this process can see. What it
+ * can do is mint a credential to a route YOU mount, which then writes them. So
+ * the upload is "direct" in the sense that matters for client code (one signed
+ * URL, one PUT, the same `createUpload()`/`completeUpload()` shape) and NOT in
+ * the sense that matters for your bill and your CPU: the bytes go through your
+ * server exactly as `upload()`'s do.
+ *
+ * Which is why `PresignedUpload.via` is `'server'` here, in the type, in the
+ * response and in the audit context. The alternative -- returning something
+ * that looks like an object-store URL -- would mean a developer builds against
+ * this in development, concludes their server is out of the data path, and
+ * deploys on that belief. The whole value of the local path is that the client
+ * code is identical; the whole risk is that the operator thinks everything else
+ * is too.
+ *
+ * It exists so the quickstart can demonstrate the reserve -> upload -> complete
+ * cycle without a bucket, and so our own tests cover that cycle in the fast
+ * lane rather than only against a live store.
+ */
+/**
+ * A refusal from `acceptDirectUpload`. Its own class so the route can map it to
+ * a 4xx while a genuine I/O failure stays a 5xx -- the distinction a developer
+ * needs when their upload route misbehaves.
+ *
+ * The `code` is safe to return to the uploader: it names what was wrong with
+ * the token, which they hold, and reveals nothing about the store.
+ */
+export class FsUploadRejected extends Error {
+  readonly code: string;
+  constructor(code: string) {
+    super(code);
+    this.name = 'FsUploadRejected';
+    this.code = code;
+  }
+}
+
+/** The token signature. `sig` itself is excluded; everything else is covered. */
+function fsUploadSignature(secret: string, params: URLSearchParams): string {
+  const canonical = [...params.entries()]
+    .filter(([k]) => k !== 'sig')
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&');
+  return createHmac('sha256', secret).update(canonical, 'utf8').digest('hex');
+}
+
+export interface FsUploadConfig {
+  /**
+   * Where `localUploadRoute()` is mounted, as an absolute URL with no trailing
+   * slash: `http://localhost:3000/_filelayer/upload`. The minted URL is this
+   * plus a query string, so it must be reachable by whoever is uploading.
+   */
+  baseUrl: string;
+  /**
+   * HMAC key for the upload tokens. At least 32 bytes of real entropy -- this
+   * is the only thing standing between a stranger and a write into your store,
+   * and the route is a write endpoint on your public surface.
+   *
+   * It is NOT interchangeable with any other secret you have. A token signed
+   * with it authorizes one key, one exact size and one content type until it
+   * expires; nothing more, and nothing in Filelayer.
+   */
+  secret: string;
+}
+
 export class FsStorage implements StorageAdapter {
   readonly provider: string;
   readonly #root: string;
+  readonly #upload: FsUploadConfig | null;
 
   /**
    * @param root      directory to store objects under. Created if absent.
    * @param provider  value written to `file.storage_provider`. It is part of an
    *                  object's identity, so changing it on an existing
    *                  deployment points every row at a store that has nothing.
+   * @param upload    omit and `presignPut` IS NOT DEFINED on this instance, so
+   *                  `canPresignPut()` reports false and `createUpload()`
+   *                  refuses with `direct_upload_unsupported`. See the note on
+   *                  the assignment in the constructor body.
    */
-  constructor(root: string, opts: { provider?: string } = {}) {
+  constructor(root: string, opts: { provider?: string; upload?: FsUploadConfig } = {}) {
     this.#root = root;
     this.provider = opts.provider ?? 'fs';
+    this.#upload = opts.upload ?? null;
+    if (opts.upload) {
+      if (!/^https?:\/\/[^/]/.test(opts.upload.baseUrl)) {
+        throw new Error(
+          `FsStorage upload.baseUrl must be an absolute http(s) URL, got ${opts.upload.baseUrl}`,
+        );
+      }
+      if (opts.upload.baseUrl.endsWith('/')) {
+        throw new Error('FsStorage upload.baseUrl must not end with a slash');
+      }
+      // Refused rather than stretched. A short HMAC key on a public write
+      // endpoint is the kind of thing that gets set to 'dev' in development and
+      // shipped, so there is no "it will do" path.
+      if (typeof opts.upload.secret !== 'string' || opts.upload.secret.length < 32) {
+        throw new Error('FsStorage upload.secret must be at least 32 characters');
+      }
+      // ASSIGNED AS AN OWN PROPERTY, NOT DECLARED AS A METHOD, and that is
+      // deliberate. `canPresignPut()` asks `typeof s.presignPut === 'function'`,
+      // the same question `canPresign()` asks of `presignGet`. A prototype
+      // method that threw when unconfigured would answer "yes, I can" and then
+      // fail in the engine; this way an unconfigured instance is honestly
+      // incapable, which is what the optionality in `StorageAdapter` is for.
+      this.presignPut = this.#presignPut.bind(this);
+    }
+  }
+
+  /** Present only when `upload` was configured. See the constructor. */
+  presignPut?: (key: string, opts: PresignPutOptions) => Promise<PresignedUpload>;
+
+  async #presignPut(key: string, opts: PresignPutOptions): Promise<PresignedUpload> {
+    const cfg = this.#upload!;
+    if (!Number.isFinite(opts.expiresInSeconds)) {
+      throw new Error('presign failed: expiresInSeconds must be a finite number');
+    }
+    if (!Number.isSafeInteger(opts.contentLength) || opts.contentLength < 0) {
+      throw new Error(
+        `presign failed: contentLength must be a non-negative safe integer, got ${opts.contentLength}`,
+      );
+    }
+    if (opts.contentType === '' || /[\r\n]/.test(opts.contentType)) {
+      throw new Error('presign failed: contentType must be non-empty and single-line');
+    }
+    const expires = Math.max(1, Math.min(Math.floor(opts.expiresInSeconds), 86400));
+    const exp = Math.floor(Date.now() / 1000) + expires;
+    const q = new URLSearchParams({
+      key,
+      size: String(opts.contentLength),
+      ct: opts.contentType,
+      exp: String(exp),
+    });
+    q.set('sig', fsUploadSignature(cfg.secret, q));
+    return {
+      url: `${cfg.baseUrl}?${q.toString()}`,
+      method: 'PUT',
+      headers: {
+        'content-length': String(opts.contentLength),
+        'content-type': opts.contentType,
+      },
+      // THE LABEL. The bytes go through your process on this adapter.
+      via: 'server',
+    };
+  }
+
+  /**
+   * Verify an upload token and write the bytes. Called by
+   * `localUploadRoute()`; there is no reason for an application to call it
+   * directly, and doing so bypasses the body-size enforcement the route does.
+   *
+   * Every check here is one the object store would have done for us on the S3
+   * path, which is the honest way to read this method: it is the bit of S3 we
+   * have to reimplement in order to offer the same shape locally, and
+   * reimplementing a security check is exactly the kind of thing that earns a
+   * `via: 'server'` label rather than hiding behind one.
+   */
+  async acceptDirectUpload(
+    params: URLSearchParams,
+    body: Uint8Array,
+    received: { contentType: string },
+  ): Promise<{ key: string; bytes: number }> {
+    const t = this.verifyUploadToken(params);
+    // THE SIZE CHECK THE OBJECT STORE DOES FOR US ON S3. Exact, not a ceiling:
+    // the token names one size.
+    if (body.byteLength !== t.size) throw new FsUploadRejected('upload_size_mismatch');
+    if (received.contentType !== t.contentType) {
+      throw new FsUploadRejected('upload_content_type_mismatch');
+    }
+    // The TOKEN's content type, never the request's. They are equal by the
+    // check above; using the token's value is what makes that check the only
+    // place the two can disagree.
+    const put = await this.put(t.key, body, t.contentType, { contentLength: body.byteLength });
+    return { key: t.key, bytes: put.bytes };
+  }
+
+  /**
+   * Verify an upload token and return what it authorizes. No body required, and
+   * that is the whole reason it is a separate method.
+   *
+   * THE ORDERING DEFECT THIS SPLIT FIXES. The route used to bound its read with
+   * the `size` out of the query string and compare it to `Content-Length`
+   * BEFORE any of this ran. Two things were wrong with that. The small one is
+   * that a tampered `size` was reported as a size mismatch rather than as the
+   * forged token it was. The large one is that an unauthenticated request could
+   * make the server buffer up to `size` bytes before anything checked the
+   * signature -- a stranger with no token at all could name a large size and
+   * spend our memory, repeatedly.
+   *
+   * So the token is proved first, with nothing but the query string, and only
+   * then is a single byte of body read. Found by a test that was asserting the
+   * wrong status code for the right reason.
+   */
+  verifyUploadToken(params: URLSearchParams): {
+    key: string;
+    size: number;
+    contentType: string;
+  } {
+    const cfg = this.#upload;
+    if (!cfg) throw new Error('direct upload is not configured on this FsStorage');
+
+    const sig = params.get('sig');
+    const key = params.get('key');
+    const size = params.get('size');
+    const ct = params.get('ct');
+    const exp = params.get('exp');
+    if (!sig || key === null || size === null || ct === null || exp === null) {
+      throw new FsUploadRejected('malformed_upload_token');
+    }
+
+    // Recomputed over the parameters AS RECEIVED, with `sig` excluded, so a
+    // caller who edits `size` or `ct` invalidates the token -- the same
+    // property SigV4 gives us on the S3 path, by the same mechanism.
+    const expected = fsUploadSignature(cfg.secret, params);
+    const a = Buffer.from(sig, 'utf8');
+    const b = Buffer.from(expected, 'utf8');
+    // Constant-time, and length-checked first because `timingSafeEqual` throws
+    // on a length mismatch rather than returning false.
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      throw new FsUploadRejected('bad_upload_signature');
+    }
+    if (!/^\d+$/.test(exp) || Number(exp) * 1000 <= Date.now()) {
+      throw new FsUploadRejected('upload_token_expired');
+    }
+    // Validated AFTER the signature, so a token we minted cannot carry a size
+    // we cannot represent, and a token we did not mint never reaches here.
+    if (!/^\d+$/.test(size) || !Number.isSafeInteger(Number(size))) {
+      throw new FsUploadRejected('malformed_upload_token');
+    }
+    return { key, size: Number(size), contentType: ct };
   }
 
   /**

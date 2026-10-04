@@ -49,6 +49,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Filelayer } from './filelayer.ts';
 import type { Principal } from './authz.ts';
 import { FilelayerError } from './errors.ts';
+// `storage.ts` imports nothing from here, so this direction is not a cycle.
+// `FsUploadRejected` is a value (the route does an `instanceof`); `FsStorage`
+// is needed only as a type.
+import { FsUploadRejected, type FsStorage } from './storage.ts';
 
 export type Disposition = 'attachment' | 'inline';
 
@@ -912,6 +916,108 @@ export function fileDownloadRoute(
         headers: { ...delivery.headers, 'x-filelayer-delivery': delivery.mode },
       } as StreamedDelivery);
     } catch (err) {
+      sendNodeError(res, err);
+    }
+    return true;
+  };
+}
+
+export interface LocalUploadRouteOptions {
+  /**
+   * Path this route is mounted at. MUST match the path in the `baseUrl` you
+   * gave `FsStorage`'s `upload` config, or every minted URL 404s here.
+   */
+  prefix?: string;
+}
+
+/**
+ * `PUT <prefix>?key=…&size=…&ct=…&exp=…&sig=…` — the receiving end of
+ * `FsStorage.presignPut`.
+ *
+ * Mount it only if you configured `FsStorage` with `upload`. It is a WRITE
+ * ENDPOINT ON YOUR PUBLIC SURFACE, and the only thing between it and a
+ * stranger is the HMAC in `sig`, so the secret is not a formality.
+ *
+ * THIS ROUTE IS THE PROOF THAT `via: 'server'` IS NOT A TECHNICALITY. On the S3
+ * path the object store performs the size and type enforcement and the bytes
+ * never enter this process. Here, every one of those checks is ours and every
+ * byte passes through this handler's memory. That is the difference the label
+ * is for, and it is why the filesystem adapter is a development convenience
+ * rather than a deployment option.
+ *
+ * Returns true if it handled the request, so it drops into any router.
+ */
+export function localUploadRoute(
+  storage: FsStorage,
+  opts: LocalUploadRouteOptions = {},
+): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
+  const prefix = (opts.prefix ?? '/_filelayer/upload').replace(/\/+$/, '');
+
+  return async (req, res) => {
+    let url: URL;
+    try {
+      url = new URL(req.url ?? '/', 'http://filelayer.invalid');
+    } catch {
+      return false;
+    }
+    if (req.method !== 'PUT') return false;
+    if (url.pathname.replace(/\/+$/, '') !== prefix) return false;
+
+    try {
+      // THE TOKEN IS PROVED BEFORE A SINGLE BYTE OF BODY IS READ.
+      //
+      // This used to bound the read with the `size` out of the raw query string
+      // and only verify the signature afterwards, which let a stranger with no
+      // valid token name a large size and spend this process's memory before
+      // anything checked whether they were allowed to. The verified size is the
+      // only size this handler will read to.
+      const token = storage.verifyUploadToken(url.searchParams);
+
+      const declared = Number(req.headers['content-length']);
+      if (!Number.isSafeInteger(declared) || declared !== token.size) {
+        throw new FsUploadRejected('upload_size_mismatch');
+      }
+      const signed = token.size;
+
+      const chunks: Buffer[] = [];
+      let seen = 0;
+      for await (const c of req) {
+        seen += (c as Buffer).byteLength;
+        // A client may declare one length and send more; HTTP framing usually
+        // prevents it, chunked encoding does not. Refused mid-stream rather
+        // than after, so an oversized body costs the bytes already read and no
+        // more.
+        //
+        // RECORDED AS UNTESTED, because a mutation removing it survives the
+        // suite and that is the truth about it rather than a gap to paper over.
+        // The refusal still happens -- `acceptDirectUpload` checks the length
+        // too and returns the identical status and code -- so the only
+        // difference is how many bytes were buffered first. Observing that
+        // means counting pulls on a streaming request body, which is a timing
+        // assertion, and this suite has already cost one afternoon to a timing
+        // assertion that was a coin flip. This guard protects memory, not
+        // correctness.
+        if (seen > signed) throw new FsUploadRejected('upload_size_mismatch');
+        chunks.push(c as Buffer);
+      }
+      const body = new Uint8Array(Buffer.concat(chunks));
+
+      const out = await storage.acceptDirectUpload(url.searchParams, body, {
+        contentType: String(req.headers['content-type'] ?? ''),
+      });
+      res.writeHead(200, errorHeaders());
+      res.end(JSON.stringify({ bytes: out.bytes }));
+    } catch (err) {
+      if (err instanceof FsUploadRejected) {
+        const code: string = err.code;
+        // 403 for anything about the token's authenticity, 400 for a request
+        // that contradicts a token that was itself valid. A developer debugging
+        // this needs to know which of the two they have.
+        const status = code === 'bad_upload_signature' || code === 'upload_token_expired' ? 403 : 400;
+        res.writeHead(status, errorHeaders());
+        res.end(JSON.stringify({ error: code }));
+        return true;
+      }
       sendNodeError(res, err);
     }
     return true;

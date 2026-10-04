@@ -403,7 +403,7 @@ Restated here so they are not only in an appendix. Each one is current as of
 2. **The tiered facade `fl.files.put()` takes a `Uint8Array`**, so a file put
    through it is fully resident in memory. The core `fl.upload()` accepts a
    `ReadableStream`; use that above a few tens of megabytes.
-3. **Direct browser → storage upload is opt-in, and S3/R2 only.**
+3. **Direct browser → storage upload is opt-in, and only S3/R2 bypass your server.**
    `createUpload()` reserves a `pending` file row and returns a presigned PUT
    whose `content-length` and `content-type` are in the SIGNED HEADERS, so the
    object store rejects a body of the wrong size or type before accepting it —
@@ -412,15 +412,22 @@ Restated here so they are not only in an appendix. Each one is current as of
    `maxUploadBytes` you choose, because an exact pin to whatever the client
    asked for is not a bound.
 
+   **`FsStorage` is the exception, and it says so in the response.** Configured
+   with an `upload` block it mints a token for `localUploadRoute()`, which you
+   mount — so the client code is identical in development, and
+   `PresignedUpload.via` reads `'server'` rather than `'storage'` because on
+   that adapter the bytes still travel through your process. Check `via` before
+   concluding otherwise. Without that config it cannot sign and answers
+   `direct_upload_unsupported`.
+
    What it does not do: **presigned POST** (Cloudflare R2 does not implement
    it, and R2 is the default store, so the POST policy's `content-length-range`
-   is not available to us — the signed-header pin is stricter anyway);
-   **`FsStorage`**, which cannot sign anything and answers
-   `direct_upload_unsupported`; and **resumable or multipart direct upload**,
-   so one PUT is one object. `collectUploadReservations()` is a job you must
-   schedule, or abandoned reservations accumulate as invisible `pending` rows.
-   Plain `upload()` is unchanged and still the default: bytes through your
-   server, no acknowledgement, every adapter.
+   is not available to us — the signed-header pin is stricter anyway), and
+   **resumable or multipart direct upload**, so one PUT is one object.
+   `collectUploadReservations()` is a job you must schedule, or abandoned
+   reservations accumulate as invisible `pending` rows. Plain `upload()` is
+   unchanged and still the default: bytes through your server, no
+   acknowledgement, every adapter.
 4. **Org admins and owners can read `private` files.** Deliberate, since retention
    and legal hold are their responsibility. But if you need to exclude the
    operator, you need envelope encryption and we do not have it.

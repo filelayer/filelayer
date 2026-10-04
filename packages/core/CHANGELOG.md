@@ -40,11 +40,12 @@ signature from the headers it received. A client issued a URL for 204,800 bytes
 and sending three gigabytes produces a different signature and a 403 with
 nothing stored.
 
-Verified against our signature-verifying local harness, and a test for it ships
-in the **live AWS S3** lane as well — because the harness builds the canonical
-request the same way the adapter does, so agreement between those two would
-prove nothing. The live result is what makes this claim load-bearing rather than
-self-consistent; it lands with the first CI run on this commit.
+**Verified against live AWS S3**, not only against our own harness: the harness
+builds the canonical request the same way the adapter does, so agreement between
+those two would have proved nothing. CI run 74, in the live AWS lane,
+`a presigned PUT with a signed content-length is enforced by the real store`
+passing, with a 64 KB body against a URL signed for 20 bytes refused 403 and the
+object left at its honest length. The live per-commit count goes from 11 to 12.
 
 **Not presigned POST**, which is what the write-ups recommend and what our own
 guide recommended: **Cloudflare R2 does not implement it**, and R2 is the
@@ -74,9 +75,39 @@ Also: one `head()` on completion rather than trusting the client, a
 less than it claims to, and metering at completion so a reservation nobody
 redeems is never billed.
 
-Still missing: resumable and multipart direct upload (one PUT is one object),
-`starts-with` policy conditions, and anything at all on `FsStorage`, which
-cannot sign and answers `direct_upload_unsupported`.
+### Added: the same upload shape on `FsStorage`, labelled `via: 'server'`
+
+`new FsStorage(root, { upload: { baseUrl, secret } })` makes `presignPut`
+available, minting an HMAC token for `localUploadRoute()`, which you mount. The
+client code is then identical in development and in production (one signed URL,
+one PUT, the same `createUpload()`/`completeUpload()` pair), which is the point:
+the part a developer is most likely to get wrong is the browser-side request,
+and it could not be exercised at all without a bucket.
+
+**`PresignedUpload.via` is `'server'` on this adapter and `'storage'` on S3/R2,
+and that field is why this is honest rather than merely convenient.** The bytes
+go through your process here, exactly as `upload()`'s do. Returning something
+that only looked like an object-store URL would let somebody build against it in
+development, conclude their server was out of the data path, and deploy on that
+belief.
+
+`presignPut` is assigned in the constructor rather than declared as a method, so
+an unconfigured instance does not have it and `canPresignPut()` honestly reports
+false. That is the shape `presignGet`'s optionality already has. The secret is
+refused below 32 characters and the base URL must be absolute, because a public
+write endpoint whose only protection is an HMAC is not a place for a key
+somebody set to `dev`.
+
+**A defect found by a test asserting the wrong status code for the right
+reason.** The route bounded its body read with the `size` out of the raw query
+string and verified the signature afterwards. A stranger holding no valid token
+could therefore name a large size and make the server buffer that much before
+anything checked whether they were allowed to, repeatedly. The token is now
+proved first, from the query string alone, and the verified size is the only
+size the handler will read to.
+
+Still missing: resumable and multipart direct upload (one PUT is one object) and
+`starts-with` policy conditions.
 
 ### Fixed — upload bytes were counted as egress, and `bytes_stored` was always zero
 

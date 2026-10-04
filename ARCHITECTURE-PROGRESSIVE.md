@@ -7,7 +7,7 @@ code in this repository, from the repository root. Reproduce with:
 
 ```bash
 npm run bootstrap                  # npm ci in packages/core
-npm test                     # 470 tests, 0 failures
+npm test                     # 482 tests, 0 failures
 npm run dev:fracture               # the four §2 experiments
 npm run loc:tiers                  # LOC per tier (§4.2)
 node benchmark/count-loc.mjs       # LOC for the full-vault implementations
@@ -15,19 +15,19 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **470 / 470 passing** across 115 suites:
+**Test status.** `npm test` is **482 / 482 passing** across 116 suites:
 
 | Suite | Tests |
 |---|---|
 | `test/tiers.test.ts` — the tiered API, and §3 below | 27 |
 | `test/group-subjects.test.ts` — `org` and `role` grant subjects | 49 |
 | `test/range.test.ts` — byte ranges, 206/416, and the download-cap rule | 30 |
-| `test/direct-upload.test.ts` — pre-authorized direct upload, against real SigV4 | 35 |
+| `test/direct-upload.test.ts` — pre-authorized direct upload, against real SigV4 | 47 |
 | everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 329 |
-| **total** | **470** |
+| **total** | **482** |
 
-Eight of the 470 are the contention tests, which need a real PostgreSQL with
-two backends. CI provides one, so all 470 run there; on a machine without one
+Eight of the 482 are the contention tests, which need a real PostgreSQL with
+two backends. CI provides one, so all 482 run there; on a machine without one
 they skip and you will see **397 passing, 8 skipped**. Two further suites — the
 live S3 ones — skip unless the five `FILELAYER_TEST_S3_*` variables are set.
 

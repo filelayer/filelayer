@@ -25,6 +25,12 @@
 
 import assert from 'node:assert/strict';
 import { describe, it, before, after } from 'node:test';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { createHmac } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createLocalS3 } from './local-s3.mjs';
 import { createTestDb } from '../src/db.ts';
 import {
@@ -32,7 +38,8 @@ import {
   DIRECT_UPLOAD_ACKNOWLEDGEMENT,
   MAX_UPLOAD_TTL_SECONDS,
 } from '../src/filelayer.ts';
-import { MemoryStorage, S3Storage } from '../src/storage.ts';
+import { FsStorage, MemoryStorage, S3Storage } from '../src/storage.ts';
+import { localUploadRoute } from '../src/delivery.ts';
 import { rejects } from './helpers.ts';
 
 const AK = 'AKIAFILELAYERTEST000';
@@ -798,6 +805,386 @@ describe('direct upload', () => {
         [rows[0]!.id],
       );
       assert.equal(Number(still[0]!.n), 1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // The filesystem adapter, where the bytes DO go through your server and the
+  // response says so.
+  // ---------------------------------------------------------------------------
+
+  describe('FsStorage: the same client code, honestly labelled', () => {
+    const SECRET = 'a'.repeat(48);
+
+    async function fsWorld() {
+      const root = await mkdtemp(join(tmpdir(), 'filelayer-fsupload-'));
+      const server = createServer(() => {});
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+      const port = (server.address() as AddressInfo).port;
+      const base = `http://127.0.0.1:${port}/_filelayer/upload`;
+
+      const store = new FsStorage(root, { upload: { baseUrl: base, secret: SECRET } });
+      const route = localUploadRoute(store);
+      server.removeAllListeners('request');
+      server.on('request', (req, res) => {
+        void route(req, res).then((handled) => {
+          if (!handled) {
+            res.writeHead(404);
+            res.end();
+          }
+        });
+      });
+
+      const { db } = await createTestDb();
+      const fl = new Filelayer(db, store, {
+        directUpload: { ...ACK, maxUploadBytes: 1024 * 1024 },
+      });
+      const alice = (await fl.createActor('alice')).id;
+      const org = (await fl.createOrg('acme', 'Acme', { ownerActorId: alice })).id;
+      return {
+        db, fl, store, alice, org,
+        close: async () => {
+          server.close();
+          await rm(root, { recursive: true, force: true });
+        },
+      };
+    }
+
+    it('is NOT capable unless upload was configured', async () => {
+      // `canPresignPut()` asks `typeof s.presignPut === 'function'`, so an
+      // unconfigured instance must not have the method at all. A prototype
+      // method that threw would answer "yes I can" and fail in the engine.
+      const root = await mkdtemp(join(tmpdir(), 'filelayer-fsplain-'));
+      try {
+        const plain = new FsStorage(root);
+        assert.equal(typeof plain.presignPut, 'undefined');
+        const configured = new FsStorage(root, {
+          upload: { baseUrl: 'http://x.test/u', secret: SECRET },
+        });
+        assert.equal(typeof configured.presignPut, 'function');
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('refuses a weak secret or a relative base URL at construction', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'filelayer-fsbad-'));
+      try {
+        assert.throws(
+          () => new FsStorage(root, { upload: { baseUrl: 'http://x.test/u', secret: 'dev' } }),
+          /at least 32 characters/,
+          'a short HMAC key on a public write endpoint was accepted',
+        );
+        assert.throws(
+          () => new FsStorage(root, { upload: { baseUrl: '/u', secret: SECRET } }),
+          /absolute http\(s\) URL/,
+        );
+        assert.throws(
+          () => new FsStorage(root, { upload: { baseUrl: 'http://x.test/u/', secret: SECRET } }),
+          /must not end with a slash/,
+        );
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('says via: server, because that is where the bytes go', async () => {
+      const w = await fsWorld();
+      try {
+        const r = await w.fl.createUpload({ actorId: w.alice }, w.org, {
+          name: 'a.txt',
+          contentType: 'text/plain',
+          size: 5,
+        });
+        // THE LABEL IS THE WHOLE POINT. A developer who builds against this in
+        // development and reads `via` knows their server is still in the data
+        // path; one who reads an S3-shaped URL does not.
+        assert.equal(r.upload.via, 'server');
+        assert.equal(r.upload.method, 'PUT');
+        assert.ok(r.upload.url.startsWith('http://127.0.0.1'));
+      } finally {
+        await w.close();
+      }
+    });
+
+    it('runs the whole reserve -> upload -> complete cycle with no bucket', async () => {
+      // The reason this adapter grew an upload path at all: the quickstart has
+      // to be able to demonstrate the cycle, and our own tests have to cover it
+      // in the fast lane rather than only against a live store.
+      const w = await fsWorld();
+      try {
+        const body = enc('local bytes');
+        const r = await w.fl.createUpload({ actorId: w.alice }, w.org, {
+          name: 'local.txt',
+          contentType: 'text/plain',
+          size: body.byteLength,
+        });
+        const put = await fetch(r.upload.url, {
+          method: 'PUT',
+          headers: r.upload.headers,
+          body,
+        });
+        assert.equal(put.status, 200, await put.text());
+
+        const done = await w.fl.completeUpload({ actorId: w.alice }, r.file.id);
+        assert.equal(done.state, 'ready');
+        assert.equal(done.sizeBytes, body.byteLength);
+        assert.equal(dec((await w.fl.read({ actorId: w.alice }, r.file.id)).body), 'local bytes');
+      } finally {
+        await w.close();
+      }
+    });
+
+    it('refuses a body larger than the token was signed for', async () => {
+      // The same guarantee the object store gives us on S3, except here it is
+      // ours to enforce -- which is the half of `via: 'server'` that matters
+      // for security rather than for billing.
+      const w = await fsWorld();
+      try {
+        const r = await w.fl.createUpload({ actorId: w.alice }, w.org, {
+          name: 'avatar.bin',
+          contentType: 'application/octet-stream',
+          size: 5,
+        });
+        const res = await fetch(r.upload.url, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/octet-stream' },
+          body: new Uint8Array(64 * 1024),
+        });
+        assert.equal(res.status, 400);
+        assert.equal(JSON.parse(await res.text()).error, 'upload_size_mismatch');
+        assert.equal(await w.store.head(r.file.storageKey), null);
+        await rejects(() => w.fl.completeUpload({ actorId: w.alice }, r.file.id), 409);
+      } finally {
+        await w.close();
+      }
+    });
+
+    it('refuses a tampered size, type or key, and says it was the signature', async () => {
+      const w = await fsWorld();
+      try {
+        const r = await w.fl.createUpload({ actorId: w.alice }, w.org, {
+          name: 'a.txt',
+          contentType: 'text/plain',
+          size: 5,
+        });
+        const body = enc('xxxxx');
+        for (const [param, value] of [
+          ['size', '999999'],
+          ['ct', 'text/html'],
+          ['key', 'somebody/elses-key'],
+          ['exp', String(Math.floor(Date.now() / 1000) + 99999)],
+        ] as const) {
+          const u = new URL(r.upload.url);
+          u.searchParams.set(param, value);
+          const res = await fetch(u, {
+            method: 'PUT',
+            headers: { 'content-length': '5', 'content-type': 'text/plain' },
+            body,
+          });
+          // 403, not 400: editing a signed parameter is a question about the
+          // token's authenticity, which is a different problem from a request
+          // that contradicts a token that was genuine.
+          assert.equal(res.status, 403, `editing ${param} was accepted`);
+          assert.equal(JSON.parse(await res.text()).error, 'bad_upload_signature');
+        }
+        assert.equal(await w.store.head(r.file.storageKey), null);
+      } finally {
+        await w.close();
+      }
+    });
+
+    it('refuses an expired token', async () => {
+      const w = await fsWorld();
+      try {
+        const r = await w.fl.createUpload({ actorId: w.alice }, w.org, {
+          name: 'a.txt',
+          contentType: 'text/plain',
+          size: 5,
+        });
+        // Re-sign an already-elapsed expiry with the real secret, so the
+        // signature is VALID and only the clock refuses it. Editing `exp`
+        // without re-signing would be caught by the signature check instead and
+        // would prove nothing about the expiry.
+        const u = new URL(r.upload.url);
+        u.searchParams.set('exp', String(Math.floor(Date.now() / 1000) - 10));
+        u.searchParams.delete('sig');
+        const canonical = [...u.searchParams.entries()]
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+          .join('&');
+        u.searchParams.set(
+          'sig',
+          createHmac('sha256', SECRET).update(canonical, 'utf8').digest('hex'),
+        );
+
+        const res = await fetch(u, {
+          method: 'PUT',
+          headers: { 'content-length': '5', 'content-type': 'text/plain' },
+          body: enc('xxxxx'),
+        });
+        assert.equal(res.status, 403);
+        assert.equal(JSON.parse(await res.text()).error, 'upload_token_expired');
+      } finally {
+        await w.close();
+      }
+    });
+
+    it('refuses a content type that does not match the token', async () => {
+      const w = await fsWorld();
+      try {
+        const r = await w.fl.createUpload({ actorId: w.alice }, w.org, {
+          name: 'note.txt',
+          contentType: 'text/plain',
+          size: 5,
+        });
+        const res = await fetch(r.upload.url, {
+          method: 'PUT',
+          headers: { 'content-length': '5', 'content-type': 'text/html' },
+          body: enc('xxxxx'),
+        });
+        assert.equal(res.status, 400);
+        assert.equal(JSON.parse(await res.text()).error, 'upload_content_type_mismatch');
+      } finally {
+        await w.close();
+      }
+    });
+
+    it('proves the token before reading a byte of body', async () => {
+      // THE ORDERING, PINNED. A stranger with no token names a large size. If
+      // the handler bounded its read from the query string first -- which it
+      // did until a test asserted the wrong status code for the right reason --
+      // it would buffer that much before noticing nobody signed it, which a
+      // stranger can repeat.
+      //
+      // The observable consequence of the fix is the status: `403
+      // bad_upload_signature` means the signature was checked first. A `400
+      // upload_size_mismatch` would mean the handler had already committed to
+      // reading a body on an unverified parameter.
+      const w = await fsWorld();
+      try {
+        const u = new URL(`${new URL(
+          (
+            await w.fl.createUpload({ actorId: w.alice }, w.org, {
+              name: 'a.txt',
+              contentType: 'text/plain',
+              size: 5,
+            })
+          ).upload.url,
+        ).origin}/_filelayer/upload`);
+        u.searchParams.set('key', 'anything/at-all');
+        u.searchParams.set('size', String(64 * 1024 * 1024));
+        u.searchParams.set('ct', 'application/octet-stream');
+        u.searchParams.set('exp', String(Math.floor(Date.now() / 1000) + 600));
+        u.searchParams.set('sig', 'f'.repeat(64));
+
+        // The body and its `content-length` agree -- declaring one length and
+        // sending another breaks HTTP framing and fails in the client, which
+        // would prove nothing about the server. What disagrees is the TOKEN,
+        // which names 64 MB. Old code compared the declared length to that
+        // unverified number and answered 400; new code checks the signature
+        // first and answers 403.
+        const body = new Uint8Array(64 * 1024);
+        const res = await fetch(u, {
+          method: 'PUT',
+          headers: {
+            'content-length': String(body.byteLength),
+            'content-type': 'application/octet-stream',
+          },
+          body,
+        });
+        assert.equal(res.status, 403, 'the handler acted on an unverified size');
+        assert.equal(JSON.parse(await res.text()).error, 'bad_upload_signature');
+      } finally {
+        await w.close();
+      }
+    });
+
+    it('acceptDirectUpload re-checks the length a direct caller could skip', async () => {
+      // `localUploadRoute` enforces the length twice before it gets here, so a
+      // mutation removing this check survives every test that goes through the
+      // route. It is not redundant for a caller who does not: the method is
+      // public, and "the route also checks" is not a property of the method.
+      const w = await fsWorld();
+      try {
+        const r = await w.fl.createUpload({ actorId: w.alice }, w.org, {
+          name: 'a.txt',
+          contentType: 'text/plain',
+          size: 5,
+        });
+        const params = new URL(r.upload.url).searchParams;
+        await assert.rejects(
+          () => w.store.acceptDirectUpload(params, enc('way too many bytes'), {
+            contentType: 'text/plain',
+          }),
+          /upload_size_mismatch/,
+        );
+        assert.equal(await w.store.head(r.file.storageKey), null);
+
+        // And the honest call still works, so the check is not just refusing.
+        const ok = await w.store.acceptDirectUpload(params, enc('xxxxx'), {
+          contentType: 'text/plain',
+        });
+        assert.equal(ok.bytes, 5);
+      } finally {
+        await w.close();
+      }
+    });
+
+    it('cuts off a chunked body that overruns the signed length', async () => {
+      // Without `content-length` there is nothing to compare up front, so the
+      // only bound is the running count inside the read loop. This is the path
+      // a client takes when it streams.
+      const w = await fsWorld();
+      try {
+        const r = await w.fl.createUpload({ actorId: w.alice }, w.org, {
+          name: 'a.txt',
+          contentType: 'text/plain',
+          size: 5,
+        });
+        // A ReadableStream body makes undici use chunked transfer encoding, so
+        // no `content-length` reaches the server at all.
+        const stream = new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(new Uint8Array(4096));
+            c.enqueue(new Uint8Array(4096));
+            c.close();
+          },
+        });
+        const res = await fetch(new URL(r.upload.url), {
+          method: 'PUT',
+          headers: { 'content-type': 'text/plain' },
+          body: stream,
+          // Required by undici for a streaming request body.
+          duplex: 'half',
+        } as RequestInit & { duplex: 'half' });
+        assert.equal(res.status, 400);
+        assert.equal(JSON.parse(await res.text()).error, 'upload_size_mismatch');
+        assert.equal(await w.store.head(r.file.storageKey), null);
+      } finally {
+        await w.close();
+      }
+    });
+
+    it('ignores anything that is not a PUT at its own path', async () => {
+      const w = await fsWorld();
+      try {
+        const r = await w.fl.createUpload({ actorId: w.alice }, w.org, {
+          name: 'a.txt',
+          contentType: 'text/plain',
+          size: 5,
+        });
+        const u = new URL(r.upload.url);
+        assert.equal((await fetch(u, { method: 'GET' })).status, 404);
+        const elsewhere = new URL(u);
+        elsewhere.pathname = '/somewhere-else';
+        assert.equal(
+          (await fetch(elsewhere, { method: 'PUT', body: enc('x') })).status,
+          404,
+        );
+      } finally {
+        await w.close();
+      }
     });
   });
 
