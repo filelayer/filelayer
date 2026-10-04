@@ -119,8 +119,8 @@ function schemaAt(ref) {
 //
 // Function BODIES are deliberately absent. `pg_get_functiondef` differs on
 // whitespace that `CREATE OR REPLACE` normalises differently, and a body
-// difference that matters shows up as a behaviour difference in the 531-test
-// suite, which is a better instrument for it than string equality.
+// difference that matters shows up as a behaviour difference in the
+// test suite, which is a better instrument for it than string equality.
 const SECTIONS = {
   columns: `
     SELECT table_name || '.' || column_name || ' ' || data_type
