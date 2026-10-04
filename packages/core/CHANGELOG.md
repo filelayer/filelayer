@@ -61,6 +61,36 @@ fail the build rather than quietly become untrue. `llms.txt` names the guides,
 and they ship in the tarball, so an agent with an install and no browser has
 them on disk.
 
+### Added — the second guide: private file uploads
+
+The question is "how do I let users upload files privately", and the usual
+answer — private bucket, presigned URL, credentials stay on the server — is
+correct as far as it goes. The tutorials get that part right and the guide says
+so.
+
+What they leave out is that **a presigned PUT does not constrain the body**. A
+URL issued for a 200 KB avatar accepts three gigabytes, up to the 5 GB
+single-`PUT` ceiling, and signing `Content-Length` does not help: S3 does not
+enforce it server-side for a `PUT`. What you published is an authenticated,
+unmetered write into a bucket you pay for. The fix is a presigned **POST** with
+a policy, where `content-length-range` is evaluated before the object exists.
+Almost none of the tutorials that teach "secure uploads" teach that one.
+
+Then the three traps in the order they bite: the declared content type is
+attacker-controlled and becomes stored XSS if you serve it inline from your own
+origin; the object key is not access control, however long it is; and the upload
+happening outside your transaction leaves orphan objects, rows without bytes, and
+replayable callbacks.
+
+**This is the guide where Filelayer is not the answer to the main question.** We
+do not do direct browser-to-storage uploads, deliberately, and the guide says to
+use the SDK with the policy above instead. A guide that only ever concludes "use
+us" is an advertisement, and nothing cites an advertisement.
+
+The executable block in it asserts the two things we do claim: the content type
+is decided from the magic bytes rather than from what the client declared, and
+`nosniff` plus `attachment` are on the read path and not optional.
+
 ### Changed — the homepage no longer leads with the numbers sitting at zero
 
 The trust section opened on a table whose second, third and fourth rows were

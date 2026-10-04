@@ -143,6 +143,14 @@ const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/guides/private-file-uploads.md',
+    why:
+      'the second guide. It is the one where this library is NOT the answer to ' +
+      'the main question, which is the point: a guide that only ever concludes ' +
+      '"use us" is an advertisement, and nothing cites an advertisement.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/expiring-and-revocable-file-links.proof.mjs',
     why:
       'the script that produced the numbers in the guide beside it. It ships for ' +

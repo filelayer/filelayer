@@ -314,9 +314,11 @@ namespaces). It is written up, with the SQL, as the first entry in
 - [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) — install → first file → the advanced capabilities
 - [`docs/guides/`](https://github.com/filelayer/filelayer/tree/main/docs/guides) — answers to
   questions people actually ask, written to be useful whether or not you use this
-  library. The code in them is executed in CI. First one:
-  [expiring and revocable file links](https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.md),
-  on why a presigned URL cannot be taken back.
+  library. The code in them is executed in CI.
+  [Expiring and revocable file links](https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.md),
+  on why a presigned URL cannot be taken back, and
+  [private file uploads](https://github.com/filelayer/filelayer/blob/main/docs/guides/private-file-uploads.md),
+  on the presigned PUT that does not limit what gets uploaded.
 - [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md) — the exact behaviour of every edge: liveness, delegation, deletion, the audit chain
 - [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) — how schema changes are delivered and what the pre-1.0 compatibility promise is
 - [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) — the real history, including the security defects we found in ourselves

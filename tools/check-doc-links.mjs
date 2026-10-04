@@ -31,6 +31,7 @@ const DOCS = [
   'docs/QUICKSTART.md',
   'docs/LIVE-S3-TESTS.md',
   'docs/guides/expiring-and-revocable-file-links.md',
+  'docs/guides/private-file-uploads.md',
   'packages/core/SEMANTICS.md',
   'SECURITY.md',
   'TRUST.md',

@@ -69,6 +69,7 @@ const ANCHORS = [
   { path: 'README.md', min: 4000, why: 'the first thing a stranger reads' },
   { path: 'docs/QUICKSTART.md', min: 8000, why: 'install to first stored byte; the one that was missing' },
   { path: 'docs/guides/expiring-and-revocable-file-links.md', min: 6000, why: 'the first guide, named by llms.txt' },
+  { path: 'docs/guides/private-file-uploads.md', min: 6000, why: 'the second guide, named by llms.txt' },
   { path: 'SEMANTICS.md', min: 8000, why: 'the reference for every edge case' },
   { path: 'MIGRATIONS.md', min: 2000, why: 'what a schema change costs, linked from QUICKSTART' },
   { path: 'CHANGELOG.md', min: 2000, why: 'what changed and which versions are unsafe' },

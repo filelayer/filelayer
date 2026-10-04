@@ -340,6 +340,13 @@ including the control that shows the naive version overshooting.
 
 ---
 
+## Related
+
+- [Private file uploads](private-file-uploads.md) — the other half: a presigned
+  PUT does not limit the size of what gets uploaded, and the policy that does.
+
+---
+
 ## Sources
 
 - [Download and upload objects with presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html) — AWS, on expiry and credential lifetime

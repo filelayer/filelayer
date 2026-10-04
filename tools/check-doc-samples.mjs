@@ -59,6 +59,7 @@ const DOCS = [
   // them runs here. A guide whose sample has rotted is worse than no guide:
   // the reader trusted it enough to paste it.
   'docs/guides/expiring-and-revocable-file-links.md',
+  'docs/guides/private-file-uploads.md',
 ];
 
 // -----------------------------------------------------------------------------
