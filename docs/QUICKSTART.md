@@ -581,28 +581,44 @@ Three consequences to design around:
   is the opt-in escape hatch and it is deliberately awkward to turn on; see
   [`../packages/core/SEMANTICS.md`](../packages/core/SEMANTICS.md) and
   [`../architecture/TIER5-DESIGN-NOTE.md`](../architecture/TIER5-DESIGN-NOTE.md) §4.
-- **These routes do not answer `Range` requests.** They never return `206`, so a
-  browser cannot seek. The delivery API underneath accepts a byte range and the
-  S3 adapter honours it, but parsing the `Range` request header and passing it
-  down is your code today:
+- **These routes answer `Range` requests, and you write none of it.**
+  `fileDownloadRoute()` and `shareDownloadRoute()` parse the header, so a
+  browser can seek in a file served by them. `Accept-Ranges: bytes` goes on
+  every proxied response — including the unranged `200`, which is the response a
+  video player or PDF reader actually reads to decide whether seeking is
+  possible — and a range past the end is a `416` carrying
+  `Content-Range: bytes */<size>`, which is the only thing that tells a client
+  the size it was guessing at.
+
+  If you are writing your own route, the same range goes straight into the
+  delivery API. `parseRangeHeader()` is exported so you get the RFC 9110
+  behaviour rather than a regex:
 
 ```ts
-import { toStreamResponse } from '@filelayer/core';
-
-// A range-capable read, in full: parse the header, pass a range, write it out.
-const rangeHeader = 'bytes=0-3'; // in a route: req.headers.range
-const m = /^bytes=(\d+)-(\d+)?$/.exec(rangeHeader ?? '');
+import { parseRangeHeader, toStreamResponse } from '@filelayer/core';
 
 const { id: clipId } = await fl.files.put(bytes, { public: true, name: 'clip.bin' });
+
+// In a route this is `req.headers.range`. A header it cannot use returns null,
+// which means "serve the whole object" -- never an error. RFC 9110 requires a
+// malformed `Range` to be IGNORED, not rejected.
+const range = parseRangeHeader('bytes=0-3');
+
 const delivery = await fl.readStream({ actorId: null }, clipId, {
   mode: 'proxy',
-  ...(m ? { range: { start: Number(m[1]), ...(m[2] ? { end: Number(m[2]) } : {}) } } : {}),
+  ...(range ? { range } : {}),
 });
 
 const response = toStreamResponse(delivery);
 console.log(response.status, response.headers.get('content-range')); // 206 bytes 0-3/5
 // On node:http it is the same one line: await sendNodeStream(res, delivery);
 ```
+
+  `bytes=-N` ("the last N bytes", which is what a PDF reader sends first to find
+  the cross-reference table) is also supported. It costs one extra `head()` on
+  the object, because the last N bytes of a file are not a byte range until
+  something authoritative says how long the file is — and that is the object
+  store, not the `size_bytes` column.
 
   You do **not** have to set the status yourself, and there is no parameter for
   it. `sendNodeStream()` and `toStreamResponse()` derive it from the delivery: a
@@ -780,10 +796,13 @@ enumeration oracle in a response body. `e.code` is the safe field.
 ## 9. What Filelayer does not do
 
 - **Authenticate users.** You supply identity.
-- **Answer `Range` requests from the shipped HTTP routes.** No `206`, no
-  seeking. **Do not use them for video or audio.** The delivery API accepts a
-  byte range and the shipped writers emit `206` correctly when you pass one
-  (§6); what is missing is a route that reads the request header for you.
+- **Answer *multiple* ranges in one request, or honour `If-Range`.**
+  `bytes=0-9,20-29` is ignored and the whole object is served under a `200`;
+  answering one of several ranges under a `206` is indistinguishable, from the
+  client's side, from an answer to a different question. `If-Range` is not
+  parsed, which is safe here only because an object key is a fresh UUID that is
+  never rewritten, so the bytes cannot change under a resuming client. Single
+  ranges, suffix ranges and `416` all work (§6).
 - **Stream through the tiered facade.** `fl.files.put()` takes a `Uint8Array`,
   so a file put through it is fully resident in memory. The core `fl.upload()`
   accepts a `ReadableStream` — use that for large files.

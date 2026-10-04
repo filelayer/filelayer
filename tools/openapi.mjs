@@ -75,6 +75,10 @@ const BYTE_HEADERS = {
   ),
   'Content-Security-Policy': h("Always `default-src 'none'; sandbox`."),
   'X-Frame-Options': h('Always `DENY`.'),
+  'Accept-Ranges': h(
+    'Always present on a proxied response. `bytes` normally; `none` when a download cap binds this delivery, because a capped grant has its range dropped and is served whole -- see the 206 description.',
+    { type: 'string', enum: ['bytes', 'none'] },
+  ),
   'X-Filelayer-Delivery': h(
     'Which delivery mode answered this request: `proxy` or `redirect`.',
     { type: 'string', enum: ['proxy', 'redirect'] },
@@ -102,6 +106,16 @@ const ERROR_HEADERS = {
   'X-Content-Type-Options': h('Always `nosniff`.'),
 };
 
+const RANGE_PARAM = {
+  name: 'Range',
+  in: 'header',
+  required: false,
+  description:
+    'A single byte range: `bytes=0-499`, `bytes=500-` or `bytes=-500` (the last 500 bytes). Per RFC 9110 a header this route cannot parse is IGNORED rather than rejected, and the whole object is served under a 200 -- so a malformed value is never an error. Multiple ranges in one header (`bytes=0-9,20-29`) are deliberately ignored for the same reason: answering one of several under a 206 is indistinguishable, from the client side, from an answer to a different question. `If-Range` is not parsed.',
+  schema: { type: 'string' },
+  example: 'bytes=0-1023',
+};
+
 const errorResponse = (description, codes, extra = {}) => ({
   description,
   headers: { ...ERROR_HEADERS, ...(extra.headers ?? {}) },
@@ -127,6 +141,29 @@ const gone = errorResponse(
 const internal = errorResponse(
   'An unexpected failure. Never a decision — every authorization outcome is one of the statuses above.',
   ['internal'],
+);
+
+const partialContent = (extraHeaders = {}) => ({
+  description:
+    'The requested byte range. The status is DERIVED from whether the store served a range, never passed in as a parameter -- a partial body under a 200 is undetectable by every HTTP client, so it is not a mistake this API lets a caller make. One case does not reach here: when a download cap binds the grant, the range is dropped and the whole object is returned under a 200 with `Accept-Ranges: none`, because charging a capped grant once per seek would make `maxDownloads: 3` mean "three seeks".',
+  headers: {
+    ...BYTE_HEADERS,
+    'Content-Range': h('`bytes <start>-<end>/<total>`. The total is the object size as the store reports it, not the `size_bytes` column.'),
+    ...extraHeaders,
+  },
+  content: {
+    'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
+  },
+});
+
+const rangeNotSatisfiable = errorResponse(
+  'A well-formed range that this object cannot satisfy -- a first-pos at or past the end, or a suffix range against a zero-byte object. NOT returned for a malformed range, which is ignored. Before 0.10.0 this case was a 404, which told a caller who was allowed to read the file that it did not exist.',
+  ['range_not_satisfiable'],
+  {
+    headers: {
+      'Content-Range': h('Always `bytes */<total>`, naming the satisfiable extent. A client that asked past the end did so because it did not know the size; this is the only field that tells it.'),
+    },
+  },
 );
 
 const spec = {
@@ -274,6 +311,7 @@ const spec = {
               'The opaque file id returned by `put()`. Knowing it grants nothing (P2): it is not an input to any decision.',
             schema: { type: 'string', format: 'uuid' },
           },
+          RANGE_PARAM,
         ],
         responses: {
           200: {
@@ -284,6 +322,7 @@ const spec = {
               'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
             },
           },
+          206: partialContent(),
           302: {
             description:
               'Redirect delivery. Only emitted when the instance was configured with `redirectDelivery` AND the verbatim acknowledgement string was supplied; by default only anonymous (published) grants are eligible. Revocation is immediate at decision time plus up to `ttlSeconds` of in-flight window, and `ttlSeconds` is clamped to 300.',
@@ -303,6 +342,7 @@ const spec = {
           ),
           404: notFound,
           410: gone,
+          416: rangeNotSatisfiable,
           500: internal,
         },
       },
@@ -319,6 +359,7 @@ const spec = {
             'The share secret returned exactly once by `fl.shares.create()`. Only its SHA-256 is stored, so it cannot be recovered from the database. It is the entire credential: possession is authorization, attenuated by the grant it was minted from.',
           schema: { type: 'string' },
         },
+        RANGE_PARAM,
       ],
       get: {
         tags: ['shares'],
@@ -346,6 +387,9 @@ const spec = {
               'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
             },
           },
+          206: partialContent({
+            'X-Downloads-Remaining': h('See the 200.'),
+          }),
           302: {
             description:
               'Redirect delivery. See the note on `GET /f/{fileId}`. Not eligible by default for a link grant — the default scope is anonymous grants only.',
@@ -370,6 +414,7 @@ const spec = {
           ),
           404: notFound,
           410: gone,
+          416: rangeNotSatisfiable,
           500: internal,
         },
       },
@@ -416,6 +461,7 @@ const spec = {
               'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
             },
           },
+          206: partialContent({ 'X-Downloads-Remaining': h('See the GET.') }),
           302: {
             description: 'Redirect delivery. See the note on `GET /f/{fileId}`.',
             headers: REDIRECT_HEADERS,
@@ -438,6 +484,7 @@ const spec = {
           404: notFound,
           410: gone,
           413: errorResponse('The request body exceeded 64 KiB.', ['payload_too_large']),
+          416: rangeNotSatisfiable,
           500: internal,
         },
       },

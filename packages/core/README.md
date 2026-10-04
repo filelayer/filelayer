@@ -150,7 +150,7 @@ attachments, exports, anything with a share link you might later want back.
 | You need | Use instead | Why |
 |---|---|---|
 | Public images at CDN volume | a CDN-backed bucket | Default delivery proxies every byte. Redirect delivery (below) removes the proxy but is opt-in and narrow. |
-| Video or audio seeking in a browser | a CDN / media service | The shipped HTTP route helpers do not answer `Range` requests. |
+| Video or audio at scale | a CDN / media service | Seeking works — the shipped routes answer `Range` with `206`. But default delivery proxies every byte through your server, and there is no CDN on that path. |
 | Direct browser → storage upload | Supabase / presigned S3 | Uploads go through your server. |
 | Thumbnails, transforms, format negotiation | Cloudinary / imgix | We have none. |
 
@@ -387,16 +387,19 @@ Restated here so they are not only in an appendix. Each one is current as of
 `0.9.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
-1. **No `Range` responses from the shipped HTTP routes.** `fileDownloadRoute()`
-   and `shareDownloadRoute()` do not parse the `Range` request header, so they
-   never return `206` and a browser cannot seek. Do not use the shipped routes
-   for video or audio. The layer underneath is complete: `readStream()` and
-   `redeemStream()` take a byte range, the S3 adapter honours it, and
-   `sendNodeStream()` / `toStreamResponse()` emit `206` with `Content-Range`
-   whenever a range was served. Parsing the request header is the part you
-   write — see
-   [QUICKSTART §6](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md)
-   for the whole thing.
+1. **`Range` is answered, with three documented edges.** The shipped routes
+   parse the `Range` request header, return `206` with `Content-Range`,
+   advertise `Accept-Ranges: bytes` on every proxied response, and answer `416`
+   with `Content-Range: bytes */<size>` for a range past the end. What they do
+   not do: **multiple ranges in one request** (`bytes=0-9,20-29`) are ignored
+   and the whole object is served under a `200` — answering one of several
+   ranges under a `206` is indistinguishable, to the client, from an answer to a
+   different question; **`If-Range` is not parsed**, which is safe here only
+   because an object key is a fresh UUID that is never rewritten, so the
+   representation cannot change under a resuming client; and **a range is
+   dropped when a download cap binds**, served whole under a `200` with
+   `Accept-Ranges: none`, because charging a capped grant per seek would make
+   `maxDownloads: 3` mean "three seeks".
 2. **The tiered facade `fl.files.put()` takes a `Uint8Array`**, so a file put
    through it is fully resident in memory. The core `fl.upload()` accepts a
    `ReadableStream`; use that above a few tens of megabytes.
@@ -439,12 +442,7 @@ Restated here so they are not only in an appendix. Each one is current as of
    database, but by a rule and a trigger the table's owner can drop.
 11. **There is no retention trimming for the audit log.** `audit_event` grows
    without bound, and erasing a tenant's history is not a supported operation.
-12. **The shipped HTTP routes still ignore the `Range` request header.** They
-   answer a full `200` and send no `Accept-Ranges`, so a resumable client has no
-   way to learn that ranges are unsupported and will retry whole objects.
-   Everything beneath the routes honours a range; parsing the header is the part
-   you write.
-13. **A proxied delivery is audited at the decision, not at the last byte.** The
+12. **A proxied delivery is audited at the decision, not at the last byte.** The
    allow event and the download-cap charge happen before any bytes move, so a
    transfer that dies mid-stream is recorded as an allowed read and still spends
    the cap. "Every access on the record" means every authorization decision. On

@@ -80,6 +80,7 @@ import {
   safeContentType,
   type Disposition,
   type ProxyDelivery,
+  type RangeSpec,
   type RedirectDelivery,
   type RedirectDeliveryConfig,
   type ResolvedRedirectConfig,
@@ -212,6 +213,18 @@ type Reservation =
       headers: Record<string, string>;
       remainingDownloads: number | null;
       grantId: string | null;
+      /**
+       * The range this delivery will actually serve, decided at RESERVATION
+       * time rather than read from the caller's options at fetch time.
+       *
+       * It exists because the two are allowed to differ: a request whose range
+       * was dropped because a download cap binds must be served whole, and the
+       * decision to drop it is made here, next to the cap. Carrying the
+       * effective range on the reservation is what stops `#fetchDelivery` from
+       * re-reading `opts.range` and quietly honouring a range the reservation
+       * already declined.
+       */
+      range: RangeSpec | null;
     }
   | {
       kind: 'redirect';
@@ -891,7 +904,7 @@ export class Filelayer {
      * same thing and nothing becomes cacheable that was not before. Pass
      * 'proxy' to force proxying on an instance that HAS opted in.
      */
-    opts: { disposition?: Disposition; mode?: 'proxy' | 'auto'; range?: { start: number; end?: number } } = {},
+    opts: { disposition?: Disposition; mode?: 'proxy' | 'auto'; range?: RangeSpec } = {},
   ): Promise<StreamedDelivery & { file: FileRecord; grantId?: string; remainingDownloads: number | null }> {
     // THE DECISION AND THE CHARGE, IN ONE TRANSACTION.
     //
@@ -905,7 +918,7 @@ export class Filelayer {
       return this.#reserve(tx, store, fileId, decision, principal, opts);
     });
 
-    return this.#fetchDelivery(reserved, opts);
+    return this.#fetchDelivery(reserved);
   }
 
   /**
@@ -990,8 +1003,11 @@ export class Filelayer {
     opts: {
       disposition?: Disposition;
       mode?: 'proxy' | 'auto';
-      /** Carried only so `#redirectEligible` can refuse to redirect a ranged read. */
-      range?: { start: number; end?: number };
+      /**
+       * Carried so `#redirectEligible` can refuse to redirect a ranged read,
+       * and so the cap rule below can decide whether the range survives at all.
+       */
+      range?: RangeSpec;
     },
   ): Promise<Reservation> {
     const grantId = decision.grantId ?? null;
@@ -1023,11 +1039,40 @@ export class Filelayer {
     const file = await getFileRecord(tx, this.projectId, fileId);
     if (!file) throw new FilelayerError(404, 'not_found');
 
+    // A DOWNLOAD CAP AND BYTE RANGES ARE INCOMPATIBLE SEMANTICS, so one of them
+    // has to give, and it is not the cap.
+    //
+    // The cap means what `deliver()` above says it means: "the bytes leave at
+    // most N times, through any path". A ranged delivery makes that
+    // unquantifiable. A video player seeking through a 2 GB file issues dozens
+    // of ranged requests, so charging each one turns `maxDownloads: 3` into
+    // "three seeks" -- a cap that is enforced and does not mean what it says,
+    // which is the exact failure this codebase refused for `maxDownloads` in
+    // the first place. Not charging them is worse: ranges then bypass the cap
+    // entirely, and a recipient reassembles the whole object for free.
+    //
+    // So when a cap binds, the RANGE gives. RFC 9110 permits a server to ignore
+    // `Range` and answer 200 with the whole representation, and that is the one
+    // option here with no downside for the client: the player gets a complete,
+    // working file instead of an error, the cap keeps its exact meaning, and
+    // there is no new failure mode to document. `#fetchDelivery` withholds
+    // `Accept-Ranges` on this response, so a well-behaved client learns not to
+    // ask again rather than retrying into the same silent drop.
+    //
+    // `remainingDownloads` is non-null if and only if some grant in the chain
+    // carries `max_downloads` (see `consume_download` in schema.sql, which
+    // takes the `min` over the chain), so it is already the answer to "does a
+    // cap bind" -- no extra query.
+    const capBinds = remainingDownloads !== null;
+    const effectiveRange = capBinds ? null : (opts.range ?? null);
+
     const headers = deliveryHeaders(file, opts);
-    const mode = this.#redirectEligible(decision, opts.mode ?? 'auto', opts);
+    const mode = this.#redirectEligible(decision, opts.mode ?? 'auto', {
+      ...(effectiveRange ? { range: effectiveRange } : {}),
+    });
 
     if (mode === 'proxy') {
-      return { kind: 'proxy', file, headers, remainingDownloads, grantId };
+      return { kind: 'proxy', file, headers, remainingDownloads, grantId, range: effectiveRange };
     }
 
     // The presigned URL is minted INSIDE the transaction, before the audit
@@ -1103,7 +1148,7 @@ export class Filelayer {
   #redirectEligible(
     decision: Extract<Decision, { allow: true }>,
     requested: 'proxy' | 'auto',
-    opts: { range?: { start: number; end?: number } } = {},
+    opts: { range?: RangeSpec } = {},
   ): 'proxy' | 'redirect' {
     if (requested !== 'auto') return 'proxy';
     if (this.redirect === null) return 'proxy';
@@ -1147,7 +1192,6 @@ export class Filelayer {
    */
   async #fetchDelivery(
     r: Reservation,
-    opts: { range?: { start: number; end?: number } },
   ): Promise<StreamedDelivery & { file: FileRecord; grantId?: string; remainingDownloads: number | null }> {
     if (r.kind === 'redirect') {
       const d: RedirectDelivery & {
@@ -1168,10 +1212,74 @@ export class Filelayer {
       return d;
     }
 
+    // THE EFFECTIVE RANGE, from the reservation rather than from `opts`. See
+    // the note on `Reservation.range`: the reservation may have dropped a range
+    // the caller asked for, and re-reading `opts` here would undo that.
+    let range: { start: number; end?: number } | undefined;
+    if (r.range) {
+      if ('suffix' in r.range) {
+        // "The last N bytes" is not a byte range until something knows how long
+        // the object is, and RESOLVING IT AGAINST `size_bytes` WOULD BE WRONG:
+        // this file distrusts that column on the two lines below, for the same
+        // reason it would matter more here. A column that disagrees with the
+        // object by one byte truncates a `content-length`; here it would serve
+        // the WRONG BYTES, offset by the difference, under a 206 that says they
+        // are the last N. The object store is the only authority on its size.
+        //
+        // The cost is one HEAD, and only on the suffix form. `bytes=-N` is what
+        // a PDF reader sends to find the cross-reference table at the end of a
+        // document -- once per document, before it switches to explicit ranges
+        // it can compute itself -- so this is not a per-chunk tax.
+        const h = await this.storage.head(r.file.storageKey);
+        if (!h) throw new FilelayerError(404, 'not_found');
+        if (h.size === 0) {
+          // No byte in an empty object can satisfy "the last N", and there is
+          // no satisfiable extent to name. `bytes * /0` is what RFC 9110 asks
+          // for in exactly this case.
+          throw new FilelayerError(416, 'range_not_satisfiable', 'suffix_on_empty_object', {
+            'content-range': 'bytes */0',
+          });
+        }
+        // A suffix longer than the object is satisfiable and means "all of it",
+        // which is what the clamp at 0 produces.
+        range = { start: Math.max(0, h.size - r.range.suffix), end: h.size - 1 };
+      } else {
+        range = r.range;
+      }
+    }
+
     const obj: ObjectStream | null = await this.storage.stream(r.file.storageKey, {
-      ...(opts.range ? { range: opts.range } : {}),
+      ...(range ? { range } : {}),
     });
-    if (!obj) throw new FilelayerError(404, 'not_found');
+    if (!obj) {
+      // A NULL MEANS TWO DIFFERENT THINGS AND THEY NEED DIFFERENT STATUS CODES.
+      //
+      // Every adapter returns null both for "no such object" and for a range
+      // that starts past the end (FsStorage and MemoryStorage return null when
+      // `start > end`; S3Storage maps a 416 from the store to null). The
+      // delivery layer turned all of it into 404, which is wrong twice: RFC
+      // 9110 reserves 416 for a well-formed range this object cannot satisfy,
+      // and telling a caller who IS authorized to read the file that it does
+      // not exist inverts the whole point of the uniform 404 -- that one is for
+      // hiding existence from people without standing, not from the owner.
+      //
+      // Disambiguated with a HEAD, on the error path only, so the ordinary
+      // delivery costs nothing extra. `head` is mandatory on `StorageAdapter`,
+      // so this needs no capability check and no change to the adapter
+      // interface third parties implement.
+      if (range) {
+        const h = await this.storage.head(r.file.storageKey);
+        if (h) {
+          throw new FilelayerError(416, 'range_not_satisfiable', `range_start:${range.start}`, {
+            // The satisfiable extent. A client that asked past the end asked
+            // precisely because it did not know the size; this is the only
+            // field that tells it.
+            'content-range': `bytes */${h.size}`,
+          });
+        }
+      }
+      throw new FilelayerError(404, 'not_found');
+    }
 
     // Metering is deliberately outside the transaction and best-effort: it is
     // not a decision, and a metering failure must not fail a delivery the
@@ -1184,9 +1292,22 @@ export class Filelayer {
     // with the object truncates or hangs the response.
     if (obj.size !== null) headers['content-length'] = String(obj.size);
     else delete headers['content-length'];
+    // ADVERTISED ON EVERY PROXIED RESPONSE, not just on the ranged ones.
+    //
+    // `Accept-Ranges` was previously set only when a range had already been
+    // served, which is the one moment the client no longer needs to be told. A
+    // client discovers range support from the UNRANGED 200 -- that is the
+    // response a video player, a PDF reader or a resuming downloader looks at
+    // before deciding whether it can seek -- so advertising it only on 206 is
+    // the same as not advertising it.
+    //
+    // `none` when a download cap binds, because `#reserve` drops ranges on
+    // those deliveries. Saying so is what keeps the drop from being silent: a
+    // client that is told `none` serves the whole file and does not retry,
+    // which is the outcome that rule was chosen for.
+    headers['accept-ranges'] = r.remainingDownloads === null ? 'bytes' : 'none';
     if (obj.range) {
       headers['content-range'] = `bytes ${obj.range.start}-${obj.range.end}/${obj.range.total}`;
-      headers['accept-ranges'] = 'bytes';
     }
 
     const d: ProxyDelivery & {
@@ -1854,7 +1975,7 @@ export class Filelayer {
       userAgent?: string;
       disposition?: Disposition;
       mode?: 'proxy' | 'auto';
-      range?: { start: number; end?: number };
+      range?: RangeSpec;
     } = {},
   ): Promise<StreamedDelivery & { file: FileRecord; remainingDownloads: number | null }> {
     const principal: Principal = {
@@ -1896,7 +2017,7 @@ export class Filelayer {
       return this.#reserve(tx, store, grant.fileId, decision, principal, opts);
     });
 
-    return this.#fetchDelivery(reserved, opts);
+    return this.#fetchDelivery(reserved);
   }
 
   // ---------------------------------------------------------------------------

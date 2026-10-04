@@ -17,7 +17,7 @@ that records denials. It was first published on **5 September 2026**.
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
-| Tests | 405, of which 397 on Node 22 / 24 / 26 and all 405 against a real PostgreSQL, every commit |
+| Tests | 435, of which 427 on Node 22 / 24 / 26 and all 435 against a real PostgreSQL, every commit |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
@@ -92,8 +92,11 @@ matter:
 - Byte delivery proxies through your application by default, so there is no CDN
   on that path. An opt-in redirect mode exists for anonymous grants and trades a
   bounded revocation window for cacheability.
-- The shipped HTTP route helpers do not parse `Range`, though everything beneath
-  them honours it.
+- `Range` is answered by the shipped route helpers, with three documented
+  edges: multiple ranges in one request are ignored and the whole object is
+  served, `If-Range` is not parsed, and a range is dropped when a download cap
+  binds (with `Accept-Ranges: none` to say so). The README limitations list
+  gives the reasoning for each.
 - No thumbnails, transformations or format negotiation. Bytes go in and the same
   bytes come out.
 - No direct browser-to-storage upload. Upload bytes travel through your server.

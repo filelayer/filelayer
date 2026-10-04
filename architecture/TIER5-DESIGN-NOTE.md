@@ -84,19 +84,36 @@ issued mid-transfer. That is inherent to streaming — S3 has it too — and the
 correct answer is a bounded response, not a re-check per chunk. It is stated in
 `packages/core/SEMANTICS.md` rather than pretended away.
 
-### 1.3 Range requests — **the largest single piece of work. Half landed.**
+### 1.3 Range requests — **landed in 0.10.0.**
 
-**LANDED:** `StorageAdapter.stream(key, { start, end })` and a `ByteRange` type;
-the S3/R2 adapter issues a ranged `GET`, `FsStorage` reads the range off an open descriptor, and the in-memory adapter slices. The
-delivery API can be handed a range.
+**LANDED EARLIER:** `StorageAdapter.stream(key, { start, end })` and a
+`ByteRange` type; the S3/R2 adapter issues a ranged `GET`, `FsStorage` reads the
+range off an open descriptor, and the in-memory adapter slices. The delivery API
+can be handed a range.
 
-**NOT landed, and this is the part a browser cares about:** the shipped HTTP
-route helpers — `fileDownloadRoute()` and `shareDownloadRoute()` — do not parse
-the `Range` *request* header and never return `206 Partial Content`. There is no
-`Content-Range`, no `Accept-Ranges`, no `If-Range`/ETag handling. A browser
-still cannot seek in a file served by the shipped routes. The parts exist; the
-route that assembles them does not. This is limitation 1 in the README and item
-3 in §5 of [`ARCHITECTURE-PROGRESSIVE.md`](../ARCHITECTURE-PROGRESSIVE.md).
+**LANDED IN 0.10.0:** `parseRangeHeader()` and the wiring. The shipped route
+helpers parse the `Range` *request* header, return `206` with `Content-Range`,
+send `Accept-Ranges` on every proxied response — including the unranged `200`,
+which is the one a client actually reads — and answer `416` with
+`Content-Range: bytes */<size>`. That last one was a defect rather than a gap:
+every adapter returns `null` both for "no such object" and for "that range
+starts past the end", and the delivery layer collapsed both into `404`, so a
+caller WITH permission to read a file was told it did not exist.
+
+**STILL NOT LANDED, and each one is a decision rather than an omission:**
+multiple ranges in one request are ignored and the object is served whole;
+`If-Range`/ETag revalidation is not implemented, which is safe here only because
+an object key is a fresh UUID that is never rewritten, so a representation
+cannot change under a resuming client.
+
+**THE `max_downloads` QUESTION THIS SECTION SAID WOULD HAVE TO BE ANSWERED
+FIRST** (see the table in §9) was answered: neither requests nor sessions. When
+a download cap binds, the RANGE gives way — it is dropped, the whole object is
+served under a `200`, and `Accept-Ranges: none` says so. Charging per ranged
+request would make `maxDownloads: 3` mean "three seeks"; not charging would let
+ranges bypass the cap entirely. RFC 9110 permits a server to ignore `Range`, and
+that is the only option here that leaves the client with a working file and the
+cap with its stated meaning.
 
 **What does NOT change:** authorization — a range request is a read, authorized
 identically.
@@ -289,7 +306,7 @@ property, not the economics.
 |---|---|---|---|---|
 | Streaming reads | unchanged | unchanged | `stream()`, `head()`, `toStreamResponse()` | **Landed.** In-flight revocation is inherent to streaming and is documented, not solved. |
 | Large files | unchanged | unchanged (`pending` state already exists) | `upload()` takes a `ReadableStream` | **Landed for streaming, not for multipart.** No resumable upload; `fl.files.put()` still buffers. Model any future upload session as a `write` grant, not as an opaque object-store upload id. |
-| Range requests | unchanged | unchanged | `stream(key, {start,end})` landed; `206` from the shipped routes did not | **Not precluded, not delivered.** The largest remaining piece. Forces the "does `max_downloads` count requests or sessions?" decision first. |
+| Range requests | unchanged | unchanged | **Delivered in 0.10.0.** `parseRangeHeader()`, `206`, `Accept-Ranges`, `416` from the shipped routes | **Done.** The `max_downloads` question it forced was answered by neither option: a cap binding makes the range give way, not the counter. Multi-range and `If-Range` remain out, deliberately. |
 | CDN delivery | unchanged | unchanged | cache only `subject_type='anonymous'` | **Taken in a narrow, opt-in form** — redirect delivery, clamped TTL, anonymous grants by default, audited. An edge-cached public route is still not offered. |
 | Processing hooks | unchanged | wants an additive `derived_from` | worker path | **Not precluded, not built.** The derivative must inherit `org_id` + `visibility`; make that structural rather than remembered. |
 

@@ -64,6 +64,16 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "required": false,
+            "description": "A single byte range: `bytes=0-499`, `bytes=500-` or `bytes=-500` (the last 500 bytes). Per RFC 9110 a header this route cannot parse is IGNORED rather than rejected, and the whole object is served under a 200 -- so a malformed value is never an error. Multiple ranges in one header (`bytes=0-9,20-29`) are deliberately ignored for the same reason: answering one of several under a 206 is indistinguishable, from the client side, from an answer to a different question. `If-Range` is not parsed.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "bytes=0-1023"
           }
         ],
         "responses": {
@@ -130,6 +140,16 @@
                   "type": "string"
                 }
               },
+              "Accept-Ranges": {
+                "description": "Always present on a proxied response. `bytes` normally; `none` when a download cap binds this delivery, because a capped grant has its range dropped and is served whole -- see the 206 description.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "bytes",
+                    "none"
+                  ]
+                }
+              },
               "X-Filelayer-Delivery": {
                 "description": "Which delivery mode answered this request: `proxy` or `redirect`.",
                 "schema": {
@@ -138,6 +158,105 @@
                     "proxy",
                     "redirect"
                   ]
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested byte range. The status is DERIVED from whether the store served a range, never passed in as a parameter -- a partial body under a 200 is undetectable by every HTTP client, so it is not a mistake this API lets a caller make. One case does not reach here: when a download cap binds the grant, the range is dropped and the whole object is returned under a 200 with `Accept-Ranges: none`, because charging a capped grant once per seek would make `maxDownloads: 3` mean \"three seeks\".",
+            "headers": {
+              "Content-Type": {
+                "description": "The stored content type, after neutralisation. A type that is not a plausible media type, or that contains CR/LF/NUL, is replaced with application/octet-stream. An active type (html, xml, svg, script, xsl, ecmascript) requested inline is also replaced.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "description": "RFC 6266, with the filename encoded rather than interpolated. `attachment` by default; forced back to `attachment` for an active content type even when `inline` was configured.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "description": "Present when the store reported a length for this response. Recomputed from the response rather than trusted from the metadata row.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "Always `nosniff`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Always `private, no-store, no-cache, must-revalidate, max-age=0`. This is what makes immediate revocation true at the browser and at intermediaries, not only at the origin.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Always `no-cache`. The HTTP/1.0 spelling, because corporate proxies are real.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Expires": {
+                "description": "Always `0`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "description": "Always `no-referrer`. A share link secret is in the URL, so any outbound link inside a delivered document would otherwise leak it in the Referer header.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Security-Policy": {
+                "description": "Always `default-src 'none'; sandbox`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Frame-Options": {
+                "description": "Always `DENY`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Accept-Ranges": {
+                "description": "Always present on a proxied response. `bytes` normally; `none` when a download cap binds this delivery, because a capped grant has its range dropped and is served whole -- see the 206 description.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "bytes",
+                    "none"
+                  ]
+                }
+              },
+              "X-Filelayer-Delivery": {
+                "description": "Which delivery mode answered this request: `proxy` or `redirect`.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "proxy",
+                    "redirect"
+                  ]
+                }
+              },
+              "Content-Range": {
+                "description": "`bytes <start>-<end>/<total>`. The total is the object size as the store reports it, not the `size_bytes` column.",
+                "schema": {
+                  "type": "string"
                 }
               }
             },
@@ -333,6 +452,60 @@
               "gone"
             ]
           },
+          "416": {
+            "description": "A well-formed range that this object cannot satisfy -- a first-pos at or past the end, or a suffix range against a zero-byte object. NOT returned for a malformed range, which is ignored. Before 0.10.0 this case was a 404, which told a caller who was allowed to read the file that it did not exist.",
+            "headers": {
+              "Content-Type": {
+                "description": "Always `application/json`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Always `private, no-store, no-cache, must-revalidate, max-age=0`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Always `no-cache`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "description": "Always `no-referrer`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "Always `nosniff`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Range": {
+                "description": "Always `bytes */<total>`, naming the satisfiable extent. A client that asked past the end did so because it did not know the size; this is the only field that tells it.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "range_not_satisfiable"
+                }
+              }
+            },
+            "x-codes": [
+              "range_not_satisfiable"
+            ]
+          },
           "500": {
             "description": "An unexpected failure. Never a decision — every authorization outcome is one of the statuses above.",
             "headers": {
@@ -395,6 +568,16 @@
           "schema": {
             "type": "string"
           }
+        },
+        {
+          "name": "Range",
+          "in": "header",
+          "required": false,
+          "description": "A single byte range: `bytes=0-499`, `bytes=500-` or `bytes=-500` (the last 500 bytes). Per RFC 9110 a header this route cannot parse is IGNORED rather than rejected, and the whole object is served under a 200 -- so a malformed value is never an error. Multiple ranges in one header (`bytes=0-9,20-29`) are deliberately ignored for the same reason: answering one of several under a 206 is indistinguishable, from the client side, from an answer to a different question. `If-Range` is not parsed.",
+          "schema": {
+            "type": "string"
+          },
+          "example": "bytes=0-1023"
         }
       ],
       "get": {
@@ -468,6 +651,16 @@
                   "type": "string"
                 }
               },
+              "Accept-Ranges": {
+                "description": "Always present on a proxied response. `bytes` normally; `none` when a download cap binds this delivery, because a capped grant has its range dropped and is served whole -- see the 206 description.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "bytes",
+                    "none"
+                  ]
+                }
+              },
               "X-Filelayer-Delivery": {
                 "description": "Which delivery mode answered this request: `proxy` or `redirect`.",
                 "schema": {
@@ -480,6 +673,111 @@
               },
               "X-Downloads-Remaining": {
                 "description": "Downloads left on this grant after this one, or empty when the grant is uncapped. Safe to expose: the recipient already holds the credential it counts against.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested byte range. The status is DERIVED from whether the store served a range, never passed in as a parameter -- a partial body under a 200 is undetectable by every HTTP client, so it is not a mistake this API lets a caller make. One case does not reach here: when a download cap binds the grant, the range is dropped and the whole object is returned under a 200 with `Accept-Ranges: none`, because charging a capped grant once per seek would make `maxDownloads: 3` mean \"three seeks\".",
+            "headers": {
+              "Content-Type": {
+                "description": "The stored content type, after neutralisation. A type that is not a plausible media type, or that contains CR/LF/NUL, is replaced with application/octet-stream. An active type (html, xml, svg, script, xsl, ecmascript) requested inline is also replaced.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "description": "RFC 6266, with the filename encoded rather than interpolated. `attachment` by default; forced back to `attachment` for an active content type even when `inline` was configured.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "description": "Present when the store reported a length for this response. Recomputed from the response rather than trusted from the metadata row.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "Always `nosniff`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Always `private, no-store, no-cache, must-revalidate, max-age=0`. This is what makes immediate revocation true at the browser and at intermediaries, not only at the origin.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Always `no-cache`. The HTTP/1.0 spelling, because corporate proxies are real.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Expires": {
+                "description": "Always `0`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "description": "Always `no-referrer`. A share link secret is in the URL, so any outbound link inside a delivered document would otherwise leak it in the Referer header.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Security-Policy": {
+                "description": "Always `default-src 'none'; sandbox`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Frame-Options": {
+                "description": "Always `DENY`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Accept-Ranges": {
+                "description": "Always present on a proxied response. `bytes` normally; `none` when a download cap binds this delivery, because a capped grant has its range dropped and is served whole -- see the 206 description.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "bytes",
+                    "none"
+                  ]
+                }
+              },
+              "X-Filelayer-Delivery": {
+                "description": "Which delivery mode answered this request: `proxy` or `redirect`.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "proxy",
+                    "redirect"
+                  ]
+                }
+              },
+              "Content-Range": {
+                "description": "`bytes <start>-<end>/<total>`. The total is the object size as the store reports it, not the `size_bytes` column.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Downloads-Remaining": {
+                "description": "See the 200.",
                 "schema": {
                   "type": "string"
                 }
@@ -735,6 +1033,60 @@
               "gone"
             ]
           },
+          "416": {
+            "description": "A well-formed range that this object cannot satisfy -- a first-pos at or past the end, or a suffix range against a zero-byte object. NOT returned for a malformed range, which is ignored. Before 0.10.0 this case was a 404, which told a caller who was allowed to read the file that it did not exist.",
+            "headers": {
+              "Content-Type": {
+                "description": "Always `application/json`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Always `private, no-store, no-cache, must-revalidate, max-age=0`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Always `no-cache`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "description": "Always `no-referrer`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "Always `nosniff`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Range": {
+                "description": "Always `bytes */<total>`, naming the satisfiable extent. A client that asked past the end did so because it did not know the size; this is the only field that tells it.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "range_not_satisfiable"
+                }
+              }
+            },
+            "x-codes": [
+              "range_not_satisfiable"
+            ]
+          },
           "500": {
             "description": "An unexpected failure. Never a decision — every authorization outcome is one of the statuses above.",
             "headers": {
@@ -887,6 +1239,16 @@
                   "type": "string"
                 }
               },
+              "Accept-Ranges": {
+                "description": "Always present on a proxied response. `bytes` normally; `none` when a download cap binds this delivery, because a capped grant has its range dropped and is served whole -- see the 206 description.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "bytes",
+                    "none"
+                  ]
+                }
+              },
               "X-Filelayer-Delivery": {
                 "description": "Which delivery mode answered this request: `proxy` or `redirect`.",
                 "schema": {
@@ -895,6 +1257,111 @@
                     "proxy",
                     "redirect"
                   ]
+                }
+              },
+              "X-Downloads-Remaining": {
+                "description": "See the GET.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested byte range. The status is DERIVED from whether the store served a range, never passed in as a parameter -- a partial body under a 200 is undetectable by every HTTP client, so it is not a mistake this API lets a caller make. One case does not reach here: when a download cap binds the grant, the range is dropped and the whole object is returned under a 200 with `Accept-Ranges: none`, because charging a capped grant once per seek would make `maxDownloads: 3` mean \"three seeks\".",
+            "headers": {
+              "Content-Type": {
+                "description": "The stored content type, after neutralisation. A type that is not a plausible media type, or that contains CR/LF/NUL, is replaced with application/octet-stream. An active type (html, xml, svg, script, xsl, ecmascript) requested inline is also replaced.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "description": "RFC 6266, with the filename encoded rather than interpolated. `attachment` by default; forced back to `attachment` for an active content type even when `inline` was configured.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "description": "Present when the store reported a length for this response. Recomputed from the response rather than trusted from the metadata row.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "Always `nosniff`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Always `private, no-store, no-cache, must-revalidate, max-age=0`. This is what makes immediate revocation true at the browser and at intermediaries, not only at the origin.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Always `no-cache`. The HTTP/1.0 spelling, because corporate proxies are real.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Expires": {
+                "description": "Always `0`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "description": "Always `no-referrer`. A share link secret is in the URL, so any outbound link inside a delivered document would otherwise leak it in the Referer header.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Security-Policy": {
+                "description": "Always `default-src 'none'; sandbox`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Frame-Options": {
+                "description": "Always `DENY`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Accept-Ranges": {
+                "description": "Always present on a proxied response. `bytes` normally; `none` when a download cap binds this delivery, because a capped grant has its range dropped and is served whole -- see the 206 description.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "bytes",
+                    "none"
+                  ]
+                }
+              },
+              "X-Filelayer-Delivery": {
+                "description": "Which delivery mode answered this request: `proxy` or `redirect`.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "proxy",
+                    "redirect"
+                  ]
+                }
+              },
+              "Content-Range": {
+                "description": "`bytes <start>-<end>/<total>`. The total is the object size as the store reports it, not the `size_bytes` column.",
+                "schema": {
+                  "type": "string"
                 }
               },
               "X-Downloads-Remaining": {
@@ -1201,6 +1668,60 @@
             },
             "x-codes": [
               "payload_too_large"
+            ]
+          },
+          "416": {
+            "description": "A well-formed range that this object cannot satisfy -- a first-pos at or past the end, or a suffix range against a zero-byte object. NOT returned for a malformed range, which is ignored. Before 0.10.0 this case was a 404, which told a caller who was allowed to read the file that it did not exist.",
+            "headers": {
+              "Content-Type": {
+                "description": "Always `application/json`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Always `private, no-store, no-cache, must-revalidate, max-age=0`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Always `no-cache`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "description": "Always `no-referrer`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "Always `nosniff`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Range": {
+                "description": "Always `bytes */<total>`, naming the satisfiable extent. A client that asked past the end did so because it did not know the size; this is the only field that tells it.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "range_not_satisfiable"
+                }
+              }
+            },
+            "x-codes": [
+              "range_not_satisfiable"
             ]
           },
           "500": {

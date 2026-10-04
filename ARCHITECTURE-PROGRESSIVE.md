@@ -7,7 +7,7 @@ code in this repository, from the repository root. Reproduce with:
 
 ```bash
 npm run bootstrap                  # npm ci in packages/core
-npm test                     # 405 tests, 0 failures
+npm test                     # 435 tests, 0 failures
 npm run dev:fracture               # the four §2 experiments
 npm run loc:tiers                  # LOC per tier (§4.2)
 node benchmark/count-loc.mjs       # LOC for the full-vault implementations
@@ -15,17 +15,18 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **405 / 405 passing** across 100 suites:
+**Test status.** `npm test` is **435 / 435 passing** across 108 suites:
 
 | Suite | Tests |
 |---|---|
 | `test/tiers.test.ts` — the tiered API, and §3 below | 27 |
 | `test/group-subjects.test.ts` — `org` and `role` grant subjects | 49 |
+| `test/range.test.ts` — byte ranges, 206/416, and the download-cap rule | 30 |
 | everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 329 |
-| **total** | **405** |
+| **total** | **435** |
 
-Eight of the 405 are the contention tests, which need a real PostgreSQL with
-two backends. CI provides one, so all 405 run there; on a machine without one
+Eight of the 435 are the contention tests, which need a real PostgreSQL with
+two backends. CI provides one, so all 435 run there; on a machine without one
 they skip and you will see **397 passing, 8 skipped**. Two further suites — the
 live S3 ones — skip unless the five `FILELAYER_TEST_S3_*` variables are set.
 
@@ -432,12 +433,13 @@ against `0.9.0`.
    `fl.upload()` with a stream above a few tens of megabytes, and do not use
    either for uploads that must survive a dropped connection. See §6.
 
-3. **Video and audio seeking in a browser.** The storage and delivery APIs
-   accept a byte range and the S3/R2 adapter honours it, but the **shipped HTTP
-   route helpers** (`fileDownloadRoute()`, `shareDownloadRoute()`) do not parse
-   the `Range` request header and never return `206 Partial Content`. A browser
-   cannot seek in a file served by them. The pieces exist; the route that would
-   assemble them does not. See §6.
+3. **Video and audio at CDN volume.** Seeking itself works as of 0.10.0: the
+   shipped route helpers parse `Range`, return `206 Partial Content` with
+   `Content-Range`, advertise `Accept-Ranges` on every proxied response and
+   answer `416` for a range past the end. What remains is the byte path, not the
+   protocol — default delivery proxies every byte through your server and there
+   is no CDN on it. Also unsupported, deliberately: multiple ranges in one
+   request, `If-Range`, and ranges on a download-capped grant. See §6.
 
 4. **Direct browser upload.** Every byte goes through your server. Supabase,
    Vercel Blob and presigned S3 all let the browser talk to storage directly;

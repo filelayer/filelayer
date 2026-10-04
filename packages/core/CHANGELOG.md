@@ -21,6 +21,94 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### Added — `Range` requests, answered by the shipped routes
+
+Everything below the route layer already handled byte ranges: all three storage
+adapters took a `ByteRange`, `assertRange()` validated it, and
+`sendNodeStream()` / `toStreamResponse()` already derived `206` from the
+presence of `Content-Range`. Nothing read the `Range` *request* header, so the
+whole capability was unreachable over HTTP — and because it was unreachable, two
+defects had been sitting in it untested.
+
+`fileDownloadRoute()`, `shareDownloadRoute()` and therefore `deliveryHandler()`
+now parse `Range`. `parseRangeHeader()` is exported for anyone writing their own
+route. Supported: `bytes=0-499`, `bytes=500-`, and `bytes=-500` — the suffix
+form, which is what a PDF reader sends first to find the cross-reference table
+at the end of a document.
+
+**The suffix form costs one `head()` on the object, and resolving it any other
+way would have been a bug.** "The last 500 bytes" is not a byte range until
+something says how long the object is, and the only authority on that is the
+object store. Resolving it from the `size_bytes` column — which this codebase
+already distrusts two lines away, for `Content-Length` — would serve the *wrong
+bytes*, offset by whatever the disagreement was, under a `Content-Range`
+asserting they were the last 500.
+
+### Fixed — an unsatisfiable range was a `404`
+
+Every adapter returns `null` for two different things: "no such object", and "a
+range that starts past the end" (`FsStorage` and `MemoryStorage` when
+`start > end`; `S3Storage` by mapping the store's own `416`). The delivery layer
+collapsed both into `404`.
+
+So a caller who **was authorized to read the file** was told it did not exist.
+That inverts what the uniform `404` is for: it exists to keep a tenant from
+enumerating files they have no standing for, not to lie to the owner. It is now
+a `416` carrying `Content-Range: bytes */<size>` — the field that tells a client
+the size it was guessing at, which is the whole reason it asked past the end.
+
+Disambiguated with a `head()` on the error path only, so an ordinary delivery
+costs nothing extra. `head` is already mandatory on `StorageAdapter`, so no
+third-party adapter has to change.
+
+### Fixed — `Accept-Ranges` was sent only where it was useless
+
+It was attached to ranged responses, which is the one response a client no
+longer needs it on. A client discovers range support from the **unranged
+`200`** — that is what a video player, a PDF reader or a resuming downloader
+reads before deciding whether it can seek. Advertising support only after the
+client had already worked it out is the same as not advertising it. It is now on
+every proxied response.
+
+### Changed — a download cap now takes precedence over a byte range
+
+A capped grant and byte ranges cannot both keep their meaning, and this is the
+decision [`architecture/TIER5-DESIGN-NOTE.md`](https://github.com/filelayer/filelayer/blob/main/architecture/TIER5-DESIGN-NOTE.md)
+said would have to be made before ranges could ship. It is neither of the two
+options it framed:
+
+- Charging a download per ranged request makes `maxDownloads: 3` mean "three
+  seeks" — a cap that is enforced and does not mean what it says, which is the
+  exact defect `maxDownloads` was already fixed for in `0.7.0`.
+- Not charging them lets ranges bypass the cap outright: a recipient reassembles
+  the whole object for free.
+
+So the **range** gives way, not the counter. When a cap binds, the range is
+dropped, the whole object is served under a `200`, and `Accept-Ranges: none`
+says so — RFC 9110 permits a server to ignore `Range`, and it is the only option
+that leaves the client with a working file and the cap with its stated meaning.
+A client that is told `none` stops asking rather than retrying into the same
+silent widening.
+
+### Still not supported, deliberately
+
+- **Multiple ranges in one request.** `bytes=0-9,20-29` is ignored and the whole
+  object is served under a `200`. Answering one of several under a `206` is
+  indistinguishable, from the client's side, from an answer to a different
+  question, so it stitches the reply in at the wrong offset.
+  `multipart/byteranges` is a response format nothing here produces.
+- **`If-Range`.** Not parsed. That is safe *here* only because an object key is
+  a fresh UUID that is never rewritten, so the representation cannot change
+  under a resuming client. It would not be safe in a system with mutable keys.
+
+### Added — `FilelayerError.headers`, and a precedence that is now testable
+
+A `416` without `Content-Range` is half an answer, and the error type had no way
+to carry a header. `errorHeaders(extra?)` takes the merge and puts `extra`
+*first*, so the security headers win: the channel can add `Content-Range` and
+cannot remove `nosniff`. Both parameters are optional, so neither addition
+breaks an existing caller.
+
 ### Added — `docs/guides/`, starting with the one whose usual answer is wrong
 
 A search for the problem this library exists to solve returns Multer tutorials

@@ -340,8 +340,18 @@ export function deliveryHeaders(
 }
 
 /** The same headers, minus the body ones, for a JSON error on a delivery path. */
-export function errorHeaders(): Record<string, string> {
+export function errorHeaders(extra?: Record<string, string>): Record<string, string> {
+  // `extra` FIRST, so the security headers below cannot be overridden by it.
+  //
+  // `FilelayerError.headers` exists so a 416 can carry the `Content-Range` that
+  // makes it meaningful. Doing that merge at the call site read more naturally
+  // the other way round -- spread the defaults, then the error's own -- and
+  // that order would let any future error drop `nosniff` to add a header of its
+  // own. Merging here instead makes the precedence a property of this function,
+  // where it is exported and can be tested, rather than of whoever remembers
+  // the argument order.
   return {
+    ...(extra ?? {}),
     'content-type': 'application/json',
     'cache-control': 'private, no-store, no-cache, must-revalidate, max-age=0',
     pragma: 'no-cache',
@@ -530,7 +540,8 @@ export async function sendNodeStream(
 function sendNodeError(res: ServerResponse, err: unknown): void {
   const e =
     err instanceof FilelayerError ? err : new FilelayerError(500, 'internal');
-  res.writeHead(e.status, errorHeaders());
+  // `errorHeaders` owns the precedence; see the note on it.
+  res.writeHead(e.status, errorHeaders(e.headers));
   res.end(JSON.stringify({ error: e.code }));
 }
 
@@ -641,6 +652,82 @@ function extractPassword(raw: string, contentType: string): string | undefined {
   }
 }
 
+/**
+ * What a client asked for in a `Range` header, once parsed.
+ *
+ * The suffix form stays unresolved on purpose: "the last 500 bytes" is not a
+ * byte range until something knows how long the object is, and the HTTP edge
+ * does not. The engine resolves it against the real object, not against
+ * `size_bytes` -- see `#fetchDelivery`.
+ */
+export type RangeSpec = { start: number; end?: number } | { suffix: number };
+
+/**
+ * Parse one `Range` request header, or decline to.
+ *
+ * RFC 9110 is unusually explicit about the failure mode here, and it is the
+ * opposite of what a validator normally does: a recipient **MUST ignore** a
+ * `Range` header it cannot parse and answer 200 with the whole representation.
+ * Rejecting a malformed range would be the wrong answer -- a range is an
+ * optimisation, and a client that garbles one is still entitled to the file.
+ * So this function has no error path. It returns a range or it returns null,
+ * and null means "serve the whole object".
+ *
+ * That also makes 416 narrower than it looks: it is NOT for a malformed range.
+ * It is only for a range that parsed cleanly and cannot be satisfied by this
+ * particular object, which is a judgement only the engine can make.
+ *
+ * DELIBERATELY UNSUPPORTED: multiple ranges (`bytes=0-9,20-29`). A server may
+ * answer one of them, all of them as `multipart/byteranges`, or ignore the
+ * header -- and of those three, ignoring is the only one that cannot mislead.
+ * Answering just the first range under a 206 is the trap: the client asked two
+ * questions and the status code says nothing about having answered one, so it
+ * stitches the reply into the wrong offset. `multipart/byteranges` is a
+ * response format nothing in this library produces. We ignore and serve 200,
+ * which is RFC-legal and leaves the client no way to misread us.
+ */
+export function parseRangeHeader(raw: string | string[] | undefined): RangeSpec | null {
+  // A repeated `Range` header arrives as an array. Two ranges in two headers is
+  // the multi-range case wearing a different hat, and gets the same answer.
+  if (typeof raw !== 'string') return null;
+  const m = /^bytes=(.*)$/.exec(raw.trim());
+  if (!m) return null; // another unit (`items=`, `seconds=`) or not a range at all
+  const specs = m[1]!.split(',');
+  if (specs.length !== 1) return null; // see above
+  const spec = specs[0]!.trim();
+
+  // `-N`: the last N bytes, which is what a PDF reader sends first to find the
+  // cross-reference table at the end of a document. A suffix length of zero
+  // asks for nothing; RFC 9110 says ignore it rather than answer 416.
+  const suffix = /^-(\d+)$/.exec(spec);
+  if (suffix) {
+    const n = Number(suffix[1]);
+    if (!Number.isSafeInteger(n) || n === 0) return null;
+    return { suffix: n };
+  }
+
+  const explicit = /^(\d+)-(\d*)$/.exec(spec);
+  if (!explicit) return null;
+  const start = Number(explicit[1]);
+  // A first-pos too large to represent exactly cannot be compared against an
+  // object size without lying about it, so it is not parseable for our
+  // purposes. Ignoring means this request gets the whole object, which is a
+  // defensible answer; guessing an offset is not.
+  if (!Number.isSafeInteger(start)) return null;
+  if (explicit[2] === '') return { start };
+  const end = Number(explicit[2]);
+  // A last-pos past the end of the object is NOT an error: RFC 9110 says the
+  // range is satisfiable and the response covers to the end. The adapters
+  // already clamp with `Math.min(end, total - 1)`, so an absurd-but-finite
+  // last-pos and an unsafe one both mean "to the end" -- which is exactly what
+  // dropping `end` says.
+  if (!Number.isSafeInteger(end)) return { start };
+  // last-pos < first-pos makes the whole byte-range-set invalid, and invalid
+  // means ignore. This is the case most often confused with 416.
+  if (end < start) return null;
+  return { start, end };
+}
+
 export interface ShareRouteOptions {
   /** Path prefix the share links are served under. Must match `baseUrl`. */
   prefix?: string;
@@ -714,12 +801,14 @@ export function shareDownloadRoute(
       // STREAMED, not buffered. This route is the one every share link goes
       // through, so buffering here was the whole-file-in-memory tax on the
       // busiest path in the product.
+      const range = parseRangeHeader(req.headers['range']);
       const delivery = await fl.redeemStream(secret, {
         ...(password !== undefined ? { password } : {}),
         ...(req.socket.remoteAddress ? { ip: req.socket.remoteAddress } : {}),
         ...(req.headers['user-agent'] ? { userAgent: String(req.headers['user-agent']) } : {}),
         ...(opts.disposition ? { disposition: opts.disposition } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
+        ...(range ? { range } : {}),
       });
 
       await sendNodeStream(res, {
@@ -806,12 +895,16 @@ export function fileDownloadRoute(
           `remove ?${forbidden}= from the URL; credentials belong in a header or a body`,
         );
       }
+      // Parsed BEFORE the authorization call, discarded if unusable, and never
+      // a reason to refuse the request. See `parseRangeHeader`.
+      const range = parseRangeHeader(req.headers['range']);
       const delivery = await fl.readStream(
         await opts.principal(req),
         safeDecode(segments[prefixSegments.length]!) ?? '',
         {
           ...(opts.disposition ? { disposition: opts.disposition } : {}),
           ...(opts.mode ? { mode: opts.mode } : {}),
+          ...(range ? { range } : {}),
         },
       );
       await sendNodeStream(res, {

@@ -28,8 +28,10 @@
       "one decision point" phrasing is ALWAYS scoped to "file access that
       goes through Filelayer". This wording cost us a correction in 0.4.4.
     - The object bucket must be private. Filelayer cannot make it private.
-    - No CDN on the default byte path, no Range in the shipped routes, no
-      transformations, no direct browser-to-storage upload.
+    - No CDN on the default byte path, no transformations, no direct
+      browser-to-storage upload. Range IS answered as of 0.10.0 -- 206,
+      Accept-Ranges and 416 -- but multi-range and If-Range are not, and a
+      download cap drops the range. Do not restate this as "no Range".
     - Zero known production deployments.
 
   If a claim here is not true of the published package, it is a bug.
@@ -479,7 +481,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
       <li><span>Version</span><span class="v">0.9.0 — alpha</span></li>
       <li><span>Storage adapter against live Cloudflare R2</span><span class="v">11 tests, every commit</span></li>
       <li><span>Storage adapter against live AWS S3</span><span class="v">11 tests, every commit</span></li>
-      <li><span>Tests, on Node 22 / 24 / 26, every commit</span><span class="v">405 across 100 suites</span></li>
+      <li><span>Tests, on Node 22 / 24 / 26, every commit</span><span class="v">435 across 108 suites</span></li>
       <li><span>Concurrency, against a real PostgreSQL</span><span class="v">8 tests, every commit</span></li>
       <li><span>Adversarial suite</span><span class="v">27 attacks, 0 breaches</span></li>
       <li><span>Runtime dependencies</span><span class="v">0</span></li>
@@ -512,7 +514,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
         </ul>
         <p class="note t2">
           Where else Filelayer is the wrong tool (no CDN on the default path, no
-          <code>Range</code>, no transformations, no direct browser upload):
+          transformations, no direct browser upload):
           <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md#what-is-known-broken-or-unfinished">the trust page has the full list →</a>
         </p>
       </div>
