@@ -25,6 +25,147 @@ Nothing yet.
 
 ---
 
+## [0.14.0] — 2026-10-04
+
+**Six defects, found by giving the published tarball to an outside analyst and
+asking it to describe the package.** It was told to look for what the project
+does not advertise. It had no access to this repository and was not told who
+wrote the catalog it was filling in. Every one of the six is real and every one
+had been green in CI, because the whole family of checks in this repository ran
+*beside* the repository rather than inside an install.
+
+### Fixed — the shipped test suite could not run from an install
+
+`test/tiers.test.ts` and `test/vault-example.test.ts` imported
+`../../../examples/...`. From `packages/core/test/` that is the repository root
+and it resolves. From `node_modules/@filelayer/core/test/` it escapes the
+package, so both files threw `ERR_MODULE_NOT_FOUND` and **28 tests — every
+example-integration test there is — ran for nobody using the shipped suite**,
+which is the only audience a shipped suite has.
+
+The copies under `packages/core/examples/` had the mirror-image defect: they
+carried the root's `../../packages/core/src/index.ts` verbatim, which from a
+copy one level deeper resolves to `packages/core/packages/core/src/`. Two wrong
+paths that cancelled out in the repository and failed together everywhere else.
+
+The tests now import `../examples/`, the copies carry `../../src/`, and
+`tools/check-package-copies.mjs` gained a declared single-line rewrite so the
+rest of those four files stays verified byte for byte — and fails if the
+pattern it rewrites ever disappears, rather than quietly collapsing back into
+the byte-identity that shipped this.
+
+### Fixed — four documents were cited by files that ship, and did not ship
+
+`TRUST.md`, `SECURITY.md` and `docs/LIVE-S3-TESTS.md` now ship.
+`TRUST.md` is the evidence table, the first thing the README links, and the
+page that exists so a sceptical engineer can decline quickly — and it was
+reachable only over the network, which fails exactly the reader this project
+claims to design for: an install and no browser. `docs/LIVE-S3-TESTS.md` is
+named three times by the CHANGELOG and `docs/` ships, so a reader who found
+`docs/` in their install went looking and came up empty.
+
+QUICKSTART's three relative links into `architecture/` and
+`ARCHITECTURE-PROGRESSIVE.md` are absolute URLs now, because those files do not
+ship and are not going to; its link to `SEMANTICS.md`, which does ship, is
+rewritten per copy so the offline reader gets the local file.
+
+### Fixed — `verifyAuditChain()` loaded the entire chain into memory
+
+One query, no `LIMIT`, mapped into an array. Two facts the project already
+documented make that a hazard rather than a style question: the audit log
+**grows without bound** and there is **no retention or trimming**. So peak
+memory was linear in a tenant's whole history, on the one call an operator
+reaches for when they already suspect something is wrong. The growth was
+disclosed; that verification loaded all of it at once was not.
+
+It reads in pages of 2,000 now, carrying the chain hash across the boundary.
+Replay is sequential by construction, so the **time** is still linear in the
+chain and no amount of paging changes that; what is fixed is the memory, which
+is the part that turns a slow answer into no answer.
+
+**One behaviour change, and it is why this is a minor rather than a patch.**
+`checked` now counts the events actually verified. On a sound chain that is the
+same number as before. On a broken one the old value reported the length of the
+whole chain — "I checked 40,000" when it had stopped at the eleventh.
+`lastId`/`lastHash` are unchanged in meaning and are now fetched in their own
+indexed query, so a failure still reports the real head of the chain rather
+than the row the replay stopped on; reporting the break point there would make
+an operator comparing a pinned head conclude the log had been truncated when it
+had not.
+
+Five tests in `test/audit-resolution.test.ts`, including a tampered row on the
+far side of a page boundary, which is the one that fails if the hash does not
+carry across.
+
+### Fixed — a line in QUICKSTART §9 said we do not do something we have done since 0.10.0
+
+"**Direct browser → storage upload.** Upload bytes go through your server",
+under the heading of what Filelayer does not do. `createUpload()` and
+`completeUpload()` shipped on 4 October 2026 in `0.10.0`, and `createUpload`
+appeared nowhere else in that document. §9 now describes the feature, its
+opt-in acknowledgement, its `maxUploadBytes` requirement and the `FsStorage`
+exception.
+
+The same section gained the limitation that was previously stated only in a
+comment inside `examples/starter/.env.example`: **plain `upload()` and
+`fl.files.put()` impose no size ceiling at all.** `maxUploadBytes` belongs to
+the direct-upload config and nothing else, so the limit is whatever your
+process can allocate — a 400 MB body took the starter from 85 MB resident to
+1.3 GB. That is the kind of thing that becomes a memory-exhaustion incident,
+and it was not in the README's limitations list.
+
+### Fixed — the two public fields that bypass the entire engine were not in the limitations list
+
+`fl.store` is a public field and `fl.store.db` reaches the raw query interface.
+Every method on `PostgresStore` reads and writes rows with no capability check
+and no audit event, which SEMANTICS §10 states — as a constraint on a future
+`@filelayer/sdk`, not as a fact about this package's own surface. The analyst
+read it as a contradiction between the document and the code. It is not one,
+but a careful reader arriving at the wrong conclusion about the authorization
+boundary is a documentation defect on its own. README limitation 13 now says it
+plainly: any code in your process holding a `Filelayer` can read or change any
+tenant's files and leave no trace, the boundary is your process, and
+`authorize()` protects it from the outside rather than from the inside.
+
+### Fixed — the README and the website said the suite was 405 tests
+
+It was 526 at the time. Both numbers had been right when written and both were
+a month stale, and `check:versions` — the gate whose entire job is this — was
+green, because it reads a hand-written list of file-and-pattern pairs and
+neither line was on it. **Registration is not coverage.** An allow-list of
+claims to check silently exempts every claim nobody thought to add, and it does
+so most on the surfaces that accumulate the most prose.
+
+### Added — `check:install-reach`, the gate that would have caught four of the six
+
+`tools/check-install-reach.mjs` packs the package, extracts the tarball, and
+resolves every relative import and every document reference **from inside the
+extracted directory, with the repository out of reach**. A path that only works
+because the checkout is one directory up cannot pass. It runs in `npm run
+verify` and in the `shipped-surface` CI job, and its negative control injects
+an escaping import and an unshipped link on every invocation.
+
+It found more than the analyst did: six unreachable references rather than
+four, and one of the four it cleared (26 `.ts` specifiers in the emitted
+`.d.ts` files) is a false positive that TypeScript resolves correctly, verified
+by typechecking a consumer against the installed `dist/`.
+
+`check:versions` gained the matching inversion: a sweep that reads every public
+surface and fails on any number that *looks* like a whole-suite test count and
+is not the real one, with a floor at 100 to separate it from the scoped
+subsets, and exceptions by shape rather than by line.
+
+### Where this leaves the method
+
+Five agent-integration runs through October found a revocation failure,
+world-readable bytes, an audit blind spot, four misleading documents and the
+identity gap. This run found six more, and the reason it could is that it was
+given the artifact rather than the repository. Nothing a reviewer with commit
+access can see would have found the two escaped import paths, because in the
+repository they resolve.
+
+---
+
 ## [0.13.1] — 2026-10-04
 
 No library code changed. This release exists because `examples/` ships inside

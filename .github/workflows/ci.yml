@@ -177,6 +177,19 @@ jobs:
       - name: Everything the documentation points at is reachable offline
         run: npm run check:offline
 
+      # THE SAME QUESTION, ASKED FROM INSIDE THE TARBALL. The step above reads a
+      # list of anchors and checks they ship, which is a question about the
+      # list. This one packs, extracts, and resolves every relative import and
+      # document reference with the repository out of reach.
+      #
+      # It exists because on 4 October 2026 an analyst holding only the
+      # published tarball found two things no gate here could see: two test
+      # files whose imports escaped the package root, so 28 shipped tests ran
+      # for nobody, and four cited documents that were not in the tarball.
+      # Every gate ran beside the repository, where both paths resolved.
+      - name: Every path inside the tarball resolves inside the tarball
+        run: npm run check:install-reach
+
       # The website is a public surface and drifts like any other.
       - name: The website's claims and references hold
         run: |

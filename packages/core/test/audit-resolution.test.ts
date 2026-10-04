@@ -377,3 +377,134 @@ describe('the resolved read costs one query', () => {
     assert.match(seen[0]!, /LEFT JOIN/);
   });
 });
+
+/**
+ * VERIFICATION READS THE CHAIN IN PAGES, AND A PAGE BOUNDARY IS NOT A SEAM.
+ *
+ * `verifyAuditChain` was one query with no `LIMIT`. Two facts the project
+ * already documented turn that into a hazard: the audit log grows without
+ * bound, and there is no retention or trimming. So peak memory was linear in a
+ * tenant's whole history, on the one call an operator makes when they already
+ * think something is wrong.
+ *
+ * Found on 4 October 2026 by an analyst reading the published source with no
+ * access to this repository. The unbounded growth was disclosed. That
+ * verification loaded all of it at once was not.
+ *
+ * Replay is sequential by construction, so paging cannot help the TIME. These
+ * tests are about the two things paging can get wrong: carrying `prev` across a
+ * boundary, and what the head means when the replay stops early.
+ */
+describe('verifyAuditChain across page boundaries', () => {
+  const PAGE = 2_000;
+
+  async function chainOf(n: number) {
+    const { db } = await createTestDb();
+    const fl = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://localhost' });
+    const org = await fl.orgs.create('acme', { owner: 'alice' });
+    for (let i = 0; i < n; i++) {
+      await fl.store.audit({
+        orgId: org.id,
+        action: 'file.read',
+        decision: 'deny',
+        reason: 'no_grant',
+        actorId: null,
+        fileId: null,
+        context: { i },
+      });
+    }
+    // THE ORG'S OWN IDS, not 1..n. `audit_event.id` is global and
+    // `orgs.create` also writes to the system chain, so assuming the org's
+    // chain is a contiguous range starting at 1 is how the first version of
+    // these tests tampered with a row in a different chain and then reported
+    // the chain it was verifying as sound.
+    const { rows } = await db.query<{ id: string }>(
+      `SELECT id FROM audit_event WHERE org_id = $1 ORDER BY id ASC`,
+      [org.id],
+    );
+    const ids = rows.map((r) => Number(r.id));
+    return { db, fl, org, ids, total: ids.length };
+  }
+
+  /**
+   * `CREATE RULE audit_no_update ... DO INSTEAD NOTHING` makes the log
+   * append-only, so a plain UPDATE is a silent no-op -- which is exactly how
+   * the first version of these tests passed while changing nothing. Disabled
+   * for the length of one statement, as the tamper tests in security.test.ts
+   * and contention.test.ts do.
+   */
+  async function tamper(db: Queryable, id: number) {
+    await db.query(`ALTER TABLE audit_event DISABLE RULE audit_no_update`);
+    await db.query(`UPDATE audit_event SET reason = 'edited' WHERE id = $1`, [id]);
+    await db.query(`ALTER TABLE audit_event ENABLE RULE audit_no_update`);
+    // READ IT BACK. `affectedRows` is optional on `QueryResult` and the rule
+    // makes a blocked UPDATE look like a successful one, so the only honest
+    // confirmation that the fixture tampered with anything is the row itself.
+    // The first version of these tests trusted the statement and passed while
+    // changing nothing, which is a test that asserts the verifier works by
+    // never giving it anything to find.
+    const { rows } = await db.query<{ reason: string | null }>(
+      `SELECT reason FROM audit_event WHERE id = $1`,
+      [id],
+    );
+    assert.equal(rows[0]?.reason, 'edited', `nothing was edited at id ${id}`);
+  }
+
+  it('verifies a chain longer than one page, and counts every event in it', async () => {
+    const { fl, org, ids, total } = await chainOf(PAGE + 100);
+    assert.ok(total > PAGE, `the fixture must cross a boundary; it is ${total}`);
+    const v = await fl.store.verifyAuditChain(org.id);
+    assert.equal(v.valid, true);
+    assert.equal(v.checked, total, 'paging dropped or double-counted events');
+    assert.equal(v.lastId, ids[ids.length - 1], 'the head is not the last row');
+  });
+
+  it('catches a tampered row in the SECOND page', async () => {
+    // THE TEST THAT WOULD FAIL IF `prev` RESET PER PAGE. A row edited on the
+    // far side of a boundary is only detectable if the hash carried across it.
+    const { db, fl, org, ids } = await chainOf(PAGE + 100);
+    const target = ids[PAGE + 50]!;
+    await tamper(db, target);
+
+    const v = await fl.store.verifyAuditChain(org.id);
+    assert.equal(v.valid, false);
+    assert.equal(v.problem, 'hash_mismatch');
+    assert.equal(v.brokenAt, target);
+  });
+
+  it('reports the real head on a failure, not the row it stopped on', async () => {
+    // The head is the half of tamper evidence replay cannot provide: it is what
+    // detects a truncation. An operator comparing a previously pinned head
+    // against the break point would conclude the log had been truncated when it
+    // had not, which is a false alarm about the one thing this field exists to
+    // make true alarms about.
+    const { db, fl, org, ids } = await chainOf(PAGE + 100);
+    const target = ids[10]!;
+    await tamper(db, target);
+
+    const v = await fl.store.verifyAuditChain(org.id);
+    assert.equal(v.valid, false);
+    assert.equal(v.brokenAt, target);
+    assert.equal(v.lastId, ids[ids.length - 1], 'the head was reported as the break point');
+    assert.ok(v.lastHash, 'a failure with no head leaves truncation undetectable');
+  });
+
+  it('reports what it checked, not how long the chain is', async () => {
+    const { db, fl, org, ids, total } = await chainOf(50);
+    await tamper(db, ids[10]!);
+    const v = await fl.store.verifyAuditChain(org.id);
+    assert.equal(v.valid, false);
+    assert.equal(
+      v.checked,
+      10,
+      `stopped at the eleventh, so ten were verified; got ${v.checked} of ${total}`,
+    );
+  });
+
+  it('an empty chain is valid, with a null head', async () => {
+    const { db } = await createTestDb();
+    const fl = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://localhost' });
+    const v = await fl.store.verifyAuditChain('00000000-0000-0000-0000-000000000000');
+    assert.deepEqual(v, { valid: true, checked: 0, lastId: null, lastHash: null });
+  });
+});

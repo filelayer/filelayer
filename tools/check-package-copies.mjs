@@ -141,6 +141,34 @@ const COPIES = [
       'told by llms.txt to start here, found it was the one Start-here file not ' +
       'in the tarball, and had to fetch it over the network. Measured 3 October 2026.',
     versionStamp: null,
+    // SEMANTICS.md ships at the PACKAGE ROOT and lives at `packages/core/` in
+    // the checkout, so the relative link to it cannot be the same string in
+    // both copies. Rewritten rather than turned into a URL because this is a
+    // document that ships, and the reader this file was written for has an
+    // install and no browser. See the note on the example files below.
+    rewrite: [['](../packages/core/SEMANTICS.md)', '](../SEMANTICS.md)']],
+  },
+  {
+    file: 'TRUST.md',
+    why:
+      'the evidence table, and the document the README puts first. It was cited ' +
+      'by absolute URL only, so the one reader this project claims to design for ' +
+      '-- an install, no browser -- could not reach the numbers that decide ' +
+      'whether to depend on this. Found 4 October 2026 by an analyst given only ' +
+      'the tarball.',
+    versionStamp: /\|\s*Version\s*\|\s*(\d+\.\d+\.\d+)\s*—/,
+  },
+  {
+    file: 'SECURITY.md',
+    why: 'how to report a vulnerability, and which versions are supported. A reviewer needs it offline.',
+    versionStamp: /pre-1\.0 \(`(\d+\.\d+\.\d+)`\)/,
+  },
+  {
+    file: 'docs/LIVE-S3-TESTS.md',
+    why:
+      'the CHANGELOG names it three times and `docs/` ships, so a reader who ' +
+      'found `docs/` in their install went looking for it and came up empty.',
+    versionStamp: null,
   },
   {
     file: 'docs/guides/deleting-files-and-orphaned-objects.md',
@@ -192,13 +220,9 @@ const COPIES = [
     versionStamp: null,
   },
   ...[
-    'examples/tier1-avatar/app.ts',
     'examples/tier1-avatar/package.json',
-    'examples/tier2-user-files/app.ts',
     'examples/tier2-user-files/package.json',
-    'examples/tier3-org-roles/app.ts',
     'examples/tier3-org-roles/package.json',
-    'examples/vault/server.ts',
     'examples/vault/package.json',
     'examples/starter/server.ts',
     'examples/starter/verify.mjs',
@@ -209,6 +233,44 @@ const COPIES = [
     file,
     why: 'a runnable example the documentation points at; shipping it is what makes it readable offline',
     versionStamp: null,
+  })),
+
+  // THE FOUR FILES THAT CANNOT BE BYTE-IDENTICAL, AND THE ONE LINE THAT DIFFERS.
+  //
+  // These four import the library by a RELATIVE path, and the two copies sit at
+  // different depths, so one path cannot be correct in both places:
+  //
+  //   examples/tier1-avatar/app.ts                -> ../../packages/core/src/index.ts
+  //   packages/core/examples/tier1-avatar/app.ts  -> ../src/index.ts
+  //
+  // Before 4 October the copies held the root's path verbatim, so from the copy
+  // it resolved to `packages/core/packages/core/src/index.ts` and the copies
+  // could not be imported at all. Nothing noticed, because the only thing that
+  // imported these examples was `test/tiers.test.ts` and
+  // `test/vault-example.test.ts` reaching THREE levels up to the root copies --
+  // a path that itself escapes the package root in an install, so those 28
+  // tests did not run for anyone using the shipped suite either. Two wrong
+  // paths that cancelled out in the repository and failed together everywhere
+  // else. Found by an outside analyst holding only the published tarball.
+  //
+  // The tests now import `../examples/`, the copies carry `../src/`, and both
+  // resolve in the repository and in an install. The rewrite below is what
+  // keeps the rest of these four files verified: it is applied to the root file
+  // and the result must match the copy EXACTLY, and the check fails if the
+  // pattern is absent from the root -- a rewrite rule that stops applying would
+  // otherwise quietly collapse back into byte-identity and pass.
+  ...[
+    'examples/tier1-avatar/app.ts',
+    'examples/tier2-user-files/app.ts',
+    'examples/tier3-org-roles/app.ts',
+    'examples/vault/server.ts',
+  ].map((file) => ({
+    file,
+    why:
+      'a runnable example the documentation points at, and one the shipped test suite ' +
+      'imports, so the package copy must resolve the library from the package root',
+    versionStamp: null,
+    rewrite: [["'../../packages/core/src/index.ts'", "'../../src/index.ts'"]],
   })),
 ];
 
@@ -360,13 +422,35 @@ if (process.argv.includes('--list')) {
 }
 
 // 1 + 2 + 3 + 5, per file.
-for (const { file, why, versionStamp } of COPIES) {
+for (const { file, why, versionStamp, rewrite } of COPIES) {
   const rootRel = file;
   const pkgRel = `${PKG_DIR}/${file}`;
   const rootAbs = join(ROOT, rootRel);
   const pkgAbs = join(ROOT, pkgRel);
 
-  const verdict = compareBytes(rootAbs, pkgAbs);
+  let verdict = compareBytes(rootAbs, pkgAbs);
+
+  // A DECLARED REWRITE IS STILL AN EXACT COMPARISON, against a different
+  // expected string. See the note on the four example files in COPIES.
+  if (rewrite && verdict === 'differs') {
+    const root = readFileSync(rootAbs, 'utf8');
+    let expected = root;
+    for (const [from, to] of rewrite) {
+      if (!root.includes(from)) {
+        fail(
+          rootRel,
+          `has a declared rewrite for the package copy, and the pattern it rewrites is no ` +
+            `longer in this file:\n      ${from}\n    Either the import moved (update the ` +
+            `rewrite in tools/check-package-copies.mjs in this commit) or the rewrite is ` +
+            `obsolete (delete it). Leaving it would make the two copies compare as plain ` +
+            `byte-identical again, which is the state that shipped a test suite that could ` +
+            `not run.`,
+        );
+      }
+      expected = expected.split(from).join(to);
+    }
+    if (readFileSync(pkgAbs, 'utf8') === expected) verdict = 'identical';
+  }
   if (verdict === 'missing-a' || verdict === 'missing-both') {
     fail(rootRel, `does not exist. It is the canonical copy of a file the package ships (${why}).`);
   }

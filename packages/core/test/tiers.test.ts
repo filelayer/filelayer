@@ -24,9 +24,35 @@ import { DEFAULT_WORKSPACE, SYSTEM_ACTOR, sniffContentType } from '../src/simple
 import { fileDownloadRoute } from '../src/delivery.ts';
 import { rejects } from './helpers.ts';
 
-import { tier1, tier1Server } from '../../../examples/tier1-avatar/app.ts';
-import { tier2, tier2App } from '../../../examples/tier2-user-files/app.ts';
-import { tier3 } from '../../../examples/tier3-org-roles/app.ts';
+// `../examples/`, NOT `../../../examples/`, AND THE DIFFERENCE IS WHETHER THIS
+// FILE RUNS AT ALL FOR A READER.
+//
+// `../../../examples/` is the repository root and resolves here. It escapes the
+// package root in an INSTALL, where this file sits at
+// `node_modules/@filelayer/core/test/` and the examples it imports sit one
+// directory up, not three. So these two test files threw
+// `ERR_MODULE_NOT_FOUND: /examples/tier1-avatar/app.ts` for anyone running the
+// shipped suite from a `npm install`, which is 28 tests -- every
+// example-integration test there is -- silently unavailable to the only
+// audience the shipped suite exists for.
+//
+// Found on 4 October 2026 by an outside analyst given nothing but the published
+// tarball. `npm test` in the repository had always been green, so no gate and
+// no run had ever been in a position to notice.
+//
+// `../examples/` resolves in BOTH layouts. The copies under
+// `packages/core/examples/` are the one place in this repository where a
+// shipped copy is NOT byte-identical to its root original, because these four
+// files import the library relatively and the two copies sit at different
+// depths: the root says `../../packages/core/src/index.ts` and the copy says
+// `../../src/index.ts`. `tools/check-package-copies.mjs` declares that single
+// rewrite, applies it to the root file and still requires an exact match on the
+// result, and fails if the pattern it rewrites ever disappears -- so the rule
+// cannot quietly lapse back into the plain byte-identity that shipped a test
+// suite nobody could run.
+import { tier1, tier1Server } from '../examples/tier1-avatar/app.ts';
+import { tier2, tier2App } from '../examples/tier2-user-files/app.ts';
+import { tier3 } from '../examples/tier3-org-roles/app.ts';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const utf8 = (s: string) => new TextEncoder().encode(s);

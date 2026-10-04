@@ -593,8 +593,8 @@ Three consequences to design around:
   makes "revocation is immediate" true at every intermediary and not merely at
   our origin. It is also why public delivery costs us money. Redirect delivery
   is the opt-in escape hatch and it is deliberately awkward to turn on; see
-  [`../packages/core/SEMANTICS.md`](../packages/core/SEMANTICS.md) and
-  [`../architecture/TIER5-DESIGN-NOTE.md`](../architecture/TIER5-DESIGN-NOTE.md) §4.
+  [`SEMANTICS.md`](../packages/core/SEMANTICS.md) and
+  [`architecture/TIER5-DESIGN-NOTE.md`](https://github.com/filelayer/filelayer/blob/main/architecture/TIER5-DESIGN-NOTE.md) §4.
 - **These routes answer `Range` requests, and you write none of it.**
   `fileDownloadRoute()` and `shareDownloadRoute()` parse the header, so a
   browser can seek in a file served by them. `Accept-Ranges: bytes` goes on
@@ -858,8 +858,22 @@ enumeration oracle in a response body. `e.code` is the safe field.
 - **Stream through the tiered facade.** `fl.files.put()` takes a `Uint8Array`,
   so a file put through it is fully resident in memory. The core `fl.upload()`
   accepts a `ReadableStream` — use that for large files.
-- **Resumable upload.**
-- **Direct browser → storage upload.** Upload bytes go through your server.
+- **Resumable or multipart upload.** A large upload that fails starts over.
+- **Direct browser → storage upload *by default*.** Upload bytes go through
+  your server unless you turn this on. `createUpload()` / `completeUpload()`
+  since `0.10.0` authorize first and then hand the browser a presigned `PUT`
+  that pins length and content type, so the bytes never enter your process; it
+  is opt-in behind an acknowledgement string and needs a `maxUploadBytes` you
+  choose, and on `FsStorage` it reports `via: 'server'` because there is
+  nothing to presign. This line said flatly that Filelayer did not do this at
+  all, which stopped being true on 4 October 2026 and stayed on the page for
+  the rest of that day.
+- **A size ceiling on `fl.files.put()` or `fl.upload()`.** `maxUploadBytes`
+  belongs to the direct-upload config and nothing else. The plain upload paths
+  accept whatever you hand them, so the limit is whatever your process can
+  allocate: a 400 MB body took the starter from 85 MB resident to 1.3 GB.
+  Counting bytes as the body arrives is your application's job and
+  `examples/starter/server.ts` shows it.
 - **CDN delivery by default.** Deliberate; see §6. Redirect delivery is opt-in,
   restricted to anonymous grants unless you widen it, and carries a bounded
   revocation window that you have to acknowledge in the config by name.
@@ -875,5 +889,5 @@ enumeration oracle in a response body. `e.code` is the safe field.
   jobs you schedule; see §7.
 
 If your problem is a public avatar and nothing more,
-[Supabase Storage does it in 10 lines to our 16](../ARCHITECTURE-PROGRESSIVE.md#41-the-headline-a-public-avatar)
+[Supabase Storage does it in 10 lines to our 16](https://github.com/filelayer/filelayer/blob/main/ARCHITECTURE-PROGRESSIVE.md#41-the-headline-a-public-avatar)
 and gives you a CDN. Use it. Come back when you need to take a URL back.

@@ -37,7 +37,7 @@ can take back cleanly.
 git status
 git branch --show-current          # -> main
 
-# The whole gate: typecheck, 526 tests, build, language, links, OpenAPI,
+# The whole gate: typecheck, 531 tests, build, language, links, OpenAPI,
 # doc samples, adversarial suite. Must exit 0.
 npm run verify
 echo "verify exit: $?"

@@ -274,7 +274,7 @@ running in-process, so there is no daemon and no Docker:
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 405 tests
+npm test                 # the security property suite, 531 tests
 npm run typecheck
 npm run verify           # typecheck + tests + build + doc and language checks
 npm run example:tier1    # a public avatar, on :3000
@@ -391,7 +391,7 @@ README says is the most valuable thing you can send us.
 ## Limitations
 
 Restated here so they are not only in an appendix. Each one is current as of
-`0.13.1`; where a limitation has been lifted since an earlier release, the
+`0.14.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **`Range` is answered, with three documented edges.** The shipped routes
@@ -483,7 +483,24 @@ Restated here so they are not only in an appendix. Each one is current as of
    database, but by a rule and a trigger the table's owner can drop.
 12. **There is no retention trimming for the audit log.** `audit_event` grows
    without bound, and erasing a tenant's history is not a supported operation.
-13. **A proxied delivery is audited at the decision, not at the last byte.** The
+   `verifyAuditChain()` reads the chain in pages of 2,000 since `0.14.0`, so
+   verification is bounded in memory, but replay is sequential by construction
+   and its TIME is still linear in everything the tenant has ever accumulated.
+   Before `0.14.0` it was a single unbounded query, which made peak memory
+   linear in the same thing.
+13. **`fl.store` and `fl.store.db` are public, and nothing on them authorizes
+   anything.** `PostgresStore` is the engine's dependency surface: every method
+   on it reads and writes rows directly, with no capability check and no audit
+   event. It is exported, and `fl.store.db` reaches the raw query interface, so
+   **any code running in your process that holds a `Filelayer` can read or
+   change any tenant's files and leave no trace in the log.** That is not a
+   hole to be closed -- an engine whose store it cannot reach is an engine that
+   cannot work, and the same is true of the `pg.Pool` you handed us, which you
+   already hold. It is a statement about where the boundary is: the boundary is
+   your process, and `authorize()` protects it from the outside, not from the
+   inside. Treat `fl.store` the way you treat your database credentials.
+   `@filelayer/sdk`, when it exists, must not re-export it.
+14. **A proxied delivery is audited at the decision, not at the last byte.** The
    allow event and the download-cap charge happen before any bytes move, so a
    transfer that dies mid-stream is recorded as an allowed read and still spends
    the cap. "Every access on the record" means every authorization decision. On

@@ -17,7 +17,7 @@
  */
 
 import { createServer } from 'node:http';
-import { Filelayer, FilelayerError } from '../../packages/core/src/index.ts';
+import { Filelayer, FilelayerError } from '../../src/index.ts';
 
 export async function tier2(fl: Filelayer) {
   const doc = new TextEncoder().encode('alice private notes');

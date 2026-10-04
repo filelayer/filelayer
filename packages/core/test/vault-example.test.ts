@@ -12,7 +12,10 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { createTestDb } from '../src/db.ts';
 import { MemoryStorage } from '../src/storage.ts';
-import { createVaultApp } from '../../../examples/vault/server.ts';
+// `../examples/`, not `../../../examples/`. See the note in `tiers.test.ts`:
+// the three-level path is the repository root and escapes the package root in
+// an install, so this file did not run for anyone using the shipped suite.
+import { createVaultApp } from '../examples/vault/server.ts';
 
 let server: Server;
 let base: string;

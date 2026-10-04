@@ -51,7 +51,7 @@ import {
   shareDownloadRoute,
   type Queryable,
   type StorageAdapter,
-} from '../../packages/core/src/index.ts';
+} from '../../src/index.ts';
 
 // The app's own authentication. Every system needs this and Filelayer does not
 // replace it: you tell Filelayer who the caller is, it tells you what they may

@@ -18,7 +18,7 @@
  */
 
 import { createServer } from 'node:http';
-import { Filelayer, fileDownloadRoute } from '../../packages/core/src/index.ts';
+import { Filelayer, fileDownloadRoute } from '../../src/index.ts';
 
 export async function tier1(avatar: Uint8Array) {
   const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });

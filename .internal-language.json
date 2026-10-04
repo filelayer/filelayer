@@ -54,7 +54,10 @@
     "packages/core/examples/**/*.mjs",
     "examples/**/.env.example",
     "packages/core/examples/**/.env.example",
-    "packages/core/docs/**/*.mjs"
+    "packages/core/docs/**/*.mjs",
+    "TRUST.md",
+    "packages/core/TRUST.md",
+    "packages/core/SECURITY.md"
   ],
   "includeNote": [
     "`include` is the surface a stranger reads: everything in the npm tarball,",

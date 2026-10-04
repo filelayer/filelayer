@@ -746,6 +746,43 @@ at the end of the load, rather than waiting for autovacuum to get there.
 
 ---
 
+### Entry 9 — `0.10.0` → `0.14.0`: no schema change, and one return value
+
+#### What changed in the schema
+
+Nothing. `schema.sql` has not been modified since the `0.10.0` commit in Entry 8
+above, so **a database running the `0.10.0` schema runs `0.14.0` unaltered** and
+there is no SQL to apply. `0.11.0`, `0.12.0`, `0.13.0`, `0.13.1` and `0.14.0`
+are all API, documentation, packaging and gate work; the changelog has each one.
+
+As in Entry 7, this entry exists because §1 promises one per minor and an absent
+entry is indistinguishable from an oversight.
+
+#### What you do have to change, if you read `checked`
+
+`verifyAuditChain()` now reads the chain in pages of 2,000 instead of one
+unbounded query, because the audit log grows without bound and verification was
+therefore linear in memory over a tenant's entire history. The replay, the
+detection, `valid`, `brokenAt`, `problem`, `lastId` and `lastHash` are all
+unchanged.
+
+`checked` changed meaning **on the failure path only**:
+
+```ts
+// Before 0.14.0, on a broken chain
+{ valid: false, checked: 40_000, brokenAt: 11, … }   // 40,000 is the chain length
+
+// 0.14.0 and later
+{ valid: false, checked: 10,     brokenAt: 11, … }   // ten were actually verified
+```
+
+On a sound chain the number is identical, so a caller that only reads `checked`
+when `valid` is true needs no change. A caller using it as a row count for a
+tenant should query `audit_event` for that instead; `checked` now means what its
+name says.
+
+---
+
 ## 4. What is not covered here
 
 - **Data migration between storage adapters.** Moving objects from one bucket to

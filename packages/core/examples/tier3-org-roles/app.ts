@@ -12,7 +12,7 @@
  * Run: npm --prefix packages/core run example:tier3
  */
 
-import { Filelayer } from '../../packages/core/src/index.ts';
+import { Filelayer } from '../../src/index.ts';
 
 export async function tier3(fl: Filelayer) {
   await fl.orgs.create('acme', { name: 'Acme Inc', owner: 'ceo' });

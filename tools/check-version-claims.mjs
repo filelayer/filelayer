@@ -321,6 +321,118 @@ if (recorded) {
   }
 }
 
+// --- the sweep: a claim nobody registered is a claim nobody checked ---------
+//
+// WHAT THIS BLOCK IS FOR, AND WHAT IT COST TO LEARN. Everything above reads an
+// explicit list of file-and-regex pairs. On 4 October 2026 an outside analyst
+// was given only the published tarball and asked to describe the package. It
+// reported, within minutes, that `README.md` said the suite was 405 tests when
+// the run says 526. The gate above was green at the time, because README had a
+// VERSION claim registered and no TESTS claim registered, so its test count was
+// never compared with anything. `web/index.html` carried the same 405 on a
+// second, also-unregistered line.
+//
+// Both numbers had been correct when written and both were a month stale. The
+// gate had already been taught twice that consistency is not accuracy; this is
+// the third lesson, and it is that REGISTRATION IS NOT COVERAGE. An allow-list
+// of claims to check silently exempts every claim nobody thought to add, and
+// the exemption is invisible precisely on the surfaces that matter most,
+// because those are the ones that accumulate prose.
+//
+// So this pass inverts the question. Instead of "do the claims I listed agree
+// with the run?", it asks "is there a number anywhere on a public surface that
+// LOOKS like a whole-suite test count and is not the real one?".
+//
+// THE DISCRIMINATOR, and why it is a real one rather than a fudge. Public prose
+// contains two kinds of test count: the whole suite, and a scoped subset ("12
+// tests every commit" against live S3, "30" for the range file, "27 attacks").
+// Every scoped subset in this repository is under 100 and the suite is in the
+// hundreds, so a floor at 100 separates them cleanly. If a single test file
+// ever crosses 100 the sweep will fail on it, which is the correct direction
+// for a gate to be wrong in: it stops the build and asks for an exception with
+// a reason, rather than going quiet.
+const SWEEP_SURFACES = [
+  'README.md',
+  'llms.txt',
+  'TRUST.md',
+  'SECURITY.md',
+  'ARCHITECTURE-PROGRESSIVE.md',
+  'PUBLISH-RUNBOOK.md',
+  'web/index.html',
+  'docs/QUICKSTART.md',
+  'packages/core/README.md',
+  'packages/core/llms.txt',
+  'packages/core/SEMANTICS.md',
+  'packages/core/MIGRATIONS.md',
+  'packages/core/docs/QUICKSTART.md',
+];
+
+/**
+ * Lines the sweep must not read as a whole-suite claim. Each entry needs a
+ * reason, and the reason is the point: an exception without one is how an
+ * allow-list grows back.
+ */
+const SWEEP_EXCEPTIONS = [
+  // A historical note about a count that WAS right at the time. The sweep would
+  // otherwise forbid the project from ever describing its own drift.
+  { match: /405 tests when the run says/, why: 'quotes the stale number in order to record it' },
+  { match: /said the suite was \d+ tests/, why: 'historical, describes a past claim' },
+  { match: /while[\s\S]{0,40}said \d+ across/, why: 'historical, quotes a superseded count' },
+];
+
+if (recorded && Number(recorded.tests) > 0) {
+  const real = String(recorded.tests);
+  // A number of 3+ digits with "test"/"tests" within a short window either
+  // side. The window is deliberately tight: at 60 characters a sentence that
+  // mentions a count and separately mentions tests starts producing noise.
+  const SHAPE = /(?:(\d{3,5})(?=[^.\d][\s\S]{0,36}?\btests?\b)|\btests?\b[\s\S]{0,36}?(\d{3,5})(?![\d.]))/g;
+  for (const file of SWEEP_SURFACES) {
+    let text;
+    try {
+      text = readFileSync(join(ROOT, file), 'utf8');
+    } catch {
+      violations.push(`${file}: in the sweep list but not on disk. Fix the list in this commit.`);
+      continue;
+    }
+    const re = new RegExp(SHAPE.source, SHAPE.flags);
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const value = m[1] ?? m[2];
+      if (value === real) continue;
+      const lineNo = text.slice(0, m.index).split('\n').length;
+      const line = text.split('\n')[lineNo - 1] ?? '';
+      const before = text.slice(Math.max(0, m.index - 2), m.index);
+      const after = text.slice(m.index + m[0].length - value.length + value.length);
+
+      // The four false positives this sweep produced on its first run, each
+      // excluded by shape rather than by listing the line. A sweep whose
+      // exceptions are all specific lines has become the allow-list it
+      // replaced.
+      //
+      //  - a year: "3 October 2026"
+      if (/\b(19|20)\d\d\b/.test(value)) continue;
+      //  - a version string: "0.206.0"
+      if (new RegExp(`\\d\\.${value}|${value}\\.\\d`).test(line)) continue;
+      //  - an HTTP status pair: "206/416", which sits in a sentence about a
+      //    test file and so has "tests" within the window.
+      if (before.endsWith('/') || /^\/\d/.test(after)) continue;
+      //  - the SUITE count in "526 tests across 125 suites". It is a real
+      //    claim and it is checked, by the `suites` kind, against the same
+      //    recorded run. Reading it as a test count would make the gate
+      //    demand that the two numbers be equal.
+      if (/^\s*suites?\b/.test(after)) continue;
+      const excused = SWEEP_EXCEPTIONS.find((e) => e.match.test(line));
+      if (excused) continue;
+      violations.push(
+        `${file}:${lineNo} reads as a whole-suite test count of ${value}; the recorded run ` +
+          `counted ${real}.\n      > ${line.trim().slice(0, 150)}\n` +
+          '      If this is a scoped subset rather than the suite, it is over the sweep floor ' +
+          'of 100 and\n      needs an entry in SWEEP_EXCEPTIONS with a reason.',
+      );
+    }
+  }
+}
+
 // --- negative control: the gate must fail on a value it should reject --------
 const control = (() => {
   const bad = [{ file: 'SECURITY.md', kind: 'version', value: '0.3.0', line: 0, text: '(control)' }];

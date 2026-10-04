@@ -1039,52 +1039,102 @@ export class PostgresStore implements AuthzDeps {
   /**
    * Full chain replay. Returns the first inconsistency found, if any.
    * Pass `null` to verify the system chain.
+   *
+   * ---------------------------------------------------------------------------
+   * WHY THIS READS IN PAGES
+   * ---------------------------------------------------------------------------
+   *
+   * It used to be one query with no `LIMIT`, mapped into an array, replayed in
+   * a loop. Two documented facts turn that into a hazard rather than a style
+   * question: the audit log GROWS WITHOUT BOUND and there is no retention or
+   * trimming (SEMANTICS §10, MIGRATIONS §4). So peak memory here was linear in
+   * a tenant's entire history, on the one call an operator reaches for when
+   * they already suspect something is wrong -- which is the worst moment for
+   * the verifier to be the thing that falls over. A tenant with ten million
+   * events would OOM the process instead of answering the question.
+   *
+   * Found on 4 October 2026 by an analyst reading the published source with no
+   * access to this repository. The growth was disclosed; that verification
+   * loaded all of it in one go was not.
+   *
+   * Replay is inherently sequential -- each event's hash feeds the next -- so
+   * TIME is still linear in the chain length and no amount of paging changes
+   * that. What paging fixes is memory, which is the part that turns a slow
+   * answer into no answer. `prev` is carried across page boundaries, so the
+   * chain is verified as one chain and a tampered row at a page edge is caught
+   * exactly as one in the middle of a page is.
+   *
+   * `checked` now counts the events ACTUALLY verified rather than the length of
+   * the whole chain. On a clean chain those are the same number; on a broken
+   * one the old value said "I checked 40,000" when it had stopped at the
+   * eleventh, which is a worse answer than none.
    */
   async verifyAuditChain(orgId: string | null): Promise<AuditChainResult> {
-    const { rows } = await this.db.query<Record<string, never>>(
-      `${AUDIT_COLUMNS} WHERE org_id IS NOT DISTINCT FROM $1 ORDER BY id ASC`,
+    const PAGE = 2_000;
+    let prev: string | null = null;
+    let afterId = 0;
+    let checked = 0;
+
+    // THE HEAD, IN ITS OWN QUERY, BEFORE ANYTHING ELSE.
+    //
+    // `lastId`/`lastHash` mean "the last event in the chain" and they are the
+    // half of tamper evidence replay cannot supply (see `AuditChainResult`:
+    // replay catches an interior deletion, only the pinned head catches a
+    // truncation). The single unbounded query this method used to be got them
+    // for free from the end of the array. Paging does not, and a paged version
+    // that reported the row it stopped on as the head would be answering a
+    // different question with the same field name -- so an operator holding a
+    // previously pinned head would compare it against a break point and
+    // conclude the log had been truncated when it had not.
+    //
+    // One row, by index, whether or not the replay completes.
+    const headRow = await this.db.query<Record<string, never>>(
+      `${AUDIT_COLUMNS} WHERE org_id IS NOT DISTINCT FROM $1 ORDER BY id DESC LIMIT 1`,
       [orgId],
     );
-    const events = rows.map(mapAuditRow);
-    const last = events[events.length - 1];
-    const head = { lastId: last ? last.id : null, lastHash: last ? last.hash : null };
-    let prev: string | null = null;
-    for (const e of events) {
-      if (e.prevHash !== prev) {
-        return {
-          valid: false,
-          checked: events.length,
-          brokenAt: e.id,
-          problem: 'prev_hash_mismatch',
-          ...head,
-        };
+    const headEvent = headRow.rows[0] ? mapAuditRow(headRow.rows[0]) : undefined;
+    const head = {
+      lastId: headEvent ? headEvent.id : null,
+      lastHash: headEvent ? headEvent.hash : null,
+    };
+
+    for (;;) {
+      const { rows } = await this.db.query<Record<string, never>>(
+        `${AUDIT_COLUMNS} WHERE org_id IS NOT DISTINCT FROM $1 AND id > $2
+          ORDER BY id ASC LIMIT $3`,
+        [orgId, afterId, PAGE],
+      );
+      if (rows.length === 0) break;
+      const events = rows.map(mapAuditRow);
+      for (const e of events) {
+        if (e.prevHash !== prev) {
+          return { valid: false, checked, brokenAt: e.id, problem: 'prev_hash_mismatch', ...head };
+        }
+        const expected = auditHash({
+          prevHash: e.prevHash,
+          orgId: e.orgId,
+          occurredAt: e.occurredAt,
+          action: e.action,
+          decision: e.decision,
+          reason: e.reason,
+          actorId: e.actorId,
+          fileId: e.fileId,
+          grantId: e.grantId,
+          ip: e.ip,
+          userAgent: e.userAgent,
+          context: e.context,
+        });
+        if (expected !== e.hash) {
+          return { valid: false, checked, brokenAt: e.id, problem: 'hash_mismatch', ...head };
+        }
+        prev = e.hash;
+        checked++;
+        afterId = e.id;
       }
-      const expected = auditHash({
-        prevHash: e.prevHash,
-        orgId: e.orgId,
-        occurredAt: e.occurredAt,
-        action: e.action,
-        decision: e.decision,
-        reason: e.reason,
-        actorId: e.actorId,
-        fileId: e.fileId,
-        grantId: e.grantId,
-        ip: e.ip,
-        userAgent: e.userAgent,
-        context: e.context,
-      });
-      if (expected !== e.hash) {
-        return {
-          valid: false,
-          checked: events.length,
-          brokenAt: e.id,
-          problem: 'hash_mismatch',
-          ...head,
-        };
-      }
-      prev = e.hash;
+      if (events.length < PAGE) break;
     }
-    return { valid: true, checked: events.length, ...head };
+
+    return { valid: true, checked, ...head };
   }
 
   // --- Counters (P6) --------------------------------------------------------
