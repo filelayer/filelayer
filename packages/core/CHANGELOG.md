@@ -125,9 +125,9 @@ reproduces that number.
 
 ### Added — the fourth guide: deleting files and orphaned objects
 
-Chosen on evidence rather than taste. The visibility baseline taken the same day
-showed that narrow, technical phrasings land closer to our territory than broad
-category questions, so this one is as narrow as the set gets.
+Chosen on evidence rather than taste. A search-visibility measurement taken the
+same day showed that narrow, technical phrasings land closer to our territory
+than broad category questions, so this one is as narrow as the set gets.
 
 The well-covered answer — Postgres and S3 do not share a transaction, run a
 sweeper — is right, and the guide credits it. What it adds is the two things
