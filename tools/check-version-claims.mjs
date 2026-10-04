@@ -87,7 +87,11 @@ const CLAIMS = [
   // the other direction (the shipped copy must not lag). Both, deliberately:
   // that stamp is the answer to "is this list current?", and it was the one this
   // gate missed on its first outing.
-  { file: 'README.md', kind: 'version',
+  // MOVED FROM README.md WITH THE SENTENCE IT CHECKS. The limitations list left
+  // the README on 5 October 2026 -- a reader pointed out that 117 of 528 lines
+  // of caveats reads as fragility rather than candour -- and the stamp went with
+  // the list rather than being left behind pointing at nothing.
+  { file: 'LIMITATIONS.md', kind: 'version',
     re: /Each one is current as of\s*\n?`([\d.]+)`/g },
 
   // --- the supported-versions table: the minor line must be the current one ---
@@ -105,6 +109,14 @@ const CLAIMS = [
     re: /\|\s*\*\*total\*\*\s*\|\s*\*\*(\d+)\*\*\s*\|/g },
   { file: 'PUBLISH-RUNBOOK.md', kind: 'tests',
     re: /typecheck, (\d+) tests, build/g },
+  // THE RUNBOOK'S OWN VERSION, registered on 5 October 2026 after it sat at
+  // 0.13.1 through two releases. It carries a test count, which this gate was
+  // watching, and a version, which it was not -- so the document that tells a
+  // maintainer which commands to run named the wrong release twice and nothing
+  // said so. It is the fourth instance of the same hole: a surface is only
+  // checked for the claims somebody remembered to register.
+  { file: 'PUBLISH-RUNBOOK.md', kind: 'version',
+    re: /the version being published is \*\*`([\d.]+)`\*\*/g },
 
   // --- suite-count claims: must agree with each other ---
   { file: 'ARCHITECTURE-PROGRESSIVE.md', kind: 'suites',
@@ -147,8 +159,12 @@ const CLAIMS = [
     re: /live Cloudflare R2<\/span><span class="v">(\d+) tests, every commit<\/span>/g },
   { file: 'web/index.html', kind: 'livetests',
     re: /live AWS S3<\/span><span class="v">(\d+) tests, every commit<\/span>/g },
+  // The README's R2 sentence moved into the evidence table on 5 October 2026,
+  // when the three places that said this became one. The phrase-based sweep
+  // further down checks whatever wording it has, wherever it sits, so this
+  // registered pattern is not replaced with another one that can go stale.
   { file: 'README.md', kind: 'livetests',
-    re: /live Cloudflare R2 on every commit\*\*: (\d+) tests/g },
+    re: /\*\*(\d+) tests against live Cloudflare R2/g },
   { file: 'llms.txt', kind: 'livetests',
     re: /in CI on every commit \((\d+) tests each/g },
   { file: 'packages/core/llms.txt', kind: 'livetests',
@@ -429,6 +445,70 @@ if (recorded && Number(recorded.tests) > 0) {
           '      If this is a scoped subset rather than the suite, it is over the sweep floor ' +
           'of 100 and\n      needs an entry in SWEEP_EXCEPTIONS with a reason.',
       );
+    }
+  }
+}
+
+// --- the same inversion, for the live-storage counts ------------------------
+//
+// The sweep above has a floor of 100, so it cannot see the live-storage counts:
+// twelve on an ordinary commit, thirteen on the nightly run. Those are
+// registered per file, and on 5 October a reader found `Eleven tests against a
+// real bucket` in README limitation 7 while two other sentences on the same
+// page said twelve. The gate was green, because that line was not one of the
+// seven registered `livetests` patterns.
+//
+// So the same lesson again, and this is the third time: an allow-list of
+// file-and-pattern pairs exempts whatever nobody added. The fix is to key on
+// the PHRASE and apply it everywhere, so a new sentence anywhere on a public
+// surface is checked the moment it is written.
+//
+// SPELLED-OUT NUMBERS TOO. `Eleven` is the form that slipped through, and a
+// gate that only reads digits would have let the same mistake back in on the
+// next paragraph.
+if (recorded) {
+  const live = readFileSync(join(ROOT, 'packages/core/test/s3-live.test.ts'), 'utf8');
+  const totalLive = (live.match(/^\s{2}it\(/gm) ?? []).length;
+  const gatedLive = (live.match(/\{\s*skip:/g) ?? []).length;
+  const perCommit = totalLive - gatedLive;
+
+  const WORDS = {
+    eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13,
+    fourteen: 14, fifteen: 15,
+  };
+  const asNumber = (t) => (/^\d+$/.test(t) ? Number(t) : WORDS[t.toLowerCase()]);
+
+  // The shapes that assert a per-commit live-storage count, wherever they
+  // appear. Each must capture the quantity.
+  const SHAPES = [
+    /(\w+) tests?,?\s+(?:against a real bucket|per commit|each)/gi,
+    /(?:commit|commit\*\*)[:,]?\s+(\w+) tests?\b/gi,
+    /(\w+) tests? (?:every|per) commit/gi,
+  ];
+
+  for (const file of SWEEP_SURFACES) {
+    let text;
+    try {
+      text = readFileSync(join(ROOT, file), 'utf8');
+    } catch {
+      continue; // the sweep above already reports a missing surface
+    }
+    for (const shape of SHAPES) {
+      const re = new RegExp(shape.source, shape.flags);
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const n = asNumber(m[1]);
+        if (n === undefined || n === perCommit) continue;
+        // `thirteen` is the nightly figure and legitimately appears beside the
+        // per-commit one; only flag it when the sentence does not say nightly.
+        const line = text.split('\n')[text.slice(0, m.index).split('\n').length - 1] ?? '';
+        if (n === totalLive && /nightly/i.test(line)) continue;
+        violations.push(
+          `${file}:${text.slice(0, m.index).split('\n').length} says ${m[1]} live-storage ` +
+            `test(s) per commit; test/s3-live.test.ts has ${totalLive} with ${gatedLive} behind ` +
+            `a skip flag, so ${perCommit} run on an ordinary commit.\n      > ${line.trim().slice(0, 140)}`,
+        );
+      }
     }
   }
 }

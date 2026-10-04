@@ -9,53 +9,17 @@
      npmjs.com/package/@filelayer/core, so the badges resolve on their own with
      no edit here. -->
 
-> ## ⚠️ Alpha — developer preview. Not production software.
-
-> **[Should you depend on this?](https://github.com/filelayer/filelayer/blob/main/TRUST.md)** — the real numbers, including the ones
-> that are zero, and exactly what would change them.
+> **Alpha — developer preview, not production software.** Nobody is running it
+> in production, including us. [**Should you depend on this?**](https://github.com/filelayer/filelayer/blob/main/TRUST.md)
+> has the real numbers, including the ones that are zero, and exactly what would
+> change them. [Limitations](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) is the complete list of what it
+> does not do.
 >
-> We would rather you trust us later for good reasons than trust us now for bad
-> ones, so here is the honest state of this project.
->
-> **What is tested.** The authorization engine is the part we stand behind. It
-> carries a property suite covering cross-tenant isolation, revocation,
-> delegation attenuation, download caps, audit tamper-evidence and the full role
-> matrix, plus a differential test asserting that the set query and the point
-> check agree exactly, plus an adversarial suite of attacks it must survive. All
-> of it runs in CI on every commit, against real PostgreSQL. A release gate packs
-> the tarball, installs it into an empty directory and drives the whole lifecycle
-> as a stranger would.
->
-> **What runs against a real object store.** Since 30 September 2026 the storage
-> adapter runs against **live Cloudflare R2 on every commit**: 12 tests,
-> including a presigned URL the store actually honours and one that expires for
-> real, plus a thirteenth on the nightly run and on manual dispatch, an 11 MB
-> multipart upload reassembled byte-exactly. Since 3 October 2026 the same tests
-> also run against **AWS S3 itself**, in `eu-north-1`, against a bucket reached
-> through a least-privilege IAM user: R2 is S3-compatible, not S3, and AWS's
-> checksum requirements, IAM evaluation, virtual-hosted addressing and error
-> codes are a different counterparty. What is still unmeasured on both is
-> traffic: nobody has pointed real load at this.
->
-> **What may break.** Nobody has deployed this. There is no production usage, no
-> hosted service, no CLI, and no operational track record, so the failure modes
-> that only appear under real traffic, real object stores and real connection
-> pools are unmeasured. Expect to be the person who finds them.
->
-> **The schema may change before 1.0, and has done so six times.** Any
-> `0.x` → `0.(x+1)` may break the API, the schema, or both. Every break is
-> in the [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md)
-> and every schema break has a numbered entry in
-> [MIGRATIONS.md](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md)
-> with a runnable file under `migrations/` that CI applies to the previous
-> release's schema and checks produces the next one,
-> but there is no long-term support branch and no backporting.
->
-> **Use it** to evaluate the model, to build something that is not yet carrying
-> customer data, or to tell us where it breaks. **Do not use it** as the file
-> layer under a production system you would be embarrassed to lose. The full
-> list of known gaps is in [Limitations](#limitations) below; nothing there is
-> hidden in an appendix.
+> **We are looking for three to five design partners.** If you are building
+> something with private user files, we will help you integrate this and stay on
+> hand while you do, in exchange for telling us where it breaks. That is the only
+> thing on our [roadmap to 1.0](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md) we cannot build ourselves.
+> [Open an issue](https://github.com/filelayer/filelayer/issues) or say hello.
 
 **The file layer for SaaS applications.** Public files and private files, with
 one authorization model behind both.
@@ -114,36 +78,32 @@ using. → [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/ma
 
 ---
 
-## Status: pre-release. Read this part.
+## The three layers
 
-Filelayer is pre-1.0 and not yet running in anyone's production. This README is
-accurate rather than promotional, because you are more likely to be an AI agent
-reading it to write an integration than a human reading it to be persuaded, and
-an inaccurate README wastes your time and ours. The complete picture, including
-what this project has not earned yet, is on
-[the trust page](https://github.com/filelayer/filelayer/blob/main/TRUST.md).
+```
+your application          fl.files.put / get / list, fl.shares, fl.orgs
+                          you pass YOUR user id; nothing here knows a uuid
+   ───────────────────────────────────────────────────────────────────────
+Filelayer                 ONE authorization function answers every request
+                          grants, roles, expiry, download caps, revocation
+                          the audit event, written in the decision's own
+                          transaction so the log cannot disagree with it
+   ───────────────────────────────────────────────────────────────────────
+your Postgres             9 tables. Filelayer owns the schema, you own the
+your bucket               database. Bytes go to S3, R2, B2 or a directory
+                          behind one adapter; storage is replaceable
+```
 
-- **Licensed under [Apache-2.0](https://github.com/filelayer/filelayer/blob/main/LICENSE).**
-  You may use it, modify it, distribute it and ship it inside commercial
-  software, with a patent grant. This was the single largest blocker to adoption
-  and it is resolved: `packages/core/package.json` declares
-  `"license": "Apache-2.0"`, and both `LICENSE` and
-  [`NOTICE`](https://github.com/filelayer/filelayer/blob/main/NOTICE) ship
-  inside the npm tarball. See [License](#license) below.
-- The authorization core is tested: a property suite covering cross-tenant
-  isolation, revocation, delegation attenuation, download caps, audit
-  tamper-evidence and the full role matrix, plus a differential test that
-  asserts the set query and the point check agree exactly.
-- The storage adapter runs against **live Cloudflare R2 on every commit**
-  (`packages/core/test/s3-live.test.ts`, 12 tests per commit and a thirteenth
-  nightly) and against a
-  **signature-verifying local S3 implementation**
-  (`packages/core/test/storage.test.ts`), and since 3 October 2026 against
-  **live AWS S3** as well (same tests, `eu-north-1`, virtual-hosted addressing).
-  R2 is S3-compatible, not S3, which is why both run.
-- There is no hosted service and no CLI. You run it against your own Postgres.
-- Versioning is pre-1.0: see [Versioning](#versioning) below and
-  [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md).
+Filelayer sits between the two things you already run. It brings no database and
+no storage of its own, and **zero runtime dependencies**.
+
+**It is authorization middleware, not row-level security.** It decides for calls
+made through it, in your process. The schema additionally refuses cross-tenant
+grants, cross-project identities and delegation that amplifies authority from
+*every* writer, including a `psql` session — those are constraints and triggers.
+But there is no RLS policy in `schema.sql`, and a direct `SELECT` against these
+tables is filtered by nothing. Filelayer composes with database-level
+enforcement; it does not replace it.
 
 ---
 
@@ -163,7 +123,20 @@ attachments, exports, anything with a share link you might later want back.
 | Resumable or multipart direct upload | presigned S3 directly / tus | One signed PUT, one object. There is no resume. |
 | Thumbnails, transforms, format negotiation | Cloudinary / imgix | We have none. |
 
-We publish the full comparison, including the cases we lose, in
+### Against the two things you would otherwise do
+
+| | Hand-rolled presigned URLs | Supabase Storage | Filelayer |
+|---|---|---|---|
+| Revoke a link somebody already holds | **No.** A signature is valid until its clock runs out; your options are a short TTL or proxying the bytes yourself | **No.** Signed URLs are signed with an internal key and cannot be revoked | **Yes**, on the next request, transitively through the delegation chain |
+| "Everyone in this org may read" | your own join, recomputed on every join and leave | expressible as an RLS policy | one grant row; membership resolves at request time |
+| Who accessed this, including refusals | whatever you wrote | not a product feature; Postgres logging is not an access log | hash-chained per tenant, written in the decision's transaction |
+| Download cap | your own counter, and the race in it | none | atomic, reserved before the bytes move |
+| CDN on the private path | yes, and that is why you cannot revoke | yes, same trade | **no** — the two facts are the same fact |
+| Public images at volume | **yes** | **yes** | no. Use a bucket behind a CDN |
+| Lines for a public avatar | ~10 | **10** | 16 |
+
+The last two rows are losses and they are not close. We publish the full
+comparison, including every case we lose, in
 [`ARCHITECTURE-PROGRESSIVE.md`](https://github.com/filelayer/filelayer/blob/main/ARCHITECTURE-PROGRESSIVE.md)
 §5. Short version: **for a public avatar, Supabase is 10 lines and Filelayer is
 16.** If avatars are your whole problem, use Supabase.
@@ -200,6 +173,62 @@ Two consequences worth knowing before you adopt:
   front of it. The two facts are the same fact. Redirect delivery trades a
   bounded revocation window for that CDN and is opt-in; see
   [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md).
+
+---
+
+## What backs that up
+
+Said once, here, because every number in it is checked by a gate that fails the
+build when a public surface and the run disagree:
+
+| | |
+|---|---|
+| The suite | **547 tests**, every commit, all of them against a real PostgreSQL |
+| Concurrency | **8 tests** on a real PostgreSQL with two backends — races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
+| Adversarial | **27 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
+| Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
+| Schema migrations | every migration file applied to the **previous release's** `schema.sql` and the result compared against the next one, on real PostgreSQL |
+| The published artifact | the tarball installed into an empty directory and driven through the whole lifecycle; the starter booted over HTTP and driven through 25 checks; every relative path inside the tarball resolved from inside the tarball |
+
+**What none of that measures is load, or anyone's production.** The complete
+table, including the rows that are zero, is on
+[the trust page](https://github.com/filelayer/filelayer/blob/main/TRUST.md).
+
+---
+
+## The five that make people decline
+
+The complete list is [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) -- fourteen
+entries, each with its reasoning, shipped in the npm tarball so an install has
+it on disk. These five are the ones that should make you close the tab if they
+apply to you:
+
+1. **No CDN on the private delivery path.** Bytes proxy through your
+   application, and authenticated responses carry `Cache-Control: no-store`.
+   That is not an oversight, it is P4: a URL that can be revoked is a URL that
+   has to be asked about. An opt-in redirect mode trades a bounded revocation
+   window of up to 300 seconds for cacheability. **If your workload is public
+   images at volume, use a bucket behind a CDN and come back when you need to
+   take a URL back.**
+2. **Read cost is linear in grants per subject, and nothing caps them.**
+   Measured: 4.3 ms at five grants on one file, 5.9 seconds at a hundred
+   thousand. `shares.create()` is not idempotent, so a share endpoint that
+   inserts on every click gets there. Use `shares.unshare()` and watch the
+   count.
+3. **No resumable or multipart upload.** One signed PUT, one object. A large
+   upload that fails starts over, and `fl.files.put()` holds the whole body in
+   memory -- only the core `fl.upload()` takes a stream, and neither imposes a
+   size ceiling, so that is yours to enforce.
+4. **Org admins and owners can read `private` files.** Deliberate: retention
+   and legal hold are useless if the people accountable for them cannot see
+   what they are holding. But it is a policy decision, and if you need to
+   exclude the operator you need envelope encryption, which we do not have.
+5. **Alpha, and the schema has changed six times.** Any `0.x` → `0.(x+1)` may
+   break the API, the schema or both. Every break has a numbered entry in
+   [`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) and a runnable file
+   under `migrations/` that CI applies to the previous release's schema and
+   checks produces the next one -- but there is no LTS branch, no backporting,
+   and **no independent security review**.
 
 ---
 
@@ -339,6 +368,8 @@ const s = await schemaStatus(pool);   // { state: 'current', at: 10, expects: 10
 ## Documents
 
 - [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) — install → first file → the advanced capabilities
+- [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) — the complete list of what this does not do, fourteen entries with their reasoning
+- [`ROADMAP.md`](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md) — the nine things an outside evaluator said would change its answer, eight of them done, and what is deliberately not coming
 - [`docs/guides/`](https://github.com/filelayer/filelayer/tree/main/docs/guides) — answers to
   questions people actually ask, written to be useful whether or not you use this
   library. The code in them is executed in CI.
@@ -404,125 +435,6 @@ copied or embedded anywhere in this repository.
   — Contributor Covenant 2.1.
 
 Bugs, questions and "this document is wrong" reports go to
-[GitHub Issues](https://github.com/filelayer/filelayer/issues). Given the alpha
-status at the top of this page, a report that the product does not do what this
-README says is the most valuable thing you can send us.
-
-## Limitations
-
-Restated here so they are not only in an appendix. Each one is current as of
-`0.15.0`; where a limitation has been lifted since an earlier release, the
-[changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
-
-1. **`Range` is answered, with three documented edges.** The shipped routes
-   parse the `Range` request header, return `206` with `Content-Range`,
-   advertise `Accept-Ranges: bytes` on every proxied response, and answer `416`
-   with `Content-Range: bytes */<size>` for a range past the end. What they do
-   not do: **multiple ranges in one request** (`bytes=0-9,20-29`) are ignored
-   and the whole object is served under a `200` — answering one of several
-   ranges under a `206` is indistinguishable, to the client, from an answer to a
-   different question; **`If-Range` is not parsed**, which is safe here only
-   because an object key is a fresh UUID that is never rewritten, so the
-   representation cannot change under a resuming client; and **a range is
-   dropped when a download cap binds**, served whole under a `200` with
-   `Accept-Ranges: none`, because charging a capped grant per seek would make
-   `maxDownloads: 3` mean "three seeks".
-2. **`shares.create()` is not idempotent, so a grant id is not a person's
-   access.** Every call inserts a grant row. Use
-   `shares.unshare(fileId, { as, user })` to remove a named user's access and
-   `revoke(grantId)` only for a link whose secret you handed out. The engine
-   has no dedupe: two calls with an `expiresIn` are two legitimately different
-   windows, and it cannot tell those from a double-clicked button. There is
-   also no bound on how many live grants one subject may hold on one file, and
-   the cost of an authorized read is linear in that number --
-   [`benchmark/load/RESULTS.md`](https://github.com/filelayer/filelayer/blob/main/benchmark/load/RESULTS.md)
-   H4b measures 4.3 ms at five grants and 5.9 s at a hundred thousand.
-3. **The tiered facade `fl.files.put()` takes a `Uint8Array`**, so a file put
-   through it is fully resident in memory. The core `fl.upload()` accepts a
-   `ReadableStream`; use that above a few tens of megabytes.
-4. **Direct browser → storage upload is opt-in, and only S3/R2 bypass your server.**
-   `createUpload()` reserves a `pending` file row and returns a presigned PUT
-   whose `content-length` and `content-type` are in the SIGNED HEADERS, so the
-   object store rejects a body of the wrong size or type before accepting it —
-   which is the hole in the usual "just issue a presigned PUT" answer. It
-   requires the verbatim `DIRECT_UPLOAD_ACKNOWLEDGEMENT` and a
-   `maxUploadBytes` you choose, because an exact pin to whatever the client
-   asked for is not a bound.
-
-   **`FsStorage` is the exception, and it says so in the response.** Configured
-   with an `upload` block it mints a token for `localUploadRoute()`, which you
-   mount — so the client code is identical in development, and
-   `PresignedUpload.via` reads `'server'` rather than `'storage'` because on
-   that adapter the bytes still travel through your process. Check `via` before
-   concluding otherwise. Without that config it cannot sign and answers
-   `direct_upload_unsupported`.
-
-   What it does not do: **presigned POST** (Cloudflare R2 does not implement
-   it, and R2 is the default store, so the POST policy's `content-length-range`
-   is not available to us — the signed-header pin is stricter anyway), and
-   **resumable or multipart direct upload**, so one PUT is one object.
-   `collectUploadReservations()` is a job you must schedule, or abandoned
-   reservations accumulate as invisible `pending` rows. Plain `upload()` is
-   unchanged and still the default: bytes through your server, no
-   acknowledgement, every adapter.
-5. **Org admins and owners can read `private` files.** Deliberate, since retention
-   and legal hold are their responsibility. But if you need to exclude the
-   operator, you need envelope encryption and we do not have it.
-6. **Identifiers are unique per *project*, not per org.** `actor.external_id`
-   and `org.external_id` are scoped to a project (one customer application). Two
-   orgs inside one project cannot both have a user called `alice` meaning
-   different people.
-7. **The storage adapter has run against AWS S3 since 3 October 2026, and only
-   in one region.** Eleven tests against a real bucket in `eu-north-1` on every
-   commit and a thirteenth on the nightly run, alongside the same against
-   Cloudflare R2. What that does not
-   cover: other regions and their endpoint quirks, S3 Express One Zone, requester
-   pays, object lock, cross-region replication, and any bucket policy more
-   restrictive than the least-privilege IAM user the tests use.
-8. **Unauthenticated callers can still append denial events to the audit chain
-   of a tenant inside a project they can reach.** That is P5 working as designed.
-   Denials are the events worth recording, but it is a load-bearing reason to
-   rate-limit at ingest. `orgExists` is project-scoped, so the reach is bounded
-   to a project the caller is already authenticated for.
-9. **Orphan collection is a job you have to run.** Bytes are written before the
-   metadata commits, so a crash in between leaves an unreferenced object.
-   `collectStorageOrphans()` cleans them up and nothing calls it for you.
-10. **Redirect delivery has a revocation window.** If you enable it, a presigned
-   URL stays valid for up to its TTL after the grant is revoked. It is off by
-   default, defaults to anonymous grants only, and requires passing a verbatim
-   acknowledgement string. That string is the point.
-11. **The audit chain does not detect truncation of its most recent events.**
-   Replay catches any edit to a recorded event, the removal of one from the
-   middle, and the removal of the first. It cannot catch the removal of the last
-   *n*: nothing in the table records where the chain was supposed to end, so what
-   remains verifies cleanly. An anchor kept in the same database would not help:
-   whoever can delete the rows can rewrite the anchor in the same transaction.
-   `verifyAuditChain()` returns `lastId` and `lastHash` so you can pin the head
-   somewhere outside your database and compare it on the next run; doing that is
-   your job, not ours. `UPDATE`, `DELETE` and `TRUNCATE` are refused at the
-   database, but by a rule and a trigger the table's owner can drop.
-12. **There is no retention trimming for the audit log.** `audit_event` grows
-   without bound, and erasing a tenant's history is not a supported operation.
-   `verifyAuditChain()` reads the chain in pages of 2,000 since `0.14.0`, so
-   verification is bounded in memory, but replay is sequential by construction
-   and its TIME is still linear in everything the tenant has ever accumulated.
-   Before `0.14.0` it was a single unbounded query, which made peak memory
-   linear in the same thing.
-13. **`fl.store` and `fl.store.db` are public, and nothing on them authorizes
-   anything.** `PostgresStore` is the engine's dependency surface: every method
-   on it reads and writes rows directly, with no capability check and no audit
-   event. It is exported, and `fl.store.db` reaches the raw query interface, so
-   **any code running in your process that holds a `Filelayer` can read or
-   change any tenant's files and leave no trace in the log.** That is not a
-   hole to be closed -- an engine whose store it cannot reach is an engine that
-   cannot work, and the same is true of the `pg.Pool` you handed us, which you
-   already hold. It is a statement about where the boundary is: the boundary is
-   your process, and `authorize()` protects it from the outside, not from the
-   inside. Treat `fl.store` the way you treat your database credentials.
-   `@filelayer/sdk`, when it exists, must not re-export it.
-14. **A proxied delivery is audited at the decision, not at the last byte.** The
-   allow event and the download-cap charge happen before any bytes move, so a
-   transfer that dies mid-stream is recorded as an allowed read and still spends
-   the cap. "Every access on the record" means every authorization decision. On
-   the redirect path a `file.deliver` event does record the handoff; on the proxy
-   path there is no event that says the bytes arrived.
+[GitHub Issues](https://github.com/filelayer/filelayer/issues). A report that
+the product does not do what this README says is the most valuable thing you can
+send us, and every one so far has been fixed the same day.

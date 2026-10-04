@@ -15,7 +15,7 @@ this page said until 4 October.
 
 | | |
 |---|---|
-| Version | 0.15.0 — alpha |
+| Version | 0.15.1 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
@@ -89,7 +89,9 @@ non-zero failure count, which the first version did not.
 
 ## What is known broken or unfinished
 
-Kept current, in [`README.md`](https://github.com/filelayer/filelayer/blob/main/README.md#limitations). The ones most likely to
+Kept current, and complete, in
+[`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) —
+fourteen entries, which ship in the npm tarball. The ones most likely to
 matter:
 
 - Byte delivery proxies through your application by default, so there is no CDN

@@ -8,12 +8,12 @@ rather hear about one from you than from a customer.
 
 Read this before you decide how much to trust us.
 
-- Filelayer is **pre-1.0 (`0.15.0`) and has never been run in production by
+- Filelayer is **pre-1.0 (`0.15.1`) and has never been run in production by
   anyone**, including us.
 - The authorization core is covered by a property suite and an adversarial
   suite, both of which run in CI on every change.
 - The S3/R2 storage adapter **runs against live Cloudflare R2 and live AWS S3 in
-  CI on every commit** — 11 tests each, a twelfth on the nightly run — in
+  CI on every commit** — 12 tests each, a thirteenth on the nightly run — in
   addition to a local, signature-verifying S3 implementation. What is still
   unmeasured is load, and anything outside one region and one bucket
   configuration per provider.

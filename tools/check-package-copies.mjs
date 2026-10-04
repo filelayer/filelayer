@@ -107,10 +107,15 @@ const COPIES = [
   {
     file: 'README.md',
     why: 'the first thing a stranger reads, on GitHub and in the tarball',
-    // "Each one is current as of `0.4.3`; where a limitation has been lifted..."
-    // `\s+` rather than a space: the sentence wraps, and a checker that breaks
-    // on a reflowed paragraph teaches people to delete the checker.
-    versionStamp: /as of\s+`(\d+\.\d+\.\d+)`/,
+    // NO STAMP, SINCE 0.16.0, AND THAT IS A CHANGE WORTH EXPLAINING. The stamp
+    // was the "Each one is current as of `0.4.3`" sentence introducing the
+    // limitations list, and the list moved to LIMITATIONS.md, where the stamp
+    // went with it. Leaving the regex here would fail the build for a sentence
+    // that is correctly somewhere else, and inventing a second version number
+    // for this file would be one more hand-maintained figure that can only go
+    // stale -- which is the defect this whole family of gates exists for. The
+    // npm badge at the top of the README is the live answer.
+    versionStamp: null,
   },
   {
     file: 'LICENSE',
@@ -147,6 +152,15 @@ const COPIES = [
     // document that ships, and the reader this file was written for has an
     // install and no browser. See the note on the example files below.
     rewrite: [['](../packages/core/SEMANTICS.md)', '](../SEMANTICS.md)']],
+  },
+  {
+    file: 'LIMITATIONS.md',
+    why:
+      'the complete list of what this does not do. It was 117 of the README\'s ' +
+      '528 lines until 5 October 2026, when a reader pointed out that reads as ' +
+      'fragility rather than candour; moving it must not make it harder to ' +
+      'reach, so it ships.',
+    versionStamp: /as of\s+`(\d+\.\d+\.\d+)`/,
   },
   {
     file: 'TRUST.md',

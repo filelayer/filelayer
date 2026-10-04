@@ -25,6 +25,74 @@ Nothing yet.
 
 ---
 
+## [0.15.1] — 2026-10-05
+
+**The README led with five paragraphs of warnings and the value was eighty-seven
+lines down.** No library code changed; the tarball did, so this is a release.
+
+A reader reviewed the GitHub page and summarised it as "the website sells and
+the README frightens". He was right, and two of the specifics were live defects
+rather than style:
+
+### Fixed — two live-storage counts disagreed with the suite
+
+README limitation 7 said **"Eleven tests against a real bucket"** while two
+other sentences on the same page said twelve. `test/s3-live.test.ts` has
+thirteen `it(` with one behind `FILELAYER_TEST_S3_MULTIPART`, so twelve run on
+an ordinary commit. Looking for it found a second: `SECURITY.md` said "11 tests
+each, a twelfth on the nightly run", which was the count before a test was added
+and the sentence did not move.
+
+`check:versions` was green through both, because the live-storage counts are
+registered as seven file-and-pattern pairs and neither sentence was one of them.
+**That is the third time this gate has been taught the same lesson** — an
+allow-list exempts whatever nobody added — so the check now keys on the PHRASE
+and applies it to every public surface, spelled-out numbers included, since
+`Eleven` is the form that slipped through. The runbook's own version got
+registered at the same time, after sitting at `0.13.1` through two releases: the
+document that says which commands to run named the wrong release twice.
+
+### Changed — the README leads with what the thing does
+
+Eighty-seven lines to the first line of code became fifty-one. The alpha block
+went from forty-seven lines to eleven: one line of status, a link to the trust
+page, a link to the limitations, and the design-partner offer.
+
+- **Said once instead of three times.** "Alpha" appeared three times and the
+  live-storage evidence three times. The evidence now has one home, a table
+  under *What backs that up*, with every number in it gate-checked. Removing it
+  from the other two places briefly removed it entirely, which was worse.
+- **`LIMITATIONS.md` is a file**, and it ships in the tarball. It was 117 of the
+  README's 528 lines. The README keeps the five that would make somebody close
+  the tab — no CDN on the private path, read cost linear in grants per subject,
+  no resumable upload, org admins reading private files, and alpha — and they
+  moved up, to just after the evidence rather than below the licence.
+- **`ROADMAP.md`**, which we did not write. It is the nine-item list an
+  evaluating agent produced on 5 September 2026 after ranking Filelayer last of
+  six, with eight now done and the ninth stated plainly as the one we cannot
+  build. It also names what is deliberately never coming, so a reader can rule
+  us out without waiting for a version that is not on the way.
+- **A three-layer diagram and a comparison table** against hand-rolled presigned
+  URLs and Supabase Storage, including the two rows we lose outright: public
+  images at volume, and lines of code for a public avatar.
+- **Two sentences left.** "This was the single largest blocker to adoption and
+  it is resolved" is our history, not the reader's information. And the premise
+  that this README is written for an AI agent moved to `llms.txt`, which is the
+  file for it — the reader's objection being that stars, issues and design
+  partners come from people.
+
+### Added — we are asking for design partners
+
+Three to five, in the README banner and set out in `ROADMAP.md`: help with the
+integration and someone on hand while you do, in exchange for being told where
+it breaks. No cost, no contract, no exclusivity, and "we evaluated it and here
+is why we said no" is a useful outcome.
+
+The same fact as "nobody has deployed this", aimed at the only item on the
+roadmap that engineering cannot close.
+
+---
+
 ## [0.15.0] — 2026-10-05
 
 **You can now tell which schema version a database is at, and the forward SQL
