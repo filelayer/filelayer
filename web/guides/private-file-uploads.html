@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/private-file-uploads.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>How do I let users upload files privately? · Filelayer</title>
+<meta name="description" content="The usual answer is &quot;make the bucket private and hand the browser a presigned URL&quot;. That answer is right, as far as it goes, and most tutorials get the part they cover correct: the…">
+
+<link rel="canonical" href="https://filelayer.dev/guides/private-file-uploads">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/private-file-uploads">
+<meta property="og:title" content="How do I let users upload files privately?">
+<meta property="og:description" content="The usual answer is &quot;make the bucket private and hand the browser a presigned URL&quot;. That answer is right, as far as it goes, and most tutorials get the part they cover correct: the…">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How do I let users upload files privately?">
+<meta name="twitter:description" content="The usual answer is &quot;make the bucket private and hand the browser a presigned URL&quot;. That answer is right, as far as it goes, and most tutorials get the part they cover correct: the…">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How do I let users upload files privately?",
+  "description": "The usual answer is \"make the bucket private and hand the browser a presigned URL\". That answer is right, as far as it goes, and most tutorials get the part they cover correct: the…",
+  "url": "https://filelayer.dev/guides/private-file-uploads",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.15.1"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>How do I let users upload files privately?</h1>
+<p>The usual answer is &quot;make the bucket private and hand the browser a presigned URL&quot;. That answer is right, as far as it goes, and most tutorials get the part they cover correct: the bucket is private, your AWS credentials never reach the browser, the upload goes straight to S3.</p>
+<p>What it leaves out is that <strong>a presigned PUT URL is an unbounded write primitive</strong>. You mean to accept a 200 KB avatar; what you handed out accepts three gigabytes. That is not a misconfiguration, it is what a presigned PUT is, and the fix is a different kind of presigned request that almost none of those tutorials mention.</p>
+<p>This guide is written to be useful whether or not you use Filelayer. The section on signing the length into a PUT exists because we needed it ourselves and could not find it written down anywhere; it works with the AWS SDK and no Filelayer, which is the test every section here has to pass.</p>
+<hr>
+<h2 id="a-private-upload-has-three-parts">A private upload has three parts</h2>
+<p>Most answers cover the first and stop:</p>
+<ol><li><strong>Where the bytes go.</strong> Private bucket, presigned request, credentials stay on your server. Well covered, and the tutorials are right.</li>
+<li><strong>What bounds the upload.</strong> Size, type, destination key. Barely covered, and the default answer has no bounds at all.</li>
+<li><strong>Who may read it back.</strong> The object key is not a secret. Barely covered.</li></ol>
+<p>Parts 2 and 3 are the rest of this page.</p>
+<hr>
+<h2 id="the-part-that-is-usually-missed">The part that is usually missed</h2>
+<h3 id="a-presigned-put-does-not-limit-the-size">A presigned PUT does not limit the size</h3>
+<p>The URL signs the method, the key and the expiry. <strong>It does not constrain the body.</strong> A client handed a PUT URL for a 200 KB avatar can send three gigabytes instead, and S3 accepts it — up to the 5 GB single-<code>PUT</code> ceiling.</p>
+<p>The obvious defence does not work <em>as usually written</em>: passing a length to the signer is not the same as signing it. If <code>content-length</code> does not appear in <code>X-Amz-SignedHeaders</code>, the signature does not cover it, the client declares whatever it likes, and S3 has nothing to compare against. Most SDK presign helpers produce exactly that URL.</p>
+<p>Signing it properly does work, and it is the third option below — put it in <code>X-Amz-SignedHeaders</code> and the signature covers its value. That distinction is the whole of this section: the hole is not in the presigned PUT, it is in which headers people sign.</p>
+<p>So what you have published is an authenticated, unmetered write into a bucket you pay for. A hostile client does not need to break anything; it just uses the URL you gave it, repeatedly, with large bodies. Your storage bill is the attack surface.</p>
+<h3 id="the-fix-is-a-presigned-post-which-is-a-different-thing">The fix is a presigned POST, which is a different thing</h3>
+<p>A presigned <strong>POST</strong> carries a <em>policy</em>: a signed document of conditions S3 evaluates before the object exists. The one that matters here is <code>content-length-range</code>, and S3 enforces it at the door — an oversized upload is rejected rather than discovered.</p>
+<pre><code class="lang-js">// AWS SDK v3: @aws-sdk/s3-presigned-post
+const { url, fields } = await createPresignedPost(s3, {
+  Bucket: 'your-bucket',
+  Key: `u/${userId}/${crypto.randomUUID()}`,
+  Conditions: [
+    ['content-length-range', 1, 2 * 1024 * 1024],   // 1 byte .. 2 MiB, enforced
+    ['starts-with', '$Content-Type', 'image/'],
+    ['eq', '$x-amz-meta-uploaded-by', String(userId)],
+  ],
+  Fields: { 'x-amz-meta-uploaded-by': String(userId) },
+  Expires: 60,
+});</code></pre>
+<p>The browser posts a <code>multipart/form-data</code> with <code>fields</code> plus the file. Anything outside the policy never becomes an object.</p>
+<p>Two conditions beyond the size are worth setting while you are there:</p>
+<ul><li><strong><code>starts-with</code> on the key</strong>, so one user's URL cannot write into another user's prefix. If you sign an exact key this is already true; if you let the client choose any part of the key, it is not.</li>
+<li><strong><code>starts-with</code> on <code>$Content-Type</code></strong>, which bounds what the <em>declared</em> type can be. Read the next section before trusting it.</li></ul>
+<p>The trade is that POST is more work on the client than <code>fetch(url, { method: 'PUT', body: file })</code>, which is most of why the tutorials teach PUT. It is the right amount of work.</p>
+<h3 id="or-sign-the-length-into-the-put-which-nobody-writes-down">Or sign the length INTO the PUT, which nobody writes down</h3>
+<p>There is a third option, and we only went looking for it because the second one was unavailable to us: <strong>put <code>content-length</code> in the signed headers of the presigned PUT.</strong></p>
+<p>SigV4 covers every header named in <code>X-Amz-SignedHeaders</code>. Sign the length and the store recomputes the signature from the headers it actually received, so a client issued a URL for 204,800 bytes and sending three gigabytes produces a different canonical request, a different signature, and a 403 with nothing stored. Sign <code>content-type</code> the same way and the stored type is the one your application chose rather than the one the uploader declared.</p>
+<pre><code class="lang-js">// A hand-rolled SigV4 presign. Most SDKs will do this if you pass the length
+// when you sign AND the signer is told to include it; check what ends up in
+// X-Amz-SignedHeaders, because that string is the whole mechanism.
+const signedHeaders = 'content-length;content-type;host';
+const canonicalRequest = [
+  'PUT',
+  canonicalUri,
+  canonicalQueryString(query),       // query includes X-Amz-SignedHeaders above
+  `content-length:${size}\ncontent-type:${type}\nhost:${host}\n`,
+  signedHeaders,
+  'UNSIGNED-PAYLOAD',                // correct: the body is not known at signing
+].join('\n');</code></pre>
+<p>The client must then send both headers verbatim. That is the cost, and it is smaller than switching to <code>multipart/form-data</code>.</p>
+<p><strong>This is stricter than the POST policy, not weaker.</strong> <code>content-length-range</code> is a range; a signed <code>content-length</code> is an exact value. You lose the ability to say &quot;anything between 1 byte and 2 MiB&quot;, which matters if you genuinely do not know the size — but a browser always does (<code>file.size</code>), so in practice you are trading a range you did not need for a pin.</p>
+<p><strong>Two reasons to reach for it.</strong> The first is that it works where POST does not: <strong>Cloudflare R2 does not implement presigned POST</strong> — it is absent from R2's own S3-compatibility tables, and attempts come back <code>InvalidArgument</code>. If your bucket is R2, the POST policy above is not available to you and this is the only way to bound the body. The second is that <code>UNSIGNED-PAYLOAD</code> is doing less work than people assume: it means the body's <em>hash</em> is not signed, which is unavoidable for a URL minted before the body exists. The <em>length</em> can still be, and conflating the two is how the hole survives.</p>
+<p>What it does not give you: <code>starts-with</code> conditions, policy expiry independent of the URL, or any constraint on a header you did not sign. If you need those and you are on AWS, use POST.</p>
+<hr>
+<h2 id="three-more-traps-in-the-order-they-bite">Three more traps, in the order they bite</h2>
+<h3 id="1-the-declared-content-type-is-attacker-controlled">1. The declared content type is attacker-controlled</h3>
+<p>Whatever the client says in <code>Content-Type</code> is what S3 stores and what you will later serve back. Accept an upload that declares <code>text/html</code>, serve it inline from your own origin, and you have stored XSS against your own domain — with your users' session cookies in scope.</p>
+<p>Two defences, and you want both:</p>
+<ul><li><strong>Decide the type from the bytes, not the declaration.</strong> The first few bytes identify the common formats unambiguously: <code>89 50 4E 47 0D 0A 1A 0A</code> is PNG, <code>FF D8 FF</code> is JPEG, <code>25 50 44 46</code> is <code>%PDF</code>, <code>47 49 46 38</code> is GIF, and <code>52 49 46 46 ?? ?? ?? ?? 57 45 42 50</code> is WebP. If you cannot identify it, <code>application/octet-stream</code> is the honest answer.</li>
+<li><strong>Serve it as an attachment with <code>X-Content-Type-Options: nosniff</code>.</strong> This is the one that holds even when the sniffing is wrong, and it costs one header. If you must render images inline, serve user content from a <em>different origin</em> than your application.</li></ul>
+<p>A presigned POST cannot do the first for you: the policy sees the declared type, not the bytes. Bounds at upload time, verification after.</p>
+<h3 id="2-the-object-key-is-not-a-secret">2. The object key is not a secret</h3>
+<p>A long random key is not access control. Keys appear in logs, in <code>Referer</code> headers, in backup tooling, in anything that has ever listed the bucket, and in any URL a user pastes anywhere. If the only thing between a file and the public is that the path is hard to guess, the file is public and you have not noticed yet.</p>
+<p>This is the reason private uploads need the download path designed too. Either the bucket is private and every read is authorized by your server, or it is not private. There is no third state, and &quot;unguessable path on a public bucket&quot; is the second state wearing the first one's clothes.</p>
+<h3 id="3-the-upload-happens-outside-your-transaction">3. The upload happens outside your transaction</h3>
+<p>The browser uploads to S3; your database knows nothing. Three ways that ends badly:</p>
+<ul><li>The client uploads and never calls your server. <strong>An orphan object</strong>, paid for monthly, referenced by nothing.</li>
+<li>You write the row first and the upload fails. <strong>A row with no bytes</strong>, and every read of it is a 500.</li>
+<li>Someone replays the callback. <strong>A row that claims an upload nobody made.</strong></li></ul>
+<p>The shape that works is: a <code>pending</code> row before you issue the URL, a callback or an S3 event that flips it to <code>ready</code>, and a sweeper that deletes <code>pending</code> rows older than some grace period along with any object they point at. Decide deliberately whether your callback is trusted — if the browser calls it, verify against S3 with a <code>HEAD</code> rather than believing the size and type the client reports.</p>
+<p><strong>Confirm the object really is what you expect</strong>, with that <code>HEAD</code>: size within your bound, and the <code>ETag</code> if you care. It is one request, it catches the difference between &quot;the client said it uploaded&quot; and &quot;the bytes are there&quot;.</p>
+<hr>
+<h2 id="if-the-files-are-small-consider-not-doing-any-of-this">If the files are small, consider not doing any of this</h2>
+<p>Direct-to-S3 exists to keep large uploads off your servers. If your files are avatars and PDFs, uploading through your own process is simpler and strictly safer: you see the bytes, so you can bound the size by counting as it arrives, sniff the type from the content, and write the database row in the same request that wrote the object. Every trap above disappears because the two things stop being separate.</p>
+<p>The cost is bandwidth and a request-sized chunk of memory or a stream. For files measured in megabytes, that is a trade worth making. For files measured in gigabytes, it is not.</p>
+<hr>
+<h2 id="if-you-would-rather-not-build-it">If you would rather not build it</h2>
+<p>Be clear about what this does and does not cover.</p>
+<p><a href="https://github.com/filelayer/filelayer" rel="noopener">Filelayer</a> does direct browser-to-storage upload as of <code>0.10.0</code>, using exactly the signed-length PUT described above. <code>createUpload()</code> authorizes the caller, reserves a <code>pending</code> file row, and returns a presigned PUT with <code>content-length</code> and <code>content-type</code> in the signed headers; <code>completeUpload()</code> asks the store what actually arrived and promotes the row. A reservation whose bytes never turn up is unreadable rather than broken, because a <code>pending</code> file refuses <code>read</code> — and a job you schedule reclaims it.</p>
+<p><strong>What it still does not do:</strong> presigned POST, for the R2 reason above; resumable or multipart direct upload, so one PUT is one object; and anything at all on the filesystem adapter, which cannot sign. It is off until you pass a verbatim acknowledgement string and a size ceiling, because handing the data path to the object store is a property you give up rather than a setting you tune. If you want <code>starts-with</code> policy conditions or a resumable upload, use the SDK directly — that is still the right tool and we are still not it.</p>
+<p>The rest of what Filelayer does is everything after the bytes land: ownership, org and role access, share links that expire and can be revoked, lifecycle, and an audit trail that records refusals as well as reads. It sniffs the content type from the magic bytes when you do not supply one, and it owns the response headers on the byte path so the <code>nosniff</code> and <code>attachment</code> above are not something you can forget.</p>
+<p>&lt;!-- doccheck-setup import { Filelayer, sniffContentType } from '@filelayer/core'; import assert from 'node:assert/strict'; const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' }); --&gt;</p>
+<pre><code class="lang-ts">// The type comes from the bytes, not from what the client claimed.
+const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
+assert.equal(sniffContentType(png), 'image/png');
+
+// Something we cannot identify is octet-stream, not the client's word for it.
+assert.equal(sniffContentType(new TextEncoder().encode('&lt;script&gt;')), 'application/octet-stream');
+
+const { id } = await fl.files.put(png, { owner: 'alice', name: 'avatar.png' });
+
+// And the read path sets the headers for you.
+const file = await fl.files.get(id, { as: 'alice' });
+assert.equal(file.headers['x-content-type-options'], 'nosniff');
+assert.match(file.headers['content-disposition']!, /^attachment/);</code></pre>
+<p>That block is executed by <code>npm run check:docs</code> on every commit. If the sniffing or the headers changed, this page would fail the build rather than quietly become untrue.</p>
+<p>It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is alpha — <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">the trust page</a> has the numbers, including the ones sitting at zero.</p>
+<hr>
+<h2 id="related">Related</h2>
+<ul><li><a href="/guides/expiring-and-revocable-file-links">Expiring and revocable file links</a> — the download half: why a presigned URL cannot be taken back, and the one query that is easy to write wrong.</li></ul>
+<hr>
+<h2 id="sources">Sources</h2>
+<ul><li><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html" rel="noopener">Download and upload objects with presigned URLs</a> — AWS</li>
+<li><a href="https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-HTTPPOSTConstructPolicy.html" rel="noopener">Creating a POST policy</a> — AWS, on <code>content-length-range</code> and the other conditions</li>
+<li><a href="https://advancedweb.hu/differences-between-put-and-post-s3-signed-urls/" rel="noopener">Differences between PUT and POST S3 signed URLs</a> — Advanced Web Machinery, on PUT not constraining the body</li>
+<li><a href="https://insecurity.blog/2021/03/06/securing-amazon-s3-presigned-urls/" rel="noopener">Securing your Amazon AWS S3 presigned URLs</a> — (in)security</li>
+<li><a href="https://dev.to/apptrail/s3-post-policy-the-hidden-s3-feature-you-havent-heard-of-k2g" rel="noopener">S3 POST policy, the hidden S3 feature</a> — DEV</li></ul>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/private-file-uploads.md" rel="noopener"><code>docs/guides/private-file-uploads.md</code></a>
+    in a public repository. The code samples in the guides are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.15.1, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

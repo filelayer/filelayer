@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/multi-tenant-file-access.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>How do I do multi-tenant file access control? · Filelayer</title>
+<meta name="description" content="The usual answer is a good one: put tenant_id on every table, turn on Row-Level Security, set a session variable per request, and index on (tenant_id, …). The better tutorials also…">
+
+<link rel="canonical" href="https://filelayer.dev/guides/multi-tenant-file-access">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/multi-tenant-file-access">
+<meta property="og:title" content="How do I do multi-tenant file access control?">
+<meta property="og:description" content="The usual answer is a good one: put tenant_id on every table, turn on Row-Level Security, set a session variable per request, and index on (tenant_id, …). The better tutorials also…">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How do I do multi-tenant file access control?">
+<meta name="twitter:description" content="The usual answer is a good one: put tenant_id on every table, turn on Row-Level Security, set a session variable per request, and index on (tenant_id, …). The better tutorials also…">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How do I do multi-tenant file access control?",
+  "description": "The usual answer is a good one: put tenant_id on every table, turn on Row-Level Security, set a session variable per request, and index on (tenant_id, …). The better tutorials also…",
+  "url": "https://filelayer.dev/guides/multi-tenant-file-access",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.15.1"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>How do I do multi-tenant file access control?</h1>
+<p>The usual answer is a good one: put <code>tenant_id</code> on every table, turn on Row-Level Security, set a session variable per request, and index on <code>(tenant_id, …)</code>. The better tutorials also tell you to use <code>FORCE ROW LEVEL SECURITY</code>, to keep <code>BYPASSRLS</code> off your application role, and to never take the tenant from the client. All of that is right and this guide does not argue with any of it.</p>
+<p>It argues with what people conclude from it. <strong>RLS decides which rows a session may see. It does not decide which rows may exist.</strong> For files that gap has a name, because files have two things ordinary rows do not: a grant that points at another tenant's row, and bytes that live somewhere with no policies at all.</p>
+<p>Everything below was measured against a real PostgreSQL. The script is <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/multi-tenant-file-access.proof.mjs" rel="noopener">beside this file</a> and takes about twenty seconds.</p>
+<hr>
+<h2 id="rls-does-exactly-what-it-says-which-is-less-than-you-need">RLS does exactly what it says, which is less than you need</h2>
+<p>Start with the schema a good tutorial produces: <code>file</code> and <code>file_grant</code>, both carrying <code>org_id</code>, both with RLS enabled and forced, both with a policy comparing <code>org_id</code> to <code>current_setting('app.tenant_id')</code>.</p>
+<p>Reads are isolated, and this part works:</p>
+<pre><code>acme sees: [&quot;acme-contract.pdf&quot;]</code></pre>
+<p><code>globex-deck.pdf</code> is invisible. Now, from a session whose tenant is <strong>globex</strong>, insert a grant that gives globex access to <strong>acme's</strong> file:</p>
+<pre><code class="lang-sql">INSERT INTO file_grant (file_id, org_id, note)
+VALUES ('&lt;acme's file&gt;', '&lt;globex&gt;', 'globex may read an acme file');</code></pre>
+<p>Measured result: <code>INSERTED</code>.</p>
+<p>Both policies are satisfied, and correctly. The row's <code>org_id</code> <strong>is</strong> globex, which is the session's tenant, so <code>WITH CHECK</code> passes. RLS compared the row to the session. <strong>Nothing compared the row to the file it points at.</strong> You now have a grant that spans two tenants, written by a session that was never allowed to see the file it just granted.</p>
+<p>This is not an RLS bug. It is RLS being a row filter, which is what it is. The tutorials are not wrong; the conclusion that RLS makes cross-tenant access impossible is.</p>
+<hr>
+<h2 id="the-composite-foreign-key">The composite foreign key</h2>
+<p>Standard SQL, no extension, no trigger. Make the pair unique on the parent, then reference the pair from the child:</p>
+<pre><code class="lang-sql">ALTER TABLE file       ADD UNIQUE (id, org_id);
+
+ALTER TABLE file_grant ADD FOREIGN KEY (file_id, org_id)
+                           REFERENCES file (id, org_id);</code></pre>
+<p><code>file.id</code> is already the primary key, so <code>UNIQUE (id, org_id)</code> adds no meaningful constraint on <code>file</code> — it exists only so the pair can be referenced. The child now says: <em>the file I point at must belong to the org I claim.</em></p>
+<p>The same <code>INSERT</code>, measured:</p>
+<pre><code>result: REFUSED:23503</code></pre>
+<p>A foreign-key violation. The pair <code>(acme's file, globex)</code> is not a row in <code>file</code>, so the grant is not a row that can exist. It is no longer a rule about who is asking; it is a statement about which rows are possible.</p>
+<h3 id="and-it-holds-where-a-policy-does-not">And it holds where a policy does not</h3>
+<p>A policy constrains a session. If anything reaches the table through another session — a migration, an admin script, a background job, a connection pooler that reset your session variable, a role someone granted <code>BYPASSRLS</code> to in a hurry — the policy is simply not in force.</p>
+<p>Measured, from a role with <code>BYPASSRLS</code> and no tenant variable set at all:</p>
+<pre><code>this role sees all 2 files, and the write: REFUSED:23503</code></pre>
+<p>It reads every row in the database, and it still cannot write that grant. That is the whole argument for pushing this into the schema: <strong>a policy is advice to a session, a constraint is a property of the data.</strong> The one you want protecting tenant isolation is the second kind, because the first kind has an off switch and the off switch is used by people in a hurry.</p>
+<p>Apply the same shape to every table that joins two tenant-scoped things: membership, audit rows, anything with two foreign keys that both ultimately belong to a tenant. If a row can be written that spans two tenants, eventually one will be.</p>
+<hr>
+<h2 id="the-bytes-are-not-in-the-database">The bytes are not in the database</h2>
+<p>The second thing files have that ordinary rows do not.</p>
+<p>RLS protects <code>SELECT … FROM file</code>. It has nothing to say about the object in S3. If your download path looks up a key under RLS and then fetches it, the lookup was protected and the fetch was not — which is fine as long as the key only ever comes from that lookup. It stops being fine the moment:</p>
+<ul><li><strong>the bucket is public.</strong> Then the object is readable by anyone who knows or guesses the key, and no policy in your database is in the path at all. The key is not a secret: it appears in logs, in <code>Referer</code> headers, in backups, in anything that has ever listed the bucket.</li>
+<li><strong>you issue presigned URLs.</strong> The store validates a signature, not a session. Whatever tenant checking you did happened before the URL existed, and the URL outlives the check. See <a href="/guides/expiring-and-revocable-file-links">expiring and revocable file links</a> for what that costs and what to do instead.</li>
+<li><strong>a key is constructible.</strong> If keys are <code>tenant/&lt;org&gt;/&lt;file&gt;</code> and a caller can influence either segment, path traversal across tenants is an input-validation bug away. Hash the key, or generate it, but never build it from something a user supplied.</li></ul>
+<p>The rule that keeps this simple: <strong>one place decides, and the bytes are only reachable through it.</strong> Private bucket, no presigned URLs you cannot revoke, and every read passing the same function. If there are two paths to the bytes, the second one is the one that will be wrong.</p>
+<hr>
+<h2 id="three-smaller-things-in-the-order-they-bite">Three smaller things, in the order they bite</h2>
+<p><strong>Sharing is cross-tenant on purpose, and RLS has no vocabulary for it.</strong> The point of a share link is that somebody outside the tenant reads one file. A policy keyed on <code>org_id = current_setting(...)</code> cannot express &quot;and also this one anonymous grant&quot;. The usual escape is a privileged role for redemption, which is a hole with a job title. Model the grant as a row, authorize against the grant, and keep the privileged path out of the design.</p>
+<p><strong>Admins are tenants too.</strong> &quot;Org owners can read every file in their org&quot; is a policy decision, not an accident, and it should be written down somewhere a user can read. If your product promises that nobody but the uploader sees a file, RLS will not give you that — you need encryption the operator cannot undo, which is a different and much larger project.</p>
+<p><strong>The index is part of the correctness story.</strong> A policy that forces a sequential scan is a policy somebody will turn off under load. <code>(org_id, …)</code> as the leading columns on the access paths, every time.</p>
+<hr>
+<h2 id="if-you-would-rather-not-build-it">If you would rather not build it</h2>
+<p><a href="https://github.com/filelayer/filelayer" rel="noopener">Filelayer</a> is this shape, packaged: files with orgs and roles, grants as rows, and the cross-tenant constraint above in the schema rather than in the application. Its <code>file_grant</code> table carries exactly the composite key this guide recommends:</p>
+<pre><code class="lang-sql">FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id) ON DELETE CASCADE</code></pre>
+<p>Worth being precise about what that is and is not: <strong>Filelayer is authorization middleware, not row-level security.</strong> It decides for calls made through it. A client that queries your Postgres directly bypasses it — the composite keys and triggers still hold, because those bind every writer, but no authorization runs and no audit event is written. The two compose; neither replaces the other. If you want RLS as well, add it; nothing here conflicts.</p>
+<p>&lt;!-- doccheck-setup import { Filelayer } from '@filelayer/core'; import assert from 'node:assert/strict'; const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' }); --&gt;</p>
+<pre><code class="lang-ts">await fl.orgs.create('acme', { owner: 'ceo' });
+await fl.orgs.create('globex', { owner: 'other-ceo' });
+const { id } = await fl.files.put(new TextEncoder().encode('CONTRACT'), {
+  org: 'acme', owner: 'ceo', name: 'contract.pdf',
+});
+
+// A member of the other tenant gets a 404, not a 403: a 403 would confirm
+// the file exists, which is itself a cross-tenant disclosure.
+await assert.rejects(
+  () =&gt; fl.files.get(id, { as: 'other-ceo' }),
+  (e: { status?: number }) =&gt; e.status === 404,
+);</code></pre>
+<p>That block is executed by <code>npm run check:docs</code> on every commit.</p>
+<p>It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is alpha — <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">the trust page</a> has the numbers, including the ones sitting at zero.</p>
+<hr>
+<h2 id="related">Related</h2>
+<ul><li><a href="/guides/expiring-and-revocable-file-links">Expiring and revocable file links</a> — why a presigned URL cannot be taken back.</li>
+<li><a href="/guides/private-file-uploads">Private file uploads</a> — why a presigned PUT does not limit what gets uploaded.</li></ul>
+<hr>
+<h2 id="sources">Sources</h2>
+<ul><li><a href="https://www.postgresql.org/docs/current/ddl-rowsecurity.html" rel="noopener">Row Security Policies</a> — PostgreSQL, on what a policy does and on <code>BYPASSRLS</code></li>
+<li><a href="https://queryplane.com/blog/postgres-row-level-security-in-practice/" rel="noopener">Postgres Row-Level Security: multi-tenant patterns that hold up</a> — QueryPlane</li>
+<li><a href="https://docs.aws.amazon.com/prescriptive-guidance/latest/saas-multitenant-managed-postgresql/welcome.html" rel="noopener">Implementing managed PostgreSQL for multi-tenant SaaS applications</a> — AWS Prescriptive Guidance</li>
+<li><a href="https://clickhouse.com/resources/engineering/multi-tenant-saas-postgres-architecture" rel="noopener">How to architect multi-tenant SaaS on Postgres</a> — ClickHouse</li></ul>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/multi-tenant-file-access.md" rel="noopener"><code>docs/guides/multi-tenant-file-access.md</code></a>
+    in a public repository. The code samples in the guides are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.15.1, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

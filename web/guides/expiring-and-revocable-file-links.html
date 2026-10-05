@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/expiring-and-revocable-file-links.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>How do I make a file link that expires — and that I can take back? · Filelayer</title>
+<meta name="description" content="The usual answer is &quot;generate a presigned URL with an expiry&quot;. That answer is right about expiry and wrong about taking it back, and the difference only shows up on the day you need it.">
+
+<link rel="canonical" href="https://filelayer.dev/guides/expiring-and-revocable-file-links">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/expiring-and-revocable-file-links">
+<meta property="og:title" content="How do I make a file link that expires — and that I can take back?">
+<meta property="og:description" content="The usual answer is &quot;generate a presigned URL with an expiry&quot;. That answer is right about expiry and wrong about taking it back, and the difference only shows up on the day you need it.">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How do I make a file link that expires — and that I can take back?">
+<meta name="twitter:description" content="The usual answer is &quot;generate a presigned URL with an expiry&quot;. That answer is right about expiry and wrong about taking it back, and the difference only shows up on the day you need it.">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How do I make a file link that expires — and that I can take back?",
+  "description": "The usual answer is \"generate a presigned URL with an expiry\". That answer is right about expiry and wrong about taking it back, and the difference only shows up on the day you need it.",
+  "url": "https://filelayer.dev/guides/expiring-and-revocable-file-links",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.15.1"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>How do I make a file link that expires — and that I can take back?</h1>
+<p>The usual answer is &quot;generate a presigned URL with an expiry&quot;. That answer is right about expiry and wrong about taking it back, and the difference only shows up on the day you need it.</p>
+<p>This guide is about the second half. It is written to be useful whether or not you use Filelayer: the design and the SQL below are yours to copy, and the one query that is genuinely hard to get right is given in full, along with the test that proves the obvious version is broken.</p>
+<hr>
+<h2 id="the-short-answer">The short answer</h2>
+<p><strong>A presigned URL cannot be revoked individually.</strong> Once it is out, you can wait for it to expire, or you can do something with a blast radius much larger than one link.</p>
+<p>If &quot;stop this link working, now&quot; is a requirement — and for a share link sent to a human it usually becomes one — then the URL has to point at <strong>your</strong> server, and your server has to decide on every request. That is roughly forty lines of code plus one query that is easy to write wrong.</p>
+<hr>
+<h2 id="why-the-usual-answer-does-not-do-what-people-think">Why the usual answer does not do what people think</h2>
+<p>A presigned URL is a signature over a request, computed with your AWS credentials. The object store validates the signature and the embedded expiry. It does not call you, and it has no idea the link was forwarded to the wrong person.</p>
+<p>Which means there is no per-link off switch. The documented ways to kill one early are:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>What you can do</th><th>What it also does</th></tr></thead>
+<tbody><tr><td>Delete the object</td><td>Kills the file, for everyone, permanently</td></tr>
+<tr><td>Change the bucket policy to deny</td><td>Affects every caller the policy matches</td></tr>
+<tr><td>Deactivate the signing credential</td><td>Invalidates <strong>every URL that credential ever signed</strong></td></tr>
+<tr><td>Add an <code>aws:signatureAge</code> condition</td><td>Expires links by age across the bucket; still not per-link</td></tr></tbody>
+</table></div>
+<p>AWS states it plainly: a presigned URL expires when the credential used to create it is revoked, deleted or deactivated — which is the whole credential, not the one link.</p>
+<p>Two more things that surprise people, both worth knowing before you design around presigned URLs:</p>
+<ul><li><strong>The ceiling is 7 days</strong> (<code>604800</code> seconds) under SigV4, and only with long-lived IAM user credentials.</li>
+<li><strong>With temporary credentials you get far less, silently.</strong> Sign from a Lambda, an EC2 instance profile or any STS role and the URL dies when the <em>session</em> dies — commonly 1 to 12 hours — no matter what expiry you asked for. The request succeeds, the number you passed is ignored, and you find out from a user.</li></ul>
+<p>None of this makes presigned URLs bad. They are excellent at what they are: a short-lived, fire-and-forget grant that costs your server nothing because the bytes never touch it. If the link lives for ninety seconds and is used once, stop reading and use one.</p>
+<hr>
+<h2 id="the-four-options-and-what-each-costs">The four options, and what each costs</h2>
+<p><strong>1. Short expiry and accept it.</strong> Simplest. Correct whenever the link's natural lifetime is minutes. &quot;Revocation&quot; becomes &quot;wait&quot;.</p>
+<p><strong>2. One credential per link.</strong> Sign each URL with its own short-lived STS session, then revoke that session to kill that link. It genuinely works, and it costs you an IAM session per share, a way to map links to sessions, and a quota you will eventually hit.</p>
+<p><strong>3. Keep the object private and proxy the bytes.</strong> The link points at your server. You decide, then stream. Full control, full audit, and every byte goes through your process — which is the real cost and the reason to think about it.</p>
+<p><strong>4. Proxy the decision, redirect the bytes.</strong> Your server decides, then issues a presigned URL with a very short expiry and redirects. You get the decision point and the CDN-ish economics, at the price of a window: a link revoked <em>now</em> still works for whoever already holds an unexpired redirect. Bound that window by clamping the expiry to seconds, and know that you have it.</p>
+<p>Options 3 and 4 are the ones that give you &quot;stop this link, now&quot;. The rest of this guide builds 3, because 4 is 3 plus a redirect.</p>
+<hr>
+<h2 id="the-design">The design</h2>
+<p>A link is a <strong>row</strong>, not a URL. The URL carries a secret that identifies the row; everything that decides is in the row.</p>
+<pre><code class="lang-sql">CREATE TABLE share_link (
+    id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id        uuid NOT NULL REFERENCES file(id),
+    -- Store the HASH. The plaintext secret is returned to the caller once and
+    -- never persisted: a leaked database should not be a leaked set of live
+    -- links.
+    secret_hash    bytea NOT NULL UNIQUE,
+    expires_at     timestamptz,
+    max_downloads  integer,
+    download_count integer NOT NULL DEFAULT 0,
+    revoked_at     timestamptz,
+    created_by     uuid NOT NULL REFERENCES app_user(id),
+    created_at     timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT downloads_within_cap
+        CHECK (max_downloads IS NULL OR download_count &lt;= max_downloads)
+);
+
+CREATE INDEX ON share_link (file_id) WHERE revoked_at IS NULL;</code></pre>
+<p>Minting a link is an insert. Revoking it is <code>UPDATE … SET revoked_at = now()</code>, and it takes effect on the next request because the next request reads the row. That is the entire mechanism, and it is why this works where a signature cannot: <strong>the authority is looked up, not carried.</strong></p>
+<p>Three details that matter more than they look:</p>
+<ul><li><strong>Hash the secret.</strong> <code>sha256</code> is fine; this is a 32-byte random value, not a password, so a slow KDF buys nothing. Compare in constant time.</li>
+<li><strong>The secret goes in the path, never the query string.</strong> Query strings end up in access logs, <code>Referer</code> headers and browser history.</li>
+<li><strong>Expiry and revocation are different things</strong> and you want both. Expiry is a promise you made at creation time. Revocation is a decision you make later. A design with only expiry cannot express &quot;I sent that to the wrong address.&quot;</li></ul>
+<hr>
+<h2 id="the-one-query-that-is-hard">The one query that is hard</h2>
+<p>Serving a download has to check liveness and spend a download, and the obvious way to write it is broken:</p>
+<pre><code class="lang-js">// WRONG. Do not ship this.
+const { rows } = await db.query('SELECT * FROM share_link WHERE secret_hash = $1', [h]);
+const link = rows[0];
+if (!link || link.revoked_at || link.expires_at &lt; new Date()) return deny();
+if (link.max_downloads !== null &amp;&amp; link.download_count &gt;= link.max_downloads) return deny();
+await db.query('UPDATE share_link SET download_count = download_count + 1 WHERE id = $1', [link.id]);</code></pre>
+<p>Between the <code>SELECT</code> and the <code>UPDATE</code> there is a window, and two requests that arrive inside it both read the same <code>download_count</code> and both decide they are allowed.</p>
+<p>This is not theoretical and it is not rare: it is what a busy link does the first time somebody posts it somewhere. Measured against a real PostgreSQL, two connections, a 50 ms window, a cap of one:</p>
+<div class="table-scroll"><table>
+<thead><tr><th></th><th>Result</th></tr></thead>
+<tbody><tr><td>The naive version, <strong>without</strong> the <code>CHECK</code> above</td><td><strong>both served</strong>, counter ends at 2</td></tr>
+<tr><td>The naive version, <strong>with</strong> the <code>CHECK</code></td><td>one served, the other gets SQLSTATE <code>23514</code></td></tr></tbody>
+</table></div>
+<p>So the constraint is worth having — it converts a silent overshoot into a loud error — but a 500 for the second visitor is not the answer either. The constraint is a backstop, not the fix.</p>
+<p>The fix is to make the check and the spend <strong>one statement</strong>, so the decision happens under the row lock rather than before it:</p>
+<pre><code class="lang-sql">-- Right. The reservation IS the write: there is no window to lose.
+UPDATE share_link
+   SET download_count = download_count + 1
+ WHERE secret_hash = $1
+   AND revoked_at IS NULL
+   AND (expires_at IS NULL OR expires_at &gt; now())
+   AND (max_downloads IS NULL OR download_count &lt; max_downloads)
+RETURNING id, file_id, download_count;</code></pre>
+<p>No row returned means denied — and it does not tell you <em>why</em>, which is fine for the response and a problem for your logs, so record the reason separately.</p>
+<p><strong>Why this works</strong>, because the mechanism matters if you are going to modify it: on PostgreSQL's default <code>READ COMMITTED</code>, a second <code>UPDATE</code> arriving at a locked row blocks, and when the lock is released it <strong>re-evaluates its <code>WHERE</code> against the updated row</strong>. The <code>download_count &lt; max_downloads</code> test is therefore made against the value the first request already wrote, not against the one that was there when the statement started. There is no window because there is no earlier read to go stale.</p>
+<p>Measured, same setup, with this statement instead:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Concurrent requests</th><th>Cap</th><th>Served</th><th>Counter</th></tr></thead>
+<tbody><tr><td>2</td><td>1</td><td>1</td><td>1</td></tr>
+<tr><td>10</td><td>3</td><td>3</td><td>3</td></tr>
+<tr><td>20</td><td>1</td><td>1</td><td>1</td></tr>
+<tr><td>50</td><td>7</td><td>7</td><td>7</td></tr></tbody>
+</table></div>
+<p>One note if you are not on the default isolation level: under <code>REPEATABLE READ</code> the same statement does not block-and-recheck, it aborts the loser with SQLSTATE <code>40001</code>. That is correct behaviour and your application has to retry it. Measured too, and it is the kind of thing that works in development and surprises you in a job that runs at <code>REPEATABLE READ</code>.</p>
+<p>Every number above came out of <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.proof.mjs" rel="noopener"><code>expiring-and-revocable-file-links.proof.mjs</code></a>, next to this file. It starts a real PostgreSQL as an ordinary user process, needs nothing installed and no server running, and takes about twenty seconds:</p>
+<pre><code>node docs/guides/expiring-and-revocable-file-links.proof.mjs</code></pre>
+<p>Re-run it before believing any of this. A guide whose numbers you cannot reproduce is an assertion in a confident voice.</p>
+<p>Two notes if you grow into them:</p>
+<ul><li><strong>If links can delegate</strong> (a recipient mints a narrower link of their own), a download must spend the budget of the whole ancestor chain, or a parent with five downloads left can mint three children and sell fifteen. Lock the chain in a deterministic order — id order works — or two siblings redeemed at once will deadlock.</li>
+<li><strong><code>FOR UPDATE</code> on a <code>SELECT</code> is the other correct answer</strong>, and it is easier to read when the logic grows past what fits in one <code>UPDATE … WHERE</code>. The property you need is that nothing decides on a value it read before taking the lock.</li></ul>
+<hr>
+<h2 id="serving-the-bytes">Serving the bytes</h2>
+<pre><code class="lang-js">app.get('/d/:secret', async (req, res) =&gt; {
+  const h = sha256(req.params.secret);
+  const { rows } = await db.query(CONSUME_SQL, [h]);   // the UPDATE above
+  if (!rows[0]) return res.status(404).end();          // not 403 — see below
+
+  const object = await storage.getStream(rows[0].file_id);
+  res.writeHead(200, {
+    'content-type': object.contentType,
+    'content-disposition': `attachment; filename=&quot;${rfc5987(object.name)}&quot;`,
+    'x-content-type-options': 'nosniff',
+    'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer',
+  });
+  object.body.pipe(res);
+});</code></pre>
+<p>Four things in those headers are load-bearing, and all four are things people leave out:</p>
+<ul><li><strong><code>attachment</code>, and <code>nosniff</code>.</strong> If a user can upload HTML or SVG and you serve it inline from your own origin, you have stored XSS against your own domain, with your session cookies.</li>
+<li><strong><code>no-store</code>.</strong> A revoked link that a CDN or a browser still has cached is a revoked link that still works.</li>
+<li><strong><code>no-referrer</code>.</strong> Otherwise the secret in the path leaks to every site the downloaded page links to.</li>
+<li><strong>Escape the filename.</strong> A CR or LF in a user-supplied name splits your response headers.</li></ul>
+<p><strong>Answer 404, not 403.</strong> A 403 confirms the link exists, which turns a secret you cannot guess into one you can probe. Say the same thing for &quot;never existed&quot;, &quot;revoked&quot;, &quot;expired&quot; and &quot;exhausted&quot;, and keep the real reason in your log where it is useful and not disclosive.</p>
+<hr>
+<h2 id="what-this-still-does-not-give-you">What this still does not give you</h2>
+<p>Being honest about the edges, because they are the next thing you will hit:</p>
+<ul><li><strong>A download is counted when the response starts, not when it finishes.</strong> A client that disconnects at 90% has spent a download. Counting on completion means holding the row lock for the length of the transfer, which is worse. Pick deliberately.</li>
+<li><strong>Range requests.</strong> If the link is for video and the player seeks, a naive implementation charges a download per range request. Decide whether a &quot;down load&quot; means a request or an object.</li>
+<li><strong>The bytes go through your process.</strong> That is the cost of option 3. For large files at volume, option 4 and a clamped redirect window is the trade.</li></ul>
+<hr>
+<h2 id="when-you-do-not-need-any-of-this">When you do not need any of this</h2>
+<p>If the link lives for seconds, is used once, and nobody will ever ask you to take it back — use a presigned URL. It is less code, it costs your server nothing, and this entire guide is overhead.</p>
+<p>The moment somebody asks &quot;can you kill that link?&quot;, you need a row.</p>
+<hr>
+<h2 id="if-you-would-rather-not-build-it">If you would rather not build it</h2>
+<p><a href="https://github.com/filelayer/filelayer" rel="noopener">Filelayer</a> is this, packaged: grants as rows, revocation on the next request, caps that hold under concurrency, the header set above, and an audit trail that records the refusals as well as the reads. It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is alpha — <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">the trust page</a> has the numbers including the ones sitting at zero.</p>
+<p>&lt;!-- doccheck-setup import { Filelayer } from '@filelayer/core'; import assert from 'node:assert/strict'; const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' }); const bytes = new TextEncoder().encode('CONTRACT'); const { id: fileId } = await fl.files.put(bytes, { owner: 'alice', name: 'contract.pdf' }); --&gt;</p>
+<pre><code class="lang-ts">const share = await fl.shares.create(fileId, {
+  as: 'alice', expiresIn: 3600, maxDownloads: 3,
+});
+
+// The link works...
+await fl.shares.redeem(share.secret, {});
+
+await fl.shares.revoke(share.grantId, { as: 'alice' });
+
+// ...and the next request does not. No deletion, no key rotation, no waiting.
+await assert.rejects(
+  () =&gt; fl.shares.redeem(share.secret, {}),
+  (e: { status?: number }) =&gt; e.status === 404,
+);</code></pre>
+<p>That block is executed by <code>npm run check:docs</code> on every commit, which is why it is the shape it is: if revocation stopped taking effect on the next request, this page would fail the build rather than quietly become untrue.</p>
+<p>Filelayer's own version of that statement is a <code>plpgsql</code> function rather than the single <code>UPDATE</code> above, because a download there also has to spend the budget of every ancestor grant. The property is the same and it is asserted on every commit by <code>test/contention.test.ts</code>, against a real PostgreSQL with two backends, including the control that shows the naive version overshooting.</p>
+<hr>
+<h2 id="related">Related</h2>
+<ul><li><a href="/guides/private-file-uploads">Private file uploads</a> — the other half: a presigned PUT does not limit the size of what gets uploaded, and the policy that does.</li></ul>
+<hr>
+<h2 id="sources">Sources</h2>
+<ul><li><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html" rel="noopener">Download and upload objects with presigned URLs</a> — AWS, on expiry and credential lifetime</li>
+<li><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/ShareObjectPreSignedURL.html" rel="noopener">Sharing objects with presigned URLs</a> — AWS, the 7-day SigV4 ceiling</li>
+<li><a href="https://repost.aws/questions/QUIdRjOEc2TaiZ7om8s9IMKg/how-to-invalidate-a-s3-pre-signed-url" rel="noopener">How to invalidate an S3 pre-signed URL</a> — AWS re:Post, on the absence of per-link revocation</li>
+<li><a href="https://fourtheorem.com/the-illustrated-guide-to-s3-pre-signed-urls/" rel="noopener">The illustrated guide to S3 pre-signed URLs</a> — fourTheorem</li>
+<li><a href="https://elasticscale.com/blog/why-do-s3-pre-signed-urls-expire-after-12-hours-despite-setting-a-longer-duration/" rel="noopener">Why do S3 pre-signed URLs expire after 12 hours</a> — elasticscale, on the temporary-credential ceiling</li></ul>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.md" rel="noopener"><code>docs/guides/expiring-and-revocable-file-links.md</code></a>
+    in a public repository. The code samples in the guides are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.15.1, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

@@ -142,7 +142,27 @@ for (const m of html.matchAll(/href="([^"]+)"/g)) {
   } else if (href.startsWith('./') || href.startsWith('/')) {
     if (href === '/') continue; // the brand link
     const rel = href.replace(/^\.?\//, '').split(/[?#]/)[0];
-    if (!existsSync(join(WEB, rel))) fail(`web/index.html:${line}`, `relative link ${href} does not resolve to a file in web/`);
+    // RESOLVE THE WAY THE HOST RESOLVES, not the way the filesystem does. The
+    // guide pages are linked as clean URLs (`/guides/private-file-uploads`),
+    // and the static host answers those from `<path>.html` and a trailing
+    // slash from `<path>/index.html`. Checking only for the literal path would
+    // fail every one of them, and "fix" it by putting `.html` in URLs that are
+    // also the canonical URLs in the sitemap and the JSON-LD.
+    //
+    // The three candidates below were not assumed. On 5 October 2026
+    // `https://filelayer.dev/index` was requested and the host served
+    // `index.html` and canonicalised the URL to `/`, which is the behaviour
+    // this encodes. If the site ever moves to a host that serves paths
+    // literally, this check goes green while the links 404, so the candidate
+    // list is the thing to re-verify on a move.
+    const candidates = rel.endsWith('/') || rel === ''
+      ? [join(rel, 'index.html')]
+      : [rel, `${rel}.html`, join(rel, 'index.html')];
+    if (!candidates.some((c) => existsSync(join(WEB, c))))
+      fail(
+        `web/index.html:${line}`,
+        `relative link ${href} does not resolve in web/ (tried ${candidates.join(', ')})`,
+      );
   }
 }
 

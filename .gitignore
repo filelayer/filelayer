@@ -49,6 +49,16 @@
 /web/openapi.yaml
 /web/openapi.json
 
+# `web/guides/` IS TRACKED, and the contrast with the three lines above is
+# deliberate rather than an oversight. Those three are copied into place by the
+# deploy. The guide pages are not: nothing builds this site, the host serves
+# `web/` exactly as it is committed, so a generated page that is not committed
+# is a page that does not exist. What makes a tracked generated artefact safe
+# here is `npm run check:guides`, which re-renders docs/guides/*.md in memory on
+# every commit and fails the build if one byte differs. The thing the ignore
+# rules protect against elsewhere -- a second copy that someone forgets to
+# update -- cannot survive a commit here.
+
 # The same shape one level down, for the two directories that hold work in
 # progress alongside what is published. Same reasoning: name what is here.
 

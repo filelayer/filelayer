@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/README.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>Guides · Filelayer</title>
+<meta name="description" content="Answers to questions people actually ask about user files in a SaaS application.">
+
+<link rel="canonical" href="https://filelayer.dev/guides/">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/">
+<meta property="og:title" content="Guides">
+<meta property="og:description" content="Answers to questions people actually ask about user files in a SaaS application.">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Guides">
+<meta name="twitter:description" content="Answers to questions people actually ask about user files in a SaaS application.">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Guides",
+  "description": "Answers to questions people actually ask about user files in a SaaS application.",
+  "url": "https://filelayer.dev/guides/",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.15.1"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>Guides</h1>
+<p>Answers to questions people actually ask about user files in a SaaS application.</p>
+<p><strong>The rule for everything in here:</strong> a guide has to be useful to somebody who never installs Filelayer. If a reader follows it and builds the thing themselves, it did its job. A page that only ever concludes &quot;use us&quot; is an advertisement, and nothing cites an advertisement.</p>
+<p>Two consequences of that rule, both deliberate:</p>
+<ul><li><strong>The code runs.</strong> Every TypeScript block in these pages is executed by <code>npm run check:docs</code> on every commit. If a behaviour changes, the page fails the build instead of quietly becoming untrue.</li>
+<li><strong>The numbers are measured.</strong> Where a guide states what happens under concurrency, or what PostgreSQL does, or what a constraint refuses, a script beside it reproduces that against a real PostgreSQL in about twenty seconds. A measurement nobody can re-run is an assertion in a confident voice.</li></ul>
+<hr>
+<h2 id="the-guides">The guides</h2>
+<h3 id="expiring-and-revocable-file-linksexpiring-and-revocable-file-linksmd"><a href="/guides/expiring-and-revocable-file-links">Expiring and revocable file links</a></h3>
+<p>The usual answer is a presigned URL with an expiry. It is right about expiry and wrong about taking it back: <strong>a presigned URL cannot be revoked individually.</strong> What you can do instead, what each option costs, and the one query that is easy to write wrong — with the schema, the SQL, and four measurements of what happens when two people redeem the same link at the same moment.</p>
+<p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.proof.mjs" rel="noopener"><code>expiring-and-revocable-file-links.proof.mjs</code></a></p>
+<h3 id="private-file-uploadsprivate-file-uploadsmd"><a href="/guides/private-file-uploads">Private file uploads</a></h3>
+<p>The usual answer — private bucket, presigned URL — is correct as far as it goes. What it leaves out is that <strong>a presigned PUT does not constrain the body</strong>: a URL issued for a 200 KB avatar accepts three gigabytes. The presigned POST policy that does constrain it, the content-type trap that becomes stored XSS, why the object key is not access control, and why the upload happening outside your transaction leaves orphans.</p>
+<p>It also documents the option we could not find written down anywhere and ended up needing: <strong>sign <code>content-length</code> into the PUT</strong>, which pins the body to an exact size and works on Cloudflare R2, where presigned POST does not exist.</p>
+<h3 id="multi-tenant-file-access-controlmulti-tenant-file-accessmd"><a href="/guides/multi-tenant-file-access">Multi-tenant file access control</a></h3>
+<p>The usual answer — <code>tenant_id</code>, Row-Level Security, a session variable — is a good one, and this guide does not argue with it. It argues with the conclusion. <strong>RLS decides which rows a session may see; it does not decide which rows may exist.</strong> Measured: a session writes a grant joining one tenant's file to another tenant's org and RLS accepts it. A composite foreign key refuses the same write, including from a role with <code>BYPASSRLS</code>.</p>
+<p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/multi-tenant-file-access.proof.mjs" rel="noopener"><code>multi-tenant-file-access.proof.mjs</code></a></p>
+<h3 id="deleting-files-and-orphaned-objectsdeleting-files-and-orphaned-objectsmd"><a href="/guides/deleting-files-and-orphaned-objects">Deleting files and orphaned objects</a></h3>
+<p>Postgres and S3 do not share a transaction, so every delete is two deletes. The well-covered answer is a sweeper job. This is about what comes after: <strong>which delete goes first</strong> (the row, because an orphan is recoverable and a row pointing at nothing is not), and why <strong>the sweeper is the most dangerous job you will write</strong> — it deletes on the strength of an absence, and a partial listing is indistinguishable from one. Measured: the same short listing hides orphans in a storage-driven sweep and destroys live rows in a DB-driven one.</p>
+<p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/deleting-files-and-orphaned-objects.proof.mjs" rel="noopener"><code>deleting-files-and-orphaned-objects.proof.mjs</code></a></p>
+<hr>
+<h2 id="running-the-proofs">Running the proofs</h2>
+<p>Nothing to install and no server to start: <code>embedded-postgres</code> runs a real PostgreSQL as an ordinary user process and cleans up after itself.</p>
+<pre><code class="lang-bash">npm run bootstrap        # npm ci in packages/core, once
+node docs/guides/expiring-and-revocable-file-links.proof.mjs
+node docs/guides/multi-tenant-file-access.proof.mjs
+node docs/guides/deleting-files-and-orphaned-objects.proof.mjs</code></pre>
+<p>Each prints what it measured and exits non-zero if any number fails to reproduce. Re-run them before believing any of this.</p>
+<hr>
+<h2 id="something-wrong-or-something-missing">Something wrong, or something missing?</h2>
+<p>A guide that is wrong is worse than no guide, because the reader trusted it enough to paste it. If something here does not hold, <a href="https://github.com/filelayer/filelayer/issues" rel="noopener">open an issue</a> — including &quot;this was confusing&quot;, which is a defect in a document whose only job is to be clear.</p>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/README.md" rel="noopener"><code>docs/guides/README.md</code></a>
+    in a public repository. The code samples in the guides are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.15.1, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>
