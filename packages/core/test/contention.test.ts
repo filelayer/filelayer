@@ -32,7 +32,7 @@ import assert from 'node:assert/strict';
 import {
   createRealDb,
   stopRealPostgres,
-  realPostgresAvailable,
+  probeRealPostgres,
   type RealDb,
 } from './real-postgres.ts';
 import { Filelayer } from '../src/filelayer.ts';
@@ -68,15 +68,20 @@ before(async () => {
     );
     return;
   }
-  available = await realPostgresAvailable();
-  if (!available && PROMISED) {
-    throw new Error(
-      'FILELAYER_TEST_DATABASE_URL is set but no server answered. ' +
-        'Refusing to skip: a contention suite that does not run proves nothing.',
-    );
-  }
-  if (!available) {
-    console.error('\n  contention.test.ts: no PostgreSQL available, skipping.\n');
+  const probe = await probeRealPostgres();
+  available = probe.ok;
+  if (!probe.ok) {
+    if (PROMISED) {
+      throw new Error(
+        `FILELAYER_TEST_DATABASE_URL is set but the suite cannot run: ${probe.why} ` +
+          'Refusing to skip: a contention suite that does not run proves nothing.',
+      );
+    }
+    // NAMES THE REASON, because the commonest one is not the one a reader
+    // guesses. Running this suite out of an install means `pg` is absent, and
+    // "no PostgreSQL available" sends them to check a server that was never
+    // the problem.
+    console.error(`\n  contention.test.ts: skipping. ${probe.why}\n`);
   }
 });
 

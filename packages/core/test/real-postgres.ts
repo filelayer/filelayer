@@ -43,8 +43,40 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import pg from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { Queryable, QueryResult } from '../src/db.ts';
+
+/**
+ * `pg` IS LOADED LAZILY, AND THE TYPE IMPORT ABOVE IS ERASED.
+ *
+ * This file used `import pg from 'pg'` until 5 October 2026, which made the
+ * driver a load-time requirement of the module rather than a requirement of the
+ * tests that use it. The suite SHIPS in the npm tarball, `pg` is deliberately
+ * not a dependency of the published package, and `embedded-postgres` is not
+ * either. So anyone who installed `@filelayer/core` and ran the tests we invite
+ * them to run got `ERR_MODULE_NOT_FOUND` out of `contention.test.ts`: 524 tests
+ * and one hard failure, instead of 547 and a clean skip.
+ *
+ * The skip logic in `contention.test.ts` was correct the whole time and never
+ * got to execute, because a static import fails before any `before()` hook
+ * runs. `embedded-postgres` was already imported dynamically ten lines below,
+ * so one of the two optional dependencies was handled and the other was not.
+ *
+ * A reader who runs our suite and sees a failure is the reader who was taking
+ * us seriously enough to check, which makes this the most expensive possible
+ * place to have a broken first impression.
+ */
+let pgModule: typeof import('pg') | null | undefined;
+
+async function loadPg(): Promise<typeof import('pg') | null> {
+  if (pgModule !== undefined) return pgModule;
+  try {
+    pgModule = (await import('pg')).default as unknown as typeof import('pg');
+  } catch {
+    pgModule = null;
+  }
+  return pgModule;
+}
 
 const SCHEMA_SQL = join(dirname(fileURLToPath(import.meta.url)), '..', 'schema.sql');
 
@@ -101,19 +133,41 @@ async function serverUrl(): Promise<string> {
  * success, and which we have already been bitten by once on the R2 job.
  */
 export async function realPostgresAvailable(): Promise<boolean> {
+  return (await probeRealPostgres()).ok;
+}
+
+/**
+ * The same probe, with the REASON it failed.
+ *
+ * "No server answered" and "the driver is not installed" are different
+ * problems with different fixes, and a caller that refuses to skip needs to
+ * say which one it hit. Reporting the wrong one sends a reader to check their
+ * `DATABASE_URL` when what they actually need is `npm i -D pg`.
+ */
+export async function probeRealPostgres(): Promise<{ ok: true } | { ok: false; why: string }> {
+  const PG = await loadPg();
+  if (!PG) {
+    return {
+      ok: false,
+      why:
+        "the `pg` driver is not installed. It is not a dependency of @filelayer/core, " +
+        'by design: the library takes any `Queryable` and does not choose your driver. ' +
+        'To run the suites that need a real server: `npm i -D pg embedded-postgres`.',
+    };
+  }
   try {
     const url = await serverUrl();
-    const c = new pg.Client({ connectionString: url });
+    const c = new PG.Client({ connectionString: url });
     await c.connect();
     await c.end();
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, why: `no server answered: ${(e as Error).message}` };
   }
 }
 
 /** node-postgres speaks `rowCount`; `Queryable` speaks `affectedRows`. */
-function adapt(poolOrClient: pg.Pool | pg.PoolClient): Queryable {
+function adapt(poolOrClient: Pool | PoolClient): Queryable {
   return {
     async query<R = Record<string, unknown>>(sql: string, params?: unknown[]) {
       const r = await poolOrClient.query(sql, params as unknown[]);
@@ -129,7 +183,7 @@ export interface RealDb {
    * the only one under which these tests prove anything.
    */
   db: Queryable;
-  pool: pg.Pool;
+  pool: Pool;
   /** A second, independent connection: the other half of every race below. */
   connect(): Promise<{ q: Queryable; release(): void }>;
   close(): Promise<void>;
@@ -146,7 +200,9 @@ export async function createRealDb(opts: { max?: number } = {}): Promise<RealDb>
   const url = await serverUrl();
   const name = `fl_${randomUUID().replace(/-/g, '')}`;
 
-  const admin = new pg.Client({ connectionString: url });
+  const PG = (await loadPg())!;
+
+  const admin = new PG.Client({ connectionString: url });
   await admin.connect();
   await admin.query(`CREATE DATABASE ${name}`);
   await admin.end();
@@ -161,7 +217,7 @@ export async function createRealDb(opts: { max?: number } = {}): Promise<RealDb>
    * a ten-connection test against a pool of eight simply stopped, with no
    * output and no failure.
    */
-  const pool = new pg.Pool({ connectionString: dbUrl.toString(), max: opts.max ?? 24 });
+  const pool = new PG.Pool({ connectionString: dbUrl.toString(), max: opts.max ?? 24 });
 
   const sql = await readFile(SCHEMA_SQL, 'utf8');
   const setup = await pool.connect();

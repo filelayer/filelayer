@@ -185,6 +185,15 @@ const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/VERIFY-WHAT-YOU-INSTALLED.md',
+    why:
+      'the procedure for running the shipped suite against the copy you installed. It has to ' +
+      'travel WITH that copy: a reader holding the tarball is exactly the reader who needs it, ' +
+      'and until 5 October 2026 the only published remedy was "clone the repository", which ' +
+      'verifies something other than what they were sent.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/deleting-files-and-orphaned-objects.md',
     why: 'the fourth guide: the sweeper deletes on an absence, and a partial answer is an absence.',
     versionStamp: null,

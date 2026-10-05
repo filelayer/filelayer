@@ -190,11 +190,40 @@ jobs:
       - name: Every path inside the tarball resolves inside the tarball
         run: npm run check:install-reach
 
+      # THE STRONGEST SENTENCE THIS PROJECT SAYS, EXECUTED. "The tests ship, so
+      # every claim is checkable from what you installed" was true of the files
+      # and false of the procedure: Node will not strip types under
+      # node_modules, and copying only test/ and src/ out leaves fifteen
+      # failures. This packs the tarball, installs it as a dependency, and runs
+      # the commands published in docs/VERIFY-WHAT-YOU-INSTALLED.md verbatim,
+      # then requires the counts to match this repository's own run. Slow,
+      # about three minutes, and the alternative is publishing an invitation
+      # nobody has accepted.
+      - name: The published suite runs from an install, by the published procedure
+        run: npm run check:suite-install
+
       # The website is a public surface and drifts like any other.
       - name: The website's claims and references hold
         run: |
           npm run check:web
           npm run check:web-samples
+
+      # The guide pages under web/guides/ are GENERATED from docs/guides/*.md.
+      # This re-renders them in memory and fails if a committed byte differs,
+      # which is what stops the published HTML from becoming a second,
+      # hand-edited copy of a guide.
+      - name: The published guide pages match their markdown
+        run: npm run check:guides
+
+      # AND THE QUESTION ABOUT THIS FILE ITSELF. Every gate above was written,
+      # wired into `npm run verify`, and then had to be remembered here. On
+      # 5 October 2026 two of them were not: check:guides shipped in a commit
+      # that CI passed without ever running it. Same defect as the comment
+      # higher up this file records, by the same route, four weeks later. This
+      # step reads the verify chain and fails if anything in it has no step
+      # here, so the list cannot fall behind again.
+      - name: Every gate in `npm run verify` has a step in this workflow
+        run: npm run check:ci-coverage
 
       # Register density on the public prose. See tools/check-register.mjs for
       # what it measures and what a clean run does not mean.

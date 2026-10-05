@@ -437,6 +437,14 @@ if (recorded && Number(recorded.tests) > 0) {
       //    recorded run. Reading it as a test count would make the gate
       //    demand that the two numbers be equal.
       if (/^\s*suites?\b/.test(after)) continue;
+      //  - the PASSING count in "547 tests, 539 passing, 8 skipped". Also a
+      //    real claim, and the honest way to describe a suite that skips
+      //    eight. Recognised by SHAPE AND BY MEASUREMENT rather than by an
+      //    exception: the value has to equal the pass count the recorded run
+      //    produced, and the word has to be there. A stale 539 beside a
+      //    changed run still fails, which is the property that matters.
+      if (recorded.pass !== undefined && value === String(recorded.pass) && /^\s*passing\b/.test(after))
+        continue;
       const excused = SWEEP_EXCEPTIONS.find((e) => e.match.test(line));
       if (excused) continue;
       violations.push(
