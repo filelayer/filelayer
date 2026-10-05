@@ -513,15 +513,341 @@ if (recorded) {
   }
 }
 
+// --- the same inversion, for the VERSION claims -----------------------------
+//
+// THE FIFTH INSTANCE, and the first one a stranger could see. On 5 October 2026
+// the published homepage carried `v0.13.0` twice -- in the eyebrow under the
+// navigation and in the alpha banner directly under the hero, the two most
+// prominent pieces of status text on the page -- while the trust table lower
+// down said `0.15.1`. Three releases apart, on one page, with this gate green.
+//
+// Green because `web/index.html` had a `version` claim REGISTERED, and the
+// registered pattern was the trust-table `<li>`. The two prose mentions use
+// different markup, so they were never read. The page had been wrong since
+// 0.14.0 and the only reason it surfaced is that somebody fetched the live site
+// and read it.
+//
+// Same lesson, fifth time: AN ALLOW-LIST OF LOCATIONS EXEMPTS WHATEVER NOBODY
+// ADDED, and it does so most reliably on the surfaces that accumulate prose.
+// The two sweeps above fixed this for test counts and live-storage counts by
+// keying on the claim's PHRASE instead of its address. This does it for
+// versions, and the discriminator is the one thing a version string cannot hide.
+//
+// -----------------------------------------------------------------------------
+// THE DISCRIMINATOR
+// -----------------------------------------------------------------------------
+//
+// A public surface mentions two kinds of version, and the difference is
+// grammatical rather than positional:
+//
+//   HISTORICAL -- "fixed in 0.6.0", "since 0.14.0", "created before 0.15.0",
+//   "we ran the suite against 0.5.8", "this changed in 0.6.0". Every one of
+//   these is correct forever and must never be rewritten. Every one of them
+//   also carries a DATING WORD immediately in front of the number.
+//
+//   CURRENT-STATE -- "v0.13.0 alpha", "Version 0.15.1 — alpha". These claim
+//   "this is what you get today" and have no dating word, because a dating word
+//   would make them historical.
+//
+// So: deny by default, and pass a version only when it equals the current one,
+// or when the construction in front of it dates it. That is an allow-list of
+// about twenty WORDS rather than of files and regexes -- and the difference that
+// matters is that a new surface, or a new paragraph on an old one, is covered
+// the moment it is written instead of when somebody remembers to register it.
+//
+// A dating word in front of a current-state claim is not a hole worth closing:
+// "the current version is in 0.13.0" is not a sentence anybody writes.
+const DATING = [
+  'in', 'since', 'before', 'after', 'until', 'through', 'against', 'from',
+  'at', 'of', 'by', 'to', 'than', 'predates', 'between', 'via', 'and',
+  'was', 'were', 'landed', 'shipped', 'introduced', 'added', 'fixed',
+  // `published` earns its place from two real sentences -- "measured against
+  // the published 0.11.0" and "an engineer deploying the published 0.11.0" --
+  // where the preposition that dates the claim is three words back and an
+  // adjective sits in the slot this sweep reads. "the published X" cannot be a
+  // claim about the present, because the thing published now is X+n.
+  'published',
+];
+
+/**
+ * Versions that are neither ours nor historical. Each needs a reason.
+ */
+const VERSION_SWEEP_EXCEPTIONS = [
+  {
+    match: /pglite@[\^~]?\d|pglite\b[\s\S]{0,40}0\.\d+\.\d+|PGlite[\s\S]{0,60}0\.\d+\.\d+/,
+    why: "a DEPENDENCY's version, not ours. @electric-sql/pglite is pinned to 0.3.x and the "
+      + 'constraint is load-bearing: npm’s `latest` is 0.5.x and installing it makes the tree '
+      + 'refuse with ERESOLVE.',
+  },
+  {
+    match: /`0\.3\.0` through `0\.5\.3`|0\.3\.0.{0,12}through/,
+    why: 'a RANGE in the security policy’s advisory table. The first endpoint has no dating '
+      + 'word in front of it because `through` sits between the two.',
+  },
+];
+
+/**
+ * The sweep itself, over (file, text) pairs rather than over the disk, so that
+ * `--self-test` can hand it text whose verdict is known. A sweep that has only
+ * ever been run against a tree that passes is indistinguishable from one that
+ * cannot fail, and this one has already been wrong once in a way a green run
+ * could not show: the first version's pattern could not match `v0.13.0`.
+ *
+ * @param {Array<{file: string, text: string}>} entries
+ * @returns {string[]} one message per hit
+ */
+function sweepVersions(entries) {
+  const out = [];
+  // THE `v?` IS NOT COSMETIC, and leaving it out is how this sweep failed on its
+  // first run: `\b0\.` has no word boundary between the `v` and the `0` of
+  // `v0.13.0`, so the pattern skipped exactly the form the defect was written
+  // in. The gate built to catch the homepage's two stale version strings could
+  // not see either of them. Same shape as the four defects it was written for --
+  // an instrument that reads a form the artifact does not use -- and the reason
+  // it was caught in a minute rather than a month is that this was checked
+  // against the two known-bad lines instead of against a green run.
+  const SHAPE = /\bv?0\.\d+\.\d+\b/g;
+  for (const { file, text } of entries) {
+    // MIGRATIONS.md is excluded, and the reason is structural rather than a
+    // convenience: every version in it is the `introduced_in` of a numbered
+    // historical entry, so the file is one long list of dated claims and has no
+    // current-state claim for this sweep to check. Its agreement with the
+    // library is verified by `test/schema-version.test.ts`, which compares the
+    // manifest against SCHEMA_VERSION, and by `check:migrations`, which
+    // executes every entry between the two tags it names.
+    if (/MIGRATIONS\.md$/.test(file)) continue;
+    // PUBLISH-RUNBOOK.md is excluded for a different reason, and it is worth
+    // being explicit because an exclusion is how an allow-list grows back. The
+    // runbook is an operator document written as a WORKED EXAMPLE of the first
+    // public release, so `0.3.0` appears a dozen times inside literal commands
+    // and inside the rollback section's `npm deprecate` / `npm unpublish`
+    // illustrations. None of those is a claim about the present, and rewriting
+    // them to the current version every release is exactly the manual upkeep
+    // this sweep exists to remove. Its one current-state claim -- "the version
+    // being published is X" -- is registered above and checked on every commit,
+    // which is the claim an operator acts on.
+    if (/PUBLISH-RUNBOOK\.md$/.test(file)) continue;
+    const re = new RegExp(SHAPE.source, SHAPE.flags);
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const value = m[0].replace(/^v/, '');
+      if (value === VERSION) continue;
+      const lineNo = text.slice(0, m.index).split('\n').length;
+      const line = text.split('\n')[lineNo - 1] ?? '';
+
+      // The 40 characters in front of the number, with the decoration a version
+      // wears in prose stripped off: backticks, quotes, bold, a `v` prefix, and
+      // HTML entities and tags from the website.
+      const lead = text
+        .slice(Math.max(0, m.index - 40), m.index)
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&[a-z]+;/g, ' ')
+        .replace(/[`"'*’]|\bv(?=$)/g, '')
+        .trimEnd();
+      const word = (lead.match(/([A-Za-z]+)[\s:,(\[]*$/) ?? [])[1]?.toLowerCase();
+      if (word && DATING.includes(word)) continue;
+
+      const excused = VERSION_SWEEP_EXCEPTIONS.find((e) => e.match.test(line));
+      if (excused) continue;
+
+      out.push(
+        `${file}:${lineNo} states \`${value}\` as a current version; packages/core/package.json ` +
+          `says ${VERSION}.\n      > ${line.trim().slice(0, 150)}\n` +
+          '      If this is a historical statement, put a dating word in front of it ' +
+          `(${DATING.slice(0, 6).join(', ')}, …)\n      so it reads as one and stays true. ` +
+          'If it is neither ours nor historical, it needs an entry in\n' +
+          '      VERSION_SWEEP_EXCEPTIONS with a reason.',
+      );
+    }
+  }
+  return out;
+}
+
+{
+  const entries = [];
+  for (const file of SWEEP_SURFACES) {
+    try {
+      entries.push({ file, text: readFileSync(join(ROOT, file), 'utf8') });
+    } catch {
+      // the test-count sweep already reports a missing surface
+    }
+  }
+  violations.push(...sweepVersions(entries));
+}
+
+// --- the freshness stamp, tied to the changelog -----------------------------
+//
+// WHY A DATE AND NOT JUST A VERSION. `llms.txt` is the one surface written to be
+// fetched, cached and vendored by somebody else's tooling, so it is the surface
+// most likely to be read long after it was written. On 4 October 2026 an
+// evaluator declined Filelayer and quoted our own sentence saying the storage
+// adapter had never run against live AWS. That sentence had been true when
+// written, was false by the time it was read, and the copy the evaluator held
+// carried nothing that said which. A version number alone does not fix that: a
+// stale copy states a stale version with equal confidence.
+//
+// So the file now names its own date and names the one request that cannot be
+// stale. This gate exists because a freshness stamp that is itself allowed to go
+// stale is worse than none: it converts "I do not know how old this is" into a
+// confident wrong answer. The date must equal the changelog's date for the
+// current version, so cutting a release cannot leave it behind.
+{
+  const changelog = readFileSync(join(ROOT, 'packages/core/CHANGELOG.md'), 'utf8');
+  const entry = new RegExp(`^## \\[${VERSION.replace(/\./g, '\\.')}\\] — (\\d{4}-\\d\\d-\\d\\d)`, 'm');
+  const released = (changelog.match(entry) ?? [])[1];
+  if (!released) {
+    violations.push(
+      `packages/core/CHANGELOG.md has no dated entry for ${VERSION}. The freshness stamp in ` +
+        'llms.txt is checked against it, so there is nothing to check against.',
+    );
+  }
+  for (const file of ['llms.txt', 'packages/core/llms.txt']) {
+    let text;
+    try {
+      text = readFileSync(join(ROOT, file), 'utf8');
+    } catch {
+      violations.push(`${file}: not on disk, so the freshness stamp could not be checked.`);
+      continue;
+    }
+    const m = text.match(/Freshness: this file describes version ([\d.]+) and was written on (\d{4}-\d\d-\d\d)\./);
+    if (!m) {
+      violations.push(
+        `${file} has no freshness stamp. It is the surface most likely to be read from a cache, ` +
+          'so it must state the version it describes and the date it was written.\n' +
+          '      Expected: `Freshness: this file describes version X and was written on YYYY-MM-DD.`',
+      );
+      continue;
+    }
+    if (m[1] !== VERSION) {
+      violations.push(`${file}: the freshness stamp says version ${m[1]}; package.json says ${VERSION}.`);
+    }
+    if (released && m[2] !== released) {
+      violations.push(
+        `${file}: the freshness stamp is dated ${m[2]}; CHANGELOG.md dates ${VERSION} ` +
+          `${released}. A stamp that lags the release it describes tells a reader the file is ` +
+          'fresher or older than it is, which is the failure it exists to prevent.',
+      );
+    }
+  }
+}
+
 // --- negative control: the gate must fail on a value it should reject --------
 const control = (() => {
   const bad = [{ file: 'SECURITY.md', kind: 'version', value: '0.3.0', line: 0, text: '(control)' }];
   return bad[0].value !== VERSION;
 })();
 
+/**
+ * The version sweep's own controls. Each fixture is text whose verdict is known
+ * in advance, and HALF OF THEM MUST FAIL -- a sweep is only as good as the
+ * things it rejects, and the two `v`-prefixed cases are here because the first
+ * version of this sweep passed them silently.
+ *
+ * `fixture.html` and `fixture.md` are names that are not in SWEEP_SURFACES, so
+ * the two filename exclusions above do not apply to them.
+ */
+const SWEEP_CONTROLS = [
+  // --- must be REJECTED -----------------------------------------------------
+  {
+    hits: true,
+    file: 'fixture.html',
+    text: '<p class="eyebrow">Apache-2.0 &middot; v0.13.0 alpha</p>',
+    why: 'the homepage eyebrow, verbatim. The `v` prefix is the form that escaped '
+      + 'the first version of this sweep.',
+  },
+  {
+    hits: true,
+    file: 'fixture.html',
+    text: '<b>Alpha. Developer preview.</b> v0.13.0. The schema can still change.',
+    why: 'the homepage alpha banner, verbatim.',
+  },
+  {
+    hits: true,
+    file: 'fixture.md',
+    text: '| Version | 0.13.0 — alpha |',
+    why: 'a table cell with no word in front of the number at all. The sweep must '
+      + 'not read "no dating word" as "dated".',
+  },
+  {
+    hits: true,
+    file: 'fixture.md',
+    text: 'The current release is 0.13.0 and the schema may change.',
+    why: 'plain prose stating a stale version as the present state.',
+  },
+  // --- must be ACCEPTED -----------------------------------------------------
+  {
+    hits: false,
+    file: 'fixture.md',
+    text: 'Both landed in 0.13.0, and the behaviour changed in 0.6.0.',
+    why: 'two historical statements. These must never be rewritten, so the sweep '
+      + 'must not demand it.',
+  },
+  {
+    hits: false,
+    file: 'fixture.md',
+    text: 'verifyAuditChain() reads the chain in pages of 2,000 since `0.14.0`.',
+    why: 'historical, with the version in backticks: the decoration must be '
+      + 'stripped before the preceding word is read.',
+  },
+  {
+    hits: false,
+    file: 'fixture.md',
+    text: 'measured against the published 0.11.0. Reads never auto-provision.',
+    why: 'historical, with an adjective between the preposition and the number.',
+  },
+  {
+    hits: false,
+    file: 'fixture.md',
+    text: 'npm install --save-dev "@electric-sql/pglite@^0.3.11"',
+    why: "a DEPENDENCY's version. Ours is not the only version on the page.",
+  },
+  {
+    hits: false,
+    file: 'fixture.md',
+    text: `The current release is ${VERSION}.`,
+    why: 'a current-state claim that is correct. The sweep must pass it without '
+      + 'needing a dating word.',
+  },
+];
+
+const sweepControl = (() => {
+  const failures = [];
+  for (const c of SWEEP_CONTROLS) {
+    const got = sweepVersions([{ file: c.file, text: c.text }]).length > 0;
+    if (got !== c.hits) {
+      failures.push(
+        `      ${c.hits ? 'SHOULD HAVE FAILED' : 'SHOULD HAVE PASSED'}: ${JSON.stringify(c.text)}\n` +
+          `        ${c.why}`,
+      );
+    }
+  }
+  return failures;
+})();
+
 if (process.argv.includes('--self-test')) {
-  console.log(control ? 'check-version-claims: negative control passed.' : 'control DID NOT FAIL');
-  process.exit(control ? 0 : 1);
+  const ok = control && sweepControl.length === 0;
+  if (ok) {
+    console.log(
+      `check-version-claims: negative control passed; the version sweep ` +
+        `agreed with all ${SWEEP_CONTROLS.length} controls ` +
+        `(${SWEEP_CONTROLS.filter((c) => c.hits).length} of which must fail).`,
+    );
+  } else {
+    if (!control) console.error('control DID NOT FAIL');
+    if (sweepControl.length) {
+      console.error('the version sweep disagreed with its own controls:\n' + sweepControl.join('\n'));
+    }
+  }
+  process.exit(ok ? 0 : 1);
+}
+
+// A control that disagrees is a broken instrument, so it fails the ordinary run
+// too rather than only the self-test.
+if (sweepControl.length) {
+  violations.push(
+    'the version sweep disagreed with its own controls, so every version verdict in ' +
+      'this run is unreliable:\n' + sweepControl.join('\n'),
+  );
 }
 
 if (process.argv.includes('--list')) {

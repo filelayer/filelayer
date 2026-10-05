@@ -543,7 +543,7 @@ to choose:
 **What shipped, and what did not.** `deliveryHeaders()` still emits
 `private, no-store, no-cache, must-revalidate, max-age=0` on the proxied path,
 unconditionally — Filelayer does not ship a cacheable public route and there is
-no TTL knob. What 0.3.0 added instead is **redirect delivery**: an opt-in mode
+no TTL knob. What we added in 0.3.0 instead is **redirect delivery**: an opt-in mode
 that authorizes the request as usual, audits it as usual, and then answers `302`
 to a short-lived presigned URL so the bytes never traverse this process. The
 trade is the same one the table above prices, made explicit rather than
