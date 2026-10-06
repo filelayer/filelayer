@@ -42,7 +42,7 @@
  *       already in the documents; this makes it load-bearing.
  */
 
-import { readFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -51,18 +51,32 @@ const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..');
 const OUT = join(ROOT, '.doccheck');
 const CORE_SRC = join(ROOT, 'packages/core/src/index.ts');
 
-const DOCS = [
-  'README.md',
-  'docs/QUICKSTART.md',
-  // The guides answer a question somebody actually asks, and the reason they
-  // are worth more than a blog post on the same subject is that the code in
-  // them runs here. A guide whose sample has rotted is worse than no guide:
-  // the reader trusted it enough to paste it.
-  'docs/guides/expiring-and-revocable-file-links.md',
-  'docs/guides/private-file-uploads.md',
-  'docs/guides/multi-tenant-file-access.md',
-  'docs/guides/deleting-files-and-orphaned-objects.md',
-];
+// The guides answer a question somebody actually asks, and the reason they are
+// worth more than a blog post on the same subject is that the code in them runs
+// here. A guide whose sample has rotted is worse than no guide: the reader
+// trusted it enough to paste it.
+//
+// DISCOVERED, NOT LISTED, and the difference is the defect this project keeps
+// finding in its own tooling. The four guides were enumerated by hand, so a
+// fifth guide was checked by nothing until somebody remembered to add a line --
+// and the failure is silent, because a checker that was never pointed at a file
+// reports success. Registration is not coverage. `README.md` is still obviously
+// a candidate for the same mistake, but it is one file in a fixed place, not a
+// growing directory.
+//
+// `README.md` is excluded from the guides directory because it is the index, and
+// an index of guides contains no samples of its own.
+const GUIDES = readdirSync(join(ROOT, 'docs/guides'))
+  .filter((f) => f.endsWith('.md') && f !== 'README.md')
+  .sort()
+  .map((f) => `docs/guides/${f}`);
+
+if (GUIDES.length === 0) {
+  console.error('check-doc-samples: found no guides, which cannot be right');
+  process.exit(1);
+}
+
+const DOCS = ['README.md', 'docs/QUICKSTART.md', ...GUIDES];
 
 // -----------------------------------------------------------------------------
 // Parse

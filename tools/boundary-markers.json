@@ -165,6 +165,12 @@
       "contains": "GATE 13",
       "why": "A HISTORICAL OCCURRENCE ONLY, in commit 9cad3e1, which is already pushed. The file at HEAD says 'REGISTER DENSITY ON THE PUBLIC SURFACES' instead. 'Gate 13' numbered this check against a private list of repository checks that no reader of the published repository can resolve, which is exactly what this rule is for, and the rule caught it one commit late rather than never. Rewriting a pushed history to erase a stale comment is a worse trade than recording it here. `historyOnly` is what makes that trade safe: the entry covers past blobs and nothing else, so writing the term into the working tree again fails the scan. That flag was added in the same commit, because the first version of this justification claimed the narrow behaviour and the checker did not have it.",
       "historyOnly": true
+    },
+    {
+      "path": "ROADMAP.md",
+      "contains": "Gate 3's decisive run",
+      "historyOnly": true,
+      "why": "A HISTORICAL OCCURRENCE ONLY, in commit f390d1b4, which is already pushed. 'Gate 3' numbers a run against a private list of agent-selection experiments that no reader of the published repository can resolve, which is exactly what this check exists to catch; it reached a published file because the sentence was written in the working folder's vocabulary and committed before this gate ran. The file at HEAD states the engineering fact instead -- that nothing here has been audited by anyone outside it, and that TRUST.md says so. historyOnly, so writing the phrase into the working tree again fails."
     }
   ]
 }

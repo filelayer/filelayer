@@ -87,7 +87,7 @@
  * never rejected anything is a green tick of unknown value.
  */
 
-import { readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -209,6 +209,19 @@ const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/guides/serving-private-files.md',
+    why:
+      'the fifth guide: a presigned redirect cannot be revoked before its TTL, ' +
+      'and the moment you proxy instead, Range is yours -- including the four ' +
+      'cases that look like a 416 and must be answered 200.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/serving-private-files.proof.mjs',
+    why: 'the script that produces both tables, with no PostgreSQL server to start.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/multi-tenant-file-access.md',
     why: 'the third guide: RLS filters reads and does not stop a cross-tenant write.',
     versionStamp: null,
@@ -299,6 +312,35 @@ const COPIES = [
 
 const problems = [];
 const fail = (where, msg) => problems.push({ where, msg });
+
+// -----------------------------------------------------------------------------
+// COMPLETENESS, for the one directory that grows.
+//
+// `COPIES` above is hand-written, and that is right for it: every entry carries
+// a reason the file ships, which is worth more than the line it costs. But a
+// hand-written list of a GROWING directory has a silent failure -- add a fifth
+// guide and it simply is not checked, and a checker that was never pointed at a
+// file reports success. That is the same defect as the one fixed in
+// `check-doc-samples.mjs` on 7 October 2026, found the same way: by adding a
+// guide and watching which gates stayed quiet.
+//
+// So the list stays, and this makes the list prove it is complete. Adding a
+// guide now fails here until somebody writes down why it ships.
+// -----------------------------------------------------------------------------
+{
+  const listed = new Set(COPIES.map((c) => c.file));
+  const onDisk = readdirSync(join(ROOT, 'docs/guides')).map((f) => `docs/guides/${f}`);
+  for (const file of onDisk.sort()) {
+    if (!listed.has(file)) {
+      fail(
+        file,
+        'exists in docs/guides/ and is not in COPIES, so nothing checks that the npm package ' +
+          'ships it or that the two copies agree. Add an entry saying why it ships -- or, if it ' +
+          'genuinely should not ship, say THAT in the entry and give it no package copy.',
+      );
+    }
+  }
+}
 
 // -----------------------------------------------------------------------------
 // The comparator. Everything else in this file is bookkeeping around it, and it

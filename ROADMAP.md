@@ -93,5 +93,5 @@ person running this in production.
   abandoned uploads, whose parts S3 bills until something does. Revisited when a
   prospect's users upload large files.
 - **An independent security review.** Costs money, deferred to January 2027.
-  Gate 3's decisive run chose Filelayer while noting that neither it nor the
-  alternative — the developer's own code — has one.
+  Nothing in this repository has been audited by anyone outside it, and
+  `TRUST.md` says so in the one place a reader will look for it.
