@@ -74,6 +74,12 @@ Three details in there are load-bearing:
 | skipped | 8 |
 | suites | 130 |
 
+The lines will look different depending on your Node version and whether you are
+piping the output: Node 22 writes `# tests 547`, Node 24 writes `ℹ tests 547`,
+and a terminal gets ticks and timings as well. The numbers are the same. Only
+the reporter changed, and CI reads both, because reading one of them is how this
+gate first reported a passing run as a failure.
+
 The eight skips are the concurrency suite in `test/contention.test.ts`. Those
 tests stage races between two real database connections, which PGlite cannot
 provide because it has a single backend, so they need the `pg` driver and a

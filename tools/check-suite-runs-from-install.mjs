@@ -130,6 +130,16 @@ const CONTROLS = [
     name: 'the tally parser refuses output with no tally at all',
     run: () => parseTally('something went wrong and node printed nothing') === null,
   },
+  {
+    // NODE 24. The gates job runs it, this gate was written on 22, and the
+    // difference is one character at the start of each summary line.
+    name: "the tally parser reads the spec reporter's output too",
+    run: () => {
+      const spec = '\u2139 tests 547\n\u2139 suites 130\n\u2139 pass 539\n\u2139 fail 0\n\u2139 skipped 8\n';
+      const t = parseTally(spec);
+      return t && t.tests === 547 && t.pass === 539 && t.fail === 0 && t.skipped === 8 && t.suites === 130;
+    },
+  },
 ];
 
 function procedureFromQuiet(text) {
@@ -139,10 +149,27 @@ function procedureFromQuiet(text) {
   return r;
 }
 
-/** Node's TAP summary. Returns null when there is no tally, which is itself a failure. */
+/**
+ * Node's run summary, in either reporter's format.
+ *
+ * THE PREFIX IS NOT COSMETIC and this cost a full CI round trip. Node 22's
+ * default reporter for a non-TTY stdout is `tap`, which writes `# tests 547`.
+ * Node 24's is `spec`, which writes `ℹ tests 547`. The gate was written and
+ * verified on 22, CI's gates job runs 24, and the only symptom was this tool
+ * reporting that a procedure which had in fact passed "printed no test tally".
+ *
+ * Same shape as every other defect this session: an instrument that reads a
+ * form the artifact does not use. The lesson that was already written down,
+ * about testing a gate against the bad input rather than inferring it from a
+ * clean run, does not cover an input that only exists on a machine I was not
+ * running on. The cover for that is to parse what the tool might be handed
+ * rather than what it happened to be handed once.
+ *
+ * Returns null when there is no tally at all, which is itself a failure.
+ */
 function parseTally(out) {
   const n = (k) => {
-    const m = out.match(new RegExp(`^# ${k} (\\d+)$`, 'm'));
+    const m = out.match(new RegExp(`^(?:#|\\u2139)\\s*${k} (\\d+)\\s*$`, 'm'));
     return m ? Number(m[1]) : null;
   };
   const tests = n('tests');
@@ -260,9 +287,17 @@ if (procedure && expected && !problems.length) {
 
     const tally = parseTally(out);
     if (!tally) {
+      // THE OUTPUT GOES IN THE MESSAGE. The first version said only "no tally"
+      // and threw the output away, so a CI failure carried no evidence and the
+      // cause (a different reporter on Node 24) took a round trip to find. A
+      // gate that knows why it failed and does not say so is wasting the one
+      // thing it is there to produce.
       fail(
         `${DOC}: the published procedure ran but printed no test tally. It is supposed to end ` +
-          'in `node --test`, and whatever it ends in now did not report one.',
+          'in `node --test`, and whatever it ends in now did not report one.\n' +
+          `      Node here is ${process.version}; the summary prefix differs between reporters ` +
+          '(`#` on the tap reporter, `\u2139` on spec).\n\n' +
+          out.trim().split('\n').slice(-25).join('\n').replace(/^/gm, '      '),
       );
     } else {
       for (const [k, v] of Object.entries(expected)) {
