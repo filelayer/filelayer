@@ -73,10 +73,25 @@ rule us out quickly instead of waiting for a version that is not coming:
 Honest ordering: these are real and none of them is more important than one
 person running this in production.
 
-- A clean skip when the shipped suite is run without the `pg` driver, instead of
-  the module-resolution error it currently gives.
-- A cap, or at least an alarm, on grants per subject, since read cost is linear
-  in that number.
-- Resumable or multipart direct upload.
-- Audit-log retention, which does not exist: `audit_event` grows without bound.
-- An independent security review. This one costs money and is not scheduled.
+- ~~A clean skip when the shipped suite is run without the `pg` driver~~ —
+  **done in `0.15.2`.** The driver was imported at the top of a shared helper,
+  so the suite crashed instead of skipping and the skip logic never ran.
+- ~~A cap, or at least an alarm, on grants per subject~~ — **done in `0.17.0`,
+  and not as a cap.** The read already stopped at the first grant that supplied
+  the capability; it stopped in application code, after the database had
+  evaluated every row. Moving that into SQL removed the cliff instead of
+  fencing it: 30 ms at 200 000 concentrated grants, against 5 911 ms at 100 000
+  before.
+- ~~Audit-log retention, which does not exist~~ — **done in `0.16.0`.**
+  `trimAuditChain()` removes old events and leaves a checkpoint recording where
+  the chain had reached, so a trimmed chain still verifies. Nothing trims unless
+  you ask: a deployment that never calls it still grows without bound.
+- **Resumable or multipart direct upload — parked, deliberately.** Two to three
+  days of work, and it fixes nothing that is broken: it adds capability. The
+  storage adapter already speaks multipart and `createUpload()` already
+  pre-authorizes, so the cost is mostly in joining them and in aborting
+  abandoned uploads, whose parts S3 bills until something does. Revisited when a
+  prospect's users upload large files.
+- **An independent security review.** Costs money, deferred to January 2027.
+  Gate 3's decisive run chose Filelayer while noting that neither it nor the
+  alternative — the developer's own code — has one.
