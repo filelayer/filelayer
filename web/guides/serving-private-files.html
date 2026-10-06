@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/serving-private-files.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>Should I redirect to a presigned URL or proxy private files myself?</title>
+<meta name="description" content="The usual answer is redirect, and it is a good one. Your server authorizes the request, mints a short-lived presigned URL, and sends a 302. The bytes go straight from the object store…">
+
+<link rel="canonical" href="https://filelayer.dev/guides/serving-private-files">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/serving-private-files">
+<meta property="og:title" content="Should I redirect to a presigned URL or proxy private files myself?">
+<meta property="og:description" content="The usual answer is redirect, and it is a good one. Your server authorizes the request, mints a short-lived presigned URL, and sends a 302. The bytes go straight from the object store…">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Should I redirect to a presigned URL or proxy private files myself?">
+<meta name="twitter:description" content="The usual answer is redirect, and it is a good one. Your server authorizes the request, mints a short-lived presigned URL, and sends a 302. The bytes go straight from the object store…">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Should I redirect to a presigned URL or proxy private files myself?",
+  "description": "The usual answer is redirect, and it is a good one. Your server authorizes the request, mints a short-lived presigned URL, and sends a 302. The bytes go straight from the object store…",
+  "url": "https://filelayer.dev/guides/serving-private-files",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.17.0"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>Should I redirect to a presigned URL or proxy private files myself?</h1>
+<p>The usual answer is redirect, and it is a good one. Your server authorizes the request, mints a short-lived presigned URL, and sends a <code>302</code>. The bytes go straight from the object store to the client, you pay no egress through your own infrastructure, and the whole thing is about fifteen lines. For most private files, most of the time, that is the right trade.</p>
+<p>This guide is about the two things that answer leaves out, both of which bite later and neither of which is about cost:</p>
+<ol><li><strong>A redirect's revocation window is the URL's remaining lifetime.</strong> Not &quot;a moment&quot;, not &quot;the next request&quot; — the full TTL, for anyone holding the URL, and there is no operation that shortens it. This is a property of signatures, not a gap in anybody's implementation.</li>
+<li><strong>The moment you proxy instead, <code>Range</code> becomes your problem</strong>, and getting it wrong breaks audio, video and PDFs in a way that reads as a corrupt file rather than as a server bug. The specific trap: <strong>four of the five ranges that look like they deserve a <code>416</code> must be answered <code>200</code> instead.</strong></li></ol>
+<p>Everything below was measured. The script is <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/serving-private-files.proof.mjs" rel="noopener">beside this file</a>: a real HTTP server and a real Postgres, in-process, about five seconds.</p>
+<hr>
+<h2 id="the-property-that-decides-it">The property that decides it</h2>
+<p>A presigned URL is a credential, and the thing it is signed with is <em>time</em>. The signature says &quot;this request, to this object, until this instant&quot;. Nothing in the object store consults your database when the request arrives — that is the whole point of the design, and the whole reason it is fast and cheap.</p>
+<p>So the question &quot;how do I revoke a presigned URL?&quot; has no answer at the URL level. The answers that exist all work by changing something the signature depends on, and each costs more than it first appears:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Approach</th><th>Revokes</th><th>Collateral</th></tr></thead>
+<tbody><tr><td>Wait for expiry</td><td>eventually</td><td>everyone keeps access until then</td></tr>
+<tr><td>Rotate the signing key</td><td>every URL, instantly</td><td>every URL, including ones you meant to keep</td></tr>
+<tr><td>Move or rename the object</td><td>that object</td><td>breaks every other live URL for it</td></tr>
+<tr><td>Delete the object</td><td>that object</td><td>you no longer have the file</td></tr></tbody>
+</table></div>
+<p>If that table is acceptable for your files, redirect. Shorten the TTL to the smallest number your clients can live with and stop reading — the rest of this page is about a cost you have decided not to pay.</p>
+<p>It is <em>not</em> acceptable when removing someone's access is a feature you sell: a shared document, a team member who left, a paid download, a subscription that lapsed. In those cases the delay is not a performance characteristic, it is the product failing to do the thing it promised.</p>
+<h3 id="measured">Measured</h3>
+<p>Bob is reading a file through the server, a range at a time, as any media player does. Alice revokes his access while he is reading:</p>
+<pre><code>bob, bytes=0-4   -&gt; 206 abcde
+... alice revokes, with the read in progress
+bob, bytes=5-9   -&gt; 404 (nothing served)</code></pre>
+<p>One request. A presigned URL handed to bob instead would have kept serving until it expired. That is the trade stated as a number: <strong>the revocation window of a presigned URL is its remaining TTL; the revocation window of a proxied read is one request.</strong></p>
+<p>Two details in that output worth taking:</p>
+<ul><li><strong><code>404</code>, not <code>403</code>.</strong> Bob no longer has access, and telling him the file still exists is telling him something he is no longer entitled to know. A permissions system that answers <code>403</code> is a membership oracle.</li>
+<li><strong>The second range is refused, not the stream.</strong> Revocation takes effect at the next <em>request</em>, not inside the response already in flight. A single enormous <code>200</code> that is already streaming will finish.</li></ul>
+<hr>
+<h2 id="if-you-proxy-range-is-now-yours">If you proxy, <code>Range</code> is now yours</h2>
+<p>Redirecting delegated more than the bandwidth: the object store was also answering <code>Range</code> requests, and it is very good at it. Proxy, and that falls to you — including the parts that have nothing to do with your application.</p>
+<p>This is not optional detail work. A <code>&lt;video&gt;</code> element issues a range request before it will let the user scrub the timeline at all. A PDF reader asks for the <em>last</em> few bytes first, because the cross-reference table lives at the end of the document. Answer those wrongly and the file appears broken, not forbidden.</p>
+<h3 id="what-a-client-actually-sends">What a client actually sends</h3>
+<p>Twenty-six bytes, one per letter, so a wrong offset reads as the wrong letters instead of as plausible binary:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Range header</th><th>status</th><th>Content-Range</th><th>body</th></tr></thead>
+<tbody><tr><td><em>(none)</em></td><td>200</td><td>—</td><td><code>abcdefghijklmnopqrstuvwxyz</code></td></tr>
+<tr><td><code>bytes=0-</code></td><td>206</td><td><code>bytes 0-25/26</code></td><td><code>abcdefghijklmnopqrstuvwxyz</code></td></tr>
+<tr><td><code>bytes=0-4</code></td><td>206</td><td><code>bytes 0-4/26</code></td><td><code>abcde</code></td></tr>
+<tr><td><code>bytes=5-9</code></td><td>206</td><td><code>bytes 5-9/26</code></td><td><code>fghij</code></td></tr>
+<tr><td><code>bytes=-4</code></td><td>206</td><td><code>bytes 22-25/26</code></td><td><code>wxyz</code></td></tr>
+<tr><td><code>bytes=20-</code></td><td>206</td><td><code>bytes 20-25/26</code></td><td><code>uvwxyz</code></td></tr>
+<tr><td><code>bytes=20-999</code></td><td>206</td><td><code>bytes 20-25/26</code></td><td><code>uvwxyz</code></td></tr></tbody>
+</table></div>
+<p><code>Accept-Ranges: bytes</code> is on every one of them, including the <code>200</code>. That is deliberate and it is the one easy to get backwards: a client reads <code>Accept-Ranges</code> to decide whether it <em>may</em> seek, so advertising it only on responses that are already ranged tells the client nothing it did not already know, at the only moment it could not act on it.</p>
+<p><code>bytes=-4</code> is a suffix, not a negative offset: the last four bytes. <code>bytes=20-999</code> is not an error — a last-position past the end is satisfiable, and the response covers to the end.</p>
+<h3 id="the-five-that-look-like-416-and-are-not">The five that look like <code>416</code> and are not</h3>
+<p><code>416 Range Not Satisfiable</code> is the status everyone reaches for when a range cannot be served as asked. It is almost always wrong, because RFC 9110 says an <strong>invalid</strong> range must be <em>ignored</em> — answer <code>200</code> with the whole representation — and reserves <code>416</code> for a range that parsed cleanly and cannot be satisfied by <em>this particular object</em>.</p>
+<p>Measured, same object:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Range header</th><th>status</th><th>why</th></tr></thead>
+<tbody><tr><td><code>bytes=9-4</code></td><td><strong>200</strong></td><td>last-position before first-position: invalid, so ignored</td></tr>
+<tr><td><code>bytes=-0</code></td><td><strong>200</strong></td><td>a suffix of zero asks for nothing</td></tr>
+<tr><td><code>bytes=abc</code></td><td><strong>200</strong></td><td>unparseable</td></tr>
+<tr><td><code>items=0-4</code></td><td><strong>200</strong></td><td>a unit that is not <code>bytes</code></td></tr>
+<tr><td><code>bytes=0-4,10-14</code></td><td><strong>200</strong></td><td>multiple ranges — see below</td></tr>
+<tr><td><code>bytes=99-120</code></td><td><strong>416</strong></td><td>parsed cleanly, past the end of a 26-byte object, with <code>Content-Range: bytes */26</code></td></tr></tbody>
+</table></div>
+<p>Only the last one is a <code>416</code>, and note what it carries: <code>bytes */26</code> tells the client the actual size, which is the information it needs to ask a better question. A <code>416</code> without it is a dead end.</p>
+<p><strong>Multiple ranges deserve their own paragraph</strong>, because the natural implementation is a silent data-corruption bug. A server may answer all of them as <code>multipart/byteranges</code>, or ignore the header and serve the whole object. What it must not do is answer the <em>first</em> one under a <code>206</code>: the client asked two questions, nothing in the status code says only one was answered, and it will stitch the reply in at the wrong offset. Ignoring is the only one of the three that cannot mislead, and it is what the table above does.</p>
+<h3 id="the-other-thing-that-changes-when-you-proxy">The other thing that changes when you proxy</h3>
+<p>Your audit log gets less precise than it looks. The authorization decision — and any download counter you charge — happens before a single byte moves, so a transfer that dies halfway is recorded as an allowed read and still spends the quota. &quot;Every access on the record&quot; means every authorization <em>decision</em>. If you need &quot;the bytes arrived&quot;, that is a second event, written at the end of the stream, and nothing gives it to you for free.</p>
+<hr>
+<h2 id="so-which-one">So: which one</h2>
+<p>Neither is the default. The question that decides it is not about cost:</p>
+<blockquote><p><strong>Does withdrawing access have to take effect before the URL expires?</strong></p></blockquote>
+<ul><li><strong>No</strong> → redirect. Short TTL, done, and you have not paid for bytes you do not need to touch.</li>
+<li><strong>Yes</strong> → proxy, and own <code>Range</code> properly. The table above is the whole specification; it is about sixty lines of parser and it is the same sixty lines for everybody.</li></ul>
+<p>And a third answer worth naming, because it is often the real one: <strong>both, per file.</strong> A public marketing asset and a customer's signed contract do not need the same guarantee, and nothing stops one application from redirecting the first and proxying the second. The decision belongs to the file, not to the codebase.</p>
+<hr>
+<h2 id="with-filelayer">With Filelayer</h2>
+<p>Proxying is the default, and the redirect path requires passing a verbatim acknowledgement string, because the revocation window above is a property a developer should have to type out before shipping.</p>
+<p>&lt;!-- doccheck-setup import { Filelayer } from '@filelayer/core'; import assert from 'node:assert/strict'; const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' }); --&gt;</p>
+<pre><code class="lang-ts">await fl.orgs.create('acme', { owner: 'ceo' });
+const { id } = await fl.files.put(new TextEncoder().encode('CONTRACT'), {
+  org: 'acme', owner: 'ceo', name: 'contract.pdf',
+});
+
+await fl.shares.create(id, { as: 'ceo', withUser: 'auditor' });
+
+const asAuditor = await fl.files.stat(id, { as: 'auditor' });
+assert.equal(asAuditor.name, 'contract.pdf');
+
+await fl.shares.unshare(id, { as: 'ceo', user: 'auditor' });
+
+// The next read is refused, and refused as `not_found`: whoever lost access is
+// no longer entitled to know the file exists.
+await fl.files.stat(id, { as: 'auditor' }); // throws 404</code></pre>
+<p>The <code>Range</code> handling is in the shipped routes: <code>deliveryHandler(fl)</code> is a complete <code>node:http</code> listener that produces every row of both tables above. What it does not do is multiple ranges in one request and <code>If-Range</code>; both are in <a href="https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md" rel="noopener">LIMITATIONS</a> with the reasoning.</p>
+<hr>
+<h2 id="something-wrong-or-something-missing">Something wrong, or something missing?</h2>
+<p>If anything here does not reproduce, that is a real finding and we want it: <a href="https://github.com/filelayer/filelayer/issues" rel="noopener">open an issue</a>. Re-run the proof before believing any of this.</p>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/serving-private-files.md" rel="noopener"><code>docs/guides/serving-private-files.md</code></a>
+    in a public repository. The code samples in the guides are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.17.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

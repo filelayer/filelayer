@@ -106,13 +106,19 @@
 <h3 id="deleting-files-and-orphaned-objectsdeleting-files-and-orphaned-objectsmd"><a href="/guides/deleting-files-and-orphaned-objects">Deleting files and orphaned objects</a></h3>
 <p>Postgres and S3 do not share a transaction, so every delete is two deletes. The well-covered answer is a sweeper job. This is about what comes after: <strong>which delete goes first</strong> (the row, because an orphan is recoverable and a row pointing at nothing is not), and why <strong>the sweeper is the most dangerous job you will write</strong> — it deletes on the strength of an absence, and a partial listing is indistinguishable from one. Measured: the same short listing hides orphans in a storage-driven sweep and destroys live rows in a DB-driven one.</p>
 <p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/deleting-files-and-orphaned-objects.proof.mjs" rel="noopener"><code>deleting-files-and-orphaned-objects.proof.mjs</code></a></p>
+<h3 id="should-i-redirect-to-a-presigned-url-or-proxy-private-files-myselfserving-private-filesmd"><a href="/guides/serving-private-files">Should I redirect to a presigned URL or proxy private files myself?</a></h3>
+<p>The usual answer is redirect to a presigned URL, and it is right about cost. What it leaves out is that <strong>a redirect's revocation window is the URL's remaining TTL</strong> — not a moment, not the next request, and no operation shortens it. Measured against proxying, where it is one request.</p>
+<p>And the bill that arrives with proxying: <code>Range</code> is now yours, and <strong>four of the five ranges that look like they deserve a <code>416</code> must be answered <code>200</code> instead.</strong> The whole table, measured, including the multi-range case whose natural implementation is a silent data-corruption bug.</p>
+<p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/serving-private-files.proof.mjs" rel="noopener"><code>serving-private-files.proof.mjs</code></a></p>
 <hr>
 <h2 id="running-the-proofs">Running the proofs</h2>
 <p>Nothing to install and no server to start: <code>embedded-postgres</code> runs a real PostgreSQL as an ordinary user process and cleans up after itself.</p>
 <pre><code class="lang-bash">npm run bootstrap        # npm ci in packages/core, once
 node docs/guides/expiring-and-revocable-file-links.proof.mjs
 node docs/guides/multi-tenant-file-access.proof.mjs
-node docs/guides/deleting-files-and-orphaned-objects.proof.mjs</code></pre>
+node docs/guides/deleting-files-and-orphaned-objects.proof.mjs
+node docs/guides/serving-private-files.proof.mjs</code></pre>
+<p>The last one needs no PostgreSQL server at all: it runs the database in-process and takes about five seconds.</p>
 <p>Each prints what it measured and exits non-zero if any number fails to reproduce. Re-run them before believing any of this.</p>
 <hr>
 <h2 id="something-wrong-or-something-missing">Something wrong, or something missing?</h2>

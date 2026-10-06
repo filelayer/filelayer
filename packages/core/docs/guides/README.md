@@ -67,6 +67,20 @@ orphans in a storage-driven sweep and destroys live rows in a DB-driven one.
 
 → [`deleting-files-and-orphaned-objects.proof.mjs`](deleting-files-and-orphaned-objects.proof.mjs)
 
+### [Should I redirect to a presigned URL or proxy private files myself?](serving-private-files.md)
+
+The usual answer is redirect to a presigned URL, and it is right about cost.
+What it leaves out is that **a redirect's revocation window is the URL's
+remaining TTL** — not a moment, not the next request, and no operation shortens
+it. Measured against proxying, where it is one request.
+
+And the bill that arrives with proxying: `Range` is now yours, and
+**four of the five ranges that look like they deserve a `416` must be answered
+`200` instead.** The whole table, measured, including the multi-range case whose
+natural implementation is a silent data-corruption bug.
+
+→ [`serving-private-files.proof.mjs`](serving-private-files.proof.mjs)
+
 ---
 
 ## Running the proofs
@@ -79,7 +93,11 @@ npm run bootstrap        # npm ci in packages/core, once
 node docs/guides/expiring-and-revocable-file-links.proof.mjs
 node docs/guides/multi-tenant-file-access.proof.mjs
 node docs/guides/deleting-files-and-orphaned-objects.proof.mjs
+node docs/guides/serving-private-files.proof.mjs
 ```
+
+The last one needs no PostgreSQL server at all: it runs the database in-process
+and takes about five seconds.
 
 Each prints what it measured and exits non-zero if any number fails to
 reproduce. Re-run them before believing any of this.

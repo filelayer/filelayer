@@ -21,7 +21,38 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
-Nothing yet.
+### A fifth guide, and two gates that were not watching the guides
+
+**[Should I redirect to a presigned URL or proxy private files myself?](docs/guides/serving-private-files.md)**
+— the question the first four guides left open, and the one with a measured
+answer rather than a preference. A presigned redirect's revocation window is the
+URL's remaining TTL, with no operation that shortens it; a proxied read's is one
+request. The bill that arrives with proxying is `Range`, and the part that is
+easy to get wrong is which failures deserve a `416`: of the five ranges a server
+cannot serve as asked, **four must be answered `200`**, because RFC 9110 says an
+invalid range is *ignored*. The multi-range case gets its own paragraph, since
+the natural implementation — answer the first one under a `206` — is a silent
+data-corruption bug.
+
+[`serving-private-files.proof.mjs`](docs/guides/serving-private-files.proof.mjs)
+produces both tables against a real HTTP server, and needs no PostgreSQL server:
+it runs the database in-process, in about five seconds.
+
+### Two gates were enumerating a growing directory by hand
+
+Found by writing the guide and watching which gates stayed quiet about it.
+
+- **`check:docs`** listed the four guides by path, so a fifth was executed by
+  nothing. It now discovers `docs/guides/*.md`.
+- **`check:copies`** listed them too, so a new guide could ship in the tarball
+  without anything comparing it against the repository copy. The list stays —
+  each entry says why that file ships, which is worth the line — but it now has
+  to prove it is complete, and adding a guide fails until somebody writes the
+  reason down.
+
+Both are the same defect, and it is the one this project keeps finding in its
+own tooling: **registration is not coverage.** A checker that was never pointed
+at a file reports success.
 
 ---
 
