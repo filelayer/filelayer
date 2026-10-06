@@ -51,94 +51,112 @@ const lineOf = (i) => html.slice(0, i).split('\n').length;
 const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 
 // -----------------------------------------------------------------------------
-// 1. Document shape
+// EVERY PAGE, NOT JUST THE ONE SOMEBODY REMEMBERED
 // -----------------------------------------------------------------------------
-if (!/^<!doctype html>/i.test(html.trim())) fail('web/index.html', 'no doctype on the first line');
-if (!/<html[^>]+lang="[a-z-]+"/i.test(html)) fail('web/index.html', '<html> has no lang attribute (screen readers need it)');
-if (!/<meta charset="utf-8">/i.test(html)) fail('web/index.html', 'no <meta charset>');
-if (!/name="viewport"/i.test(html)) fail('web/index.html', 'no viewport meta — the page will not be responsive on a phone');
+//
+// This gate read `web/index.html` and nothing else. That was right when the
+// site was one file. It stopped being right on 5 October 2026, when five
+// generated guide pages shipped carrying their own titles, descriptions,
+// canonicals, Open Graph tags and JSON-LD — none of which any gate looked at.
+// The commit that added them said so as a known gap, which is better than
+// silence and is not a substitute for checking.
+//
+// Registration is not coverage, once more and at the level of a filename: a
+// check hard-coded to one path reports clean on every path it does not open.
+// Sections 1 to 3 apply to any HTML page and now run over all of them.
+// Sections 4 and 5 are about the site as a whole and stay where they were.
+function checkPage(page, html) {
+  const lineOf = (i) => html.slice(0, i).split('\n').length;
 
-const h1s = [...html.matchAll(/<h1[\s>]/gi)];
-if (h1s.length !== 1) fail('web/index.html', `expected exactly 1 <h1>, found ${h1s.length}`);
+  // -----------------------------------------------------------------------------
+  // 1. Document shape
+  // -----------------------------------------------------------------------------
+  if (!/^<!doctype html>/i.test(html.trim())) fail(page, 'no doctype on the first line');
+  if (!/<html[^>]+lang="[a-z-]+"/i.test(html)) fail(page, '<html> has no lang attribute (screen readers need it)');
+  if (!/<meta charset="utf-8">/i.test(html)) fail(page, 'no <meta charset>');
+  if (!/name="viewport"/i.test(html)) fail(page, 'no viewport meta — the page will not be responsive on a phone');
 
-// Heading order: never skip a level on the way down.
-const heads = [...html.matchAll(/<h([1-6])[\s>]/gi)].map((m) => ({ level: +m[1], line: lineOf(m.index) }));
-for (let i = 1; i < heads.length; i++) {
+  const h1s = [...html.matchAll(/<h1[\s>]/gi)];
+  if (h1s.length !== 1) fail(page, `expected exactly 1 <h1>, found ${h1s.length}`);
+
+  // Heading order: never skip a level on the way down.
+  const heads = [...html.matchAll(/<h([1-6])[\s>]/gi)].map((m) => ({ level: +m[1], line: lineOf(m.index) }));
+  for (let i = 1; i < heads.length; i++) {
   const jump = heads[i].level - heads[i - 1].level;
-  if (jump > 1) fail(`web/index.html:${heads[i].line}`, `heading jumps h${heads[i - 1].level} → h${heads[i].level}`);
-}
+  if (jump > 1) fail(`${page}:${heads[i].line}`, `heading jumps h${heads[i - 1].level} → h${heads[i].level}`);
+  }
 
-// Every image needs alt text. (None today; this is the guard for the first one added.)
-for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
-  if (!/\balt=/.test(m[0])) fail(`web/index.html:${lineOf(m.index)}`, `<img> without alt: ${m[0].slice(0, 70)}`);
-}
+  // Every image needs alt text. (None today; this is the guard for the first one added.)
+  for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+  if (!/\balt=/.test(m[0])) fail(`${page}:${lineOf(m.index)}`, `<img> without alt: ${m[0].slice(0, 70)}`);
+  }
 
-// Content must not depend on JavaScript: AI crawlers do not reliably run it.
-for (const m of html.matchAll(/<script\b(?![^>]*type="application\/ld\+json")[^>]*>/gi)) {
-  fail(`web/index.html:${lineOf(m.index)}`, 'a <script> other than JSON-LD — content must render without JavaScript');
-}
-for (const m of html.matchAll(/\son(click|load|error|mouseover)=/gi)) {
-  fail(`web/index.html:${lineOf(m.index)}`, `inline event handler ${m[1]} — same reason`);
-}
+  // Content must not depend on JavaScript: AI crawlers do not reliably run it.
+  for (const m of html.matchAll(/<script\b(?![^>]*type="application\/ld\+json")[^>]*>/gi)) {
+  fail(`${page}:${lineOf(m.index)}`, 'a <script> other than JSON-LD — content must render without JavaScript');
+  }
+  for (const m of html.matchAll(/\son(click|load|error|mouseover)=/gi)) {
+  fail(`${page}:${lineOf(m.index)}`, `inline event handler ${m[1]} — same reason`);
+  }
 
-// -----------------------------------------------------------------------------
-// 2. The meta a search result and a social preview actually need
-// -----------------------------------------------------------------------------
-const meta = (re, label, { min = 1, max = Infinity } = {}) => {
+  // -----------------------------------------------------------------------------
+  // 2. The meta a search result and a social preview actually need
+  // -----------------------------------------------------------------------------
+  const meta = (re, label, { min = 1, max = Infinity } = {}) => {
   const m = html.match(re);
-  if (!m) return fail('web/index.html', `missing ${label}`);
+  if (!m) return fail(page, `missing ${label}`);
   const v = m[1].trim();
-  if (v.length < min) fail('web/index.html', `${label} is too short (${v.length} chars)`);
-  if (v.length > max) fail('web/index.html', `${label} is ${v.length} chars; search results truncate around ${max}`);
+  if (v.length < min) fail(page, `${label} is too short (${v.length} chars)`);
+  if (v.length > max) fail(page, `${label} is ${v.length} chars; search results truncate around ${max}`);
   return v;
-};
+  };
 
-meta(/<title>([^<]+)<\/title>/i, '<title>', { min: 10, max: 70 });
-meta(/<meta name="description" content="([^"]+)"/i, 'meta description', { min: 70, max: 320 });
-meta(/<link rel="canonical" href="([^"]+)"/i, 'canonical link');
+  meta(/<title>([^<]+)<\/title>/i, '<title>', { min: 10, max: 70 });
+  meta(/<meta name="description" content="([^"]+)"/i, 'meta description', { min: 70, max: 320 });
+  meta(/<link rel="canonical" href="([^"]+)"/i, 'canonical link');
 
-for (const tag of ['og:type', 'og:url', 'og:title', 'og:description', 'og:image', 'og:image:alt']) {
-  if (!new RegExp(`property="${tag}"`).test(html)) fail('web/index.html', `missing ${tag}`);
-}
-for (const tag of ['twitter:card', 'twitter:title', 'twitter:description', 'twitter:image']) {
-  if (!new RegExp(`name="${tag}"`).test(html)) fail('web/index.html', `missing ${tag}`);
-}
+  for (const tag of ['og:type', 'og:url', 'og:title', 'og:description', 'og:image', 'og:image:alt']) {
+  if (!new RegExp(`property="${tag}"`).test(html)) fail(page, `missing ${tag}`);
+  }
+  for (const tag of ['twitter:card', 'twitter:title', 'twitter:description', 'twitter:image']) {
+  if (!new RegExp(`name="${tag}"`).test(html)) fail(page, `missing ${tag}`);
+  }
 
-// The structured data must parse, and must not claim a rating we do not have.
-const ld = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/i);
-if (!ld) fail('web/index.html', 'no JSON-LD block');
-else {
+  // The structured data must parse, and must not claim a rating we do not have.
+  const ld = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/i);
+  if (!ld) fail(page, 'no JSON-LD block');
+  else {
   try {
     const obj = JSON.parse(ld[1]);
     for (const banned of ['aggregateRating', 'review', 'offers']) {
       if (JSON.stringify(obj).toLowerCase().includes(banned.toLowerCase()))
-        fail('web/index.html', `JSON-LD contains "${banned}" — we have no ratings, reviews or price, and inventing them is the one thing that would destroy this page's argument`);
+        fail(page, `JSON-LD contains "${banned}" — we have no ratings, reviews or price, and inventing them is the one thing that would destroy this page's argument`);
     }
     const pkg = JSON.parse(readFileSync(join(ROOT, 'packages/core/package.json'), 'utf8'));
     if (obj.softwareVersion && obj.softwareVersion !== pkg.version)
-      fail('web/index.html', `JSON-LD softwareVersion is ${obj.softwareVersion}; packages/core/package.json says ${pkg.version}`);
+      fail(page, `JSON-LD softwareVersion is ${obj.softwareVersion}; packages/core/package.json says ${pkg.version}`);
   } catch (e) {
-    fail('web/index.html', `JSON-LD does not parse: ${e.message}`);
+    fail(page, `JSON-LD does not parse: ${e.message}`);
   }
-}
+  }
 
-// -----------------------------------------------------------------------------
-// 3. Links — the load-bearing part
-// -----------------------------------------------------------------------------
-// `[^"#\s<]` rather than `[^"#\s]`: these URLs also appear as plain text inside
-// <code> blocks, and without excluding `<` the match swallows the closing tag.
-const REPO_BLOB = /https:\/\/github\.com\/filelayer\/filelayer\/(blob|tree)\/main\/([^"#\s<]+)(#[^"\s<]*)?/g;
-const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
-const links = [];
+  // -----------------------------------------------------------------------------
+  // 3. Links — the load-bearing part
+  // -----------------------------------------------------------------------------
+  // `[^"#\s<]` rather than `[^"#\s]`: these URLs also appear as plain text inside
+  // <code> blocks, and without excluding `<` the match swallows the closing tag.
+  const REPO_BLOB = /https:\/\/github\.com\/filelayer\/filelayer\/(blob|tree)\/main\/([^"#\s<]+)(#[^"\s<]*)?/g;
+  const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  const links = [];
 
-for (const m of html.matchAll(/href="([^"]+)"/g)) {
+  for (const m of html.matchAll(/href="([^"]+)"/g)) {
   const href = m[1];
   const line = lineOf(m.index);
   links.push({ href, line });
 
   if (href.startsWith('#')) {
     const id = href.slice(1);
-    if (id && !ids.has(id)) fail(`web/index.html:${line}`, `anchor ${href} has no matching id on the page`);
+    if (id && !ids.has(id)) fail(`${page}:${line}`, `anchor ${href} has no matching id on the page`);
   } else if (href.startsWith('./') || href.startsWith('/')) {
     if (href === '/') continue; // the brand link
     const rel = href.replace(/^\.?\//, '').split(/[?#]/)[0];
@@ -160,26 +178,26 @@ for (const m of html.matchAll(/href="([^"]+)"/g)) {
       : [rel, `${rel}.html`, join(rel, 'index.html')];
     if (!candidates.some((c) => existsSync(join(WEB, c))))
       fail(
-        `web/index.html:${line}`,
+        `${page}:${line}`,
         `relative link ${href} does not resolve in web/ (tried ${candidates.join(', ')})`,
       );
   }
-}
+  }
 
-// Repo links must point at files that exist in this working tree.
-let repoLinks = 0;
-for (const m of html.matchAll(REPO_BLOB)) {
+  // Repo links must point at files that exist in this working tree.
+  let repoLinks = 0;
+  for (const m of html.matchAll(REPO_BLOB)) {
   repoLinks++;
   const target = decodeURIComponent(m[2]);
   const line = lineOf(m.index);
   if (!existsSync(join(ROOT, target)))
-    fail(`web/index.html:${line}`, `links to ${target}, which does not exist in this repository`);
-}
-if (repoLinks === 0) fail('web/index.html', 'no links into the repository at all — the page cannot hand off');
+    fail(`${page}:${line}`, `links to ${target}, which does not exist in this repository`);
+  }
+  if (repoLinks === 0) fail(page, 'no links into the repository at all — the page cannot hand off');
 
-// A GitHub anchor is derived from the heading text; a stale one lands at the top
-// of a long file and silently loses the reader. Check the ones we can.
-for (const m of html.matchAll(REPO_BLOB)) {
+  // A GitHub anchor is derived from the heading text; a stale one lands at the top
+  // of a long file and silently loses the reader. Check the ones we can.
+  for (const m of html.matchAll(REPO_BLOB)) {
   const [, , target, hash] = m;
   if (!hash) continue;
   const path = join(ROOT, decodeURIComponent(target));
@@ -195,7 +213,32 @@ for (const m of html.matchAll(REPO_BLOB)) {
   );
   const want = hash.slice(1).toLowerCase();
   if (!slugs.has(want))
-    fail(`web/index.html:${lineOf(m.index)}`, `anchor ${hash} not found in ${target} (headings moved?)`);
+    fail(`${page}:${lineOf(m.index)}`, `anchor ${hash} not found in ${target} (headings moved?)`);
+  }
+  return { ids, links, repoLinks };
+}
+
+// The landing page plus everything generated under web/guides/. Discovered
+// rather than listed, so a sixth guide is covered the moment it is built.
+const PAGES = [['web/index.html', PAGE]];
+const GUIDES = join(WEB, 'guides');
+if (existsSync(GUIDES)) {
+  for (const f of readdirSync(GUIDES).filter((n) => n.endsWith('.html')).sort()) {
+    PAGES.push([`web/guides/${f}`, join(GUIDES, f)]);
+  }
+}
+// The landing page's own figures feed the sections below and the summary; the
+// guide pages are checked and their totals added. One number for the whole
+// site, because "48 links checked" that silently meant one page was the thing
+// this refactor exists to stop.
+let ids = new Set();
+let links = [];
+let repoLinks = 0;
+for (const [label, file] of PAGES) {
+  const r = checkPage(label, readFileSync(file, 'utf8'));
+  if (label === 'web/index.html') ids = r.ids;
+  links = links.concat(r.links);
+  repoLinks += r.repoLinks;
 }
 
 // -----------------------------------------------------------------------------

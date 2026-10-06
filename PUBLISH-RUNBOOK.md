@@ -197,14 +197,27 @@ Then, in the browser:
 
 ### 3.1 Log in
 
+**EXPECT TO DO THIS EVERY TIME, and do it before anything else.** The browser
+login npm uses now issues a short-lived token. On 6 October 2026 it expired
+twice in one working day, both times surfacing as the first command of the
+sequence failing:
+
+```
+npm error code E401
+npm error 401 Unauthorized - GET https://registry.npmjs.org/-/whoami
+```
+
+That is not a problem with the package, the scope or the network, and it reads
+like one. It means log in again.
+
 ```bash
 npm login
-# username / password / email / one-time password as prompted
-npm whoami                      # -> your npm username
+npm whoami
 ```
 
 If your npm account has 2FA set to "Authorization and writes" (it should), the
-publish in 3.3 will prompt for a one-time password.
+publish in 3.3 will prompt for a one-time password, and so will
+`npm dist-tag add`.
 
 ### 3.2 Create the `@filelayer` scope
 
@@ -286,9 +299,22 @@ Notes on that invocation, because each flag is load-bearing:
 
 ### 4.1 The registry has what you think it has
 
+**WAIT A MINUTE FIRST, AND DO NOT READ ANYTHING INTO AN EMPTY ANSWER.** npm
+says it at publish time — *"Your package is being processed and may take a few
+minutes to become available"* — and it means it. For the first minute or so,
+`npm view` answers from a replica that still has the previous version and
+`npm install <pkg>@<new version>` fails with `notarget`.
+
+This has already produced one wrong conclusion: on 6 October 2026 a check run
+seconds after a successful publish reported the old version, and the release was
+declared unpublished when it was not. The authoritative evidence that a publish
+happened is the publish command's own output. If you want to double-check
+anyway, the useful signal is that re-running `npm publish` refuses with
+*"You cannot publish over the previously published versions"*.
+
 ```bash
 npm view @filelayer/core
-npm view @filelayer/core dist-tags       # -> { latest: '0.15.1', alpha: '0.15.1' }
+npm view @filelayer/core dist-tags       # -> { latest: '0.16.0', alpha: '0.16.0' }
 npm view @filelayer/core license         # -> Apache-2.0
 npm view @filelayer/core files
 ```

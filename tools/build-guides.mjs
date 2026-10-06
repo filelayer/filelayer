@@ -370,7 +370,18 @@ const clip = (s, n) => {
 function page({ slug, title, lede, body, isIndex }) {
   const url = isIndex ? `${SITE}/guides/` : `${SITE}/guides/${slug}`;
   const desc = clip(lede ?? '', 185);
-  const pageTitle = `${title} · Filelayer`;
+
+  // THE BRAND SUFFIX IS THE PART THAT GIVES WAY. Search results truncate a
+  // title around 70 characters, and these titles are questions: the question is
+  // the whole value of the page and " · Filelayer" is a nicety. Two of the four
+  // guides were at 74 and 78 characters with the suffix and under 70 without,
+  // so the rule is to add it only when it fits.
+  //
+  // Found by `check:web` on 6 October 2026, the day it was taught to read these
+  // pages at all. They had been live, and in Google's indexing queue, with
+  // titles that would have been cut mid-sentence.
+  const withBrand = `${title} · Filelayer`;
+  const pageTitle = withBrand.length <= 70 ? withBrand : title;
   const ld = {
     '@context': 'https://schema.org',
     '@type': 'TechArticle',
