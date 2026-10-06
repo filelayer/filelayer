@@ -59,12 +59,19 @@ const DEFAULT_URL = 'https://filelayer.dev/';
  * So each surface is extracted separately and reported separately: "the version
  * is right somewhere on the page" is not the property we want.
  */
+// THE EYEBROW EXTRACTOR IS GONE, and this note is here so nobody adds it back
+// without knowing why it went. On 6 October 2026 the version was deliberately
+// removed from the eyebrow: the page said "alpha" three times and the version
+// three times, and repetition makes evidence weigh less rather than more. The
+// pattern then matched nothing and this gate reported `not found`, correctly.
+//
+// What replaced it is better than a pattern per location. `check:versions`
+// sweeps every public surface for any version presented as the current one and
+// requires it to be the current one, so a version returning to the eyebrow is
+// covered the moment it is typed, with no extractor to remember. This file
+// keeps the ones that read the DEPLOYED page, which is a question no sweep over
+// the working tree can answer.
 const extractors = [
-  {
-    name: 'eyebrow version',
-    re: /Apache-2\.0\s*(?:&middot;|·)\s*v([\d.]+)\s*alpha/,
-    want: (c) => c.version,
-  },
   {
     name: 'alpha banner version',
     re: /Alpha\.?\s*Developer preview\.?<\/b>\s*v(\d+(?:\.\d+)*)/,

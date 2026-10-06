@@ -262,12 +262,18 @@ jobs:
       # The extractors, against the markup that actually drifted and against the
       # file as it stands. A pattern that matches nothing reports "not found"
       # rather than passing, which is the failure mode this kind of gate has.
-      - name: The extractors still match
-        run: node tools/check-live-site.mjs --self-test
-
-      # The counts come from a run, not from a number typed by hand.
+      # THE COUNTS FIRST, and the ordering is the whole bug. The self-test
+      # compares the live markup against the recorded run, so it needs this
+      # file. It ran BEFORE the step that writes it, so it exited on a missing
+      # file every night since this job was written on 4 October 2026 -- which
+      # means the self-test, whose entire purpose is to prove the extractors can
+      # fail, had never once executed. It passes locally because a developer has
+      # run `npm run verify` and the file is already on disk.
       - name: Record what the suite counts
         run: npm run test:counted
+
+      - name: The extractors still match
+        run: node tools/check-live-site.mjs --self-test
 
       - name: The deployed page carries this tree's numbers
         run: npm run check:live
