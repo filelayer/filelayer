@@ -437,14 +437,23 @@ if (recorded && Number(recorded.tests) > 0) {
       //    recorded run. Reading it as a test count would make the gate
       //    demand that the two numbers be equal.
       if (/^\s*suites?\b/.test(after)) continue;
-      //  - the PASSING count in "547 tests, 539 passing, 8 skipped". Also a
-      //    real claim, and the honest way to describe a suite that skips
-      //    eight. Recognised by SHAPE AND BY MEASUREMENT rather than by an
-      //    exception: the value has to equal the pass count the recorded run
-      //    produced, and the word has to be there. A stale 539 beside a
-      //    changed run still fails, which is the property that matters.
-      if (recorded.pass !== undefined && value === String(recorded.pass) && /^\s*passing\b/.test(after))
-        continue;
+      // A PASSING COUNT IS NOT EXEMPTED HERE, and the attempt to exempt it is
+      // worth recording. On 5 October 2026 llms.txt gained "547 tests, 539
+      // passing, 8 skipped" and this sweep flagged the 539, so a rule was
+      // added allowing a value that equals the recorded run's pass count. CI
+      // rejected it within minutes, correctly: this repository's recorded run
+      // happens on a machine WITH a real PostgreSQL, where the concurrency
+      // suite executes and the pass count is 547 with nothing skipped. The
+      // procedure we publish to strangers uses PGlite and no server, where it
+      // is 539 with eight skipped. Both runs are real and neither is the
+      // other's expectation, so no single recorded number could validate that
+      // sentence.
+      //
+      // The sentence was removed instead. A pass/skip breakdown belongs in
+      // `docs/VERIFY-WHAT-YOU-INSTALLED.md`, where `check:suite-install` runs
+      // the procedure and compares the output against the table on every
+      // commit. A number checked by a runner beats a number exempted from a
+      // sweep.
       const excused = SWEEP_EXCEPTIONS.find((e) => e.match.test(line));
       if (excused) continue;
       violations.push(

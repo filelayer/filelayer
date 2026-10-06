@@ -53,8 +53,8 @@
  * did not match it. If someone improves the instructions, CI runs the
  * improvement. If someone breaks them, CI goes red on the same commit.
  *
- * Then it asserts the run reported the counts in `.measured/suite-counts.json`,
- * the same file every public test figure is checked against. So this also
+ * Then it asserts the run matches the "What you should see" table in that same
+ * document, which makes the table executable rather than asserted. So this also
  * answers a question no other gate here answers: are the numbers we publish
  * reproducible by somebody who has only the package?
  *
@@ -173,22 +173,56 @@ if (controlFailures.length) {
 
 // --- the run ----------------------------------------------------------------
 
-const counts = (() => {
-  try {
-    return JSON.parse(readFileSync(join(ROOT, '.measured/suite-counts.json'), 'utf8'));
-  } catch {
+const docText = readFileSync(join(ROOT, DOC), 'utf8');
+const procedure = procedureFrom(docText);
+
+/**
+ * THE DOCUMENT'S OWN TABLE IS THE EXPECTATION, not `.measured/suite-counts.json`.
+ *
+ * The first version read the recorded run, and CI failed it twice for two
+ * different reasons, both correct:
+ *
+ *   - The job that runs this gate does not run the suite, so the recorded file
+ *     was not there at all.
+ *   - Where it IS there, it describes a different run. CI has a real
+ *     PostgreSQL, so the concurrency suite executes instead of skipping and the
+ *     recorded numbers are 547 passing and 0 skipped. The published procedure
+ *     uses PGlite and no server, and produces 539 passing and 8 skipped. Both
+ *     are true; neither is the other's expectation.
+ *
+ * The table below the procedure in the document says what a reader should see.
+ * That is the claim, it is the thing a stranger will compare their own output
+ * against, and it does not move with the environment this gate happens to run
+ * in. So it is what the run is checked against, which also makes the table
+ * executable rather than asserted.
+ */
+const expected = (() => {
+  const table = {};
+  for (const m of docText.matchAll(/^\|\s*(tests|pass|fail|skipped|suites)\s*\|\s*\*{0,2}(\d+)\*{0,2}\s*\|/gm)) {
+    table[m[1]] = Number(m[2]);
+  }
+  const want = ['tests', 'pass', 'fail', 'skipped', 'suites'];
+  const absent = want.filter((k) => table[k] === undefined);
+  if (absent.length) {
     fail(
-      '.measured/suite-counts.json is missing, so there is nothing to compare the ' +
-        'install run against. Run `npm run test:counted` first.',
+      `${DOC}: the "What you should see" table is missing a row for ${absent.join(', ')}. ` +
+        'This gate checks the run against that table, so a row nobody wrote is a number ' +
+        'nobody checks.',
     );
     return null;
   }
+  if (table.fail !== 0) {
+    fail(
+      `${DOC}: the table says ${table.fail} failing tests are expected. It is the procedure we ` +
+        'invite strangers to run; the expected number of failures is zero.',
+    );
+    return null;
+  }
+  return table;
 })();
 
-const procedure = procedureFrom(readFileSync(join(ROOT, DOC), 'utf8'));
-
 let work = null;
-if (procedure && counts && !problems.length) {
+if (procedure && expected && !problems.length) {
   work = mkdtempSync(join(tmpdir(), 'filelayer-install-'));
   try {
     // A consumer project: the tarball as a dependency, and nothing else. Its
@@ -231,18 +265,12 @@ if (procedure && counts && !problems.length) {
           'in `node --test`, and whatever it ends in now did not report one.',
       );
     } else {
-      const want = {
-        tests: counts.tests,
-        fail: 0,
-        skipped: counts.skip ?? counts.skipped ?? tally.skipped,
-        suites: counts.suites,
-      };
-      for (const [k, v] of Object.entries(want)) {
-        if (v !== undefined && tally[k] !== v) {
+      for (const [k, v] of Object.entries(expected)) {
+        if (tally[k] !== v) {
           fail(
-            `the suite run from an install reported ${k}=${tally[k]}; the repository's own run ` +
-              `recorded ${k}=${v}.\n      The published figures are supposed to be reproducible ` +
-              'by somebody who has only the package.',
+            `the suite run from an install reported ${k}=${tally[k]}; ${DOC} tells a reader to ` +
+              `expect ${k}=${v}.\n      That table is what a stranger compares their own output ` +
+              'against, so one of the two is wrong and both are published.',
           );
         }
       }
@@ -251,7 +279,7 @@ if (procedure && counts && !problems.length) {
           `check-suite-runs-from-install: clean. The procedure in ${DOC} was run verbatim ` +
             `against a freshly packed tarball installed as a dependency: ${tally.tests} test(s), ` +
             `${tally.pass} passing, ${tally.fail} failing, ${tally.skipped} skipped across ` +
-            `${tally.suites} suites, matching the repository's own run. ` +
+            `${tally.suites} suites, matching every row of that document's own table. ` +
             `${CONTROLS.length} controls correct.`,
         );
       }
