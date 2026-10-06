@@ -60,6 +60,8 @@ import {
   LIST_MAX_LIMIT,
   type AuditFilter,
   type AuditChainResult,
+  type AuditCheckpoint,
+  type AuditTrimResult,
   type ResolvedAuditRow,
 } from './store.ts';
 import {
@@ -2718,6 +2720,77 @@ export class Filelayer {
     });
     this.#raise(decision);
     return this.store.verifyAuditChain(orgId);
+  }
+
+  /**
+   * Every checkpoint on a chain: the trims that removed history, and the seals
+   * that recorded where it had reached.
+   *
+   * Authorized like reading the log, and for the same reason: the number and
+   * timing of a tenant's retention runs is information about that tenant.
+   */
+  async auditCheckpoints(principal: Principal, orgId: string): Promise<AuditCheckpoint[]> {
+    const decision = await authorizeOrg(this.store, principal, orgId, 'read_audit', {
+      action: 'audit.checkpoints',
+      emitAllow: false,
+    });
+    this.#raise(decision);
+    return this.store.auditCheckpoints(orgId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Operator jobs: retention
+  // ---------------------------------------------------------------------------
+  //
+  // THESE TWO TAKE NO PRINCIPAL, and that is a decision rather than an
+  // oversight. They sit beside `collectStorageOrphans()` and
+  // `collectUploadReservations()` for the same reason: retention policy is set
+  // by whoever runs the application, not by a tenant's own administrator, and
+  // an erasure request arrives at the operator rather than through a customer
+  // UI. The alternative was a fourth `OrgCapability`, and that vocabulary is
+  // deliberately tiny -- "an unbounded permission vocabulary is an
+  // authorization model nobody can audit", as `authz.ts` puts it.
+  //
+  // THE COST, stated rather than hidden: any code holding a `Filelayer` can
+  // call these, exactly as any code holding one can call the collectors or
+  // reach `fl.store.db`. Gating them is the application's job. If you mount
+  // them on an HTTP route, that route needs its own authorization, and it is
+  // not the same route your tenants reach.
+
+  /**
+   * Remove old audit events, leaving a checkpoint that records what went.
+   *
+   * `{ before }` applies a time-based retention policy; `{ keepLast }` keeps a
+   * fixed number of the most recent events. The chain stays verifiable either
+   * way: `verifyAuditChain()` meets the gap, finds the checkpoint that accounts
+   * for it, and reports an attested gap rather than tampering.
+   *
+   * To honour an erasure request for a tenant, trim with `{ keepLast: 0 }` and
+   * then delete the org row. The checkpoint survives and holds an org id, two
+   * hashes, a count and a time window: no personal data, and a record that the
+   * erasure happened.
+   */
+  async trimAuditChain(
+    orgId: string | null,
+    opts: { before?: Date; keepLast?: number; note: string },
+  ): Promise<AuditTrimResult> {
+    return this.store.trimAuditChain(orgId, opts);
+  }
+
+  /**
+   * Record where a chain has reached, without removing anything.
+   *
+   * Schedule it, and the removal of recent events stops being invisible: a head
+   * that is behind a recorded seal is a chain that lost what came after it.
+   * `verifyAuditChain()` reports that as `truncated_past_seal`.
+   *
+   * Read `AuditChainResult.lastHash` before relying on this. A seal lives in
+   * the same database as the events it describes, so it raises the cost of a
+   * silent truncation without making one impossible. Pinning the head hash
+   * somewhere outside this database is still the only thing that does.
+   */
+  async sealAuditChain(orgId: string | null, note: string): Promise<AuditCheckpoint | null> {
+    return this.store.sealAuditChain(orgId, note);
   }
 
   // ---------------------------------------------------------------------------

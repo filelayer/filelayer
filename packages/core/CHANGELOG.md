@@ -25,6 +25,89 @@ Nothing yet.
 
 ---
 
+## [0.16.0] — 2026-10-06
+
+**Schema version 10 → 11. A migration, and the first one that fixes something
+that raised.**
+
+### The tenant that could not be deleted
+
+`audit_event.org_id` was `REFERENCES org(id) ON DELETE CASCADE`. A cascade is a
+DELETE; `audit_no_delete` rewrote that DELETE to nothing; and Postgres refused
+its own referential-integrity result:
+
+```
+referential integrity query on "org" from constraint
+"audit_event_org_id_fkey" on "audit_event" gave unexpected result
+```
+
+Creating an org is an audited action, so **every tenant was undeletable**, and
+not quietly: the statement raised. Nobody had met it because the library
+exposes no org deletion, which means the trap was waiting for whoever first had
+to honour an erasure request. The column keeps its meaning and loses the
+constraint, exactly as `actor_id`, `file_id` and `grant_id` did before it: an
+audit log that forgets what happened when its subject goes away is not an audit
+log.
+
+Deleting an org no longer removes its audit history. Erasure is now explicit.
+
+### Retention on a hash chain
+
+A hash chain cannot be cut from the front: the remainder is indistinguishable
+from a tampered one. So keeping the log verifiable meant keeping it forever,
+and `audit_event` grew without bound for the life of a deployment.
+
+`audit_checkpoint` is the missing piece. A trim records the hash the chain had
+reached, how many events went, and over what window. `verifyAuditChain()` meets
+the gap, finds the checkpoint accounting for it, and reports an attested gap
+instead of a break.
+
+**A removal that leaves no checkpoint is still reported as tampering**, and
+that is the property the rest rests on. The delete path is a declaration rather
+than a privilege — `SET LOCAL filelayer.audit_trim = 'on'`, scoped to one
+transaction — so this stops an accident and an application bug, exactly as the
+unconditional rule did, and stops nobody who means it. Attestation is a record,
+not a lock, and a trim without a receipt is visible.
+
+### Truncation, from invisible to detectable
+
+`AuditChainResult.lastHash` has always said that replay cannot catch the removal
+of the last *n* events: what remains verifies perfectly. `sealAuditChain()`
+records where the chain had reached, and a head behind a recorded seal is now
+reported as `truncated_past_seal`.
+
+This is a real improvement and **not a solution**, and LIMITATIONS 11 says so in
+those words: the seal lives in the same database as the events, so whoever
+removes one can remove the other. Pinning `lastHash` outside the database is
+still the only fix that leaves the blast radius.
+
+### Added
+
+- `trimAuditChain(orgId, { before | keepLast, note })` — retention, attested.
+  `note` is required: a retention run that cannot say why it ran is a deletion
+  with a receipt attached.
+- `sealAuditChain(orgId, note)` — pin the head without removing anything.
+- `auditCheckpoints(orgId)` — what was removed, and the heads on record.
+  Authorized like reading the log; the other two are operator jobs and take no
+  principal, beside `collectStorageOrphans()` and for the same reason.
+- `AuditChainResult` gains `attestedGaps`, `trims` and `seals`, and `problem`
+  gains `'truncated_past_seal'`.
+- `test/audit-retention.test.ts`, 17 tests on real PostgreSQL. The one that
+  matters most deletes through the same privileged path the library uses,
+  writes no checkpoint, and requires verification to still call it tampering.
+
+### Migration
+
+`migrations/011-audit-retention.sql`, transactional, refuses a database that
+already has `audit_checkpoint`. CI applies it to the `v0.15.2` schema and
+compares the result against this release's `schema.sql` built fresh. Entry 11 of
+`MIGRATIONS.md` has the reasoning and the two jobs worth scheduling.
+
+Nothing in existing code has to change. If you switch on
+`AuditChainResult.problem`, there is a new case.
+
+---
+
 ## [0.15.2] — 2026-10-06
 
 **The repository was fixed and the package was not, so for one evening the

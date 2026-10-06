@@ -50,7 +50,7 @@ import type {
   ListQuery,
   OrgRole,
 } from './authz.ts';
-import type { Queryable } from './db.ts';
+import { withTransaction, type Queryable } from './db.ts';
 
 import { membershipCells, type MembershipCell } from './authz.ts';
 import { FilelayerError } from './errors.ts';
@@ -1098,6 +1098,41 @@ export class PostgresStore implements AuthzDeps {
       lastHash: headEvent ? headEvent.hash : null,
     };
 
+    // THE CHECKPOINTS, BEFORE REPLAY, because replay needs them to tell a
+    // recorded trim from a deletion nobody admits to. Both look identical in
+    // `audit_event`: a surviving chain whose first link points at a
+    // predecessor that is gone. The only difference is whether something
+    // attests to the hash it points at.
+    const checkpoints = await this.auditCheckpoints(orgId);
+    const trims = checkpoints.filter((c) => c.kind === 'trim');
+    const seals = checkpoints.filter((c) => c.kind === 'seal');
+    const attestedBy = new Map(trims.map((c) => [c.throughHash, c]));
+    let attestedGaps = 0;
+
+    // TRUNCATION, WHICH REPLAY CANNOT SEE. Remove the last n events and what
+    // remains verifies perfectly, because nothing inside the chain records
+    // where it was supposed to end. A seal does record that, so a head now
+    // BEHIND a seal is a chain that lost events after the seal was taken.
+    //
+    // An empty chain with a seal on record is the same finding in its loudest
+    // form, and it is the one an emptied table produces.
+    const highestSeal = seals.reduce<AuditCheckpoint | null>(
+      (max, s) => (max === null || s.throughEventId > max.throughEventId ? s : max),
+      null,
+    );
+    if (highestSeal !== null && (head.lastId === null || head.lastId < highestSeal.throughEventId)) {
+      return {
+        valid: false,
+        checked: 0,
+        brokenAt: highestSeal.throughEventId,
+        problem: 'truncated_past_seal',
+        ...head,
+        attestedGaps: 0,
+        trims,
+        seals,
+      };
+    }
+
     for (;;) {
       const { rows } = await this.db.query<Record<string, never>>(
         `${AUDIT_COLUMNS} WHERE org_id IS NOT DISTINCT FROM $1 AND id > $2
@@ -1108,7 +1143,24 @@ export class PostgresStore implements AuthzDeps {
       const events = rows.map(mapAuditRow);
       for (const e of events) {
         if (e.prevHash !== prev) {
-          return { valid: false, checked, brokenAt: e.id, problem: 'prev_hash_mismatch', ...head };
+          // A GAP. Is it attested? A trim checkpoint carrying exactly this
+          // `prev_hash` says the chain reached that hash and the events up to
+          // it were removed on purpose. Accept it, count it, and carry on from
+          // there -- the surviving chain is intact, it is just shorter than its
+          // history.
+          //
+          // An unattested gap is reported as it always was. That is the whole
+          // mechanism: trimming is allowed, trimming WITHOUT LEAVING A RECORD
+          // is indistinguishable from tampering, and it should be.
+          const gap = e.prevHash !== null ? attestedBy.get(e.prevHash) : undefined;
+          if (gap === undefined) {
+            return {
+              valid: false, checked, brokenAt: e.id, problem: 'prev_hash_mismatch',
+              ...head, attestedGaps, trims, seals,
+            };
+          }
+          attestedGaps++;
+          prev = e.prevHash;
         }
         const expected = auditHash({
           prevHash: e.prevHash,
@@ -1125,7 +1177,10 @@ export class PostgresStore implements AuthzDeps {
           context: e.context,
         });
         if (expected !== e.hash) {
-          return { valid: false, checked, brokenAt: e.id, problem: 'hash_mismatch', ...head };
+          return {
+            valid: false, checked, brokenAt: e.id, problem: 'hash_mismatch',
+            ...head, attestedGaps, trims, seals,
+          };
         }
         prev = e.hash;
         checked++;
@@ -1134,7 +1189,207 @@ export class PostgresStore implements AuthzDeps {
       if (events.length < PAGE) break;
     }
 
-    return { valid: true, checked, ...head };
+    return { valid: true, checked, ...head, attestedGaps, trims, seals };
+  }
+
+  // --- Retention (0.16.0) ---------------------------------------------------
+
+  /**
+   * Every checkpoint recorded for a chain, newest first.
+   *
+   * Read-only, and deliberately not filtered to trims: a caller asking what
+   * happened to this chain needs the seals too, because a seal is the evidence
+   * that the chain reached a given head at a given time.
+   */
+  async auditCheckpoints(orgId: string | null): Promise<AuditCheckpoint[]> {
+    const { rows } = await this.db.query<Record<string, never>>(
+      `SELECT id, org_id, kind, created_at, through_event_id, through_hash,
+              removed_count, removed_from, removed_to, note
+         FROM audit_checkpoint
+        WHERE org_id IS NOT DISTINCT FROM $1
+        ORDER BY id DESC`,
+      [orgId],
+    );
+    return rows.map(mapCheckpointRow);
+  }
+
+  /**
+   * Pin where the chain has reached, without removing anything.
+   *
+   * WHAT THIS BUYS, stated narrowly because the broad version would be false.
+   * Replay cannot detect the removal of the most recent events: what remains is
+   * a shorter chain in which every link still verifies. A seal records the head
+   * at a moment, so a later head that is BEHIND a recorded seal is a chain that
+   * lost events, and `verifyAuditChain` reports it.
+   *
+   * It does not survive an adversary who removes the seals as well, and
+   * `AuditChainResult.lastHash` still says what the only real fix is: pin the
+   * value somewhere outside this database. A seal moves truncation from
+   * undetectable to detectable-unless-also-covered-up, which is worth having
+   * and is not the same as solved.
+   *
+   * Returns `null` for an empty chain: there is no head to attest to, and a
+   * seal claiming one would be the fabrication this whole mechanism exists to
+   * make visible.
+   */
+  async sealAuditChain(orgId: string | null, note: string): Promise<AuditCheckpoint | null> {
+    const head = await this.db.query<{ id: string; hash: string }>(
+      `SELECT id, hash FROM audit_event
+        WHERE org_id IS NOT DISTINCT FROM $1 ORDER BY id DESC LIMIT 1`,
+      [orgId],
+    );
+    const h = head.rows[0];
+    if (!h) return null;
+
+    const { rows } = await this.db.query<Record<string, never>>(
+      `INSERT INTO audit_checkpoint (org_id, kind, through_event_id, through_hash, note)
+            VALUES ($1, 'seal', $2, $3, $4)
+         RETURNING id, org_id, kind, created_at, through_event_id, through_hash,
+                   removed_count, removed_from, removed_to, note`,
+      [orgId, h.id, h.hash, note],
+    );
+    return mapCheckpointRow(rows[0]!);
+  }
+
+  /**
+   * Remove old events from a chain and leave a record of what was removed.
+   *
+   * `before` trims everything that happened before an instant. `keepLast` keeps
+   * the n most recent and trims the rest. Exactly one of them, because "before
+   * this date but also keep at least n" is two policies and a caller who wants
+   * both should run two passes and see two checkpoints.
+   *
+   * -------------------------------------------------------------------------
+   * WHY THIS IS NOT A `DELETE`
+   * -------------------------------------------------------------------------
+   *
+   * A hash chain cannot be cut from the front without the remainder looking
+   * tampered with. So three things happen in ONE transaction, and the order is
+   * load-bearing:
+   *
+   *   1. Take an advisory lock on this chain, so two retention runs cannot
+   *      interleave and each write a record of removing the same rows.
+   *   2. Read the boundary event's hash, and the window being removed. BEFORE
+   *      deleting, obviously, and worth saying because that hash is the only
+   *      surviving evidence of where the chain had reached once the row is gone.
+   *   3. Delete.
+   *   4. READ BACK that the rows are actually gone, and only then write the
+   *      checkpoint.
+   *
+   * Step 4 is not belt and braces. `DELETE` on this table is rewritten to
+   * nothing when the declaration is absent and it does that SILENTLY: no error,
+   * no indication. A trim that trusted its own DELETE would write a checkpoint
+   * saying history was removed while every row was still there, which is a
+   * false record in the one table whose entire value is being believed. This
+   * file has been bitten once already by trusting a row count it had not read
+   * back, in the tamper tests, and the lesson is cheap to apply twice.
+   *
+   * NO `RETURNING`, AND NOT BY CHOICE. Postgres refuses `DELETE ... RETURNING`
+   * on a relation carrying a `DO INSTEAD` rule, because the rule may suppress
+   * the statement and there would be nothing to return. That is also the reason
+   * the count comes from a SELECT taken under the lock rather than from the
+   * delete itself.
+   *
+   * The transaction declares `filelayer.audit_trim`, which is what lifts the
+   * rule, and `SET LOCAL` means the declaration cannot outlive it.
+   */
+  async trimAuditChain(
+    orgId: string | null,
+    opts: { before?: Date; keepLast?: number; note: string },
+  ): Promise<AuditTrimResult> {
+    const byDate = opts.before !== undefined;
+    const byCount = opts.keepLast !== undefined;
+    if (byDate === byCount) {
+      throw new Error('trimAuditChain: pass exactly one of `before` or `keepLast`.');
+    }
+    if (byCount && (!Number.isInteger(opts.keepLast) || opts.keepLast! < 0)) {
+      throw new Error('trimAuditChain: `keepLast` must be a non-negative integer.');
+    }
+    if (!opts.note.trim()) {
+      throw new Error('trimAuditChain: `note` is required. A retention run has to say why it ran.');
+    }
+
+    return withTransaction(this.db, async (tx) => {
+      await tx.query(`SET LOCAL filelayer.audit_trim = 'on'`);
+
+      // ONE RETENTION RUN PER CHAIN AT A TIME. Without this, two runs read the
+      // same boundary, both delete, both find the rows gone, and both record
+      // having removed them. The second record would be false.
+      //
+      // `1` is a namespace so this lock cannot collide with anything else that
+      // ever wants an advisory lock in this database; `hashtext` turns the org
+      // id into the second half of the key. A transaction-scoped lock is
+      // released by the commit or rollback, with nothing to leak.
+      await tx.query(`SELECT pg_advisory_xact_lock(1, hashtext(coalesce($1::text, 'system')))`, [
+        orgId,
+      ]);
+
+      const boundary = byDate
+        ? await tx.query<{ id: string; hash: string }>(
+            `SELECT id, hash FROM audit_event
+              WHERE org_id IS NOT DISTINCT FROM $1 AND occurred_at < $2
+              ORDER BY id DESC LIMIT 1`,
+            [orgId, opts.before],
+          )
+        : await tx.query<{ id: string; hash: string }>(
+            `SELECT id, hash FROM audit_event
+              WHERE org_id IS NOT DISTINCT FROM $1
+              ORDER BY id DESC OFFSET $2 LIMIT 1`,
+            [orgId, opts.keepLast],
+          );
+
+      const edge = boundary.rows[0];
+      if (!edge) return { removed: 0, checkpoint: null };
+
+      const doomed = await tx.query<{ n: string; lo: string | null; hi: string | null }>(
+        `SELECT count(*)::text AS n, min(occurred_at)::text AS lo, max(occurred_at)::text AS hi
+           FROM audit_event
+          WHERE org_id IS NOT DISTINCT FROM $1 AND id <= $2`,
+        [orgId, edge.id],
+      );
+      const count = Number(doomed.rows[0]?.n ?? 0);
+      if (count === 0) return { removed: 0, checkpoint: null };
+
+      await tx.query(
+        `DELETE FROM audit_event WHERE org_id IS NOT DISTINCT FROM $1 AND id <= $2`,
+        [orgId, edge.id],
+      );
+
+      // READ IT BACK. See the note above: a suppressed DELETE says nothing.
+      const left = await tx.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM audit_event
+          WHERE org_id IS NOT DISTINCT FROM $1 AND id <= $2`,
+        [orgId, edge.id],
+      );
+      if (Number(left.rows[0]?.n ?? -1) !== 0) {
+        throw new Error(
+          'trimAuditChain: the DELETE was suppressed and the events are still present. ' +
+            'No checkpoint was written, because a record of a removal that did not happen is ' +
+            'worse than no record. This means the `filelayer.audit_trim` declaration did not ' +
+            'reach the server, which happens when the connection is not the one running the ' +
+            'transaction.',
+        );
+      }
+
+      const { rows } = await tx.query<Record<string, never>>(
+        `INSERT INTO audit_checkpoint
+                (org_id, kind, through_event_id, through_hash,
+                 removed_count, removed_from, removed_to, note)
+          VALUES ($1, 'trim', $2, $3, $4, $5, $6, $7)
+       RETURNING id, org_id, kind, created_at, through_event_id, through_hash,
+                 removed_count, removed_from, removed_to, note`,
+        [
+          orgId,
+          edge.id,
+          edge.hash,
+          count,
+          doomed.rows[0]!.lo,
+          doomed.rows[0]!.hi,
+          opts.note,
+        ],
+      );
+      return { removed: count, checkpoint: mapCheckpointRow(rows[0]!) };
+    });
   }
 
   // --- Counters (P6) --------------------------------------------------------
@@ -1322,11 +1577,48 @@ function toListedFile(r: Record<string, unknown>): ListedFile {
   };
 }
 
+/** A row of `audit_checkpoint`: what was removed, or where the chain had reached. */
+export interface AuditCheckpoint {
+  id: number;
+  orgId: string | null;
+  kind: 'trim' | 'seal';
+  createdAt: Date;
+  /** The last event this row attests to. For a trim, that event is gone. */
+  throughEventId: number;
+  /** Its hash, which after a trim is the only surviving evidence of the chain's state there. */
+  throughHash: string;
+  removedCount: number;
+  removedFrom: Date | null;
+  removedTo: Date | null;
+  note: string;
+}
+
+export interface AuditTrimResult {
+  removed: number;
+  /** `null` when nothing matched the policy, in which case nothing was recorded either. */
+  checkpoint: AuditCheckpoint | null;
+}
+
 export interface AuditChainResult {
   valid: boolean;
   checked: number;
   brokenAt?: number;
-  problem?: 'prev_hash_mismatch' | 'hash_mismatch';
+  /**
+   * `truncated_past_seal` is the one that replay alone could never produce: the
+   * chain is internally perfect and shorter than a seal says it was.
+   */
+  problem?: 'prev_hash_mismatch' | 'hash_mismatch' | 'truncated_past_seal';
+  /**
+   * Gaps replay met and accepted because a trim checkpoint accounted for them.
+   *
+   * A non-zero value is not a problem and is not nothing either: it says this
+   * chain's history is shorter than what happened, by the amounts in `trims`.
+   */
+  attestedGaps: number;
+  /** Every recorded trim for this chain, newest first. What is missing, and why. */
+  trims: AuditCheckpoint[];
+  /** Every recorded seal. The heads this chain is known to have reached. */
+  seals: AuditCheckpoint[];
   /**
    * The id and hash of the LAST event in the chain, or null for an empty chain.
    *
@@ -1484,6 +1776,27 @@ export function auditHashTail(input: Omit<AuditHashInput, 'prevHash'>): string {
 export function auditHash(input: AuditHashInput): string {
   const canonical = `[${JSON.stringify(input.prevHash)},${auditHashTail(input)}`;
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
+}
+
+/**
+ * `bigint` columns arrive as strings from node-postgres, which is correct of it
+ * and wrong for a count the caller will compare with `===`. `id`,
+ * `through_event_id` and `removed_count` are all bigserial or bigint, so all
+ * three go through Number here rather than at every call site.
+ */
+function mapCheckpointRow(r: Record<string, unknown>): AuditCheckpoint {
+  return {
+    id: Number(r['id']),
+    orgId: (r['org_id'] as string | null) ?? null,
+    kind: r['kind'] as 'trim' | 'seal',
+    createdAt: new Date(r['created_at'] as string),
+    throughEventId: Number(r['through_event_id']),
+    throughHash: r['through_hash'] as string,
+    removedCount: Number(r['removed_count']),
+    removedFrom: r['removed_from'] ? new Date(r['removed_from'] as string) : null,
+    removedTo: r['removed_to'] ? new Date(r['removed_to'] as string) : null,
+    note: r['note'] as string,
+  };
 }
 
 function mapAuditRow(r: Record<string, unknown>): AuditRow {

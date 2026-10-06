@@ -15,12 +15,12 @@ this page said until 4 October.
 
 | | |
 |---|---|
-| Version | 0.15.2 — alpha |
+| Version | 0.16.0 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
 | Load measured | First run 4 October 2026, `benchmark/load/RESULTS.md`. One machine, no network, no object store, seconds per cell |
-| Tests | 547, of which 539 on Node 22 / 24 / 26 and all 547 against a real PostgreSQL, every commit |
+| Tests | 564, of which 539 on Node 22 / 24 / 26 and all 564 against a real PostgreSQL, every commit |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
@@ -114,12 +114,26 @@ matter:
   legal hold are useless if the people accountable for them cannot see what they
   are holding — but it is a policy decision, so it belongs on this page.
 - The audit chain detects any edit to a recorded event, and the removal of one
-  from the middle or the start. It does **not** detect truncation of the most
-  recent events — replay walks forward and nothing records where the chain was
-  supposed to end. An anchor inside the same database would not fix that, so
-  `verifyAuditChain()` hands you the head hash and pinning it somewhere else is
-  your job. Found by our own adversarial sweep, 2 October 2026, after three
-  weeks of this page saying "tamper-evidence" without that sentence.
+  from the middle or the start. Truncation of the most recent events is the
+  hard case: replay walks forward and nothing inside the chain records where it
+  was supposed to end. Since 6 October 2026 `sealAuditChain()` records the head
+  at a moment and verification reports a head that has fallen behind a seal, so
+  routine truncation is no longer invisible. **An anchor inside the same
+  database still does not fix the adversarial case** — whoever removes the
+  events can remove the seals — so `verifyAuditChain()` hands you the head hash
+  and pinning it somewhere else is still your job. Found by our own adversarial
+  sweep, 2 October 2026, after three weeks of this page saying
+  "tamper-evidence" without that sentence.
+- The audit log can be trimmed, and nothing trims it for you. `trimAuditChain()`
+  removes old events and leaves a checkpoint recording the hash the chain had
+  reached, so a trimmed chain still verifies and the gap is reported as
+  attested rather than as tampering. A deployment that never calls it still
+  grows without bound. Until 6 October 2026 there was no trimming at all, and
+  a tenant that had ever been audited — every tenant — **could not be deleted**:
+  the cascade from `org` was a DELETE, the append-only rule rewrote it away, and
+  Postgres raised on its own integrity check. Nobody had hit it because we
+  expose no org deletion, so the trap was set for whoever first had to honour an
+  erasure request.
 - Concurrency is no longer argued. **Since 3 October 2026 eight tests run on
   every commit against a real PostgreSQL with two connections**, staging the
   races rather than reasoning about them: two backends demoting two owners, ten

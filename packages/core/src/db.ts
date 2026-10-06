@@ -283,7 +283,7 @@ export const MIGRATIONS_PATH = join(HERE, '..', 'migrations');
  * them. `tools/check-migrations.mjs` fails the build if this disagrees with
  * `migrations/manifest.json`.
  */
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 export interface MigrationRef {
   /** The entry number in MIGRATIONS.md. */
@@ -442,6 +442,9 @@ export async function schemaStatus(db: Queryable): Promise<SchemaStatus> {
     // THE MARKERS, newest first. Each is the object that migration created, so
     // the highest one present is the newest migration this database has had.
     const markers: { version: number; because: string; sql: string }[] = [
+      { version: 11, because: `table audit_checkpoint`,
+        sql: `SELECT 1 FROM pg_tables WHERE schemaname = 'public'
+               AND tablename = 'audit_checkpoint'` },
       { version: 8, because: `constraint file_upload_reservation_complete`,
         sql: `SELECT 1 FROM pg_constraint WHERE conname = 'file_upload_reservation_complete'` },
       { version: 6, because: `trigger audit_no_truncate on audit_event`,

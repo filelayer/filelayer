@@ -1073,10 +1073,33 @@ describe('every public method that names a resource also names a principal', () 
       // authorize -- which is exactly why it must never be reachable from a
       // request handler.
       'collectUploadReservations',
+      // RETENTION, and the classification is not a formality. These two take an
+      // ORG ID and no principal, so by this test's own definition they are
+      // resource accessors, and the honest justification is the precedent two
+      // lines up rather than a claim that they are deployment-wide:
+      // `softDeleteOrg` and `restoreOrg` are also org-scoped, also destructive,
+      // and also here.
+      //
+      // The reason is that retention is set by whoever runs the application,
+      // not by a tenant's administrator, and an erasure request reaches the
+      // operator rather than a customer UI. The alternative was a fourth
+      // `OrgCapability`, and that vocabulary is deliberately tiny because "an
+      // unbounded permission vocabulary is an authorization model nobody can
+      // audit".
+      //
+      // THE COST, which belongs in this list and not only in a doc comment:
+      // these must never be reachable from a request handler. A route that
+      // calls `trimAuditChain` with a tenant-supplied org id is a way for one
+      // tenant to erase another's history.
+      'trimAuditChain',
+      'sealAuditChain',
     ]);
     const PRINCIPAL_FIRST = new Set([
       'upload', 'read', 'readStream', 'stat', 'listFiles', 'delete',
       'share', 'revoke', 'listGrants', 'auditLog', 'verifyAuditChain',
+      // Reading what was trimmed is reading about the tenant: the number and
+      // timing of its retention runs is information about it.
+      'auditCheckpoints',
       'addMember', 'removeMember',
       // Direct upload. Both belong here rather than in CONTROL_PLANE, and the
       // distinction is the whole security story of the feature: `createUpload`

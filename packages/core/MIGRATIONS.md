@@ -963,6 +963,80 @@ held by that database.
 
 ---
 
+### Entry 11 — `0.15.2` → `0.16.0`: audit retention, and a tenant you can delete
+
+#### What changed in the schema
+
+Three things on the audit log, one of which was a live bug.
+
+```sql
+-- 1. The cascade that made a tenant undeletable.
+ALTER TABLE audit_event DROP CONSTRAINT audit_event_org_id_fkey;
+
+-- 2. DELETE becomes conditional on a declaration rather than impossible.
+DROP RULE audit_no_delete ON audit_event;
+CREATE RULE audit_no_delete AS ON DELETE TO audit_event
+    WHERE coalesce(current_setting('filelayer.audit_trim', true), 'off') <> 'on'
+    DO INSTEAD NOTHING;
+
+-- 3. The record of what a trim removed.
+CREATE TABLE audit_checkpoint (...);
+```
+
+The runnable file is `migrations/011-audit-retention.sql`. It is transactional,
+it refuses a database that already has `audit_checkpoint`, and CI applies it to
+the `v0.15.2` schema and compares the result against `0.16.0`'s `schema.sql`
+built fresh.
+
+#### The bug, because it is the reason this entry is not optional
+
+`audit_event.org_id` was `REFERENCES org(id) ON DELETE CASCADE`. A cascade is a
+DELETE. `audit_no_delete` rewrote that DELETE to nothing. Postgres then found
+that its own referential-integrity check had returned something impossible:
+
+```
+referential integrity query on "org" from constraint
+"audit_event_org_id_fkey" on "audit_event" gave unexpected result
+```
+
+**So an org that had ever been audited could not be deleted.** Creating an org
+is an audited action, so that is every org. Nobody had hit it because the
+library exposes no org deletion, which means the trap was waiting for whoever
+first had to honour an erasure request — the worst imaginable moment to meet a
+database error you have never seen.
+
+#### What you do have to change
+
+Nothing, unless you were relying on behaviour that did not work:
+
+* **If you deleted orgs by `DELETE FROM org`,** you did not: it raised. It works
+  now, and it no longer removes the tenant's audit history, deliberately. An
+  audit log that forgets what happened when its subject goes away is not an
+  audit log. To erase, call `trimAuditChain(org, { keepLast: 0, note })` and
+  then delete the org. The checkpoint survives and holds an org id, two hashes,
+  a count and a time window: nothing about any person.
+* **If anything in your code does `DELETE FROM audit_event`,** it did nothing
+  before and does nothing now. Deletion requires a transaction that declares
+  `SET LOCAL filelayer.audit_trim = 'on'`, which `trimAuditChain()` does for
+  you.
+* `verifyAuditChain()` gains `attestedGaps`, `trims` and `seals`, and can now
+  return `problem: 'truncated_past_seal'`. If you switch on `problem`, there is
+  a new case.
+
+#### The one thing worth doing by hand
+
+Schedule two jobs, and they are not the same job:
+
+* `sealAuditChain(org, note)` — cheap, removes nothing, and is what makes the
+  removal of recent events visible at all. Read limitation 11 before relying on
+  it: a seal in the same database as the events is not proof against someone
+  who removes both.
+* `trimAuditChain(org, { before, note })` — your retention policy. Nothing is
+  trimmed unless you call it, so a deployment that never does still grows
+  without bound.
+
+---
+
 ## 4. What is not covered here
 
 - **Data migration between storage adapters.** Moving objects from one bucket to

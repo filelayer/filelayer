@@ -6,7 +6,7 @@ because a limitations list that lives only in a README gets trimmed for length
 and the trimming is always in our favour.
 
 Each one is current as of
-`0.15.2`; where a limitation has been lifted since an earlier release, the
+`0.16.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **`Range` is answered, with three documented edges.** The shipped routes
@@ -86,23 +86,35 @@ Each one is current as of
    URL stays valid for up to its TTL after the grant is revoked. It is off by
    default, defaults to anonymous grants only, and requires passing a verbatim
    acknowledgement string. That string is the point.
-11. **The audit chain does not detect truncation of its most recent events.**
-   Replay catches any edit to a recorded event, the removal of one from the
-   middle, and the removal of the first. It cannot catch the removal of the last
-   *n*: nothing in the table records where the chain was supposed to end, so what
-   remains verifies cleanly. An anchor kept in the same database would not help:
-   whoever can delete the rows can rewrite the anchor in the same transaction.
-   `verifyAuditChain()` returns `lastId` and `lastHash` so you can pin the head
-   somewhere outside your database and compare it on the next run; doing that is
-   your job, not ours. `UPDATE`, `DELETE` and `TRUNCATE` are refused at the
-   database, but by a rule and a trigger the table's owner can drop.
-12. **There is no retention trimming for the audit log.** `audit_event` grows
-   without bound, and erasing a tenant's history is not a supported operation.
-   `verifyAuditChain()` reads the chain in pages of 2,000 since `0.14.0`, so
-   verification is bounded in memory, but replay is sequential by construction
-   and its TIME is still linear in everything the tenant has ever accumulated.
-   Before `0.14.0` it was a single unbounded query, which made peak memory
-   linear in the same thing.
+11. **Truncation of the most recent audit events is detectable only if you
+   seal, and only against someone who does not also remove the seals.** Replay
+   catches any edit to a recorded event, the removal of one from the middle, and
+   the removal of the first. It cannot catch the removal of the last *n*:
+   nothing in the chain records where it was supposed to end, so what remains
+   verifies cleanly. Since `0.16.0`, `sealAuditChain()` writes a row recording
+   the head at a moment, and `verifyAuditChain()` reports
+   `truncated_past_seal` when the head is behind one. Schedule it and routine
+   truncation stops being invisible. **It is not a solution and we will not
+   describe it as one**: the seal lives in the same database as the events, so
+   whoever deletes the rows can delete the seals in the same transaction. The
+   only fix that leaves the blast radius is still to pin `lastHash` somewhere
+   your database administrator cannot rewrite and compare it on the next run.
+   Doing that is your job, not ours. `UPDATE` and `TRUNCATE` are refused at the
+   database; `DELETE` is refused unless a transaction declares
+   `filelayer.audit_trim`; all of it is a rule and a trigger the table's owner
+   can drop.
+12. **The audit log is trimmable but has no retention policy of its own, and
+   nothing schedules one.** Since `0.16.0`, `trimAuditChain()` removes old
+   events and leaves an `audit_checkpoint` row recording the hash the chain had
+   reached, so a trimmed chain still verifies and `verifyAuditChain()` reports
+   an attested gap rather than tampering. Choosing a policy and running it is
+   yours: nothing is trimmed unless you ask, so **`audit_event` still grows
+   without bound in a deployment that never calls it.** Replay is sequential by
+   construction and its TIME is linear in what the tenant has accumulated since
+   its last trim; verification has been bounded in memory since `0.14.0`, which
+   is a different property. A trim is attested, not prevented: the same
+   privileged path that removes events can remove them without writing a
+   checkpoint, and that is reported as tampering, which is the point.
 13. **`fl.store` and `fl.store.db` are public, and nothing on them authorizes
    anything.** `PostgresStore` is the engine's dependency surface: every method
    on it reads and writes rows directly, with no capability check and no audit

@@ -8,7 +8,7 @@ rather hear about one from you than from a customer.
 
 Read this before you decide how much to trust us.
 
-- Filelayer is **pre-1.0 (`0.15.2`) and has never been run in production by
+- Filelayer is **pre-1.0 (`0.16.0`) and has never been run in production by
   anyone**, including us.
 - The authorization core is covered by a property suite and an adversarial
   suite, both of which run in CI on every change.
@@ -126,7 +126,7 @@ support branch and no backporting. See
 
 | Version | Supported |
 |---|---|
-| `0.15.x` | Yes |
+| `0.16.x` | Yes |
 | `0.12.x` | No |
 | `0.11.x` | No, **and `FsStorage` wrote world-readable bytes in it** |
 | `0.10.x` | No, **and the revocation defect below is in it** |

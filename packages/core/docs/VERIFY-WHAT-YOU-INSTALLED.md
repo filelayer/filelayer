@@ -68,27 +68,28 @@ Three details in there are load-bearing:
 
 | | |
 |---|---|
-| tests | 547 |
+| tests | 564 |
 | pass | 539 |
 | fail | **0** |
-| skipped | 8 |
-| suites | 130 |
+| skipped | 25 |
+| suites | 135 |
 
 The lines will look different depending on your Node version and whether you are
-piping the output: Node 22 writes `# tests 547`, Node 24 writes `ℹ tests 547`,
+piping the output: Node 22 writes `# tests 564`, Node 24 writes `ℹ tests 564`,
 and a terminal gets ticks and timings as well. The numbers are the same. Only
 the reporter changed, and CI reads both, because reading one of them is how this
 gate first reported a passing run as a failure.
 
-The eight skips are the concurrency suite in `test/contention.test.ts`. Those
-tests stage races between two real database connections, which PGlite cannot
-provide because it has a single backend, so they need the `pg` driver and a
-server. They are not optional for us: CI runs them on every commit against a
+The twenty-five skips are two suites that need two real database connections:
+`test/contention.test.ts` stages races between them, and
+`test/audit-retention.test.ts` needs real `SET LOCAL` behaviour across a
+transaction boundary and real advisory locks. PGlite has a single backend and
+can give neither, so both need the `pg` driver and a server. They are not optional for us: CI runs them on every commit against a
 real PostgreSQL and fails the job if they skip there. To run them here too:
 
 ```bash
 npm install --no-save pg embedded-postgres
-FILELAYER_TEST_CONTENTION=1 node --test 'test/contention.test.ts'
+FILELAYER_TEST_CONTENTION=1 node --test 'test/contention.test.ts' 'test/audit-retention.test.ts'
 ```
 
 Until 5 October 2026 that suite did not skip, it crashed, with

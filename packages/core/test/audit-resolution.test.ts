@@ -505,6 +505,18 @@ describe('verifyAuditChain across page boundaries', () => {
     const { db } = await createTestDb();
     const fl = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://localhost' });
     const v = await fl.store.verifyAuditChain('00000000-0000-0000-0000-000000000000');
-    assert.deepEqual(v, { valid: true, checked: 0, lastId: null, lastHash: null });
+    // The deep-equal is the point: it fails when a field is ADDED, which is how
+    // 0.16.0's retention fields were noticed here rather than in someone's
+    // integration. An empty chain has no gaps and no checkpoints, and the empty
+    // arrays say so rather than leaving the caller to guess from `undefined`.
+    assert.deepEqual(v, {
+      valid: true,
+      checked: 0,
+      lastId: null,
+      lastHash: null,
+      attestedGaps: 0,
+      trims: [],
+      seals: [],
+    });
   });
 });

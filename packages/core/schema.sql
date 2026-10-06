@@ -1183,7 +1183,33 @@ $$;
 
 CREATE TABLE audit_event (
     id              bigserial PRIMARY KEY,
-    org_id          uuid REFERENCES org(id) ON DELETE CASCADE,   -- NULL = system chain
+
+    -- `org_id` CARRIES NO FOREIGN KEY EITHER, since 0.16.0, and the reason is
+    -- the same one given below for the other three plus one that was a live
+    -- bug.
+    --
+    -- THE BUG. It used to be `REFERENCES org(id) ON DELETE CASCADE`. A cascade
+    -- is itself a DELETE, `audit_no_delete` rewrote that DELETE to nothing, and
+    -- Postgres then found that its own referential-integrity check had returned
+    -- something impossible:
+    --
+    --     referential integrity query on "org" from constraint
+    --     "audit_event_org_id_fkey" on "audit_event" gave unexpected result
+    --
+    -- So a tenant that had ever been audited -- which is every tenant, because
+    -- creating one is an audited action -- COULD NOT BE DELETED AT ALL. Not
+    -- soft-deleted-and-retained: the statement raised. Nobody had hit it
+    -- because the library exposes no org deletion, so the trap was set for
+    -- whoever first needed to honour an erasure request, which is the worst
+    -- possible moment to meet a database error.
+    --
+    -- THE PRINCIPLE, which was already written for `actor_id`: an audit log
+    -- that forgets who did something is not an audit log, and deleting a
+    -- subject must not rewrite what they did. A tenant's history outliving the
+    -- tenant row is correct. Erasing it is a separate, explicit, attested
+    -- operation -- see `audit_checkpoint` below -- and not a side effect of
+    -- deleting something else.
+    org_id          uuid,                                        -- NULL = system chain
 
     occurred_at     timestamptz NOT NULL DEFAULT now(),
     action          text NOT NULL,          -- file.read, grant.revoke, member.add, ...
@@ -1251,25 +1277,138 @@ CREATE INDEX audit_system_idx   ON audit_event (occurred_at DESC) WHERE org_id I
 -- needs to survive its own DBA, the head hash has to be pinned outside this
 -- database -- see `AuditChainResult.lastHash` in store.ts.
 --
--- THERE IS NO RETENTION-TRIMMING PATH. This comment used to claim one existed
--- as "a separate privileged path". It did not, and still does not: `audit_event`
--- grows without bound, and because `ON DELETE CASCADE` from `org` is itself a
--- DELETE that the rule rewrites away, deleting a tenant row fails its own
--- referential-integrity check. Erasing a tenant's history is not currently a
--- supported operation.
+-- THE RETENTION PATH, added in 0.16.0, and what it is honestly worth.
+--
+-- This comment used to say there was none, and before that it wrongly claimed
+-- there was. There is one now, and it is deliberately NOT a privilege: it is a
+-- DECLARATION OF INTENT, scoped to one transaction.
+--
+-- `audit_no_delete` is now conditional. A DELETE is still rewritten to nothing
+-- unless the transaction has said, in so many words, that it is trimming:
+--
+--     SET LOCAL filelayer.audit_trim = 'on';
+--
+-- `SET LOCAL` dies with the transaction, so the window cannot be left open.
+-- What this stops is what the unconditional rule stopped: an accidental DELETE,
+-- and an application bug that believes it is tidying up. What it does not stop,
+-- and never could, is somebody who means it. The paragraph above about
+-- privilege boundaries still applies in full.
+--
+-- WHY A DECLARATION RATHER THAN A LOCK. The alternative was a SECURITY DEFINER
+-- function that disables the rule, which opens the gate for every session for
+-- as long as it runs. A session-local GUC opens it for one transaction that had
+-- to name what it was doing.
+--
+-- AND THE REAL PROTECTION IS NOT PREVENTION, IT IS ATTESTATION. Every trim must
+-- leave an `audit_checkpoint` row carrying the hash of the last event it
+-- removed. `verifyAuditChain()` then finds the surviving chain pointing at a
+-- predecessor that is gone, looks for a checkpoint attesting to exactly that
+-- hash, and reports an ATTESTED GAP rather than tampering. A trim that leaves
+-- no checkpoint is indistinguishable from tampering, which is the correct
+-- outcome and the reason this design does not need the delete path to be
+-- unreachable.
 CREATE RULE audit_no_update AS ON UPDATE TO audit_event DO INSTEAD NOTHING;
-CREATE RULE audit_no_delete AS ON DELETE TO audit_event DO INSTEAD NOTHING;
+CREATE RULE audit_no_delete AS ON DELETE TO audit_event
+    WHERE coalesce(current_setting('filelayer.audit_trim', true), 'off') <> 'on'
+    DO INSTEAD NOTHING;
 
 CREATE FUNCTION audit_no_truncate() RETURNS trigger
     LANGUAGE plpgsql AS $$
 BEGIN
-    RAISE EXCEPTION 'audit_event is append-only: TRUNCATE is refused'
+    -- TG_TABLE_NAME rather than a literal, because this same guard is attached
+    -- to `audit_checkpoint` too and a message naming the wrong table sends the
+    -- reader to the wrong place.
+    RAISE EXCEPTION '% is append-only: TRUNCATE is refused', TG_TABLE_NAME
         USING ERRCODE = 'raise_exception';
 END;
 $$;
 
 CREATE TRIGGER audit_no_truncate
     BEFORE TRUNCATE ON audit_event
+    FOR EACH STATEMENT EXECUTE FUNCTION audit_no_truncate();
+
+-- -----------------------------------------------------------------------------
+-- AUDIT CHECKPOINTS: what was removed, and where the chain had got to
+-- -----------------------------------------------------------------------------
+--
+-- A hash chain cannot be trimmed from the front. Delete the oldest events and
+-- the first survivor's `prev_hash` points at something that is gone, which is
+-- exactly what a tampered log looks like -- so before 0.16.0 the only way to
+-- keep the log verifiable was to keep it forever, and `audit_event` grew
+-- without bound for the life of the deployment.
+--
+-- A checkpoint is the missing piece: a row that says "the chain reached THIS
+-- hash at THIS event id, and the n events up to it were removed on purpose, in
+-- this time window, for this reason". `verifyAuditChain()` meeting a gap looks
+-- for a checkpoint whose `through_hash` is the `prev_hash` it was expecting. If
+-- there is one, the gap is attested and replay resumes from there. If there is
+-- not, it is a break, as before.
+--
+-- WHAT THIS IS AND IS NOT WORTH, because the paragraph above about privilege
+-- boundaries has not stopped applying:
+--
+--   * It distinguishes a deliberate, recorded trim from a deletion nobody
+--     admits to. That is the whole claim.
+--   * It does NOT stop anyone who can delete events from also writing a
+--     checkpoint that attests to the deletion. They know the hash: they had the
+--     row. Attestation is a record, not a lock.
+--   * Checkpoints are never deleted. The delete rule below is unconditional,
+--     unlike `audit_event`'s, because the point of the record is to outlive
+--     what it records. A checkpoint holds an org id, two hashes, a count and a
+--     time window; it carries nothing about any person, which is what lets the
+--     record of an erasure survive the erasure.
+--
+-- A `seal` is the same row with nothing removed: it pins where the chain had
+-- reached at a moment in time. Written periodically, it is what turns "the last
+-- n events were removed and the remaining chain verifies perfectly", described
+-- in `AuditChainResult.lastHash` as the thing replay cannot catch, into a
+-- detectable condition -- a chain whose head is now BEHIND a seal it has on
+-- record was truncated. That is a genuine improvement and still not a solution:
+-- whoever removes the events can remove the seals in the same transaction. The
+-- only fix that leaves the blast radius is still to pin `lastHash` outside this
+-- database.
+CREATE TABLE audit_checkpoint (
+    id                bigserial PRIMARY KEY,
+
+    -- No foreign key, for the reason given on `audit_event.org_id`: the record
+    -- that a tenant's history was erased has to outlive the tenant.
+    org_id            uuid,                 -- NULL = the system chain
+    kind              text NOT NULL CHECK (kind IN ('trim', 'seal')),
+    created_at        timestamptz NOT NULL DEFAULT now(),
+
+    -- The chain state this row attests to: the last event covered, and its
+    -- hash. For a trim, that event is gone and this hash is the only surviving
+    -- evidence of where the chain had reached.
+    through_event_id  bigint NOT NULL,
+    through_hash      text NOT NULL,
+
+    -- What a trim removed. A seal removes nothing.
+    removed_count     bigint NOT NULL DEFAULT 0 CHECK (removed_count >= 0),
+    removed_from      timestamptz,
+    removed_to        timestamptz,
+
+    -- NOT NULL on purpose. A retention run that cannot say why it ran is a
+    -- deletion with a receipt attached, which is not the same as a record.
+    note              text NOT NULL,
+
+    CONSTRAINT checkpoint_seal_removes_nothing CHECK (
+        kind <> 'seal' OR (removed_count = 0 AND removed_from IS NULL AND removed_to IS NULL)
+    ),
+    CONSTRAINT checkpoint_trim_removes_something CHECK (
+        kind <> 'trim' OR (removed_count > 0 AND removed_from IS NOT NULL AND removed_to IS NOT NULL)
+    )
+);
+
+-- The hash index is the one verification uses: given the `prev_hash` that leads
+-- nowhere, is there a checkpoint that accounts for it?
+CREATE INDEX audit_checkpoint_org_idx  ON audit_checkpoint (org_id, id DESC);
+CREATE INDEX audit_checkpoint_hash_idx ON audit_checkpoint (through_hash);
+
+CREATE RULE checkpoint_no_update AS ON UPDATE TO audit_checkpoint DO INSTEAD NOTHING;
+CREATE RULE checkpoint_no_delete AS ON DELETE TO audit_checkpoint DO INSTEAD NOTHING;
+
+CREATE TRIGGER checkpoint_no_truncate
+    BEFORE TRUNCATE ON audit_checkpoint
     FOR EACH STATEMENT EXECUTE FUNCTION audit_no_truncate();
 
 -- -----------------------------------------------------------------------------
@@ -1438,4 +1577,4 @@ CREATE TABLE file_owning_user_daily (
 -- be a fabricated history in a table whose whole purpose is to be believed. The
 -- note says which it is.
 INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
-    (10, '0.15.0', 'created whole from schema.sql at this version; migrations 1-9 were never run against this database because it never held an earlier schema');
+    (11, '0.16.0', 'created whole from schema.sql at this version; migrations 1-10 were never run against this database because it never held an earlier schema');

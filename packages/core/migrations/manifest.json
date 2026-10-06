@@ -10,7 +10,7 @@
     "to and no way to verify them; they have no file. Entries 4, 7 and 9 changed",
     "no schema. The gaps are the entries that cost you nothing."
   ],
-  "expects": 10,
+  "expects": 11,
   "migrations": [
     {
       "version": 3,
@@ -79,6 +79,18 @@
       "note": "Only for a database created before 0.15.0. schema.sql creates and stamps this table itself.",
       "verifiedAgainst": {
         "from": "v0.14.0",
+        "to": "v0.15.2"
+      }
+    },
+    {
+      "version": 11,
+      "file": "011-audit-retention.sql",
+      "introducedIn": "0.16.0",
+      "title": "audit retention: checkpoints, a trimmable chain, and a deletable tenant",
+      "transactional": true,
+      "requiresDecision": false,
+      "verifiedAgainst": {
+        "from": "v0.15.2",
         "to": "HEAD"
       }
     }
