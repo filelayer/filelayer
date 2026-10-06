@@ -312,6 +312,22 @@ happened is the publish command's own output. If you want to double-check
 anyway, the useful signal is that re-running `npm publish` refuses with
 *"You cannot publish over the previously published versions"*.
 
+**AND THE METADATA ARRIVES BEFORE THE TARBALL, which is worse because it is
+silent.** On the `0.17.0` publish, `npm view` reported the new version and both
+dist-tags while the tarball those metadata point at still answered:
+
+```
+npm error 404 Not Found - GET https://registry.npmjs.org/@filelayer/core/-/core-0.17.0.tgz
+```
+
+For about five minutes the registry advertised a `latest` that nobody could
+install. Timed: the tarball became available **114 seconds after `npm view`
+already gave the right answer**.
+
+So `npm view` is not the check. It will tell you everything is fine while
+`npm install` fails for every reader. **The check is to install it**, which is
+§4.2 below, and that is the reason §4.2 is not optional.
+
 ```bash
 npm view @filelayer/core
 npm view @filelayer/core dist-tags       # -> { latest: '0.16.0', alpha: '0.16.0' }
