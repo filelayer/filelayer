@@ -285,6 +285,18 @@ export interface AuthzDeps {
   /** Live grants only: the store must apply the `live_grant` predicate. */
   getActorGrants(fileId: string, actorId: string): Promise<GrantRow[]>;
   /**
+   * The first of those, in the same order, that supplies `capability`.
+   *
+   * `null` means "none of them supplies it", NOT "there are none" -- the engine
+   * still has to tell those apart, because they are different refusals with
+   * different audit reasons. See the note on the implementation.
+   */
+  getActorGrantSupplying(
+    fileId: string,
+    actorId: string,
+    capability: Capability,
+  ): Promise<GrantRow | null>;
+  /**
    * The same grants WITHOUT the liveness predicate. Called on the DENY PATH
    * ONLY, to explain a refusal, and never to grant anything.
    *
@@ -472,6 +484,26 @@ async function resolveStanding(
     // --- explicit actor grants ---------------------------------------------
     // A member of the org without the capability may still hold an explicit
     // grant, so we accumulate rather than deciding here.
+    // THE FAST PATH, and it is the same answer by construction. The loop below
+    // attributes the allow to the FIRST grant in this order that supplies the
+    // capability; asking the database for exactly that row gets the same row
+    // without evaluating `grant_is_live` on every other one. See
+    // `getActorGrantSupplying` for what that cost and what it measured.
+    //
+    // Skipped when `complete` is set, because that caller wants the whole
+    // capability set and a short-circuit is the one thing it must not get.
+    if (!complete) {
+      const first = await deps.getActorGrantSupplying(file.id, principal.actorId, capability);
+      if (first) {
+        take(first.capabilities, 'grant:actor', first);
+        return settled();
+      }
+      // A MISS IS NOT A DENIAL. It means no live grant of this subject supplies
+      // this capability, and the engine still has to know whether they hold any
+      // live grant at all: that is `grant_wrong_capability` versus
+      // `no_membership`, in the refusal and in the audit log. So fall through
+      // to the full fetch, which is the slow path and is on the deny side.
+    }
     const grants = await deps.getActorGrants(file.id, principal.actorId);
     for (const g of grants) {
       if (take(g.capabilities, 'grant:actor', g) && !complete) return settled();

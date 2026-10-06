@@ -126,11 +126,12 @@ describe('the version table, and the states schemaStatus reports', () => {
     // reported with the object it rests on and the caller can check it.
     const { db } = await createTestDb();
     await db.query(`DROP TABLE filelayer_schema_version`);
-    // A pre-0.15.0 database has no `audit_checkpoint` either: that arrived with
-    // entry 11, years of releases later. Dropping only the version table would
-    // leave a shape no database ever had, and the inference would correctly
-    // report 11 against a fixture that was lying about being old.
+    // A pre-0.15.0 database has none of what came after it either. Dropping
+    // only the version table would leave a shape no database ever had, and the
+    // inference would correctly report the newest marker present against a
+    // fixture that was lying about being old.
     await db.query(`DROP TABLE audit_checkpoint`);
+    await db.query(`DROP INDEX grant_subject_order_idx`);
 
     const s = await schemaStatus(db);
     assert.equal(s.state, 'unversioned');
@@ -140,6 +141,7 @@ describe('the version table, and the states schemaStatus reports', () => {
     assert.deepEqual(s.outstanding.map((m) => m.file), [
       '010-schema-version.sql',
       '011-audit-retention.sql',
+      '012-grant-lookup-order.sql',
     ]);
   });
 
@@ -149,6 +151,7 @@ describe('the version table, and the states schemaStatus reports', () => {
     const { db } = await createTestDb();
     await db.query(`DROP TABLE filelayer_schema_version`);
     await db.query(`DROP TABLE audit_checkpoint`);
+    await db.query(`DROP INDEX grant_subject_order_idx`);
     await db.query(`ALTER TABLE file DROP CONSTRAINT file_upload_reservation_complete`);
 
     const s = await schemaStatus(db);
@@ -156,7 +159,7 @@ describe('the version table, and the states schemaStatus reports', () => {
     assert.match(s.inferred!.because, /audit_no_truncate/);
     assert.deepEqual(
       s.outstanding.map((m) => m.version),
-      [8, 10, 11],
+      [8, 10, 11, 12],
       'and every outstanding migration is named, in order',
     );
   });
@@ -171,7 +174,7 @@ describe('the version table, and the states schemaStatus reports', () => {
     const s = await schemaStatus(db);
     assert.equal(s.state, 'behind');
     assert.equal(s.at, 6);
-    assert.deepEqual(s.outstanding.map((m) => m.version), [8, 10, 11]);
+    assert.deepEqual(s.outstanding.map((m) => m.version), [8, 10, 11, 12]);
   });
 
   it('reports ahead rather than pretending to understand a newer schema', async () => {
@@ -206,7 +209,7 @@ describe('schema.sql refuses a database it did not create', () => {
     await assert.rejects(
       () => (raw as Exec).exec(sql),
       (err: Error) => {
-        assert.match(err.message, /already at schema version 11/);
+        assert.match(err.message, /already at schema version 12/);
         assert.match(err.message, /migrations\//, 'and points at what to do instead');
         return true;
       },

@@ -683,6 +683,28 @@ CREATE INDEX grant_subject_org_idx ON file_grant (file_id, subject_org_id)
 CREATE INDEX grant_file_subject_type_idx ON file_grant (file_id, subject_type)
     WHERE revoked_at IS NULL;
 
+-- THE INDEX THAT LETS THE LOOKUP STOP EARLY, and without it the `LIMIT 1` in
+-- `getActorGrantSupplying` buys nothing at all.
+--
+-- That query wants the FIRST live grant of one subject on one file, in
+-- `created_at, id` order, that supplies a capability. With only the index
+-- above, Postgres can find the subject's rows but not in that order, so it
+-- filters every one of them -- evaluating `grant_is_live(id)`, a recursive
+-- function declared COST 100, on each -- and sorts afterwards. The LIMIT then
+-- discards all but one row whose cost has already been paid.
+--
+-- Carrying `created_at, id` in the index makes the order free, so the executor
+-- walks rows in order and stops at the first that qualifies. With duplicate
+-- grants, which is the shape that produces the cliff, that is the first row it
+-- looks at.
+--
+-- `subject_id` is in the key rather than the predicate because this lookup
+-- always names one subject, and the partial index on `revoked_at IS NULL`
+-- keeps revoked rows out of the walk entirely.
+CREATE INDEX grant_subject_order_idx
+    ON file_grant (file_id, subject_type, subject_id, created_at, id)
+    WHERE revoked_at IS NULL;
+
 -- -----------------------------------------------------------------------------
 -- GRANT LINEAGE AND LIVENESS (P4, transitive)
 -- -----------------------------------------------------------------------------
@@ -1577,4 +1599,4 @@ CREATE TABLE file_owning_user_daily (
 -- be a fabricated history in a table whose whole purpose is to be believed. The
 -- note says which it is.
 INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
-    (11, '0.16.0', 'created whole from schema.sql at this version; migrations 1-10 were never run against this database because it never held an earlier schema');
+    (12, '0.17.0', 'created whole from schema.sql at this version; migrations 1-11 were never run against this database because it never held an earlier schema');

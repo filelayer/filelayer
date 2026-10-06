@@ -25,6 +25,89 @@ Nothing yet.
 
 ---
 
+## [0.17.0] — 2026-10-06
+
+**Schema version 11 → 12. One index, one query, and a cliff that is gone rather
+than fenced.**
+
+### The short-circuit was one layer too late
+
+`resolveStanding` has always stopped at the first live grant supplying the
+capability being asked for. It stopped in TypeScript, after the database had
+fetched every row and evaluated `grant_is_live(id)` — a recursive function
+declared `COST 100` — on each one. A subject holding *n* grants on a file paid
+*n* recursive chain walks on every read, for an answer the loop took from the
+first.
+
+`share()` does not dedupe, by design, so a retry loop or a nightly re-sync
+accumulates them, and anyone holding `share` on a file could do it to one
+specific reader through the documented API.
+
+Measured with the new `benchmark/load/grant-depth.mjs`, delegated read, one
+machine, before and after:
+
+| grants | before | after |
+|---|---|---|
+| 5 | 0.88 ms | 0.81 ms |
+| 100 | 3.10 ms | 0.63 ms |
+| 500 | 9.75 ms | 0.67 ms |
+| 2 000 | 38.10 ms | 1.04 ms |
+
+The owner read on the same file stayed flat throughout, which is the control
+that makes those numbers mean anything.
+
+Confirmed by `BENCH_CONC=8 npm run bench:load`, H4b, at twice the original
+scale:
+
+| concentrated grants | owner p50 | delegated p50 |
+|---|---|---|
+| 101 000 | 23.6 ms | 26.9 ms |
+| 200 000 | 26.9 ms | 30.4 ms |
+
+`RESULTS.md` recorded **5 911 ms** at 100 000 with the owner read at 2.28 ms.
+
+The ROADMAP asked for "a cap, or at least an alarm" — a fence around the cliff.
+This removes it instead.
+
+### What it did NOT change, which is the part that needed the care
+
+A capability filter with `LIMIT 1` picks exactly the row the loop picked: the
+oldest live grant that supplies the capability. That row also becomes
+`parent_grant_id` on delegation, so it sets the ceiling the attenuation trigger
+measures a child against, and choosing differently would have been an
+authorization change made for speed.
+
+**A miss is not a denial.** When no live grant supplies the capability, the
+engine falls back to the full fetch, because it still has to know whether the
+subject holds any live grant at all: that is `grant_wrong_capability` versus
+`no_membership`, in the refusal and in the audit log. This project shipped that
+exact confusion once, in `0.10.0`, when a recipient whose downloads were spent
+was refused with `no_membership`. Denials for a subject with many grants still
+pay the old cost; allows, the hot path, do not.
+
+### Added
+
+- `getActorGrantSupplying(fileId, actorId, capability)` on the store.
+- `benchmark/load/grant-depth.mjs`: one question, on real PostgreSQL, in about
+  a minute, with a before/after table. `npm run bench:load` already covers this
+  in H4b and remains what settles the number; this is the narrower instrument to
+  reach for while changing the lookup.
+- `test/grant-lookup.test.ts`, nine tests. Not about speed: about the chosen row
+  and the refusal reason being identical to what the loop produced.
+
+### Migration
+
+`migrations/012-grant-lookup-order.sql`, **not transactional**: it is
+`CREATE INDEX CONCURRENTLY`, which Postgres refuses inside a transaction.
+
+**Run `ANALYZE file_grant` after applying it.** The file ends with it, and this
+is not a nicety: without statistics the planner estimates one row, decides
+sorting one row is free, and never considers the new index. Measured at 500
+grants, same query and same data: 10.2 ms with the index present and unused,
+0.21 ms once it is used.
+
+---
+
 ## [0.16.0] — 2026-10-06
 
 **Schema version 10 → 11. A migration, and the first one that fixes something

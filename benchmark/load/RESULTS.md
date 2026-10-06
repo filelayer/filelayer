@@ -101,6 +101,42 @@ the delegated read resolves. Concurrency 8:
 The owner read is untouched at 2.3 ms throughout, so this is specific to the
 subject whose grants accumulated.
 
+> **FIXED IN 0.17.0, and this section is kept as written.** The table above is
+> what `0.16.0` and everything before it did, and deleting it would remove the
+> evidence that the fix was needed. What changed: `resolveStanding` always
+> stopped at the first grant supplying the capability, but it stopped in
+> application code, after the database had evaluated every row. The lookup moved
+> into SQL with a capability filter and `LIMIT 1`, and
+> `grant_subject_order_idx` (migration 012) carries the order so the executor
+> can stop at the first qualifying row.
+>
+> **Re-measured with this same benchmark**, `BENCH_CONC=8 npm run bench:load`,
+> H4b, on one machine:
+>
+> | concentrated grants | owner p50 | delegated p50 | |
+> |---|---|---|---|
+> | 101 000 | 23.6 ms | 26.9 ms | 1.14x |
+> | 110 000 | 25.4 ms | 28.9 ms | 1.14x |
+> | 200 000 | 26.9 ms | 30.4 ms | 1.13x |
+>
+> Against **5 911 ms at 100 000** in the table below, with the owner read at
+> 2.28 ms — a factor of 2 592. The delegated read is now 1.13x the owner read
+> and stays there at twice the original scale, which is the point: both are
+> dominated by table size and neither by the grant count.
+>
+> Also re-measured with the narrower `grant-depth.mjs` while making the change:
+> 0.88 / 0.63 / 0.67 / 1.04 ms at 5 / 100 / 500 / 2 000 grants, against
+> 0.88 / 3.10 / 9.75 / 38.10 with it disabled.
+>
+> Two things that were not obvious. A `LIMIT 1` without the right index buys
+> nothing: Postgres filters every row and sorts afterwards. And without
+> `ANALYZE file_grant` the planner estimates one row, decides the sort is free,
+> and never uses the index at all -- 10.2 ms with it present and unused against
+> 0.21 ms once used.
+>
+> `share()` still does not dedupe. The cost of duplicates is gone; the
+> duplicates are not.
+
 **The cause.** `live_grant` is
 `file_grant WHERE revoked_at IS NULL AND grant_is_live(id)`, and
 `grant_is_live` is a recursive SQL function declared `COST 100`. It is evaluated

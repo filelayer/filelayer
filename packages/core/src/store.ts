@@ -535,6 +535,67 @@ export class PostgresStore implements AuthzDeps {
   }
 
   /**
+   * The FIRST live grant, in the same order, that supplies a given capability.
+   *
+   * -----------------------------------------------------------------------------
+   * WHY THIS EXISTS: THE SHORT-CIRCUIT WAS ONE LAYER TOO LATE
+   * -----------------------------------------------------------------------------
+   *
+   * `resolveStanding` already stops at the first grant supplying what was asked
+   * for. It just stopped in TypeScript, after `getActorGrants` had fetched every
+   * row and Postgres had evaluated `grant_is_live(id)` on each one -- a
+   * recursive function declared `COST 100`, run once per matching row. So a
+   * subject holding n grants on a file paid n recursive chain walks on every
+   * read, for an answer the loop took from the first.
+   *
+   * Measured on this machine with `benchmark/load/grant-depth.mjs`: 0.91 ms at
+   * 5 grants, 2.86 ms at 100, 10.80 ms at 500, while the owner read on the same
+   * file stayed flat at 0.5 ms throughout. `benchmark/load/RESULTS.md` recorded
+   * the same shape reaching 5.9 SECONDS at 100 000.
+   *
+   * `share()` does not dedupe, by design, so a retry loop or a nightly re-sync
+   * accumulates them. Anyone holding `share` on a file can do this to one
+   * specific reader through the documented API.
+   *
+   * Pushing the capability test into SQL with `LIMIT 1` lets the executor stop
+   * at the first row that qualifies, which with duplicates is the first row it
+   * looks at.
+   *
+   * -----------------------------------------------------------------------------
+   * WHAT THIS MUST NOT CHANGE, AND THE REASON THE CALLER FALLS BACK
+   * -----------------------------------------------------------------------------
+   *
+   * Returning nothing here does NOT mean "denied". It means "no live grant of
+   * this subject supplies this capability", and the engine still has to know
+   * whether the subject holds any live grant at all, because that is the
+   * difference between `grant_wrong_capability` and `no_membership` in the
+   * refusal and in the audit log.
+   *
+   * This project has already shipped that exact defect once: a recipient whose
+   * three downloads were spent was refused with `no_membership`, and a
+   * compliance reader asking why was told the person was not in the org, which
+   * was true and was not the reason. So the caller treats an empty result as
+   * "take the slow path", not as an answer. Denials for a subject with many
+   * grants still pay the old cost; allows, which are the hot path, do not.
+   */
+  async getActorGrantSupplying(
+    fileId: string,
+    actorId: string,
+    capability: Capability,
+  ): Promise<GrantRow | null> {
+    if (!isUuid(fileId) || !isUuid(actorId)) return null;
+    const { rows } = await this.db.query<DbGrant>(
+      `SELECT * FROM live_grant
+        WHERE file_id = $1 AND subject_type = 'actor' AND subject_id = $2
+          AND $3::grant_capability = ANY (capabilities)
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1`,
+      [fileId, actorId, capability],
+    );
+    return rows[0] ? toGrantRow(rows[0]) : null;
+  }
+
+  /**
    * The same rows WITHOUT the liveness predicate, for explaining a refusal.
    *
    * `file_grant` DIRECTLY, not `live_grant`, which is the entire point: the
