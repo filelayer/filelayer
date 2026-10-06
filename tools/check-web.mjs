@@ -79,6 +79,25 @@ function checkPage(page, html) {
   const h1s = [...html.matchAll(/<h1[\s>]/gi)];
   if (h1s.length !== 1) fail(page, `expected exactly 1 <h1>, found ${h1s.length}`);
 
+  // MARKUP THAT ESCAPED INTO THE PROSE.
+  //
+  // `&lt;!--` is an HTML comment that was escaped instead of dropped, so the
+  // reader sees `<!-- ... -->` as a paragraph. That is what every guide page
+  // did with its `<!-- doccheck-setup ... -->` block from the day the pages
+  // went live until 7 October 2026 -- internal tooling vocabulary, published,
+  // on five pages, caught by nothing. It was caught by reading the page, which
+  // is the check this file exists to stop depending on.
+  //
+  // Deliberately not limited to `doccheck`: the defect is escaped markup
+  // reaching the reader, and the next one will have a different marker in it.
+  for (const m of html.matchAll(/&lt;!--/g)) {
+    fail(
+      `${page}:${lineOf(m.index)}`,
+      'an HTML comment was escaped into visible text rather than dropped. The reader sees ' +
+        '`<!-- ... -->` as a paragraph. A comment is invisible by definition.',
+    );
+  }
+
   // Heading order: never skip a level on the way down.
   const heads = [...html.matchAll(/<h([1-6])[\s>]/gi)].map((m) => ({ level: +m[1], line: lineOf(m.index) }));
   for (let i = 1; i < heads.length; i++) {

@@ -62,7 +62,9 @@ prose, so `esc()` turned it into `&lt;!-- ... --&gt;` and all five pages carried
 the `<!-- doccheck-setup ... -->` block as a paragraph, in front of readers,
 from the day the pages went live. A comment is invisible by definition;
 rendering one at all was the bug, and dropping them is not a special case for
-one tool's marker.
+one tool's marker. `check:web` now fails on `&lt;!--` in any published
+page, so the next escaped-markup defect is caught by a gate rather than by
+somebody happening to read the page.
 
 ---
 
