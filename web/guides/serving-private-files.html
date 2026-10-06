@@ -158,7 +158,6 @@ bob, bytes=5-9   -&gt; 404 (nothing served)</code></pre>
 <hr>
 <h2 id="with-filelayer">With Filelayer</h2>
 <p>Proxying is the default, and the redirect path requires passing a verbatim acknowledgement string, because the revocation window above is a property a developer should have to type out before shipping.</p>
-<p>&lt;!-- doccheck-setup import { Filelayer } from '@filelayer/core'; import assert from 'node:assert/strict'; const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' }); --&gt;</p>
 <pre><code class="lang-ts">await fl.orgs.create('acme', { owner: 'ceo' });
 const { id } = await fl.files.put(new TextEncoder().encode('CONTRACT'), {
   org: 'acme', owner: 'ceo', name: 'contract.pdf',

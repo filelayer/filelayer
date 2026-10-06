@@ -227,6 +227,26 @@ function render(md, file) {
 
     if (/^\s*$/.test(line)) { i++; continue; }
 
+    // HTML COMMENTS ARE DROPPED, INCLUDING MULTI-LINE ONES.
+    //
+    // Not cosmetic. Until 7 October 2026 a comment was treated as ordinary
+    // prose, so `esc()` turned it into `&lt;!-- ... --&gt;` and every guide
+    // page published the `<!-- doccheck-setup ... -->` block as a visible
+    // paragraph: internal tooling vocabulary, printed to readers, on all five
+    // pages, from the day the pages went live. Nobody caught it because the
+    // boundary gate reads the markdown, where it is correctly a comment, and
+    // because reading your own page is the one check nothing automates.
+    //
+    // A comment is invisible BY DEFINITION. Rendering one at all was the bug;
+    // dropping it is not a special case for `doccheck`.
+    if (/^\s*<!--/.test(line)) {
+      let j = i;
+      while (j < lines.length && !lines[j].includes('-->')) j++;
+      if (j >= lines.length) throw new Unsupported(file, no, 'an unclosed HTML comment', line);
+      i = j + 1;
+      continue;
+    }
+
     // fenced code
     if (/^```/.test(line)) {
       const lang = line.slice(3).trim();

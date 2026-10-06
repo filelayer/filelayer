@@ -170,7 +170,6 @@ listing that throws               REFUSED</code></pre>
 <h2 id="if-you-would-rather-not-build-it">If you would rather not build it</h2>
 <p><a href="https://github.com/filelayer/filelayer" rel="noopener">Filelayer</a> ships this job as <code>collectStorageOrphans()</code>. It is storage-driven, it defaults to <code>dryRun: true</code>, it has a grace period floored at 60 seconds, and its adapters raise rather than return an empty listing for a store they could not read — the last one because they did not, once, and a review caught it.</p>
 <p><strong>It is a job you schedule, not something that happens for you.</strong> Bytes are written before metadata commits, so a crash in between leaves an unreferenced object. Nothing calls it on your behalf, and the documentation says so rather than leaving you to find out from a bill.</p>
-<p>&lt;!-- doccheck-setup import { Filelayer } from '@filelayer/core'; import assert from 'node:assert/strict'; const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' }); --&gt;</p>
 <pre><code class="lang-ts">// The default is a dry run: it reports what it would delete and deletes nothing.
 const planned = await fl.collectStorageOrphans();
 assert.equal(planned.deleted, 0, 'a dry run deletes nothing');

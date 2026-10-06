@@ -222,7 +222,6 @@ RETURNING id, file_id, download_count;</code></pre>
 <hr>
 <h2 id="if-you-would-rather-not-build-it">If you would rather not build it</h2>
 <p><a href="https://github.com/filelayer/filelayer" rel="noopener">Filelayer</a> is this, packaged: grants as rows, revocation on the next request, caps that hold under concurrency, the header set above, and an audit trail that records the refusals as well as the reads. It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is alpha — <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">the trust page</a> has the numbers including the ones sitting at zero.</p>
-<p>&lt;!-- doccheck-setup import { Filelayer } from '@filelayer/core'; import assert from 'node:assert/strict'; const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' }); const bytes = new TextEncoder().encode('CONTRACT'); const { id: fileId } = await fl.files.put(bytes, { owner: 'alice', name: 'contract.pdf' }); --&gt;</p>
 <pre><code class="lang-ts">const share = await fl.shares.create(fileId, {
   as: 'alice', expiresIn: 3600, maxDownloads: 3,
 });

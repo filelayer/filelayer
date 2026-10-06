@@ -54,6 +54,16 @@ Both are the same defect, and it is the one this project keeps finding in its
 own tooling: **registration is not coverage.** A checker that was never pointed
 at a file reports success.
 
+### Every guide page was publishing an HTML comment as visible text
+
+Found by reading the published page rather than the markdown, which is the one
+check nothing here automates. `build-guides` treated an HTML comment as ordinary
+prose, so `esc()` turned it into `&lt;!-- ... --&gt;` and all five pages carried
+the `<!-- doccheck-setup ... -->` block as a paragraph, in front of readers,
+from the day the pages went live. A comment is invisible by definition;
+rendering one at all was the bug, and dropping them is not a special case for
+one tool's marker.
+
 ---
 
 ## [0.17.0] — 2026-10-06

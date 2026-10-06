@@ -136,7 +136,6 @@ ALTER TABLE file_grant ADD FOREIGN KEY (file_id, org_id)
 <p><a href="https://github.com/filelayer/filelayer" rel="noopener">Filelayer</a> is this shape, packaged: files with orgs and roles, grants as rows, and the cross-tenant constraint above in the schema rather than in the application. Its <code>file_grant</code> table carries exactly the composite key this guide recommends:</p>
 <pre><code class="lang-sql">FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id) ON DELETE CASCADE</code></pre>
 <p>Worth being precise about what that is and is not: <strong>Filelayer is authorization middleware, not row-level security.</strong> It decides for calls made through it. A client that queries your Postgres directly bypasses it — the composite keys and triggers still hold, because those bind every writer, but no authorization runs and no audit event is written. The two compose; neither replaces the other. If you want RLS as well, add it; nothing here conflicts.</p>
-<p>&lt;!-- doccheck-setup import { Filelayer } from '@filelayer/core'; import assert from 'node:assert/strict'; const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' }); --&gt;</p>
 <pre><code class="lang-ts">await fl.orgs.create('acme', { owner: 'ceo' });
 await fl.orgs.create('globex', { owner: 'other-ceo' });
 const { id } = await fl.files.put(new TextEncoder().encode('CONTRACT'), {
