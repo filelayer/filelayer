@@ -15,7 +15,7 @@ this page said until 4 October.
 
 | | |
 |---|---|
-| Version | 0.15.1 — alpha |
+| Version | 0.15.2 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |

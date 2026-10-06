@@ -25,6 +25,63 @@ Nothing yet.
 
 ---
 
+## [0.15.2] — 2026-10-06
+
+**The repository was fixed and the package was not, so for one evening the
+website published a procedure the published package could not satisfy.** No
+source changes: `src/` is byte-identical to `0.15.1`. What ships is the test
+suite fix, the document that tells you how to run it, and a correction to
+`llms.txt` that had been sending readers to verify the wrong thing.
+
+### The suite could not be run from an install, three ways
+
+`node --test node_modules/@filelayer/core/test/*.ts` does not work at all. Node
+refuses to strip types under `node_modules`, with or without
+`--experimental-strip-types` and `--experimental-transform-types`. That is a
+Node restriction rather than a bug of ours, but "the tests ship so you can check
+every claim from what you installed" rested on it and nobody had ever tried.
+
+`llms.txt` knew about that and answered "clone the repository to run it", which
+verifies a checkout rather than the artefact you were sent. That is a different
+question, and the weaker one. Corrected.
+
+Copying `test/` and `src/` out, the obvious remedy, leaves fifteen failures: the
+suite also reads `schema.sql`, `migrations/` and `examples/`. Copying the whole
+package directory out and installing PGlite gives 547 tests, 539 passing, 8
+skipped, 0 failing, with no server and no credentials.
+
+### Added
+
+- **`docs/VERIFY-WHAT-YOU-INSTALLED.md`**, which ships. The exact commands, the
+  table of counts to expect, and why the obvious invocation does not work. CI
+  extracts the command block from that document and runs it verbatim against a
+  freshly packed tarball on every commit, then requires the run to match the
+  document's own table. The procedure cannot rot without the build going red.
+
+### Fixed
+
+- **`test/real-postgres.ts` imported `pg` at the top level**, so
+  `test/contention.test.ts` died with `ERR_MODULE_NOT_FOUND` instead of
+  skipping. `pg` is deliberately not a dependency of this package, so anyone
+  running the shipped suite hit it: 524 tests and one hard failure instead of
+  547 and a clean skip. The skip logic had been correct the whole time and never
+  got to execute, because a static import fails before any `before()` hook runs.
+  `embedded-postgres` was already imported dynamically ten lines below, so one
+  of the two optional dependencies was handled and the other was not.
+- **The skip now names which problem it hit.** "No PostgreSQL available" sends a
+  reader to check a server that was never involved; the message now distinguishes
+  a missing driver from an unreachable server, and says what to install.
+
+### Changed
+
+- `llms.txt` carries a freshness stamp: the version it describes, the date it
+  was written, and the one request that cannot be stale. A cached copy of a
+  document states a stale version with the same confidence as a current one, and
+  in October 2026 an evaluator declined Filelayer while quoting our own sentence
+  about live AWS back at us, true when written and false when read.
+
+---
+
 ## [0.15.1] — 2026-10-05
 
 **The README led with five paragraphs of warnings and the value was eighty-seven
