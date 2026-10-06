@@ -169,7 +169,37 @@ const CLAIMS = [
     re: /in CI on every commit \((\d+) tests each/g },
   { file: 'packages/core/llms.txt', kind: 'livetests',
     re: /in CI on every commit \((\d+) tests each/g },
+  // HOW MANY CHECKS THE STARTER'S `verify.mjs` RUNS.
+  //
+  // Registered on 7 October 2026 because the three surfaces that stated this
+  // number gave three different answers: the starter's own README said twenty,
+  // llms.txt said twenty-five, and the script has twenty-four call sites. Both
+  // published figures were wrong, in opposite directions, and nothing noticed
+  // because the number was prose.
+  //
+  // The README spells it in words, which is how it drifted in the first place:
+  // a figure you cannot grep is a figure nobody re-checks.
+  // The pattern captures WHATEVER word is there, not the correct one. Pinning
+  // `(Twenty-four)` would have made this registration match only when it was
+  // already right -- a check that cannot observe the failure it exists for, and
+  // the same defect this file's own header is about.
+  { file: 'examples/starter/README.md', kind: 'startercheck',
+    re: /^([A-Za-z][A-Za-z-]*) checks over HTTP/gm, words: true },
+  { file: 'llms.txt', kind: 'startercheck',
+    re: /over HTTP in (\d+) checks/g },
+  { file: 'packages/core/llms.txt', kind: 'startercheck',
+    re: /over HTTP in (\d+) checks/g },
 ];
+
+/**
+ * Spelled-out numerals, for the one claim that is written in words. Only the
+ * values this project has actually used: a longer table would be inventing
+ * requirements, and an unknown word fails loudly below rather than passing.
+ */
+const WORDS = {
+  twenty: 20, 'twenty-one': 21, 'twenty-two': 22, 'twenty-three': 23,
+  'twenty-four': 24, 'twenty-five': 25, 'twenty-six': 26, 'twenty-seven': 27,
+};
 
 function scan(claims) {
   const found = [];
@@ -190,7 +220,7 @@ function scan(claims) {
     while ((m = re.exec(text)) !== null) {
       hits++;
       const line = text.slice(0, m.index).split('\n').length;
-      found.push({ file: c.file, kind: c.kind, value: m[1], line, text: m[0].replace(/\s+/g, ' ') });
+      found.push({ file: c.file, kind: c.kind, value: m[1], line, words: c.words === true, text: m[0].replace(/\s+/g, ' ') });
     }
     if (hits === 0) found.push({ ...c, unmatched: true });
   }
@@ -326,6 +356,36 @@ if (recorded) {
         'could not count the live-storage tests in test/s3-live.test.ts. The shape of ' +
           'that file changed; fix the patterns in this gate in the same commit.',
       );
+    }
+
+    // --- the starter's check count, read out of the script ------------------
+    //
+    // Counted statically, like the live tests above: running it needs a booted
+    // starter and a database, which this gate does not have. `check(` minus its
+    // own definition is the number of assertions the script makes.
+    const verify = readFileSync(join(ROOT, 'examples/starter/verify.mjs'), 'utf8');
+    const calls = (verify.match(/\bcheck\(/g) ?? []).length;
+    const defs = (verify.match(/function check\(/g) ?? []).length;
+    const checks = calls - defs;
+    if (checks <= 0) {
+      violations.push(
+        'could not count the checks in examples/starter/verify.mjs. The shape of that ' +
+          'file changed; fix the patterns in this gate in the same commit.',
+      );
+    }
+    for (const c of claims.filter((x) => x.kind === 'startercheck')) {
+      const claimed = c.words ? WORDS[String(c.value).toLowerCase()] : Number(c.value);
+      if (claimed === undefined) {
+        violations.push(
+          `${c.file}:${c.line} spells a number this gate cannot read: "${c.value}". Add it ` +
+            `to WORDS, or write the digits.\n      > ${c.text}`,
+        );
+      } else if (claimed !== checks) {
+        violations.push(
+          `${c.file}:${c.line} claims ${c.value} check(s) in the starter's verify.mjs; ` +
+            `the script makes ${checks}.\n      > ${c.text}`,
+        );
+      }
     }
 
     if (recorded.fail > 0) {

@@ -62,14 +62,24 @@ operator under `zsh` with `extendedglob` and an escape character in `cmd.exe`.
 Forget it and nothing breaks silently: `createTestDb()` throws an error naming
 the package and that exact command. Production code never reaches it — see §7.
 
-To run the test suite, or the examples, clone the repository instead. The tests
-import the TypeScript source directly and Node will not strip types from files
-under `node_modules`, so they cannot be run from an install:
+The tests import the TypeScript source directly and Node will not strip types
+from files under `node_modules`, so `node --test node_modules/@filelayer/core/test/`
+does not work. **That is not a reason to clone us.** Copying the package
+directory out to a scratch directory runs the same suite against *the bytes you
+were sent*, which is the only thing worth verifying, and the exact procedure is
+in
+[docs/VERIFY-WHAT-YOU-INSTALLED.md](https://github.com/filelayer/filelayer/blob/main/docs/VERIFY-WHAT-YOU-INSTALLED.md)
+— two minutes, no account, no credentials, no database. CI runs that document's
+commands verbatim against a freshly packed tarball on every commit, so it cannot
+quietly stop working.
+
+Clone the repository if you want to *change* it, or to run the examples, which
+are driven by scripts in the repository root:
 
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap
-npm test          # confirm the suite passes before you build on it
+npm run example:tier1
 ```
 
 A throwaway instance, for a first run and for tests:
@@ -666,11 +676,42 @@ it). The path is also exported programmatically as `SCHEMA_PATH`, and
 `loadSchemaSql()` returns its contents, so a migration runner does not have to
 hardcode a path.
 
-`schema.sql` is **not idempotent**: applying it twice fails with
-`relation "project" already exists`. There is no `schema_version` table and no
-migrate command, so recording what you have applied is yours to do.
+`schema.sql` is **not idempotent, and since `0.15.0` it refuses rather than
+half-applies.** Run it against a database that already has the schema and its
+first statement raises, naming the version it found, instead of dying part-way
+through on `relation "project" already exists`.
+
+It creates `filelayer_schema_version` and stamps it as its last statement, so
+the database records what it has. **`schemaStatus(db)` reads that** and returns
+`{ state, at, expects, outstanding, history }` — which is what a boot sequence
+should consult rather than counting tables by hand:
+
+<!-- doccheck: skip reason="it takes the `pg.Pool` you own; `pg` is deliberately not a dependency of this package, so there is nothing here to construct one from" -->
+
+```ts
+import { schemaStatus } from '@filelayer/core';
+
+const status = await schemaStatus(pool);
+if (status.state === 'absent') {
+  // apply schema.sql, once, under an advisory lock if more than one node boots
+} else if (status.outstanding.length > 0) {
+  throw new Error(`schema is at ${status.at}, expected ${status.expects}`);
+}
+```
+
+`schemaStatus` is read-only by construction: it will not apply anything, which
+is deliberate — see MIGRATIONS.md. The migrations themselves are `.sql` files
+under `migrations/`, enumerated in `migrations/manifest.json` with whether each
+one is transactional and which schema version it upgrades from, so a runner can
+drive them without parsing prose.
 [MIGRATIONS.md](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md)
 says how changes are delivered and what the pre-1.0 promise is.
+
+*Until 7 October 2026 this paragraph said there was no `schema_version` table
+and no way to tell, which stopped being true in `0.15.0` and sent every reader
+of the canonical production path off to hand-roll something that already
+shipped. Recorded rather than quietly corrected, because the stale instruction
+is the kind of defect this project is supposed to find before its readers do.*
 
 **2. Construct the client with a real pool and a real bucket.**
 

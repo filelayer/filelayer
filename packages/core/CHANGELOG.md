@@ -21,6 +21,40 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### The documents were telling an agent things that stopped being true
+
+Found by asking what an agent hits when it is handed "add private file uploads
+with permissions to this Next.js app" and has only the repo and the tarball.
+Three published statements were wrong, and the first one is the expensive kind:
+
+- **`docs/QUICKSTART.md` §7 — the canonical path to production — said there was
+  no `schema_version` table and no way to tell what a database has applied.**
+  That stopped being true in `0.15.0`: `schema.sql` creates
+  `filelayer_schema_version`, stamps it, and refuses a database that already has
+  the schema, and `schemaStatus(db)` reports state, version and outstanding
+  migrations. Every reader of that paragraph was being sent to hand-roll
+  something that already shipped, and `examples/starter/README.md` repeated it.
+  Both corrected, with the correction left visible rather than quietly applied.
+- **QUICKSTART said to clone the repository to run the suite**, which
+  `llms.txt` has said not to do since `docs/VERIFY-WHAT-YOU-INSTALLED.md`
+  existed: cloning verifies our checkout rather than the bytes you were sent.
+  Now it says what the clone is actually for.
+- **Three surfaces gave three different counts for the starter's `verify.mjs`**
+  — twenty in the example's own README, twenty-five in `llms.txt`, and
+  twenty-four in the script. Both published figures were wrong, in opposite
+  directions. `check:versions` now counts the call sites and compares, including
+  the one written in words, with the pattern capturing whatever word is there
+  rather than the right one.
+
+### `AGENTS.md`
+
+The repository root has 25 Markdown files and nothing said where to start. It
+covers the one command (`npm run verify`), the five things that fail a build if
+you do not know them — generated pages, byte-identical copies, executed code
+samples, measured numbers, the deny-by-default root — and what needs a human.
+It points an integrator at `llms.txt` in its second paragraph, because that is a
+different reader with a different document.
+
 ### A fifth guide, and two gates that were not watching the guides
 
 **[Should I redirect to a presigned URL or proxy private files myself?](docs/guides/serving-private-files.md)**

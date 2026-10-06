@@ -18,7 +18,7 @@ Then, in another terminal:
 node verify.mjs
 ```
 
-Twenty checks over HTTP: upload, an owner reading their own file, a stranger
+Twenty-four checks over HTTP: upload, an owner reading their own file, a stranger
 refused, a share link with a download cap, revocation taking effect on the next
 request, the audit log with the refusals in it, and the four things an
 adversarial sweep broke on 3 October 2026 -- a percent-escaped tenant name
@@ -71,9 +71,12 @@ why the file exists.
 `.env.example` is read by `server.ts` and handed to a constructor, which saves
 you looking for a config reference that does not exist.
 
-**Applying the schema.** `schema.sql` is not idempotent and there is no migrate
-command, so `applySchemaIfAbsent()` counts how many of Filelayer's nine tables
-exist and applies the schema only if none do, under an advisory lock. Without the
+**Applying the schema.** `schema.sql` is not idempotent, so
+`applySchemaIfAbsent()` applies it only when the database has none of it, under
+an advisory lock. It counts tables because this file predates
+`schemaStatus(db)`, which since `0.15.0` answers the same question properly --
+`state`, the version the database records, and which migrations are outstanding
+-- and is what your own boot sequence should call instead of counting. Without the
 lock, two servers booting together both find nothing, both apply, and one
 crashes: a failure that never happens on a laptop and always happens in a
 deployment. It counts nine rather than looking for one because the first version
