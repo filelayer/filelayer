@@ -21,6 +21,22 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+Nothing yet.
+
+---
+
+## [0.18.0] — 2026-10-07
+
+**The delivery routes reach the runtimes that speak `Request` and `Response`, and four published statements that had stopped being true are corrected.**
+
+### The lock file had been two releases behind, and nothing watched it
+
+`packages/core/package-lock.json` said `0.15.1` while `package.json` said
+`0.17.0`. It is not published, so it was on no surface `check:versions`
+watched -- but it is the file `npm ci` reads, in CI and on a contributor's
+machine. Corrected, and registered as a claim, anchored on the package name
+because a bare `"version"` pattern matches every dependency in the file.
+
 ### `deliveryFetch`: the delivery routes for Next.js, Hono, Workers, Deno and Bun
 
 **`deliveryHandler(fl)` cannot be mounted in a Next.js App Router**, because it

@@ -169,6 +169,21 @@ const CLAIMS = [
     re: /in CI on every commit \((\d+) tests each/g },
   { file: 'packages/core/llms.txt', kind: 'livetests',
     re: /in CI on every commit \((\d+) tests each/g },
+  // THE LOCK FILE'S OWN VERSION.
+  //
+  // Registered on 7 October 2026 after finding it at 0.15.1 while package.json
+  // said 0.17.0 -- two releases of drift that nothing noticed, because the lock
+  // file is not published and so was not on any surface this gate watched.
+  // It is still the file `npm ci` reads, in CI and on a contributor's machine,
+  // and a number in it that disagrees with the package is a number somebody
+  // will eventually trust. Both occurrences: the root `version` and the `""`
+  // entry in `packages`.
+  // Anchored on the package NAME, because a bare `"version"` pattern matches
+  // every dependency in the file -- which the first version of this entry did,
+  // reporting twenty violations about `nanoid`.
+  { file: 'packages/core/package-lock.json', kind: 'version',
+    re: /"name":\s*"@filelayer\/core",\s*\n\s*"version":\s*"(\d+\.\d+\.\d+)"/g },
+
   // HOW MANY CHECKS THE STARTER'S `verify.mjs` RUNS.
   //
   // Registered on 7 October 2026 because the three surfaces that stated this
