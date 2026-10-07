@@ -22,7 +22,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ERROR_CODES, FilelayerError, isErrorCode } from '../src/errors.ts';
+// IMPORTED FROM THE PACKAGE ENTRY, NOT FROM `../src/errors.ts`, and that is the
+// point of this line. The first version of this file imported the module
+// directly, so it passed while `0.19.0` shipped a catalogue that was not
+// re-exported from `index.ts` and therefore not importable as
+// `@filelayer/core` at all. A test that reaches past the surface it is meant
+// to be testing will tell you the module works, which was never in doubt.
+import { ERROR_CODES, FilelayerError, isErrorCode } from '../src/index.ts';
 import { createTestDb } from '../src/db.ts';
 import { Filelayer } from '../src/filelayer.ts';
 import { MemoryStorage } from '../src/storage.ts';

@@ -132,6 +132,30 @@ for (const [code, why] of Object.entries(NOT_THROWN_DIRECTLY)) {
 }
 
 // -----------------------------------------------------------------------------
+// 2b. THE CATALOGUE HAS TO BE REACHABLE AS `@filelayer/core`.
+//
+// `0.19.0` shipped it and did not export it. `index.ts` never re-exported
+// `errors.ts`, so `ERROR_CODES` and `isErrorCode` were absent from the package
+// surface while llms.txt and QUICKSTART both told a reader to use them.
+// `FilelayerError` arrived anyway through another module's re-export, which is
+// what made it look fine.
+//
+// Checked against `index.ts` rather than by importing, because this tool runs
+// before the build and must not depend on `dist/` being current.
+// -----------------------------------------------------------------------------
+{
+  const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
+  if (!/^export \* from '\.\/errors\.ts';$/m.test(index)) {
+    fail(
+      'src/index.ts',
+      "does not re-export './errors.ts', so ERROR_CODES, ErrorCode and isErrorCode are not " +
+        'importable from `@filelayer/core`. The catalogue that the documentation tells a reader ' +
+        'to use has to be on the package surface.',
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
 // 3. Render.
 // -----------------------------------------------------------------------------
 const byStatus = Object.entries(catalogue).sort(

@@ -25,6 +25,29 @@ Nothing yet.
 
 ---
 
+## [0.19.1] — 2026-10-07
+
+### `0.19.0` shipped the error catalogue and did not export it
+
+`index.ts` never re-exported the errors module. So `ERROR_CODES`, `ErrorCode` and
+`isErrorCode` were not importable from `@filelayer/core`, while `llms.txt` and
+QUICKSTART both told a reader to use them. `FilelayerError` arrived anyway
+through another module's re-export, which is exactly what made it look fine.
+
+**The test did not catch it because the test imported the errors module
+directly.** It verified the module, which was never in doubt, and
+said nothing about the package surface. That is the same mistake
+`check:suite-runs-from-install` exists to prevent one level up: test what ships,
+not what you have on disk. The test now imports from the package entry.
+
+`check:errors` now fails the build if the package entry stops re-exporting it,
+so this cannot come back quietly.
+
+Nothing else changed. `0.19.0` is not broken, it is incomplete; this supersedes
+it.
+
+---
+
 ## [0.19.0] — 2026-10-07
 
 **Every error code is enumerated, typed and machine-readable, and the one gate that should have caught a version claim about an unreleased version now does.**
