@@ -21,6 +21,32 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+Nothing yet.
+
+---
+
+## [0.19.0] — 2026-10-07
+
+**Every error code is enumerated, typed and machine-readable, and the one gate that should have caught a version claim about an unreleased version now does.**
+
+### The version sweep could not see a claim about a version that does not exist
+
+Twice on 7 October a sentence was written about the version the work was going
+to ship in, and committed while the registry still said the previous number:
+*"until `0.18.0` the Next.js user did not"*, and *"since 0.19.0 `code` was a
+union"*. The first was caught by reading a diff. The second was pushed, in
+`llms.txt`, which ships -- a published file telling a reader about a release
+that did not exist.
+
+`check:versions` let both through, and the reason is worth writing down. The
+sweep excuses a version number when a DATING WORD sits in front of it, because
+that is how a sentence about the past is supposed to look. `until` and `since`
+are dating words. Nothing noticed that the number was in the FUTURE, which no
+past tense can make true.
+
+The sweep now rejects any version ahead of `package.json` before it considers
+the dating word at all. Both of today's sentences fail it.
+
 ### Every error code is enumerated, typed, and machine-readable
 
 **Breaking: `new FilelayerError(status, code)` is now `new FilelayerError(code)`.**

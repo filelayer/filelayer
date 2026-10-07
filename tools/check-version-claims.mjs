@@ -649,6 +649,17 @@ if (recorded) {
 //
 // A dating word in front of a current-state claim is not a hole worth closing:
 // "the current version is in 0.13.0" is not a sentence anybody writes.
+
+/** `a` is a later semver than `b`. Both are `x.y.z` with numeric parts. */
+function newerThan(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] > pb[i];
+  }
+  return false;
+}
+
 const DATING = [
   'in', 'since', 'before', 'after', 'until', 'through', 'against', 'from',
   'at', 'of', 'by', 'to', 'than', 'predates', 'between', 'via', 'and',
@@ -726,6 +737,31 @@ function sweepVersions(entries) {
       if (value === VERSION) continue;
       const lineNo = text.slice(0, m.index).split('\n').length;
       const line = text.split('\n')[lineNo - 1] ?? '';
+
+      // A VERSION THAT DOES NOT EXIST YET IS NEVER HISTORICAL, SO THE DATING
+      // WORD DOES NOT EXCUSE IT.
+      //
+      // Checked before the dating-word rule below, deliberately. Twice on
+      // 7 October 2026 a sentence was written about the version the work was
+      // GOING to ship in -- "until `0.18.0` the Next.js user did not", "since
+      // 0.19.0 `code` was a union" -- and committed while the registry still
+      // said the previous number. The first was caught by reading a diff. The
+      // second was pushed, in `llms.txt`, which ships: a published file telling
+      // a reader about a release that did not exist.
+      //
+      // The sweep let both through because `until` and `since` are dating
+      // words, and a dating word is how a sentence about the PAST is supposed
+      // to look. Nothing noticed that the number was in the future, which no
+      // past tense can make true.
+      if (newerThan(value, VERSION)) {
+        out.push(
+          `${file}:${lineNo} names \`${value}\`, which is AHEAD of packages/core/package.json ` +
+            `(${VERSION}).\n      > ${line.trim().slice(0, 150)}\n` +
+            '      A version that has not shipped cannot be written about in the past tense.\n' +
+            '      Either publish it first, or write the sentence without naming a version.',
+        );
+        continue;
+      }
 
       // The 40 characters in front of the number, with the decoration a version
       // wears in prose stripped off: backticks, quotes, bold, a `v` prefix, and
