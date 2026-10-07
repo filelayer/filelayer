@@ -105,10 +105,14 @@ person running this in production.
     "implement in somebody else's codebase".
   - **A CLI.** There is no `bin`. `schemaStatus()` exists as a function, so
     checking what a database has applied means writing a script first.
-  - **A machine-readable error catalogue.** `FilelayerError.code` is typed
-    `string`, with no exported union, so a `switch` over it gets no help from
-    the compiler and a typo is not a type error. At least eight codes that the
-    library actually throws appear in no published table.
+  - ~~A machine-readable error catalogue~~ — **done in `0.19.0`, completed in
+    `0.19.1`.** `code` is a union of the 29 codes the library can produce, the
+    status is derived from the code rather than passed alongside it, and
+    `errors.json` and `ERRORS.md` are generated from the one place the set is
+    decided. It was 29 codes, not the eight the published tables named. The
+    `0.19.1` was because `0.19.0` shipped the catalogue without exporting it
+    from the package entry, which the test did not catch because the test
+    imported the module.
   - **A way for an adopter to verify THEIR integration**, rather than ours.
     Everything runnable today — the shipped suite, the starter's `verify.mjs`,
     the guide proofs — checks this library or this library's examples. Nothing
