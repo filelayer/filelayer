@@ -78,7 +78,7 @@ const CLAIMS = [
   // real PostgreSQL and skip there. The gate watches the FIRST number, which is
   // the suite's size; the second is a property of the matrix, not of the suite.
   { file: 'TRUST.md', kind: 'tests',
-    re: /\|\s*Tests\s*\|\s*(\d+), of which \d+ on Node/g },
+    re: /\|\s*Tests\s*\|\s*(\d+), all of them against a real PostgreSQL/g },
   { file: 'packages/core/llms.txt', kind: 'version',
     re: /developer preview, version ([\d.]+), Apache-2\.0/g },
   { file: 'ARCHITECTURE-PROGRESSIVE.md', kind: 'version',

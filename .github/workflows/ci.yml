@@ -502,6 +502,16 @@ jobs:
         env:
           FILELAYER_STARTER_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/filelayer_verify
 
+      # THE SAME IDEA FOR THE FRAMEWORK MOST READERS ACTUALLY USE. Every route
+      # this project documents is `node:http`, which cannot be mounted in a
+      # Next.js App Router at all -- and nothing said so. `examples/nextjs` is
+      # the four files that work there; this drives their exported handlers
+      # with real `Request` objects, against a freshly packed tarball installed
+      # into a scratch directory. No database and no server: the example uses
+      # `quickstart()`, and an App Router handler is a plain function.
+      - name: Drive the Next.js example against the packed tarball
+        run: npm run verify:nextjs
+
   # ---------------------------------------------------------------------------
   # THE MIGRATION FILES, EXECUTED.
   #

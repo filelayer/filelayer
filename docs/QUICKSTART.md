@@ -651,7 +651,52 @@ console.log(response.status, response.headers.get('content-range')); // 206 byte
   undetectable by every HTTP client, so it is not a mistake the API lets you
   make.
 
-For Workers / Deno / Bun, `toResponse(delivery)` returns a WHATWG `Response` and
+### Next.js App Router, Hono, Workers, Deno, Bun
+
+**`deliveryHandler(fl)` cannot be mounted on any of those.** It is a
+`node:http` handler: it takes `(req, res)` and writes to a `ServerResponse`.
+An App Router route handler is `(Request) => Response`, and the two are not the
+same shape. That sentence is here because its absence cost a reader a morning.
+
+`deliveryFetch(fl, opts)` is the same two routes for a runtime that speaks
+`Request` and `Response`, with the same `Range` parsing, the same `416` carrying
+the object's size, the same refusal of a credential in the query string, and the
+same `401` that tells a client to retry a password link as a POST:
+
+<!-- doccheck: skip reason="it is a route module: the export is the deliverable, and there is nothing here to call without inventing a request the rest of this page does not need" -->
+
+```ts
+// app/[...filelayer]/route.ts
+import { deliveryFetch } from '@filelayer/core';
+
+const serve = deliveryFetch(fl, {
+  principal: async (req) => ({ as: await currentUser(req) }),
+});
+
+async function handler(req: Request) {
+  // `null` means "not one of mine", so your own routes still work.
+  return (await serve(req)) ?? new Response('Not found', { status: 404 });
+}
+
+export const GET = handler;
+export const POST = handler;
+export const HEAD = handler;
+export const dynamic = 'force-dynamic';   // authorization is per request
+```
+
+Two things it deliberately does not do for you. It will not read
+`X-Forwarded-For`: a `Request` has no socket, that header is written by whoever
+spoke last, and a library that guessed would let a client choose what its own
+audit log says about it — pass `clientIp` if you sit behind an edge you trust.
+And `dynamic = 'force-dynamic'` is yours to set; without it Next may serve a
+previously authorized response to a later caller.
+
+[`examples/nextjs`](https://github.com/filelayer/filelayer/blob/main/examples/nextjs/README.md)
+is the whole thing — upload, list, read, share, revoke — in four files, driven
+by CI on every commit against a freshly packed tarball.
+
+The lower-level pieces are still exported and still right when you want to build
+the response yourself: `toResponse(delivery)` returns a WHATWG `Response` and
 `toStreamResponse(delivery)` returns one that streams.
 
 ---

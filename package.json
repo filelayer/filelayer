@@ -34,11 +34,12 @@
     "verify:release": "node tools/verify-release.mjs",
     "adversarial": "node benchmark/adversarial/run.mjs filelayer",
     "adversarial:all": "node benchmark/adversarial/run.mjs",
-    "verify": "npm run typecheck && npm run test:counted && npm run build && npm run check:ci-coverage && npm run check:boundary && npm run check:language && npm run check:links && npm run check:install && npm run check:copies && npm run check:versions && npm run check:web && npm run check:web-samples && npm run check:guides && npm run check:register && npm run check:offline && npm run check:install-reach && npm run check:suite-install && npm run check:migrations && npm run check:openapi && npm run check:docs && npm run adversarial",
+    "verify": "npm run typecheck && npm run test:counted && npm run build && npm run check:ci-coverage && npm run check:boundary && npm run check:language && npm run check:links && npm run check:install && npm run check:copies && npm run check:versions && npm run check:web && npm run check:web-samples && npm run check:guides && npm run check:register && npm run check:offline && npm run check:install-reach && npm run check:suite-install && npm run check:migrations && npm run check:openapi && npm run check:docs && npm run verify:nextjs && npm run adversarial",
     "example:tier1": "node --experimental-strip-types examples/tier1-avatar/app.ts",
     "example:tier2": "node --experimental-strip-types examples/tier2-user-files/app.ts",
     "example:tier3": "node --experimental-strip-types examples/tier3-org-roles/app.ts",
     "example:vault": "node --experimental-strip-types examples/vault/server.ts",
+    "example:nextjs": "node tools/drive-nextjs.mjs",
     "dev:probe": "node packages/core/dev/probe.mjs",
     "dev:findings": "node --experimental-strip-types packages/core/dev/diag.ts",
     "dev:bench": "node --experimental-strip-types packages/core/dev/bench-authz.ts",
@@ -57,6 +58,7 @@
     "build:guides": "node tools/build-guides.mjs",
     "check:guides": "node tools/build-guides.mjs --check",
     "check:suite-install": "node tools/check-suite-runs-from-install.mjs",
-    "check:ci-coverage": "node tools/check-ci-coverage.mjs"
+    "check:ci-coverage": "node tools/check-ci-coverage.mjs",
+    "verify:nextjs": "node tools/drive-nextjs.mjs"
   }
 }

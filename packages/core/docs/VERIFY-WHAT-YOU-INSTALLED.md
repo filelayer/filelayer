@@ -68,14 +68,14 @@ Three details in there are load-bearing:
 
 | | |
 |---|---|
-| tests | 573 |
-| pass | 548 |
+| tests | 592 |
+| pass | 567 |
 | fail | **0** |
 | skipped | 25 |
-| suites | 137 |
+| suites | 140 |
 
 The lines will look different depending on your Node version and whether you are
-piping the output: Node 22 writes `# tests 573`, Node 24 writes `ℹ tests 573`,
+piping the output: Node 22 writes `# tests 592`, Node 24 writes `ℹ tests 592`,
 and a terminal gets ticks and timings as well. The numbers are the same. Only
 the reporter changed, and CI reads both, because reading one of them is how this
 gate first reported a passing run as a failure.

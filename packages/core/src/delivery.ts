@@ -1131,3 +1131,230 @@ export function deliveryHandler(
     res.end(JSON.stringify({ error: 'not_found' }));
   };
 }
+
+// -----------------------------------------------------------------------------
+// The same two routes, for a runtime that speaks `Request` and `Response`
+// -----------------------------------------------------------------------------
+
+/**
+ * Options for `deliveryFetch`. The `node:http` version's options, with a
+ * `principal` that is handed a `Request`, plus the two fields a WHATWG runtime
+ * cannot supply on its own.
+ */
+export interface FetchHandlerOptions {
+  /** Where authorized file reads are served. Must match `publicUrl()`. */
+  filePrefix?: string;
+  /** Where share links are served. Must match `baseUrl` + `/d`. */
+  sharePrefix?: string;
+  disposition?: Disposition;
+  /** See `ShareRouteOptions.mode`. Applies to both routes. */
+  mode?: 'proxy' | 'auto';
+  /**
+   * The application's authentication. Omitted means every request to the file
+   * path is ANONYMOUS, exactly as in `deliveryHandler`.
+   */
+  principal?: (req: Request) => RouteCaller | Promise<RouteCaller>;
+  /**
+   * THE CLIENT'S ADDRESS, AND WHY YOU HAVE TO HAND IT OVER.
+   *
+   * `node:http` has `req.socket.remoteAddress`: the address the bytes actually
+   * came from, which no client can choose. A `Request` has no socket. All that
+   * is left is `X-Forwarded-For`, and that header is written by whoever spoke
+   * last -- which, if your runtime is reachable directly, is the attacker.
+   *
+   * Reading it here would put an attacker-chosen string into the audit log of
+   * every application that mounted this, silently, and the audit log is the
+   * part of this product whose whole value is that it is not guessable. So
+   * this library does not guess. Your deployment knows whether it sits behind
+   * a proxy it trusts and which hop to believe; pass the answer, or pass
+   * nothing and have no address recorded, which is the honest default.
+   *
+   *     clientIp: (req) => req.headers.get('cf-connecting-ip') ?? undefined
+   */
+  clientIp?: (req: Request) => string | undefined;
+  /** Same shape, same reasoning. `user-agent` is a client-supplied string. */
+  userAgent?: (req: Request) => string | undefined;
+  /** Refuse a password body larger than this. Default 64 KiB, as on `node:http`. */
+  maxBodyBytes?: number;
+}
+
+/** A `FilelayerError`, or anything else, as the response it should produce. */
+function toErrorResponse(err: unknown): Response {
+  const e = err instanceof FilelayerError ? err : new FilelayerError(500, 'internal');
+  // 401 means "this link has a password", and the client must re-issue as a
+  // POST with the password in the body. Same answer as the `node:http` route,
+  // because a client should not be able to tell which one it is talking to.
+  if (e.status === 401) {
+    return new Response(JSON.stringify({ error: e.code, retry: { method: 'POST', field: 'password' } }), {
+      status: 401,
+      headers: { ...errorHeaders(e.headers), 'www-authenticate': 'FilelayerShare' },
+    });
+  }
+  return new Response(JSON.stringify({ error: e.code }), {
+    status: e.status,
+    headers: errorHeaders(e.headers),
+  });
+}
+
+/**
+ * Both delivery routes as one `fetch` handler, for Next.js App Router, Hono,
+ * Workers, Deno, Bun, and anything else whose handler is
+ * `(Request) => Response`.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS EXISTS
+ * ---------------------------------------------------------------------------
+ *
+ * `toResponse()` and `toStreamResponse()` already turned a delivery into a
+ * `Response`, and the documentation said so in two lines. What it did not say
+ * is that everything AROUND those calls was still the developer's problem on a
+ * WHATWG runtime: parsing `Range`, deriving 206 from `Content-Range`, turning
+ * an unsatisfiable range into a 416 that carries `Content-Range: bytes * /size`,
+ * refusing a credential in the query string, decoding a path segment without
+ * throwing on `%%%`, reading a password from a body that might be JSON or a
+ * form, and answering 401 with the header that tells the client to retry.
+ *
+ * That is thirty-odd lines the `node:http` user gets from `deliveryHandler(fl)`
+ * and the Next.js user was writing by hand -- so the library's most careful
+ * code was unavailable to the framework most of its readers use. Every one of
+ * those lines is a place to be subtly wrong in a way that looks like it works.
+ *
+ * Mount it at a catch-all route:
+ *
+ *     // app/[...filelayer]/route.ts
+ *     const handler = deliveryFetch(fl, { principal: async (req) => ({ as: await userId(req) }) });
+ *     export async function GET(req: Request) { return (await handler(req)) ?? new Response('Not found', { status: 404 }); }
+ *     export const POST = GET;
+ *     export const HEAD = GET;
+ *
+ * ---------------------------------------------------------------------------
+ * IT RETURNS `null` RATHER THAN A 404
+ * ---------------------------------------------------------------------------
+ *
+ * `deliveryHandler` owns the whole server and answers 404 for anything else.
+ * This one is mounted inside an application that has its own routes, so a
+ * request that is not ours is not an error -- it is somebody else's. `null`
+ * means "not mine", and the caller decides. `deliveryHandler`'s shape would
+ * have swallowed every other route in the app.
+ */
+export function deliveryFetch(
+  fl: Filelayer,
+  opts: FetchHandlerOptions = {},
+): (req: Request) => Promise<Response | null> {
+  const filePrefix = (opts.filePrefix ?? '/f').replace(/\/+$/, '');
+  const sharePrefix = (opts.sharePrefix ?? '/d').replace(/\/+$/, '');
+  const limit = opts.maxBodyBytes ?? 64 * 1024;
+
+  const match = (pathname: string, prefix: string): string | null => {
+    const segments = pathname.split('/').filter(Boolean);
+    const prefixSegments = prefix.split('/').filter(Boolean);
+    if (segments.length !== prefixSegments.length + 1) return null;
+    if (prefixSegments.some((s, i) => segments[i] !== s)) return null;
+    return segments[prefixSegments.length]!;
+  };
+
+  /**
+   * A HEAD must carry the headers of the GET and none of the body. Node strips
+   * the body itself; a `Response` does not, and handing one a body on a HEAD
+   * throws in some runtimes and silently sends bytes in others.
+   */
+  const forMethod = (method: string, res: Response): Response =>
+    method === 'HEAD' ? new Response(null, { status: res.status, headers: res.headers }) : res;
+
+  return async (req) => {
+    let url: URL;
+    try {
+      url = new URL(req.url);
+    } catch {
+      return null;
+    }
+
+    const fileSegment = match(url.pathname, filePrefix);
+    const shareSegment = match(url.pathname, sharePrefix);
+
+    // Routing decisions come first and return `null`, so a request this handler
+    // does not own never becomes an error response it did not mean to send.
+    if (fileSegment !== null && (req.method === 'GET' || req.method === 'HEAD')) {
+      try {
+        const forbidden = forbiddenQueryKey(url);
+        if (forbidden) {
+          throw new FilelayerError(
+            400,
+            'credential_in_query_string',
+            `remove ?${forbidden}= from the URL; credentials belong in a header or a body`,
+          );
+        }
+        const range = parseRangeHeader(req.headers.get('range') ?? undefined);
+        const delivery = await fl.readStream(
+          await resolveCaller(fl, opts.principal ? await opts.principal(req) : { actorId: null }),
+          safeDecode(fileSegment) ?? '',
+          {
+            ...(opts.disposition ? { disposition: opts.disposition } : {}),
+            ...(opts.mode ? { mode: opts.mode } : {}),
+            ...(range ? { range } : {}),
+          },
+        );
+        return forMethod(
+          req.method,
+          toStreamResponse({
+            ...delivery,
+            headers: { ...delivery.headers, 'x-filelayer-delivery': delivery.mode },
+          } as StreamedDelivery),
+        );
+      } catch (err) {
+        return forMethod(req.method, toErrorResponse(err));
+      }
+    }
+
+    if (shareSegment !== null && (req.method === 'GET' || req.method === 'POST')) {
+      try {
+        const secret = safeDecode(shareSegment);
+        if (secret === null) throw new FilelayerError(404, 'not_found', 'bad_link_secret');
+
+        const offending = forbiddenQueryKey(url);
+        if (offending !== null) {
+          throw new FilelayerError(400, 'credential_in_query', `query_param:${offending}`);
+        }
+
+        let password: string | undefined;
+        if (req.method === 'POST') {
+          // The declared length first, because refusing before reading is the
+          // point of a limit; then the real length, because the declaration is
+          // the client's word for it.
+          const declared = Number(req.headers.get('content-length') ?? '');
+          if (Number.isFinite(declared) && declared > limit) {
+            throw new FilelayerError(413, 'payload_too_large');
+          }
+          const raw = await req.text();
+          if (raw.length > limit) throw new FilelayerError(413, 'payload_too_large');
+          password = extractPassword(raw, req.headers.get('content-type') ?? '');
+        }
+
+        const range = parseRangeHeader(req.headers.get('range') ?? undefined);
+        const ip = opts.clientIp?.(req);
+        const ua = opts.userAgent?.(req);
+        const delivery = await fl.redeemStream(secret, {
+          ...(password !== undefined ? { password } : {}),
+          ...(ip ? { ip } : {}),
+          ...(ua ? { userAgent: ua } : {}),
+          ...(opts.disposition ? { disposition: opts.disposition } : {}),
+          ...(opts.mode ? { mode: opts.mode } : {}),
+          ...(range ? { range } : {}),
+        });
+
+        return toStreamResponse({
+          ...delivery,
+          headers: {
+            ...delivery.headers,
+            'x-downloads-remaining': String(delivery.remainingDownloads ?? ''),
+            'x-filelayer-delivery': delivery.mode,
+          },
+        } as StreamedDelivery);
+      } catch (err) {
+        return toErrorResponse(err);
+      }
+    }
+
+    return null;
+  };
+}

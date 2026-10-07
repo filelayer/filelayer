@@ -21,6 +21,52 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### `deliveryFetch`: the delivery routes for Next.js, Hono, Workers, Deno and Bun
+
+**`deliveryHandler(fl)` cannot be mounted in a Next.js App Router**, because it
+is a `node:http` handler and an App Router route is `(Request) => Response`.
+Nothing in this project said so, and every route it documents is `node:http` --
+so the framework most of its readers use was the one with no path through the
+documentation. `toResponse()` and `toStreamResponse()` existed and were
+mentioned in two lines, but they only build the response: everything AROUND
+them was still hand-written on a WHATWG runtime -- `Range` parsing, `206`
+derived from `Content-Range`, `416` carrying the object's size, an invalid range
+ignored rather than refused, the query-string credential refusal, a path segment
+that must be answered rather than thrown on, a password read from a JSON or form
+body, and the `401` whose header is the only thing telling a client to retry.
+
+`deliveryFetch(fl, opts)` is those two routes for `Request`/`Response`. It
+returns **`null`** for a request it does not own, rather than a 404, so a
+catch-all route does not swallow the rest of the application --
+`deliveryHandler`'s shape would have.
+
+Two things it will not do for you, both deliberate:
+
+- **It does not read `X-Forwarded-For`.** A `Request` has no socket, so the only
+  candidate is a header written by whoever spoke last. On a directly reachable
+  deployment that is the client choosing what its own audit log says about it.
+  Pass `clientIp` if you sit behind an edge you trust, or record no address.
+- **It does not set `dynamic = 'force-dynamic'`.** That is the application's
+  file, and without it Next may serve a previously authorized response to a
+  later caller.
+
+Nineteen tests, and almost all of them are PARITY tests: the same request goes
+through both handlers and the two answers are compared, because a second
+implementation of these rules is a second place for them to drift.
+
+### `examples/nextjs`
+
+Upload, list, read, share and revoke in four files, with the one sentence a
+reader arriving from the README most needs: the handler in the README does not
+work here, and this is the one that does. Twenty-eight checks, driven by CI on
+every commit against a freshly packed tarball -- no database and no server,
+because `quickstart()` runs PostgreSQL in-process and an App Router handler is a
+plain function the harness can call with a real `Request`.
+
+What it does not cover is stated in its README rather than left to be assumed:
+Next's own routing, caching, middleware, the edge runtime and the build need a
+real Next.js install.
+
 ### The documents were telling an agent things that stopped being true
 
 Found by asking what an agent hits when it is handed "add private file uploads
