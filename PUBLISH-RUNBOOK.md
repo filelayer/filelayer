@@ -32,6 +32,23 @@ nothing here runs itself.
 Run this first. If any of it is not green, stop; publishing is not a step you
 can take back cleanly.
 
+**The npm session first, before anything slow.** It expired four times on
+7 October 2026, and it fails in a way that does not look like what it is: an
+expired token makes `npm publish` answer **404 Not Found** on a package that
+exists, because npm will not tell an unauthenticated caller whether a scoped
+package is there. Six minutes of `verify` before discovering that is six
+minutes wasted, and the 404 sends you looking at permissions and package names
+instead of at the token.
+
+```bash
+npm whoami
+```
+
+Anything other than your username: run `npm login`, finish it in the browser,
+and run `npm whoami` again before continuing. Do not paste the next command
+while `npm login` is waiting for ENTER; it gets eaten as the keypress and the
+command never runs.
+
 ```bash
 # You are on main, with nothing uncommitted.
 git status
@@ -501,6 +518,21 @@ npm deprecate @filelayer/core@0.3.0 "Use @filelayer/core@0.3.1; 0.3.0 shipped a 
 ---
 
 ## 6. Immediately after a successful publish
+
+**"Successful" means a `npm publish` with no `--dry-run` in it.** A dry run
+ends with the same `+ @filelayer/core@<version>` line as a real one; the only
+difference is the word `(dry-run)` four lines above it, in a wall of `npm
+notice` output nobody reads to the end.
+
+On 7 October 2026 the tag and the GitHub release for `0.20.0` were created
+after a dry run, so for a few minutes both existed and npm had no such version.
+Nothing downstream broke, because nobody was looking, which is the only reason
+it was cheap.
+
+So: the dry run and the real publish are **separate steps, run and read one at
+a time**, and nothing below this line happens until the publish output says
+`Publishing to https://registry.npmjs.org/ ... with tag alpha and public
+access` WITHOUT `(dry-run)` after it.
 
 ```bash
 # Tag the released commit and push the tag.
