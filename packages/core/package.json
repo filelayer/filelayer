@@ -18,7 +18,8 @@
     "./schema.sql": "./schema.sql",
     "./llms.txt": "./llms.txt",
     "./openapi.json": "./openapi.json",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./errors.json": "./errors.json"
   },
   "files": [
     "dist",
@@ -40,7 +41,9 @@
     "TRUST.md",
     "SECURITY.md",
     "migrations",
-    "LIMITATIONS.md"
+    "LIMITATIONS.md",
+    "errors.json",
+    "ERRORS.md"
   ],
   "sideEffects": false,
   "repository": {

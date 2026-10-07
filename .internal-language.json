@@ -26,6 +26,8 @@
     "packages/core/test/**/*.ts",
     "packages/core/test/**/*.mts",
     "packages/core/test/**/*.mjs",
+    "packages/core/ERRORS.md",
+    "packages/core/errors.json",
     "packages/core/SEMANTICS.md",
     "packages/core/CHANGELOG.md",
     "packages/core/MIGRATIONS.md",

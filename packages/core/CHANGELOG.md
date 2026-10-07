@@ -21,7 +21,43 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
-Nothing yet.
+### Every error code is enumerated, typed, and machine-readable
+
+**Breaking: `new FilelayerError(status, code)` is now `new FilelayerError(code)`.**
+The status is a function of the code, so passing both was 75 chances for the
+two to disagree. Checked while changing it: at 73 literal call sites, nobody
+had made that mistake yet -- which is the argument for removing the class
+rather than adding a check for it. The status is read from the catalogue.
+
+`code` was typed `string`. It is now a union of the 29 codes this library can
+produce, so a `switch` over it is exhaustive and `'not-found'` for
+`'not_found'` is a compile error rather than a branch that silently never runs.
+A code that is not in the catalogue does not build.
+
+**The published tables named eight codes. The library throws twenty-nine.** A
+caller who met `upload_not_received`, `bad_cursor` or `upload_size_mismatch`
+had nothing to tell them whether those names were stable. Now:
+
+- [`errors.json`](errors.json) ships in the tarball and resolves as
+  `@filelayer/core/errors.json`. An agent mapping our codes onto its own
+  responses should not have to parse a markdown table, and until now that was
+  the only option.
+- [`ERRORS.md`](ERRORS.md) is the same thing for a person, with what to do
+  about each.
+
+Both are GENERATED from `src/errors.ts` by `npm run build:errors`, and
+`check:errors` fails the build if either drifts. It also checks the direction
+generation cannot: every code thrown in `src/` is catalogued, and every
+catalogued code is reachable -- a catalogue entry nothing can produce is a
+promise about an error that does not exist. Three codes are reachable only
+through `toPublicError()`, and are listed with that reason rather than left to
+look like dead entries.
+
+One distinction the catalogue makes that a bare status cannot: most of the 5xx
+codes here are **your configuration**, not a failure. `direct_upload_not_acknowledged`
+is a 500 and it means a setting is missing. `internal` is the only one that
+means a defect.
+
 
 ---
 

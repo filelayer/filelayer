@@ -264,7 +264,7 @@ class Identities {
     );
     const row = rows[0]!;
     if (row.deleted_at !== null) {
-      throw new FilelayerError(404, 'not_found', 'deleted_actor');
+      throw new FilelayerError('not_found', 'deleted_actor');
     }
     return row.id;
   }
@@ -310,7 +310,7 @@ class Identities {
       fileId: null,
       context: { org: String(externalId).slice(0, 128) },
     });
-    throw new FilelayerError(404, 'not_found', 'unknown_org');
+    throw new FilelayerError('not_found', 'unknown_org');
   }
 
   async findActor(externalId: string): Promise<string | null> {
@@ -408,7 +408,7 @@ export class FilesApi {
         resolved.created ||
         (await this.fl.store.getMembership(orgId, ownerId)) !== null;
       if (!mayJoin) {
-        throw new FilelayerError(403, 'forbidden', 'no_membership');
+        throw new FilelayerError('forbidden', 'no_membership');
       }
       await this.ids.membership(orgId, ownerId, 'member');
     } else {
@@ -655,7 +655,7 @@ async function resolveActorOrDeny(
     fileId,
     context: { as: String(as).slice(0, 128) },
   });
-  throw new FilelayerError(404, 'not_found', 'unknown_actor');
+  throw new FilelayerError('not_found', 'unknown_actor');
 }
 
 /**
@@ -785,7 +785,7 @@ export class OrgsApi {
       // somebody asking for standing in a tenant that is not theirs.
       const role = await this.fl.store.getMembership(id, ownerActorId);
       if (role !== 'owner') {
-        throw new FilelayerError(409, 'org_exists', 'not_owner');
+        throw new FilelayerError('org_exists', 'not_owner');
       }
     }
     return { id };
@@ -918,10 +918,10 @@ export class SharesApi {
   async create(fileId: string, opts: ShareOptions): Promise<ShareResult> {
     const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.create', fileId);
     if (opts.withUser && opts.withOrg) {
-      throw new FilelayerError(400, 'ambiguous_subject', 'withUser_and_withOrg');
+      throw new FilelayerError('ambiguous_subject', 'withUser_and_withOrg');
     }
     if (opts.minRole && !opts.withOrg) {
-      throw new FilelayerError(400, 'ambiguous_subject', 'minRole_without_withOrg');
+      throw new FilelayerError('ambiguous_subject', 'minRole_without_withOrg');
     }
     const subject: ShareSubject = opts.withUser
       ? { type: 'actor', actorId: await this.ids.actor(opts.withUser) }

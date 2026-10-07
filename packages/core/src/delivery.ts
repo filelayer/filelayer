@@ -168,15 +168,13 @@ export interface ResolvedRedirectConfig {
 
 export function resolveRedirectConfig(cfg: RedirectDeliveryConfig): ResolvedRedirectConfig {
   if (cfg.acknowledgeRevocationWindow !== REDIRECT_ACKNOWLEDGEMENT) {
-    throw new FilelayerError(
-      500,
-      'redirect_not_acknowledged',
+    throw new FilelayerError('redirect_not_acknowledged',
       'redirect delivery requires the verbatim REDIRECT_ACKNOWLEDGEMENT string',
     );
   }
   const requested = cfg.ttlSeconds ?? DEFAULT_REDIRECT_TTL_SECONDS;
   if (!Number.isFinite(requested) || requested < 1) {
-    throw new FilelayerError(500, 'redirect_bad_ttl', 'ttlSeconds must be >= 1');
+    throw new FilelayerError('redirect_bad_ttl', 'ttlSeconds must be >= 1');
   }
   return {
     // Clamped, not rejected: a config that asks for a day gets five minutes and
@@ -543,7 +541,7 @@ export async function sendNodeStream(
 
 function sendNodeError(res: ServerResponse, err: unknown): void {
   const e =
-    err instanceof FilelayerError ? err : new FilelayerError(500, 'internal');
+    err instanceof FilelayerError ? err : new FilelayerError('internal');
   // `errorHeaders` owns the precedence; see the note on it.
   res.writeHead(e.status, errorHeaders(e.headers));
   res.end(JSON.stringify({ error: e.code }));
@@ -634,7 +632,7 @@ async function readBody(req: IncomingMessage, limit = 64 * 1024): Promise<string
   let size = 0;
   for await (const c of req) {
     size += (c as Buffer).byteLength;
-    if (size > limit) throw new FilelayerError(413, 'payload_too_large');
+    if (size > limit) throw new FilelayerError('payload_too_large');
     chunks.push(c as Buffer);
   }
   return Buffer.concat(chunks).toString('utf8');
@@ -652,7 +650,7 @@ function extractPassword(raw: string, contentType: string): string | undefined {
     const v = parsed['password'];
     return typeof v === 'string' ? v : undefined;
   } catch {
-    throw new FilelayerError(400, 'bad_request');
+    throw new FilelayerError('bad_request');
   }
 }
 
@@ -784,7 +782,7 @@ export function shareDownloadRoute(
 
     try {
       const secret = safeDecode(segments[prefixSegments.length]!);
-      if (secret === null) throw new FilelayerError(404, 'not_found', 'bad_link_secret');
+      if (secret === null) throw new FilelayerError('not_found', 'bad_link_secret');
 
       // THE FIX FOR THE CREDENTIAL-IN-THE-URL DEFECT, and the reason this
       // route exists.
@@ -794,7 +792,7 @@ export function shareDownloadRoute(
       // a download -- so the mistake cannot be made silently.
       const offending = forbiddenQueryKey(url);
       if (offending !== null) {
-        throw new FilelayerError(400, 'credential_in_query', `query_param:${offending}`);
+        throw new FilelayerError('credential_in_query', `query_param:${offending}`);
       }
 
       let password: string | undefined;
@@ -893,9 +891,7 @@ export function fileDownloadRoute(
       // only thing the guard is about.
       const forbidden = forbiddenQueryKey(url);
       if (forbidden) {
-        throw new FilelayerError(
-          400,
-          'credential_in_query_string',
+        throw new FilelayerError('credential_in_query_string',
           `remove ?${forbidden}= from the URL; credentials belong in a header or a body`,
         );
       }
@@ -978,7 +974,7 @@ async function resolveCaller(fl: Filelayer, caller: RouteCaller): Promise<Princi
     fileId: null,
     context: { as: String(caller.as).slice(0, 128) },
   });
-  throw new FilelayerError(404, 'not_found', 'unknown_actor');
+  throw new FilelayerError('not_found', 'unknown_actor');
 }
 
 export interface LocalUploadRouteOptions {
@@ -1180,7 +1176,7 @@ export interface FetchHandlerOptions {
 
 /** A `FilelayerError`, or anything else, as the response it should produce. */
 function toErrorResponse(err: unknown): Response {
-  const e = err instanceof FilelayerError ? err : new FilelayerError(500, 'internal');
+  const e = err instanceof FilelayerError ? err : new FilelayerError('internal');
   // 401 means "this link has a password", and the client must re-issue as a
   // POST with the password in the body. Same answer as the `node:http` route,
   // because a client should not be able to tell which one it is talking to.
@@ -1278,9 +1274,7 @@ export function deliveryFetch(
       try {
         const forbidden = forbiddenQueryKey(url);
         if (forbidden) {
-          throw new FilelayerError(
-            400,
-            'credential_in_query_string',
+          throw new FilelayerError('credential_in_query_string',
             `remove ?${forbidden}= from the URL; credentials belong in a header or a body`,
           );
         }
@@ -1309,11 +1303,11 @@ export function deliveryFetch(
     if (shareSegment !== null && (req.method === 'GET' || req.method === 'POST')) {
       try {
         const secret = safeDecode(shareSegment);
-        if (secret === null) throw new FilelayerError(404, 'not_found', 'bad_link_secret');
+        if (secret === null) throw new FilelayerError('not_found', 'bad_link_secret');
 
         const offending = forbiddenQueryKey(url);
         if (offending !== null) {
-          throw new FilelayerError(400, 'credential_in_query', `query_param:${offending}`);
+          throw new FilelayerError('credential_in_query', `query_param:${offending}`);
         }
 
         let password: string | undefined;
@@ -1323,10 +1317,10 @@ export function deliveryFetch(
           // the client's word for it.
           const declared = Number(req.headers.get('content-length') ?? '');
           if (Number.isFinite(declared) && declared > limit) {
-            throw new FilelayerError(413, 'payload_too_large');
+            throw new FilelayerError('payload_too_large');
           }
           const raw = await req.text();
-          if (raw.length > limit) throw new FilelayerError(413, 'payload_too_large');
+          if (raw.length > limit) throw new FilelayerError('payload_too_large');
           password = extractPassword(raw, req.headers.get('content-type') ?? '');
         }
 

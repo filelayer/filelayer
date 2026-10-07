@@ -1766,7 +1766,7 @@ function auditFilterClauses(
 const auditLimit = (filter: AuditFilter): number => {
   if (filter.limit !== undefined) {
     if (!Number.isSafeInteger(filter.limit) || filter.limit < 0) {
-      throw new FilelayerError(400, 'invalid_argument', 'limit_must_be_a_non_negative_integer');
+      throw new FilelayerError('invalid_argument', 'limit_must_be_a_non_negative_integer');
     }
   }
   return Math.min(filter.limit ?? 500, 5000);

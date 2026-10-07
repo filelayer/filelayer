@@ -346,24 +346,18 @@ export interface ResolvedDirectUploadConfig {
 
 export function resolveDirectUploadConfig(cfg: DirectUploadConfig): ResolvedDirectUploadConfig {
   if (cfg.acknowledgeBytesBypassApplication !== DIRECT_UPLOAD_ACKNOWLEDGEMENT) {
-    throw new FilelayerError(
-      500,
-      'direct_upload_not_acknowledged',
+    throw new FilelayerError('direct_upload_not_acknowledged',
       'direct upload requires the verbatim DIRECT_UPLOAD_ACKNOWLEDGEMENT string',
     );
   }
   if (!Number.isSafeInteger(cfg.maxUploadBytes) || cfg.maxUploadBytes < 1) {
-    throw new FilelayerError(
-      500,
-      'direct_upload_bad_max',
+    throw new FilelayerError('direct_upload_bad_max',
       'maxUploadBytes must be a positive integer; there is deliberately no default',
     );
   }
   const requested = cfg.ttlSeconds ?? DEFAULT_UPLOAD_TTL_SECONDS;
   if (!Number.isFinite(requested) || requested < 60) {
-    throw new FilelayerError(
-      500,
-      'direct_upload_bad_ttl',
+    throw new FilelayerError('direct_upload_bad_ttl',
       'ttlSeconds must be >= 60: a shorter window fails real uploads on real networks',
     );
   }
@@ -623,14 +617,14 @@ export class Filelayer {
   }
 
   async #setOrgDeleted(orgId: string, deleted: boolean): Promise<void> {
-    if (!isUuid(orgId)) throw new FilelayerError(404, 'not_found');
+    if (!isUuid(orgId)) throw new FilelayerError('not_found');
     const { rows } = await this.db.query<{ id: string }>(
       `UPDATE org SET deleted_at = ${deleted ? 'now()' : 'NULL'}
         WHERE id = $1 AND ($2::uuid IS NULL OR project_id = $2::uuid)
         RETURNING id`,
       [orgId, this.projectId],
     );
-    if (!rows[0]) throw new FilelayerError(404, 'not_found');
+    if (!rows[0]) throw new FilelayerError('not_found');
     await this.store.audit({
       orgId,
       action: deleted ? 'org.delete' : 'org.restore',
@@ -660,14 +654,14 @@ export class Filelayer {
   }
 
   async #setActorDeleted(actorId: string, deleted: boolean): Promise<void> {
-    if (!isUuid(actorId)) throw new FilelayerError(404, 'not_found');
+    if (!isUuid(actorId)) throw new FilelayerError('not_found');
     const { rows } = await this.db.query<{ id: string }>(
       `UPDATE actor SET deleted_at = ${deleted ? 'now()' : 'NULL'}
         WHERE id = $1 AND ($2::uuid IS NULL OR project_id = $2::uuid)
         RETURNING id`,
       [actorId, this.projectId],
     );
-    if (!rows[0]) throw new FilelayerError(404, 'not_found');
+    if (!rows[0]) throw new FilelayerError('not_found');
     // Attributed to every org the identity is a member of: "who lost access
     // here, and when" must be answerable from each affected tenant's own chain.
     const { rows: orgs } = await this.db.query<{ org_id: string }>(
@@ -722,7 +716,7 @@ export class Filelayer {
   }
 
   async #setProjectDeleted(projectId: string, deleted: boolean): Promise<void> {
-    if (!isUuid(projectId)) throw new FilelayerError(404, 'not_found');
+    if (!isUuid(projectId)) throw new FilelayerError('not_found');
     // THE PROJECT FILTER ITS TWO NEIGHBOURS ALREADY CARRIED.
     //
     // `#setOrgDeleted` and `#setActorDeleted`, twelve lines above, both end with
@@ -743,7 +737,7 @@ export class Filelayer {
         WHERE id = $1 AND ($2::uuid IS NULL OR id = $2::uuid) RETURNING id`,
       [projectId, this.store.projectId],
     );
-    if (!rows[0]) throw new FilelayerError(404, 'not_found');
+    if (!rows[0]) throw new FilelayerError('not_found');
     // The system chain: a project is above every tenant, so there is no single
     // tenant to charge the event to, and writing it to all of them would let a
     // control-plane action inflate an arbitrary number of customer chains.
@@ -877,7 +871,7 @@ export class Filelayer {
     // "keep this past the moment it stops being readable" -- so refusing it is
     // not a policy choice.
     if (expiresAt && retainUntil && retainUntil > expiresAt) {
-      throw new FilelayerError(400, 'invalid_argument', 'retain_for_exceeds_expires_in');
+      throw new FilelayerError('invalid_argument', 'retain_for_exceeds_expires_in');
     }
     const visibility: FileVisibility = input.visibility ?? 'private';
 
@@ -1006,9 +1000,7 @@ export class Filelayer {
   ): Promise<{ file: FileRecord; upload: PresignedUpload & { expiresAt: Date } }> {
     const cfg = this.directUpload;
     if (cfg === null) {
-      throw new FilelayerError(
-        501,
-        'direct_upload_not_enabled',
+      throw new FilelayerError('direct_upload_not_enabled',
         'set `directUpload` with DIRECT_UPLOAD_ACKNOWLEDGEMENT to enable this',
       );
     }
@@ -1018,9 +1010,7 @@ export class Filelayer {
       // mint an upload credential by not having the method, and the honest
       // answer is to say so with the provider named -- a 501 with no detail
       // sends the reader to the wrong layer.
-      throw new FilelayerError(
-        501,
-        'direct_upload_unsupported',
+      throw new FilelayerError('direct_upload_unsupported',
         `storage_provider:${storage.provider}`,
       );
     }
@@ -1028,12 +1018,10 @@ export class Filelayer {
     // VALIDATED BEFORE THE DECISION IS ASKED FOR, because a 400 must not cost
     // an audit event that claims someone tried to create a file.
     if (!Number.isSafeInteger(input.size) || input.size < 0) {
-      throw new FilelayerError(400, 'invalid_argument', 'size_must_be_a_non_negative_integer');
+      throw new FilelayerError('invalid_argument', 'size_must_be_a_non_negative_integer');
     }
     if (input.size > cfg.maxUploadBytes) {
-      throw new FilelayerError(
-        413,
-        'payload_too_large',
+      throw new FilelayerError('payload_too_large',
         `size:${input.size}>max:${cfg.maxUploadBytes}`,
       );
     }
@@ -1054,7 +1042,7 @@ export class Filelayer {
     // constraint fires on the INSERT, which here is before any credential is
     // minted, so a caller would otherwise get a raw SQLSTATE instead of a 400.
     if (expiresAt && retainUntil && retainUntil > expiresAt) {
-      throw new FilelayerError(400, 'invalid_argument', 'retain_for_exceeds_expires_in');
+      throw new FilelayerError('invalid_argument', 'retain_for_exceeds_expires_in');
     }
     const uploadExpiresAt = new Date(now + cfg.ttlSeconds * 1000);
     const visibility: FileVisibility = input.visibility ?? 'private';
@@ -1153,13 +1141,13 @@ export class Filelayer {
       const decision = await authorize(store, principal, fileId, 'write');
       this.#raise(decision);
       const f = await getFileRecord(tx, this.projectId, fileId);
-      if (!f) throw new FilelayerError(404, 'not_found');
+      if (!f) throw new FilelayerError('not_found');
       return f;
     });
 
     // Already done. See the note on idempotency above.
     if (existing.state === 'ready') return existing;
-    if (existing.state !== 'pending') throw new FilelayerError(404, 'not_found', 'file_deleted');
+    if (existing.state !== 'pending') throw new FilelayerError('not_found', 'file_deleted');
 
     // ASKED OF THE STORE, OUTSIDE THE TRANSACTION. A HEAD against a remote
     // store is network I/O; holding a connection open across it is how a pool
@@ -1171,7 +1159,7 @@ export class Filelayer {
       // again. 409 rather than 404 precisely because the file DOES exist -- it
       // is the bytes that do not, and collapsing the two would send the caller
       // looking for a lost id.
-      throw new FilelayerError(409, 'upload_not_received', `storage_key:${existing.storageKey}`);
+      throw new FilelayerError('upload_not_received', `storage_key:${existing.storageKey}`);
     }
 
     return this.#transaction(async (tx, store) => {
@@ -1210,9 +1198,7 @@ export class Filelayer {
       // Two clocks are fine as long as the gap between them is smaller than the
       // window, which is why the floor is not configurable to zero.
       if (claim[0]?.expired === true) {
-        throw new FilelayerError(
-          410,
-          'upload_reservation_expired',
+        throw new FilelayerError('upload_reservation_expired',
           'the upload window closed; reserve again',
         );
       }
@@ -1227,9 +1213,7 @@ export class Filelayer {
           fileId,
           context: { expectedBytes: Number(expected), actualBytes: head.size },
         });
-        throw new FilelayerError(
-          409,
-          'upload_size_mismatch',
+        throw new FilelayerError('upload_size_mismatch',
           `expected:${expected} actual:${head.size}`,
         );
       }
@@ -1251,7 +1235,7 @@ export class Filelayer {
       );
       if (rows.length === 0) {
         const again = await getFileRecord(tx, this.projectId, fileId);
-        if (!again) throw new FilelayerError(404, 'not_found');
+        if (!again) throw new FilelayerError('not_found');
         return again;
       }
 
@@ -1303,7 +1287,7 @@ export class Filelayer {
     // of a redirect is a contradiction, and silently fetching the presigned URL
     // ourselves would spend the redirect's egress budget AND the proxy's.
     const d = await this.readStream(principal, fileId, { ...opts, mode: 'proxy' });
-    if (d.mode !== 'proxy') throw new FilelayerError(500, 'internal', 'unexpected_redirect');
+    if (d.mode !== 'proxy') throw new FilelayerError('internal', 'unexpected_redirect');
     const body = await collectStream(d.body);
     return {
       file: d.file,
@@ -1365,7 +1349,7 @@ export class Filelayer {
       const decision = await authorize(store, principal, fileId, 'read');
       this.#raise(decision);
       const file = await getFileRecord(tx, this.projectId, fileId);
-      if (!file) throw new FilelayerError(404, 'not_found');
+      if (!file) throw new FilelayerError('not_found');
       return file;
     });
   }
@@ -1469,13 +1453,13 @@ export class Filelayer {
           ...(principal.ip !== undefined ? { ip: principal.ip } : {}),
           context: { race: true, ...(file ? {} : { chain: 'system' }) },
         });
-        throw new FilelayerError(404, 'not_found', 'grant_exhausted');
+        throw new FilelayerError('not_found', 'grant_exhausted');
       }
       remainingDownloads = consumed.remaining;
     }
 
     const file = await getFileRecord(tx, this.projectId, fileId);
-    if (!file) throw new FilelayerError(404, 'not_found');
+    if (!file) throw new FilelayerError('not_found');
 
     // A DOWNLOAD CAP AND BYTE RANGES ARE INCOMPATIBLE SEMANTICS, so one of them
     // has to give, and it is not the cap.
@@ -1669,12 +1653,12 @@ export class Filelayer {
         // document -- once per document, before it switches to explicit ranges
         // it can compute itself -- so this is not a per-chunk tax.
         const h = await this.storage.head(r.file.storageKey);
-        if (!h) throw new FilelayerError(404, 'not_found');
+        if (!h) throw new FilelayerError('not_found');
         if (h.size === 0) {
           // No byte in an empty object can satisfy "the last N", and there is
           // no satisfiable extent to name. `bytes * /0` is what RFC 9110 asks
           // for in exactly this case.
-          throw new FilelayerError(416, 'range_not_satisfiable', 'suffix_on_empty_object', {
+          throw new FilelayerError('range_not_satisfiable', 'suffix_on_empty_object', {
             'content-range': 'bytes */0',
           });
         }
@@ -1708,7 +1692,7 @@ export class Filelayer {
       if (range) {
         const h = await this.storage.head(r.file.storageKey);
         if (h) {
-          throw new FilelayerError(416, 'range_not_satisfiable', `range_start:${range.start}`, {
+          throw new FilelayerError('range_not_satisfiable', `range_start:${range.start}`, {
             // The satisfiable extent. A client that asked past the end asked
             // precisely because it did not know the size; this is the only
             // field that tells it.
@@ -1716,7 +1700,7 @@ export class Filelayer {
           });
         }
       }
-      throw new FilelayerError(404, 'not_found');
+      throw new FilelayerError('not_found');
     }
 
     // Metering is deliberately outside the transaction and best-effort: it is
@@ -1804,14 +1788,14 @@ export class Filelayer {
     // than ignored: a silently-dropped credential is how a caller ends up
     // believing they listed something they did not.
     if (principal.linkSecret !== undefined) {
-      throw new FilelayerError(400, 'link_principal_cannot_list', 'link_principal_cannot_list');
+      throw new FilelayerError('link_principal_cannot_list', 'link_principal_cannot_list');
     }
     const capability = opts.capability ?? 'read';
     // `Math.max(1, ...)` silently clamped `limit: 0` UP to one row -- neither
     // the zero the caller asked for nor the default they would have got by
     // omitting it. Refuse instead of guessing which one they meant.
     if (opts.limit !== undefined && (!Number.isSafeInteger(opts.limit) || opts.limit < 1)) {
-      throw new FilelayerError(400, 'invalid_argument', 'limit_must_be_a_positive_integer');
+      throw new FilelayerError('invalid_argument', 'limit_must_be_a_positive_integer');
     }
     const limit = Math.max(1, Math.min(opts.limit ?? LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT));
 
@@ -1850,7 +1834,7 @@ export class Filelayer {
       this.#raise(decision);
 
       const f = await getFileRecord(tx, this.projectId, fileId);
-      if (!f) throw new FilelayerError(404, 'not_found');
+      if (!f) throw new FilelayerError('not_found');
       await tx.query(
         `UPDATE file SET state = 'deleted', deleted_at = now(), updated_at = now()
           WHERE id = $1`,
@@ -2003,9 +1987,7 @@ export class Filelayer {
     } = {},
   ): Promise<{ scanned: number; orphans: string[]; deleted: number; truncated: boolean }> {
     if (!canList(this.storage)) {
-      throw new FilelayerError(
-        500,
-        'storage_cannot_list',
+      throw new FilelayerError('storage_cannot_list',
         'orphan collection needs a storage adapter that implements list()',
       );
     }
@@ -2024,7 +2006,7 @@ export class Filelayer {
     // a correct caller with a typo in a deployment config.
     const requestedGrace = opts.olderThanSeconds ?? 3600;
     if (!Number.isFinite(requestedGrace)) {
-      throw new FilelayerError(400, 'invalid_argument', 'older_than_seconds_not_finite');
+      throw new FilelayerError('invalid_argument', 'older_than_seconds_not_finite');
     }
     const grace = Math.max(60, requestedGrace) * 1000;
     const limit = Math.max(1, Math.min(opts.limit ?? 1000, 10_000));
@@ -2156,7 +2138,7 @@ export class Filelayer {
     // one. `grant_password_only_on_link` in schema.sql refuses the row as well,
     // so this cannot be reintroduced by a second writer.
     if (input.password !== undefined && input.subject.type !== 'link') {
-      throw new FilelayerError(400, 'password_requires_link_subject');
+      throw new FilelayerError('password_requires_link_subject');
     }
 
     // A LINK CARRIES `read` AND NOTHING ELSE, and this is where you find that
@@ -2173,9 +2155,7 @@ export class Filelayer {
     if (input.subject.type === 'link') {
       const extra = capabilities.filter((c) => c !== 'read');
       if (extra.length > 0) {
-        throw new FilelayerError(
-          400,
-          'link_is_read_only',
+        throw new FilelayerError('link_is_read_only',
           `link_capabilities:${extra.join(',')}`,
         );
       }
@@ -2186,11 +2166,11 @@ export class Filelayer {
     });
     if (!decision.allow) {
       const pub = toPublicError(decision.reason);
-      throw new FilelayerError(pub.status, pub.code, decision.reason);
+      throw new FilelayerError(pub.code, decision.reason);
     }
 
     const file = await getFileRecord(tx, this.projectId, fileId);
-    if (!file) throw new FilelayerError(404, 'not_found');
+    if (!file) throw new FilelayerError('not_found');
 
     const expiresAt = secondsFromNow(input.expiresIn, Date.now(), 'expiresIn');
 
@@ -2213,9 +2193,7 @@ export class Filelayer {
     if (input.maxDownloads !== undefined && input.maxDownloads !== null) {
       const n = input.maxDownloads;
       if (!Number.isSafeInteger(n) || n < 1 || n > 2147483647) {
-        throw new FilelayerError(
-          400,
-          'invalid_argument',
+        throw new FilelayerError('invalid_argument',
           'max_downloads_must_be_a_positive_integer',
         );
       }
@@ -2305,7 +2283,7 @@ export class Filelayer {
         grantId: decision.parentGrantId,
         context: { capabilities, subjectType: input.subject.type },
       });
-      throw new FilelayerError(403, 'forbidden', refusal);
+      throw new FilelayerError('forbidden', refusal);
     }
 
 
@@ -2359,7 +2337,7 @@ export class Filelayer {
    *    project are the whole point of the feature.
    */
   async #resolveSubjectOrg(tx: Tx, orgId: string): Promise<string> {
-    if (!isUuid(orgId)) throw new FilelayerError(404, 'not_found', 'unknown_subject_org');
+    if (!isUuid(orgId)) throw new FilelayerError('not_found', 'unknown_subject_org');
     const { rows } = await tx.query<{ id: string }>(
       `SELECT o.id FROM org o
          JOIN project p ON p.id = o.project_id
@@ -2369,7 +2347,7 @@ export class Filelayer {
           AND ($2::uuid IS NULL OR o.project_id = $2::uuid)`,
       [orgId, this.projectId],
     );
-    if (!rows[0]) throw new FilelayerError(404, 'not_found', 'unknown_subject_org');
+    if (!rows[0]) throw new FilelayerError('not_found', 'unknown_subject_org');
     return rows[0].id;
   }
 
@@ -2473,7 +2451,7 @@ export class Filelayer {
   }
 
   async revoke(principal: Principal, grantId: string): Promise<void> {
-    if (!isUuid(grantId)) throw new FilelayerError(404, 'not_found');
+    if (!isUuid(grantId)) throw new FilelayerError('not_found');
     // Revocation is the operation the product is sold on, so the state change
     // and the event proving it happened must not be separable. Both are in this
     // transaction.
@@ -2521,7 +2499,7 @@ export class Filelayer {
     const g = rows[0];
     // Unknown grant and "not yours" are the same answer, for the same reason
     // file ids are: otherwise this endpoint is a grant-id oracle.
-    if (!g) throw new FilelayerError(404, 'not_found');
+    if (!g) throw new FilelayerError('not_found');
 
     const decision = await authorizeRevoke(store, principal, {
       id: grantId,
@@ -2606,7 +2584,7 @@ export class Filelayer {
     // Buffered convenience form of `redeemStream()`, exactly as `read()` is of
     // `readStream()`. Forces proxy mode for the same reason.
     const d = await this.redeemStream(linkSecret, { ...opts, mode: 'proxy' });
-    if (d.mode !== 'proxy') throw new FilelayerError(500, 'internal', 'unexpected_redirect');
+    if (d.mode !== 'proxy') throw new FilelayerError('internal', 'unexpected_redirect');
     return {
       file: d.file,
       body: await collectStream(d.body),
@@ -2651,7 +2629,7 @@ export class Filelayer {
         // In the transaction, so the sweep cannot be made invisible by a
         // failure on the way out either.
         await auditUnresolvedSecret(store, principal, hash);
-        throw new FilelayerError(404, 'not_found', 'bad_link_secret');
+        throw new FilelayerError('not_found', 'bad_link_secret');
       }
 
       const decision = await authorize(store, principal, grant.fileId, 'read');
@@ -2810,7 +2788,7 @@ export class Filelayer {
   #raise(decision: Decision): asserts decision is Extract<Decision, { allow: true }> {
     if (decision.allow) return;
     const pub = toPublicError(decision.reason);
-    throw new FilelayerError(pub.status, pub.code, decision.reason);
+    throw new FilelayerError(pub.code, decision.reason);
   }
 }
 
@@ -2953,10 +2931,10 @@ async function lockOrgForMembershipChange(tx: Tx, orgId: string): Promise<void> 
 function secondsFromNow(seconds: number | undefined, now: number, field: string): Date | null {
   if (seconds === undefined) return null;
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
-    throw new FilelayerError(400, 'invalid_argument', `${field}_not_finite`);
+    throw new FilelayerError('invalid_argument', `${field}_not_finite`);
   }
   if (seconds <= 0) {
-    throw new FilelayerError(400, 'invalid_argument', `${field}_not_positive`);
+    throw new FilelayerError('invalid_argument', `${field}_not_positive`);
   }
   return new Date(now + seconds * 1000);
 }
@@ -2971,14 +2949,14 @@ function decodeCursor(cursor: string | null | undefined): { createdAt: Date; id:
   try {
     decoded = Buffer.from(cursor, 'base64url').toString('utf8');
   } catch {
-    throw new FilelayerError(400, 'bad_cursor');
+    throw new FilelayerError('bad_cursor');
   }
   const sep = decoded.lastIndexOf('|');
-  if (sep < 0) throw new FilelayerError(400, 'bad_cursor');
+  if (sep < 0) throw new FilelayerError('bad_cursor');
   const createdAt = new Date(decoded.slice(0, sep));
   const id = decoded.slice(sep + 1);
   if (Number.isNaN(createdAt.getTime()) || !isUuid(id)) {
-    throw new FilelayerError(400, 'bad_cursor');
+    throw new FilelayerError('bad_cursor');
   }
   return { createdAt, id };
 }

@@ -913,6 +913,16 @@ catch (e) {
 }
 ```
 
+`code` is typed: it is a union of the 29 codes this library can produce, so a
+`switch` over it is exhaustive and `'not-found'` for `'not_found'` is a compile
+error rather than a branch that silently never runs.
+
+**The status is a function of the code.** One code never means two statuses, so
+branching on `code` is enough. The constructor does not take a status at all;
+it reads it from the catalogue.
+
+The eight you will meet first:
+
 | status | code | Meaning |
 |---|---|---|
 | 404 | `not_found` | Does not exist, **or** you may not have it, **or** the link is revoked/expired/used up. Deliberately indistinguishable. |
@@ -923,6 +933,17 @@ catch (e) {
 | 400 | `credential_in_query` | A credential appeared in the query string. Move it to the body. |
 | 400 | `link_principal_cannot_list` | A share-link credential was used to call `listFiles`. |
 | 400 | `link_is_read_only` | A share link was asked for a capability beyond `read`. Name an actor or an org as the subject instead. |
+
+**All twenty-nine, with what to do about each, are in
+[`ERRORS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/ERRORS.md).**
+It is generated from the code, so it cannot drift from it. If you are mapping
+these onto your own responses in a script, read
+[`errors.json`](https://github.com/filelayer/filelayer/blob/main/packages/core/errors.json)
+instead; it ships in the tarball and resolves as `@filelayer/core/errors.json`.
+
+*Until 7 October 2026 the table above was the whole published list, and the
+library threw twenty-nine codes. A caller who hit `upload_not_received` or
+`bad_cursor` had nothing to tell them whether those names were stable.*
 
 **Never serialize `e.reason` to an untrusted caller.** It carries the internal
 deny reason (`no_membership`, `grant_revoked`, `bad_link_secret`…), which is

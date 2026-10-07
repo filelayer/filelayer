@@ -512,6 +512,14 @@ jobs:
       - name: Drive the Next.js example against the packed tarball
         run: npm run verify:nextjs
 
+      # THE ERROR CATALOGUE, BOTH DIRECTIONS. `src/errors.ts` is the one place
+      # the set of codes is decided, and the constructor is typed against it, so
+      # a code that is not there does not compile. This checks the two things
+      # the compiler cannot: that `errors.json` and `ERRORS.md` are what that
+      # object renders to, and that every catalogued code is actually reachable.
+      - name: The error catalogue matches the code
+        run: npm run check:errors
+
   # ---------------------------------------------------------------------------
   # THE MIGRATION FILES, EXECUTED.
   #

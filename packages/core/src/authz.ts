@@ -1516,7 +1516,15 @@ export function schemaRefusal(err: unknown): string | null {
  * the kind of decision a hand-rolled integration requires developers to make
  * themselves, in every route, correctly, every time.
  */
-export function toPublicError(reason: DenyReason): { status: number; code: string } {
+/**
+ * `import type`, and that matters: this module has no runtime imports, which is
+ * the property that lets the decision engine be reasoned about on its own. A
+ * type is erased, so the circular reference with `errors.ts` (which imports
+ * `DenyReason` from here) exists only for the compiler.
+ */
+import type { ErrorCode } from './errors.ts';
+
+export function toPublicError(reason: DenyReason): { status: number; code: ErrorCode } {
   switch (reason) {
     case 'bad_password':
       return { status: 401, code: 'password_required' };
