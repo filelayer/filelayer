@@ -25,6 +25,48 @@ Nothing yet.
 
 ---
 
+## [0.20.0] — 2026-10-07
+
+### `auditIntegration()`: check YOUR routes, not ours
+
+Everything else runnable in this project checks us. The suite checks the
+library. `examples/starter/verify.mjs` checks the starter and hard-codes the
+starter's routes. The guide proofs check the guides. None of them answer the
+question an adopter is actually asking, which is whether THEIR application is
+correct, and that is where the leak usually is: a route that falls through to a
+200, a failed session lookup treated as "no user", a proxy that strips a header
+or caches a response it should not.
+
+`auditIntegration({ owner, stranger, app })` takes four callbacks written
+against your routes and checks the properties against your running
+application. It imports none of your code and knows nothing about your
+framework; it makes requests and reads the answers.
+
+What it checks: the owner reads their own file; a stranger cannot, and is
+refused **404 rather than 403**, because a 403 confirms the file exists and
+lets a stranger enumerate real ids; an anonymous caller cannot; an id your
+application has never seen **denies rather than degrading to anonymous**;
+`nosniff` and `attachment` are on the bytes; the response is not publicly
+cacheable; byte ranges are answered correctly, including the invalid range that
+must be **ignored** and the unsatisfiable one that must carry the size; and
+revocation lands on the **next request**.
+
+It stops after the first check if the owner cannot read their own file, because
+every refusal check below it would pass against a route that refuses everybody.
+A harness that cannot start says so as its own problem rather than reporting a
+finding about your application.
+
+**The harness is verified against eleven deliberately broken applications**,
+each with exactly one property wrong and each of which the matching check must
+catch: a stranger served the file, a 403 where a 404 belongs, an unknown id
+degrading to anonymous, a stripped `nosniff`, content served inline, a publicly
+cacheable response, a 416 for a range that should have been ignored, a 416 with
+no size in it, and access surviving revocation. A harness that has only ever
+run against a correct application is unverified in the way that matters: every
+check could be returning `pass` unconditionally.
+
+---
+
 ## [0.19.1] — 2026-10-07
 
 ### `0.19.0` shipped the error catalogue and did not export it

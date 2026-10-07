@@ -6,7 +6,7 @@ because a limitations list that lives only in a README gets trimmed for length
 and the trimming is always in our favour.
 
 Each one is current as of
-`0.19.1`; where a limitation has been lifted since an earlier release, the
+`0.20.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **`Range` is answered, with three documented edges.** The shipped routes

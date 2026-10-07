@@ -23,8 +23,9 @@ with the test suite, the test suite is right and this page is a bug.
 5. [Listing what a caller may see](#5-listing-what-a-caller-may-see)
 6. [Serving bytes](#6-serving-bytes)
 7. [Going to production](#7-going-to-production)
-8. [Errors](#8-errors)
-9. [What Filelayer does not do](#9-what-filelayer-does-not-do)
+8. [Does YOUR route hold?](#8-does-your-route-hold)
+9. [Errors](#9-errors)
+10. [What Filelayer does not do](#10-what-filelayer-does-not-do)
 
 ---
 
@@ -892,7 +893,82 @@ sweep that calls `delete()` on files past their expiry.
 
 ---
 
-## 8. Errors
+## 8. Does YOUR route hold?
+
+Everything else in this project that you can run checks us: the suite checks
+the library, `examples/starter/verify.mjs` checks the starter and hard-codes
+the starter's routes, the guide proofs check the guides. None of them answer
+the question you are actually asking, which is whether YOUR application is
+correct.
+
+You can mount this library perfectly and still leak files, because the leak is
+usually in the code around it: a route that falls through to a 200, a failed
+session lookup treated as "no user", a reverse proxy that strips a header or
+caches a response it should not.
+
+`auditIntegration()` takes your application, through four callbacks you write,
+and checks the properties against it. It does not import your code and knows
+nothing about your framework. It makes requests and reads the answers.
+
+<!-- doccheck: skip reason="it drives an application over HTTP; there is no application here, and inventing one would check this library rather than the reader's" -->
+
+```ts
+import { auditIntegration, formatAuditReport } from '@filelayer/core';
+
+const report = await auditIntegration({
+  owner: 'alice',
+  stranger: 'bob',
+  app: {
+    // However your upload endpoint works.
+    async upload({ owner, name, contentType, body }) {
+      const res = await fetch('http://localhost:3000/api/files', {
+        method: 'POST', headers: session(owner), body: form(name, contentType, body),
+      });
+      const { id, url } = await res.json();
+      return { id, url };
+    },
+    // MUST NOT throw on a 4xx: the refusals are what is being measured.
+    async get(url, who, extraHeaders) {
+      const res = await fetch(url, {
+        headers: { ...(who ? session(who) : {}), ...extraHeaders },
+        redirect: 'manual',
+      });
+      const headers: Record<string, string> = {};
+      res.headers.forEach((v, k) => { headers[k.toLowerCase()] = v; });
+      return { status: res.status, headers, body: new Uint8Array(await res.arrayBuffer()) };
+    },
+    // Optional. Without them the revocation check is skipped, not failed.
+    share: (id, user) => grant(id, user),
+    unshare: (id, user) => ungrant(id, user),
+  },
+});
+
+console.log(formatAuditReport(report));
+if (!report.ok) process.exit(1);
+```
+
+What it checks: the owner can read their own file; a stranger cannot, and is
+refused **404 rather than 403**, because a 403 tells them the file exists; an
+anonymous caller cannot; an id your application has never seen **denies rather
+than degrading to anonymous**; `nosniff` and `attachment` are on the bytes; the
+response is not publicly cacheable; byte ranges are answered correctly,
+including the invalid range that must be ignored and the unsatisfiable one that
+must carry the size; and revocation lands on the **next request**.
+
+**What a pass means.** The properties held for the requests it made. It is not
+a security audit, it does not read your code, and it cannot find a hole in a
+path it was not told about. **A failure is real**: it is a request that got an
+answer it should not have, and every check prints what it did so you can argue
+with the verdict.
+
+The harness itself is checked the only way a harness can be: against a
+deliberately broken application. Eleven variants, each with exactly one
+property wrong, each of which the matching check must catch. See
+`test/audit-integration.test.ts` in the tarball.
+
+---
+
+## 9. Errors
 
 Everything throws `FilelayerError` with an HTTP-shaped `status` and a stable
 machine-readable `code`.
@@ -952,7 +1028,7 @@ enumeration oracle in a response body. `e.code` is the safe field.
 
 ---
 
-## 9. What Filelayer does not do
+## 10. What Filelayer does not do
 
 - **Authenticate users.** You supply identity.
 - **Answer *multiple* ranges in one request, or honour `If-Range`.**

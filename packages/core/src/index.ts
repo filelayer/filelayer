@@ -14,6 +14,7 @@
 export * from './authz.ts';
 export * from './db.ts';
 export * from './errors.ts';
+export * from './audit-integration.ts';
 export * from './storage.ts';
 export * from './store.ts';
 export * from './filelayer.ts';

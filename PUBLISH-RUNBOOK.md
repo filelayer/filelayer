@@ -4,7 +4,7 @@ The exact commands to make this repository public and to publish
 `@filelayer/core` to npm.
 
 > **This runbook was written for the first public release, `0.3.0`.** The
-> repository is public and the version being published is **`0.19.1`**. Steps 0,
+> repository is public and the version being published is **`0.20.0`**. Steps 0,
 > 3, 4 and 6 have been updated to that version so the commands are
 > copy-pasteable; steps 1 and 2 are the one-time org and repository setup and
 > are kept as the record of what was done. Everything else — the gate, the
@@ -37,7 +37,7 @@ can take back cleanly.
 git status
 git branch --show-current          # -> main
 
-# The whole gate: typecheck, 600 tests, build, language, links, OpenAPI,
+# The whole gate: typecheck, 614 tests, build, language, links, OpenAPI,
 # doc samples, adversarial suite. Must exit 0.
 npm run verify
 echo "verify exit: $?"
@@ -313,11 +313,11 @@ anyway, the useful signal is that re-running `npm publish` refuses with
 *"You cannot publish over the previously published versions"*.
 
 **AND THE METADATA ARRIVES BEFORE THE TARBALL, which is worse because it is
-silent.** On the `0.19.1` publish, `npm view` reported the new version and both
+silent.** On the `0.20.0` publish, `npm view` reported the new version and both
 dist-tags while the tarball those metadata point at still answered:
 
 ```
-npm error 404 Not Found - GET https://registry.npmjs.org/@filelayer/core/-/core-0.19.1.tgz
+npm error 404 Not Found - GET https://registry.npmjs.org/@filelayer/core/-/core-0.20.0.tgz
 ```
 
 For about five minutes the registry advertised a `latest` that nobody could

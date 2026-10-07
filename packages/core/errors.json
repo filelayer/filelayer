@@ -1,6 +1,6 @@
 {
   "$comment": "Generated from packages/core/src/errors.ts by tools/build-errors.mjs. Do not edit. Every code this library can produce, with the HTTP status it always carries. The status is a function of the code: one code never means two statuses.",
-  "version": "0.19.1",
+  "version": "0.20.0",
   "codes": {
     "ambiguous_subject": {
       "status": 400,
