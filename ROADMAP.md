@@ -95,3 +95,23 @@ person running this in production.
 - **An independent security review.** Costs money, deferred to January 2027.
   Nothing in this repository has been audited by anyone outside it, and
   `TRUST.md` says so in the one place a reader will look for it.
+- **The agent-facing surfaces that still do not exist.** `0.18.0` closed the one
+  that was blocking: the delivery routes now have a `Request`/`Response` form,
+  so Next.js, Hono, Workers, Deno and Bun can mount them. These remain, listed
+  rather than implied:
+  - **An MCP server**, so an agent can operate a deployment through a tool
+    interface rather than by writing code against the API.
+  - **Agent Skills**, which is the cheaper half and the one that serves
+    "implement in somebody else's codebase".
+  - **A CLI.** There is no `bin`. `schemaStatus()` exists as a function, so
+    checking what a database has applied means writing a script first.
+  - **A machine-readable error catalogue.** `FilelayerError.code` is typed
+    `string`, with no exported union, so a `switch` over it gets no help from
+    the compiler and a typo is not a type error. At least eight codes that the
+    library actually throws appear in no published table.
+  - **A way for an adopter to verify THEIR integration**, rather than ours.
+    Everything runnable today — the shipped suite, the starter's `verify.mjs`,
+    the guide proofs — checks this library or this library's examples. Nothing
+    takes somebody's own routes and reports whether the properties hold: that a
+    stranger gets a 404, that revocation lands on the next request, that an
+    unknown user id denies instead of degrading to anonymous.
