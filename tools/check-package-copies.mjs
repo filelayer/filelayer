@@ -265,6 +265,17 @@ const COPIES = [
     'examples/starter/README.md',
     'examples/starter/package.json',
     'examples/starter/.env.example',
+    // The Next.js example. Byte-identical with no rewrite, unlike the tier
+    // examples below, because it imports `@filelayer/core` by name -- which is
+    // what you paste into your own project, and is also why `verify:nextjs`
+    // has to install the tarball to run it.
+    'examples/nextjs/README.md',
+    'examples/nextjs/package.json',
+    'examples/nextjs/verify.mjs',
+    'examples/nextjs/lib/filelayer.ts',
+    'examples/nextjs/app/[...filelayer]/route.ts',
+    'examples/nextjs/app/api/files/route.ts',
+    'examples/nextjs/app/api/files/[id]/share/route.ts',
   ].map((file) => ({
     file,
     why: 'a runnable example the documentation points at; shipping it is what makes it readable offline',
@@ -338,6 +349,62 @@ const fail = (where, msg) => problems.push({ where, msg });
           'ships it or that the two copies agree. Add an entry saying why it ships -- or, if it ' +
           'genuinely should not ship, say THAT in the entry and give it no package copy.',
       );
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// THE SAME COMPLETENESS QUESTION FOR `examples/`, WHICH IS WHERE IT BIT.
+//
+// `examples/nextjs` shipped on 7 October 2026 and was NOT in the tarball: the
+// list above was hand-written, nobody added seven lines to it, and `files` in
+// package.json says `examples`, so the directory was simply absent from the
+// published package. Every gate passed. The only reason it was caught is that
+// somebody read a `npm publish --dry-run` listing and noticed an absence --
+// which is not a check, it is luck.
+//
+// Four files are deliberately NOT byte-identical: the tier examples and the
+// vault import `../../packages/core/src/index.ts` in the checkout and
+// `../../src/index.ts` in the package, because the same relative path cannot
+// mean the same thing from two different depths. They are named here with that
+// reason, so "not in COPIES" stops being a silent state: a file under
+// `examples/` is either compared, or listed here as knowingly different.
+// -----------------------------------------------------------------------------
+const EXAMPLES_REWRITTEN = new Map([
+  ['examples/tier1-avatar/app.ts', 'imports the library by relative path, which differs by depth'],
+  ['examples/tier2-user-files/app.ts', 'imports the library by relative path, which differs by depth'],
+  ['examples/tier3-org-roles/app.ts', 'imports the library by relative path, which differs by depth'],
+  ['examples/vault/server.ts', 'imports the library by relative path, which differs by depth'],
+]);
+
+{
+  const listed = new Set(COPIES.map((c) => c.file));
+  const walk = (dir) => {
+    const out = [];
+    for (const e of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${e.name}`;
+      if (e.isDirectory()) out.push(...walk(rel));
+      else out.push(rel);
+    }
+    return out;
+  };
+  for (const file of walk('examples').sort()) {
+    if (listed.has(file) || EXAMPLES_REWRITTEN.has(file)) continue;
+    fail(
+      file,
+      'exists under examples/ and is neither in COPIES nor in EXAMPLES_REWRITTEN, so nothing ' +
+        'checks that the npm package ships it. `files` in package.json says `examples`, which ' +
+        'ships whatever is in packages/core/examples -- not whatever is in examples/. Add it to ' +
+        'COPIES with a reason, or to EXAMPLES_REWRITTEN with the reason it cannot be identical.',
+    );
+  }
+  // And the reverse: a file named as knowingly-different must actually exist in
+  // both places, or the exemption is excusing nothing and hiding a deletion.
+  for (const [file, why] of EXAMPLES_REWRITTEN) {
+    for (const side of [join(ROOT, file), join(ROOT, PKG_DIR, file)]) {
+      if (!existsSync(side)) {
+        fail(file, `is in EXAMPLES_REWRITTEN ("${why}") but ${side} does not exist.`);
+      }
     }
   }
 }

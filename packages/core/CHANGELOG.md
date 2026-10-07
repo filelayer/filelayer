@@ -29,9 +29,27 @@ Nothing yet.
 
 **The delivery routes reach the runtimes that speak `Request` and `Response`, and four published statements that had stopped being true are corrected.**
 
+### `examples/nextjs` was not in the tarball, and every gate passed
+
+Caught by reading a `npm publish --dry-run` listing and noticing an absence,
+which is luck rather than a check. `files` in package.json says `examples`, and
+that ships whatever is in `packages/core/examples/` -- not whatever is in
+`examples/`. The new example was in the second and not the first, so the
+document that llms.txt and QUICKSTART both point at was unreachable for the
+reader this project says it designs for: an install and no browser.
+
+The list of compared example files was hand-written, which is the third
+instance of the same defect found today. It now has to prove it is complete:
+every file under `examples/` is either compared against its package copy, or
+named in `EXAMPLES_REWRITTEN` with the reason it cannot be identical -- the
+four that import the library by a relative path, which cannot be the same
+string from two different depths. A file that is in neither fails the build,
+and an exemption naming a file that does not exist fails too, so the escape
+hatch cannot quietly become a place to hide a deletion.
+
 ### The lock file had been two releases behind, and nothing watched it
 
-`packages/core/package-lock.json` said `0.15.1` while `package.json` said
+The package lock file said `0.15.1` while `package.json` said
 `0.17.0`. It is not published, so it was on no surface `check:versions`
 watched -- but it is the file `npm ci` reads, in CI and on a contributor's
 machine. Corrected, and registered as a claim, anchored on the package name
