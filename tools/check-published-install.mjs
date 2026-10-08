@@ -229,6 +229,18 @@ for (const { path, where } of DOCUMENTED_FILES) {
   }
 }
 
+const tarballReadme = (() => {
+  try {
+    return readFileSync(join(work, 'node_modules', PKG, 'README.md'), 'utf8');
+  } catch {
+    fail(
+      'the published tarball ships no README.md',
+      'npm has nothing to hoist, so the packument description can only be empty.',
+    );
+    return '';
+  }
+})();
+
 rmSync(work, { recursive: true, force: true });
 
 // -----------------------------------------------------------------------------
@@ -265,17 +277,30 @@ try {
     // It reported `clean` against a packument that was missing everything. A
     // check whose assertion is conditional on the thing it is checking is not a
     // check. Normalising whitespace only, this compares the two texts.
+    // Compared against the README inside the PUBLISHED tarball, not the one in
+    // the working tree. Those are different questions. A working tree ahead of
+    // the registry is unreleased work, which is normal and is not a defect --
+    // comparing against it would mean no README could be improved without an
+    // immediate publish, and a gate that punishes ordinary work gets worked
+    // around. A hoisted copy that differs from the tarball it was published
+    // from is the actual failure: the release carried a README the registry
+    // never served.
     const norm = (s) => s.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').trim();
-    if (norm(hoisted) !== norm(readme)) {
+    if (norm(hoisted) !== norm(tarballReadme)) {
       const hLines = norm(hoisted).split('\n');
-      const rLines = norm(readme).split('\n');
-      const at = hLines.findIndex((l, i) => l !== rLines[i]);
+      const rLines = norm(tarballReadme).split('\n');
+      // findIndex returns -1 when one text is a prefix of the other, which is
+      // what a pure append or truncation looks like. Reporting "line 0" there
+      // sends the reader to the top of a 27 kB file; the boundary is the
+      // interesting line.
+      const firstDiff = hLines.findIndex((l, i) => l !== rLines[i]);
+      const at = firstDiff === -1 ? Math.min(hLines.length, rLines.length) : firstDiff;
       fail(
-        'the packument README is not this repository\'s README',
-        `${hoisted.length} bytes served, ${readme.length} bytes here; first difference at\n` +
-          `        line ${at + 1}.\n` +
-          `        served: ${JSON.stringify((hLines[at] ?? '<end>').slice(0, 90))}\n` +
-          `        here:   ${JSON.stringify((rLines[at] ?? '<end>').slice(0, 90))}\n` +
+        'the packument README is not the one in the published tarball',
+        `${hoisted.length} bytes served, ${tarballReadme.length} bytes in the\n` +
+          `        tarball; first difference at line ${at + 1}.\n` +
+          `        served:  ${JSON.stringify((hLines[at] ?? '<end>').slice(0, 90))}\n` +
+          `        tarball: ${JSON.stringify((rLines[at] ?? '<end>').slice(0, 90))}\n` +
           '        npm hoists a README only for the version published AS `latest`, and a\n' +
           '        dist-tag move does NOT re-hoist it. Fix: publish with `--tag latest`.',
       );

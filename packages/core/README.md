@@ -294,6 +294,138 @@ is all three in one file you can copy, and
 [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md)
 §7 is the prose version.
 
+### Serving the bytes
+
+Authorizing a read is not the same as answering the request, and this page used
+to stop at the first one. Two handlers do the second, and which one you want is
+decided by your runtime, not by preference:
+
+| | |
+|---|---|
+| `deliveryHandler(fl, opts?)` | Returns `(req: IncomingMessage, res: ServerResponse) => Promise<void>`. Node's own HTTP server, and Express, Fastify and Koa, which hand you those objects. |
+| `deliveryFetch(fl, opts?)` | Returns `(req: Request) => Promise<Response \| null>`. Next.js App Router, Hono, Cloudflare Workers, Deno and Bun, which hand you a `Request` and want a `Response` back. |
+
+They are the same two routes with the same behaviour. `deliveryFetch` returns
+`null` for a request it does not own, so a catch-all route can fall through to
+the rest of your application instead of swallowing it.
+
+**Mounting the wrong one is the most common integration failure we see.** A
+`node:http` handler in an App Router route exports a function with the wrong
+shape; the symptom is not a type error at the mount point but a request that
+never answers.
+
+<!-- doccheck: skip reason="it is a route module: the export is the deliverable, and there is nothing here to call without inventing a request this page does not need" -->
+```ts
+import { deliveryFetch } from '@filelayer/core';
+
+const serve = deliveryFetch(fl, {
+  principal: async () => ({ as: await currentUserId() }),
+});
+
+export async function GET(req: Request) {
+  return (await serve(req)) ?? new Response('Not found', { status: 404 });
+}
+```
+
+Both parse `Range`, which matters more than it sounds: a `<video>` element will
+not let the user scrub until a range request is answered, and a PDF reader asks
+for the end of the file first. An **invalid** range is answered `200` with the
+whole representation, as RFC 9110 requires, and only a range that parsed
+cleanly and cannot be satisfied gets `416` with `Content-Range: bytes */<size>`.
+`Accept-Ranges: bytes` goes on the plain `200` as well, because that is how a
+client learns it may seek at all.
+
+Two defaults to know before you mount either one. **`disposition` defaults to
+`attachment`**, which downloads rather than plays, so a media route needs
+`disposition: 'inline'`. And redirecting to a presigned URL instead of proxying
+is opt-in, because it moves revocation out of your process for the life of the
+URL; it requires a storage adapter that can sign, and it refuses with
+`redirect_not_acknowledged` until the configuration says so out loud.
+[`docs/guides/serving-private-files.md`](https://github.com/filelayer/filelayer/blob/main/docs/guides/serving-private-files.md)
+is the measured comparison of the two.
+
+### Uploading straight to the bucket
+
+For files measured in hundreds of megabytes, `createUpload()` mints a presigned
+PUT so the bytes never travel through your process:
+
+<!-- doccheck: skip reason="direct upload is opt-in and needs a storage adapter that can sign plus the verbatim acknowledgement; the throwaway instance on this page has neither, by design" -->
+```ts
+const { file, upload } = await fl.createUpload(principal, orgId, {
+  name: 'recording.mp4',
+  contentType: 'video/mp4',
+  size: declaredSize,            // required and exact
+});
+// the client PUTs to upload.url with upload.headers, then:
+const ready = await fl.completeUpload(principal, file.id);
+```
+
+A presigned PUT signs the method, the key and the expiry, and **does not
+constrain the body**: a URL minted for a 200 KB avatar accepts three gigabytes.
+`createUpload()` signs `content-length` and `content-type` into the credential
+so the object store rejects the wrong size or type before accepting it, which on
+Cloudflare R2 is the only way to bound the body at all. Until
+`completeUpload()` succeeds the row is `pending` and refuses `read`, and
+`completeUpload()` asks the store what arrived rather than believing the client.
+
+It is off until the configuration carries the verbatim
+`DIRECT_UPLOAD_ACKNOWLEDGEMENT` string, and `maxUploadBytes` has no default.
+Below a few tens of megabytes `fl.files.put()` is simpler and strictly safer,
+because you see the bytes.
+
+### Errors, and proving the integration
+
+Everything throws `FilelayerError`, carrying `status`, a typed `code`, an
+internal `reason` that must never be serialized, and `headers` where a status is
+defined in terms of one. **The status is a function of the code**, so branching
+on `code` never means also branching on `status`.
+
+```ts
+import { FilelayerError } from '@filelayer/core';
+
+async function readOrRespond(id: string, as: string): Promise<Response> {
+  try {
+    const file = await fl.files.get(id, { as });
+    return new Response(JSON.stringify({ id: file.id }), { status: 200 });
+  } catch (e) {
+    if (!(e instanceof FilelayerError)) throw e;
+    return new Response(JSON.stringify({ error: e.code }), {
+      status: e.status,
+      headers: { 'content-type': 'application/json', ...(e.headers ?? {}) },
+    });
+  }
+}
+
+// A file that is not there, and a caller who may not know that:
+const denied = await readOrRespond('00000000-0000-0000-0000-000000000000', 'user_123');
+console.assert(denied.status === 404, 'a stranger gets 404, never 403');
+```
+
+There are 29 codes. The full table ships in the package as `ERRORS.md` and
+machine-readably as `errors.json`, both resolvable from an install
+(`@filelayer/core/errors.json`), both generated from the source, and a build
+gate fails if they drift. `ERROR_CODES` and `isErrorCode()` are exported for
+narrowing a code that arrived as a string.
+
+`auditIntegration()` then checks **your** routes rather than ours. You give it
+an owner, a stranger and four callbacks onto your own endpoints, and it drives
+them over HTTP:
+
+<!-- doccheck: skip reason="it drives an application over HTTP; there is no application here, and inventing one would check this library rather than the reader's" -->
+```ts
+import { auditIntegration, formatAuditReport } from '@filelayer/core';
+
+const report = await auditIntegration({ owner, stranger, app });
+console.log(formatAuditReport(report));
+```
+
+It is there because the library being correct and the integration being correct
+are different claims, and the second one is the one your users depend on. It
+checks, among other things, that a stranger gets `404` and not `403` — a `403`
+confirms the file exists and turns your ids into an enumeration oracle, and an
+application error handler that helpfully maps `not_found` back to a `403` undoes
+the property the library was providing.
+
 ### Running the suite
 
 The tests are in the tarball but they cannot be executed from inside
