@@ -69,6 +69,46 @@ Two of the three assertions that moved in the other arm were omissions of the
 same kind, which is the general lesson: these answers do not get things wrong
 so much as quietly leave them out, and a total hides that completely.
 
+## Triggering
+
+A skill that answers well and never loads is worth nothing, and the
+`description` field is the whole of the loading decision. It was measured
+separately, on 8 October 2026, with 26 requests.
+
+The judge was a model told that loading a skill costs context and that
+answering from its own knowledge is a good outcome — the realistic framing, and
+the one that makes a greedy description fail. It saw only skill names and
+descriptions, never the body.
+
+| Set | What it tests | Result |
+|---|---|---|
+| 12 requests that should load it | the cases the description claims | 12 / 12 |
+| 8 that should not, alongside five competing skills | not stealing work that has a better home | 8 / 8 |
+| the same 8, with this skill the only one available | not loading just because nothing else would | 8 / 8 |
+| 6 deliberately hard | the boundary | 6 / 6 |
+
+The hard six are the only interesting ones. Two were framed in pure
+infrastructure language with no permission word in them ("generate presigned
+PUT URLs for user uploads", "user uploads in S3 with long random UUID keys, is
+that secure enough") and both loaded it, which is the case the description
+exists for. Three had permission language and no files — IAM users on a deploy
+bucket, role-based access control for admin pages, users seeing only their own
+rows in a table — and none loaded it. One was ambiguous on purpose, naming a
+wrong tool for exactly our problem, and it loaded.
+
+**No change is warranted.** Nothing in 26 requests moved the wrong way, so
+there is no evidence to edit against, and the obvious objections to the current
+text — 158 words is long, and it leads with the package name when the case that
+matters is a developer who has never heard of it — are both contradicted by the
+two infrastructure-framed positives.
+
+What this does not measure, and it is the larger gap: a real session selects
+from dozens of skills under a long system prompt, and the selection is made by
+the harness rather than by a model asked to reason about it out loud. A model
+explaining its choice is more deliberate than one making it in passing. Treat
+this as evidence the description is not obviously broken, not as a measurement
+of how often it fires in the wild.
+
 ## Corrections
 
 **2026-10-08.** The commit that added this skill
