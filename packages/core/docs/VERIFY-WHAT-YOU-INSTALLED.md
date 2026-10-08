@@ -68,21 +68,21 @@ Three details in there are load-bearing:
 
 | | |
 |---|---|
-| tests | 627 |
+| tests | 628 |
 | pass | 594 |
 | fail | **0** |
-| skipped | 33 |
+| skipped | 34 |
 | suites | 146 |
 
 The lines will look different depending on your Node version and whether you are
-piping the output: Node 22 writes `# tests 627`, Node 24 writes `ℹ tests 627`,
+piping the output: Node 22 writes `# tests 628`, Node 24 writes `ℹ tests 628`,
 and a terminal gets ticks and timings as well. The numbers are the same. Only
 the reporter changed, and CI reads both, because reading one of them is how this
 gate first reported a passing run as a failure.
 
-The thirty-three skips are three groups.
+The thirty-four skips are three groups.
 
-**Eight** are `test/mcp.test.ts`, which needs the two optional peer
+**Nine** are `test/mcp.test.ts`, which needs the two optional peer
 dependencies of `@filelayer/core/mcp`. They are optional precisely so that an
 ordinary install does not pull them in, so in this run they are absent and the
 file skips itself test by test rather than failing to load. To run them here:

@@ -27,9 +27,16 @@ Nothing yet.
 
 ### An agent can operate this now, and the audit trail can tell that it did
 
-`@filelayer/core/mcp` builds an MCP server over an instance. Eight tools by
+`@filelayer/core/mcp` builds an MCP server over an instance. Seven tools by
 default -- list, describe, list grants, share with a person, create a link,
 revoke one grant, remove a person -- plus three that are off unless asked for.
+
+CORRECTION, same day: the first published wording of this entry, and of the
+README and llms.txt, said "eight tools by default" while enumerating seven. The
+list was right and the number was wrong. Found by smoke-testing the PUBLISHED
+package rather than the checkout, which is the only place that count can be
+read honestly. `test/mcp.test.ts` now asserts the default set by name, so the
+number in the prose is pinned to the code instead of to my memory.
 Both sharing tools require an expiry.
 
 **The subject is fixed at construction and is not a tool parameter.** The

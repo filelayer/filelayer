@@ -129,7 +129,7 @@ describe('the MCP server', () => {
     const client = await connect(filelayerMcpServer(fl, everything));
 
     const { tools } = await client.listTools();
-    assert.ok(tools.length >= 8, `only ${tools.length} tools advertised`);
+    assert.equal(tools.length, 10, `expected the default seven plus the three optional, got ${tools.map((t) => t.name).join(' ')}`);
 
     for (const tool of tools) {
       const keys = Object.keys(
@@ -151,6 +151,29 @@ describe('the MCP server', () => {
         );
       }
     }
+  });
+
+  it('registers exactly the default seven, by name', { skip: SKIP }, async () => {
+    const { fl } = await world();
+    const quiet = await toolNames(
+      filelayerMcpServer(fl, { as: 'alice', org: 'acme', agentLabel: AGENT }),
+    );
+
+    // By name and by count, because the published pages state the number. The
+    // first version of this file asserted `>= 8` with all three options on,
+    // which is ten, so it never looked at the default set -- and the README,
+    // llms.txt and the changelog all shipped saying "eight tools by default"
+    // over a list of seven. A number in prose that nothing asserts is a number
+    // nobody checked.
+    assert.deepEqual(quiet.sort(), [
+      'create_share_link',
+      'file_info',
+      'list_files',
+      'list_shares',
+      'revoke_share',
+      'share_with_user',
+      'unshare_user',
+    ]);
   });
 
   it('registers the dangerous three only when asked', { skip: SKIP }, async () => {

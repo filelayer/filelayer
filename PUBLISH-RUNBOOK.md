@@ -54,7 +54,7 @@ command never runs.
 git status
 git branch --show-current          # -> main
 
-# The whole gate: typecheck, 627 tests, build, language, links, OpenAPI,
+# The whole gate: typecheck, 628 tests, build, language, links, OpenAPI,
 # doc samples, adversarial suite. Must exit 0.
 npm run verify
 echo "verify exit: $?"
