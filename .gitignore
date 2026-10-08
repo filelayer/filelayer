@@ -30,6 +30,7 @@
 !/architecture/
 !/benchmark/
 !/docs/
+!/skills/
 
 !/examples/
 !/llms.txt
@@ -59,6 +60,20 @@
 # every commit and fails the build if one byte differs. The thing the ignore
 # rules protect against elsewhere -- a second copy that someone forgets to
 # update -- cannot survive a commit here.
+
+# `skills/` SHIPS THE SKILL AND NOT THE EVIDENCE BEHIND IT.
+#
+# `skills/filelayer-integration/` is a product surface: an Agent Skill that
+# tells a coding agent how to integrate this library in somebody else's
+# codebase, including when not to.
+#
+# `skills/*-workspace/` is the opposite: a hundred-odd files of generated
+# answers from the evaluation runs that produced the skill, with and without
+# it. They are how the skill was measured and they are not the skill. Keeping
+# them out is not hiding the method -- the eval prompts and assertions ship
+# inside the skill's own `evals/` directory -- it is keeping the repository the
+# product rather than the laboratory.
+/skills/*-workspace/
 
 # The same shape one level down, for the two directories that hold work in
 # progress alongside what is published. Same reasoning: name what is here.

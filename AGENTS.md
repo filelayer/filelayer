@@ -74,7 +74,10 @@ a failing test.
 **Registration is not coverage.** A checker pointed at a hand-written list of
 files does not check the file somebody added yesterday, and it reports success
 while doing so. Prefer discovering what exists over enumerating it; where a list
-really is better, make the list prove it is complete.
+really is better, make the list prove it is complete. The checker that enforces
+the register in this very file was itself the example: its list of scanned files
+was hand-written, so `skills/` and this page were both public and both unscanned,
+and it printed `clean` the whole time.
 
 **Say what it does not do.** [`LIMITATIONS.md`](LIMITATIONS.md) is a real
 document and it is not marketing copy with the edges filed off. If you ship a

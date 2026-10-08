@@ -18,6 +18,7 @@
  * in the repository at all is tools/check-publication-boundary.mjs.
  */
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -86,6 +87,58 @@ if (files.length === 0) {
       'certainly a broken config rather than a clean repository. Refusing to pass.',
   );
   process.exit(2);
+}
+
+// -----------------------------------------------------------------------------
+// Coverage. The include list above is an enumeration, so a new public document
+// is unscanned by default and nothing says so -- which is how `skills/` and
+// `AGENTS.md` shipped unscanned. Every git-tracked .md must therefore match
+// either `include` or `notScanned`, and a document that matches neither fails
+// the build until somebody decides which it is and writes the reason down.
+// -----------------------------------------------------------------------------
+const notScanned = config.notScanned ?? [];
+const notScannedRes = notScanned.map((e) => ({ ...e, re: globToRegExp(e.glob) }));
+
+let tracked;
+try {
+  tracked = execFileSync('git', ['ls-files', '*.md'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean);
+} catch {
+  console.error(
+    'check-internal-language: could not list tracked files with git. The coverage\n' +
+      'assertion needs it, and passing without it would report a completeness it\n' +
+      'did not check.',
+  );
+  process.exit(2);
+}
+
+const uncovered = tracked.filter(
+  (rel) =>
+    !includeRes.some((re) => re.test(rel)) && !notScannedRes.some((e) => e.re.test(rel)),
+);
+
+if (uncovered.length > 0) {
+  console.error(
+    `check-internal-language: ${uncovered.length} tracked document(s) are neither\n` +
+      'scanned nor declared out of scope:\n',
+  );
+  for (const rel of uncovered) console.error(`  ${rel}`);
+  console.error(
+    '\nAdd each one to `include` in .internal-language.json if an adopter reads it,\n' +
+      'or to `notScanned` with a reason if it is written for us. There is no default.',
+  );
+  process.exit(1);
+}
+
+const deadGlobs = notScannedRes.filter((e) => !tracked.some((rel) => e.re.test(rel)));
+if (deadGlobs.length > 0) {
+  console.error(
+    'check-internal-language: these `notScanned` entries match nothing, so they are\n' +
+      'an exemption for a file that no longer exists:\n',
+  );
+  for (const e of deadGlobs) console.error(`  ${e.glob}`);
+  process.exit(1);
 }
 
 // -----------------------------------------------------------------------------

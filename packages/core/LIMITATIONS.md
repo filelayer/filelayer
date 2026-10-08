@@ -133,6 +133,23 @@ Each one is current as of
    the cap. "Every access on the record" means every authorization decision. On
    the redirect path a `file.deliver` event does record the handoff; on the proxy
    path there is no event that says the bytes arrived.
+15. **There is no way to adopt an object that is already in your bucket.** The
+   storage key is chosen by the library, `<orgId>/<fileId>`, and every write
+   path goes through a call that mints a new file row. There is no
+   `importExisting()`, no "register this key", and no way to point a file row
+   at bytes somebody else wrote. So **an application migrating to Filelayer
+   with files already in a bucket has to copy them**: read each object, call
+   `upload()` or `files.put()`, and either delete or leave the original. For a
+   large bucket that is a real job with a real egress bill, and it is the first
+   thing a prospective adopter with existing data runs into.
+
+   Deliberate, and the reason is the half of the unique index that the key
+   participates in: `UNIQUE (storage_provider, storage_key)` is what makes a
+   file row and an object the same thing. Letting a caller supply a key would
+   let two rows claim one object, or one row claim an object the caller does
+   not own, which is ambient authority through the back door. But it is a cost
+   paid at exactly the moment somebody decides to adopt this, and saying so
+   here is cheaper than letting them find out.
 
 ---
 

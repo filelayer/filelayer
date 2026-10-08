@@ -65,7 +65,10 @@
     "packages/core/migrations/*.json",
     "LIMITATIONS.md",
     "ROADMAP.md",
-    "packages/core/LIMITATIONS.md"
+    "packages/core/LIMITATIONS.md",
+    "skills/*/SKILL.md",
+    "skills/*/references/*.md",
+    "AGENTS.md"
   ],
   "includeNote": [
     "`include` is the surface a stranger reads: everything in the npm tarball,",
@@ -77,7 +80,11 @@
     "",
     "If a file is added to the `files` array in packages/core/package.json, add a",
     "glob for it here in the same commit -- the two lists are the same list seen",
-    "from two directions, and check-publication-boundary.mjs fails if they drift."
+    "from two directions, and check-publication-boundary.mjs fails if they drift.",
+    "skills/ is a public product surface -- an Agent Skill ships in the repo and is read by other people's coding agents -- so it is scanned like the guides. The evaluation workspace under skills/*-workspace/ is gitignored and not scanned.",
+    "skills/ is a public product surface -- an Agent Skill ships in the repo and is read by other people's coding agents -- so it is scanned like the guides. The evaluation workspace under skills/*-workspace/ is gitignored and not scanned.",
+    "This list used to be the whole definition of the scanned surface, which meant a new public document was unscanned by default and nothing said so: skills/ and AGENTS.md were both public and both invisible to this gate until 2026-10-08. Every git-tracked .md must now match either include or notScanned, and the gate fails otherwise. Adding a document is therefore a decision somebody has to write down.",
+    "The coverage assertion covers tracked .md only. Other shipped file types -- .ts, .sql, .json -- are scanned where an include glob names them, and are not forced to be declared, because prose is the thing this gate reads and most of those files have none. A shipped .json that argues a position rather than carrying data should be added to include by hand."
   ],
   "terms": [
     {
@@ -89,7 +96,7 @@
     {
       "id": "comparison-implementation",
       "pattern": "\\bbaselines?\\b",
-      "reason": "The comparison implementations built alongside this library. Name the actual technology instead ('a hand-rolled S3 integration'). EXEMPTION, added 2026-09-06: the directories `benchmark/baseline-convex/`, `benchmark/baseline-raw-s3/`, `benchmark/baseline-supabase/` and `benchmark/baseline-vercel-blob/` are published on purpose, and their reports are the evidence we cite AGAINST ourselves -- ARCHITECTURE-PROGRESSIVE.md \u00a74.3 links baseline-supabase/REPORT.md to concede that RLS enforces at a layer this library does not reach. A published file cannot be cited without naming its path. The exemption therefore allows a line ONLY where every occurrence of the word is immediately preceded by the literal `benchmark/`, which is the same shape as the `benchmark` rule's own path exemption and covers exactly one surface: a link or path reference. Every other use is framing and still fails, including hyphenated ones -- 'the baseline', 'our baselines', 'a baseline metric', 'baseline-driven', and even 'the baseline-supabase numbers' without the directory prefix. A first draft of this exemption allowed any `baseline-*`, which was a hole; the lookbehind closes it. If you widen this pattern, re-run these cases: PASS `benchmark/baseline-supabase/REPORT.md`; FAIL `the baselines showed a difference`, `our baseline`, `a baseline metric`, `our baseline-driven evaluation metric`, `the baseline-supabase numbers say`, and any line mixing a valid path with a bare use.",
+      "reason": "The comparison implementations built alongside this library. Name the actual technology instead ('a hand-rolled S3 integration'). EXEMPTION, added 2026-09-06: the directories `benchmark/baseline-convex/`, `benchmark/baseline-raw-s3/`, `benchmark/baseline-supabase/` and `benchmark/baseline-vercel-blob/` are published on purpose, and their reports are the evidence we cite AGAINST ourselves -- ARCHITECTURE-PROGRESSIVE.md §4.3 links baseline-supabase/REPORT.md to concede that RLS enforces at a layer this library does not reach. A published file cannot be cited without naming its path. The exemption therefore allows a line ONLY where every occurrence of the word is immediately preceded by the literal `benchmark/`, which is the same shape as the `benchmark` rule's own path exemption and covers exactly one surface: a link or path reference. Every other use is framing and still fails, including hyphenated ones -- 'the baseline', 'our baselines', 'a baseline metric', 'baseline-driven', and even 'the baseline-supabase numbers' without the directory prefix. A first draft of this exemption allowed any `baseline-*`, which was a hole; the lookbehind closes it. If you widen this pattern, re-run these cases: PASS `benchmark/baseline-supabase/REPORT.md`; FAIL `the baselines showed a difference`, `our baseline`, `a baseline metric`, `our baseline-driven evaluation metric`, `the baseline-supabase numbers say`, and any line mixing a valid path with a bare use.",
       "allowIfLineMatches": "^(?:(?!(?<!benchmark/)baseline).)*$"
     },
     {
@@ -99,5 +106,19 @@
       "allowIfLineMatches": "compliance auditor|'auditor'|\"auditor\"|`auditor`"
     }
   ],
-  "exceptions": []
+  "exceptions": [],
+  "notScanned": [
+    {
+      "glob": "architecture/*.md",
+      "reason": "Design records, written for us. They argue with themselves in our own register -- SPIKE-RLS.md weighs 'the benchmark' against the architecture on purpose -- and rewriting them for an outside reader would destroy the record. Public on GitHub, deliberately not adopter-facing."
+    },
+    {
+      "glob": "benchmark/**/*.md",
+      "reason": "Measurement reports. The word this gate forbids is the name of the directory and of the exercise, so the term rules cannot apply here. Published as evidence, including the reports that go against us."
+    },
+    {
+      "glob": "packages/core/README.md",
+      "reason": "Byte-identical copy of the root README, which IS scanned. check:copies fails if they ever diverge, so scanning it twice would only hide which one to fix."
+    }
+  ]
 }
