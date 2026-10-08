@@ -257,15 +257,27 @@ try {
         '        find the package undescribed. Fix: publish a version with `--tag latest`.',
     );
   } else {
-    const missing = DOCUMENTED_EXPORTS.filter(
-      (e) => readme.includes(e.name) && !hoisted.includes(e.name),
-    ).map((e) => e.name);
-    if (missing.length > 0) {
+    // Compare the served copy against this repository's README directly.
+    //
+    // The first version of this check looked for the documented export names in
+    // the served copy and skipped any the local README did not mention -- which
+    // made it vacuous, because the local README mentions almost none of them.
+    // It reported `clean` against a packument that was missing everything. A
+    // check whose assertion is conditional on the thing it is checking is not a
+    // check. Normalising whitespace only, this compares the two texts.
+    const norm = (s) => s.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').trim();
+    if (norm(hoisted) !== norm(readme)) {
+      const hLines = norm(hoisted).split('\n');
+      const rLines = norm(readme).split('\n');
+      const at = hLines.findIndex((l, i) => l !== rLines[i]);
       fail(
-        `the packument README is not the current one (missing: ${missing.join(', ')})`,
-        'README.md in this repository documents those; the copy npm serves does not,\n' +
-          '        so it is an older release\'s README still hoisted. A dist-tag move does\n' +
-          '        NOT re-hoist it. Fix: publish a version with `--tag latest`.',
+        'the packument README is not this repository\'s README',
+        `${hoisted.length} bytes served, ${readme.length} bytes here; first difference at\n` +
+          `        line ${at + 1}.\n` +
+          `        served: ${JSON.stringify((hLines[at] ?? '<end>').slice(0, 90))}\n` +
+          `        here:   ${JSON.stringify((rLines[at] ?? '<end>').slice(0, 90))}\n` +
+          '        npm hoists a README only for the version published AS `latest`, and a\n' +
+          '        dist-tag move does NOT re-hoist it. Fix: publish with `--tag latest`.',
       );
     }
   }
