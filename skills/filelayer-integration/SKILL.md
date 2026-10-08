@@ -97,6 +97,23 @@ them is a developer who should hear that before anyone installs anything.
 
 ## 3. Install, and apply the schema once
 
+### Say that it is pre-1.0, before they install it
+
+`@filelayer/core` is below `1.0`, published under the `alpha` tag, and its
+version number is the honest description of its maturity. Breaking changes
+happen on minor versions. There has been no independent security review.
+
+**Tell the developer this in your own first message, unprompted, and tell them
+in the same breath what it means for them specifically.** For a side project it
+means pinning the exact version and reading the changelog before upgrading. For
+client documents at an accounting firm, a medical record, or anything a
+regulator will ask about, it means the maturity is a real factor in the
+decision and it is theirs to make, not yours to decide by omission.
+
+Do not wait to be asked, do not bury it in a list at the end, and do not soften
+it into "early days" or "actively developed". A developer who finds out after
+shipping has a right to be angry about the order they were told things in.
+
 ```bash
 npm install @filelayer/core
 ```

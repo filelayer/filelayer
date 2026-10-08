@@ -68,7 +68,8 @@
     "packages/core/LIMITATIONS.md",
     "skills/*/SKILL.md",
     "skills/*/references/*.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "skills/*/evals/*.md"
   ],
   "includeNote": [
     "`include` is the surface a stranger reads: everything in the npm tarball,",

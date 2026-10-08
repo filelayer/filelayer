@@ -190,6 +190,18 @@ jobs:
       - name: Every path inside the tarball resolves inside the tarball
         run: npm run check:install-reach
 
+      # And the step above, and every other install check, packs this checkout.
+      # None of them had ever run the command the README gives a reader. That is
+      # how 0.18.0 through 0.20.0 went out under `--tag alpha` while `latest`
+      # stayed on 0.17.0: a green suite, and `npm install @filelayer/core`
+      # handing strangers a package with no `deliveryFetch`, no
+      # `auditIntegration` and no error catalogue, against five guides, a worked
+      # example and an Agent Skill that all tell them to use those. This step
+      # installs from the registry, with the command the README prints, and
+      # compares what arrives against what the pages promise.
+      - name: A reader installing what the README says gets what the docs describe
+        run: npm run check:published
+
       # THE STRONGEST SENTENCE THIS PROJECT SAYS, EXECUTED. "The tests ship, so
       # every claim is checkable from what you installed" was true of the files
       # and false of the procedure: Node will not strip types under
