@@ -6,7 +6,7 @@ because a limitations list that lives only in a README gets trimmed for length
 and the trimming is always in our favour.
 
 Each one is current as of
-`0.20.1`; where a limitation has been lifted since an earlier release, the
+`0.21.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **`Range` is answered, with three documented edges.** The shipped routes
@@ -150,6 +150,26 @@ Each one is current as of
    not own, which is ambient authority through the back door. But it is a cost
    paid at exactly the moment somebody decides to adopt this, and saying so
    here is cheaper than letting them find out.
+16. **Reading the audit trail is not itself an audited act.** `orgs.audit()`
+   and `auditLog()` write nothing, so a caller with standing can read an entire
+   organisation's history -- every file name, every actor, every denial and its
+   reason -- and leave no trace that they did. The trail answers "who touched
+   this file" and does not answer "who read the trail".
+
+   This is a gap rather than a decision. Several compliance regimes treat
+   access to an audit log as a loggable event precisely because it is the
+   record an insider would consult first. It is not closed yet because making a
+   read append to a hash-chained log needs a deliberate answer on chain growth
+   and on what a read of a read records, and guessing at that is worse than
+   saying it is missing.
+
+   Two consequences worth knowing now. The audit tool in the MCP server is off
+   by default for this reason, not because reading is dangerous in itself but
+   because an agent reading on someone's behalf is exactly the case where the
+   missing record would have mattered. And
+   [`test/audit-context.test.ts`](packages/core/test/audit-context.test.ts)
+   asserts the current behaviour, so closing the gap fails that test and forces
+   this entry to be deleted in the same commit as the fix.
 
 ---
 

@@ -183,7 +183,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **614 tests**, every commit, all of them against a real PostgreSQL |
+| The suite | **627 tests**, every commit, all of them against a real PostgreSQL |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends — races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **27 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -373,6 +373,66 @@ It is off until the configuration carries the verbatim
 Below a few tens of megabytes `fl.files.put()` is simpler and strictly safer,
 because you see the bytes.
 
+### Letting an agent operate it
+
+`@filelayer/core/mcp` builds an MCP server over an instance, so an agent can
+answer "which contracts can Alice see", "share this one with the external
+accountant for two weeks", "take that back" — through the same authorization
+code path as your HTTP routes, with no second set of rules to keep in agreement.
+You construct it and you run it; there is nothing hosted and nothing to sign up
+for.
+
+<!-- doccheck: skip reason="it connects a server to stdio and never returns, and it imports the MCP SDK, which is an optional peer this checker does not install" -->
+```ts
+import { filelayerMcpServer } from '@filelayer/core/mcp';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+
+const server = await filelayerMcpServer(fl, {
+  as: 'user_partner_alice',          // fixed here, not a tool argument
+  org: 'org_acme',
+  agentLabel: 'acme-assistant/1.0',  // how the audit trail names the agent
+});
+await server.connect(new StdioServerTransport());
+```
+
+**The subject is fixed at construction.** It is not a tool parameter and no
+tool changes it, because the obvious design — a `user` argument on every call —
+lets the agent choose who it is, which makes every permission check advisory. An
+MCP server that can act as anyone is an admin backdoor with a schema. One server
+speaks for one subject in one organisation; serving several people means
+constructing several servers, and that cost is the property.
+
+Eight tools by default: list files, describe one, list its grants, share with a
+person, create a link, revoke one grant, remove a person entirely. Expiry is
+required on both sharing tools, because a permanent grant is a decision a person
+should make. Each tool declares `readOnlyHint` and `destructiveHint` so a client
+can gate the ones that write. Failures come back as the stable error `code` with
+the `meaning` and `fix` from the catalogue, and never with `reason`.
+
+Three things are off by default, each for its own reason: `allowDestructive`
+(deleting is not recoverable), `returnFileBytes` (a document returned by a tool
+is a document copied into a model's context), and `exposeAuditTrail` — because
+reading the trail is the one act Filelayer does not itself record, so an agent
+could read an organisation's whole history and leave nothing behind
+([`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md)
+entry 16).
+
+This module is the only part of the package with dependencies, and they are
+optional peers, so the install above stays at zero:
+
+```bash
+npm install @modelcontextprotocol/sdk zod
+```
+
+`zod` is not a preference: the SDK accepts Zod schemas for a tool's inputs and
+nothing else. Calling the factory without either one throws and names what is
+missing and the command.
+
+Every call made through these tools records `agentLabel` as the audit event's
+user agent, which is what lets the chain separate "the partner opened this" from
+"the partner's assistant opened this". Those are different facts and until
+`0.21.0` the library had nowhere to put the difference.
+
 ### Errors, and proving the integration
 
 Everything throws `FilelayerError`, carrying `status`, a typed `code`, an
@@ -437,7 +497,7 @@ running in-process, so there is no daemon and no Docker:
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 614 tests
+npm test                 # the security property suite, 627 tests
 npm run typecheck
 npm run verify           # typecheck + tests + build + doc and language checks
 npm run example:tier1    # a public avatar, on :3000

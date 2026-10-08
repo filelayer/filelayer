@@ -109,6 +109,25 @@ explaining its choice is more deliberate than one making it in passing. Treat
 this as evidence the description is not obviously broken, not as a measurement
 of how often it fires in the wild.
 
+## What ships is no longer exactly what was graded
+
+Two things were added to `SKILL.md` after run 2, both from findings rather than
+from taste, and neither has been graded:
+
+- the instruction to say the package is pre-1.0, which is the gap run 2 found
+- one paragraph pointing at `@filelayer/core/mcp` for the case where somebody
+  wants an assistant to operate their files, with an explicit "do not pitch it"
+
+So the figures above describe the fourth draft, and the fifth is what an
+adopter gets. The additions are additive and in sections the graded assertions
+do not reach, which is a reason to expect the numbers to hold and not a reason
+to claim they do.
+
+The `description` field was NOT touched. It now under-describes the skill,
+since operating files through MCP is not in it, and that is deliberate for now:
+editing it would invalidate the triggering measurement below, and nothing has
+established that the omission costs anything.
+
 ## Corrections
 
 **2026-10-08.** The commit that added this skill

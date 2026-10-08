@@ -105,6 +105,16 @@ const CLAIMS = [
     probe: { kind: 'export', name: 'ERROR_CODES' },
     note: 'The typed code union and the generated catalogue.',
   },
+  {
+    match: 'is an MCP server over an instance',
+    probe: { kind: 'ships', file: 'dist/mcp.js', text: 'registerTool' },
+    note: 'The MCP server. Probed as a shipped file rather than an export, because it is a subpath entry and not re-exported from the main one -- on purpose, so that the SDK is not a hard import for everyone.',
+  },
+  {
+    match: '**`AsOption` now carries `ip` and `userAgent`**',
+    probe: { kind: 'ships', file: 'dist/simple.d.ts', text: 'userAgent?: string' },
+    note: 'Audit context on the facade tier.',
+  },
 ];
 
 let failures = 0;
@@ -205,6 +215,10 @@ try {
   process.exit(2);
 }
 
+const localVersion = JSON.parse(
+  readFileSync(join(ROOT, 'packages/core/package.json'), 'utf8'),
+).version;
+
 const installs = new Map();
 function install(version) {
   if (installs.has(version)) return installs.get(version);
@@ -253,6 +267,26 @@ for (const w of work) {
   const label = `${probe.kind}:${probe.name ?? `${probe.file}/${probe.text}`}`;
 
   if (!published.includes(w.version)) {
+    // The release being prepared is not a wrong claim. `check:versions` already
+    // refuses a version ahead of package.json, so a claim dated to the local
+    // version and not yet on the registry is a pending publish, and failing
+    // here would mean no release could ever document its own new feature. Said
+    // out loud rather than skipped silently, because what it means is that this
+    // particular claim is unverified until the publish happens -- and then
+    // `check:published` is the gate that notices.
+    //
+    // This is the second time today the same mistake went into a gate: the
+    // first version of `check:published` compared the served README against the
+    // working tree, which turned every README edit red until a publish.
+    // Verifying against the registry is right; punishing unreleased work is
+    // not, and the two are easy to conflate.
+    if (w.version === localVersion) {
+      console.log(
+        `  ${label}: dated ${w.version}, which is this checkout's version and is not ` +
+          'published yet. UNVERIFIED until it is.',
+      );
+      continue;
+    }
     fail(
       `${w.file}:${w.line} dates ${label} to ${w.version}, which was never published`,
       `Published: ${published.join(', ')}`,

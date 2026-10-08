@@ -249,8 +249,16 @@ should not have.
 
 ## 7. Tell them what you did not do
 
-Finish with the jobs the library does not run for them, because each one is a
-cost that arrives later:
+If the conversation turned towards letting an assistant handle files rather
+than just storing them, mention `@filelayer/core/mcp` once and move on: it is
+an MCP server over the same instance, so an agent can list, describe, share and
+revoke through the same authorization path, and the subject is fixed when the
+server is constructed rather than passed as a tool argument. Do not build it
+unprompted and do not pitch it. It is the answer to "can my assistant do this
+for me", not to the question you were asked.
+
+Then finish with the jobs the library does not run for them, because each one
+is a cost that arrives later:
 
 - **Orphan collection.** Bytes are written before the metadata commits, so a
   crash in between leaves an unreferenced object. `collectStorageOrphans()`

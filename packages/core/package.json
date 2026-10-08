@@ -1,6 +1,6 @@
 {
   "name": "@filelayer/core",
-  "version": "0.20.1",
+  "version": "0.21.0",
   "description": "Multi-tenant file authorization middleware and lifecycle for Postgres: a single decision point for public and private files, revocable URLs, delegated share links and a hash-chained audit trail.",
   "license": "Apache-2.0",
   "type": "module",
@@ -19,7 +19,12 @@
     "./llms.txt": "./llms.txt",
     "./openapi.json": "./openapi.json",
     "./package.json": "./package.json",
-    "./errors.json": "./errors.json"
+    "./errors.json": "./errors.json",
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js",
+      "default": "./dist/mcp.js"
+    }
   },
   "files": [
     "dist",
@@ -82,19 +87,29 @@
     "test:contention": "FILELAYER_TEST_CONTENTION=1 node --test --experimental-strip-types \"test/contention.test.ts\""
   },
   "peerDependencies": {
-    "@electric-sql/pglite": "^0.3.11"
+    "@electric-sql/pglite": "^0.3.11",
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "zod": "^3.25.0 || ^4.0.0"
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "zod": {
       "optional": true
     }
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.11",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.23.1",
     "embedded-postgres": "^18.4.0-beta.17",
     "pg": "^8.23.1",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "zod": "^4.6.5"
   }
 }

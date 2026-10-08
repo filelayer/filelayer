@@ -72,6 +72,7 @@ const DOCUMENTED_SUBPATHS = [
   { spec: 'schema.sql', json: false, where: 'README.md, docs/QUICKSTART.md' },
   { spec: 'llms.txt', json: false, where: 'filelayer.dev, llms.txt' },
   { spec: 'openapi.json', json: true, where: 'docs/, check:openapi' },
+  { spec: 'mcp', json: false, where: 'README.md, llms.txt: `@filelayer/core/mcp`' },
 ];
 
 /** Files that must ship inside the tarball because a page tells a reader to open them. */

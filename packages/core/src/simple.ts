@@ -138,6 +138,55 @@ export interface AsOption {
    * to prevent.
    */
   as?: string;
+
+  /**
+   * Audit context, recorded against every event this call produces.
+   *
+   * ---------------------------------------------------------------------------
+   * WHY THESE ARE HERE
+   * ---------------------------------------------------------------------------
+   *
+   * `Principal` has carried `ip` and `userAgent` since the beginning and the
+   * route layer passes them, but this tier did not expose them, so a call made
+   * through `files.*` or `shares.*` wrote an event with no idea where it came
+   * from. That was survivable while every caller was a web request. It stopped
+   * being survivable with an MCP server: "the partner opened this document" and
+   * "the partner's AI assistant opened this document" are different facts, and
+   * a compliance auditor reading the chain could not tell them apart because
+   * the library gave the caller nowhere to say which it was.
+   *
+   * ---------------------------------------------------------------------------
+   * THESE ARE ASSERTIONS, NOT MEASUREMENTS
+   * ---------------------------------------------------------------------------
+   *
+   * Both values are whatever the caller passed. Nothing verifies them, and
+   * nothing can: this is a library call, not a socket. They are recorded
+   * because an unverified attribution is still worth more than none to someone
+   * reconstructing an incident, and they are worth exactly nothing as an
+   * authorization input. **No authorization decision reads either field**, and
+   * none ever should -- that would make the audit context a credential.
+   *
+   * The same reasoning is why `deliveryFetch` refuses to read
+   * `X-Forwarded-For` by itself and makes you pass `clientIp`: a value the
+   * caller chose should be labelled as such at the point it enters.
+   */
+  ip?: string;
+  userAgent?: string;
+}
+
+/**
+ * The audit fields of an `AsOption`, as a spreadable object.
+ *
+ * Returns the keys only when they were passed, so a caller that said nothing
+ * produces `{ actorId }` exactly as before rather than `{ actorId, ip:
+ * undefined, userAgent: undefined }`. That matters because those two shapes
+ * serialize differently and the audit row is hashed into a chain.
+ */
+function auditContext(opts: AsOption): { ip?: string; userAgent?: string } {
+  const out: { ip?: string; userAgent?: string } = {};
+  if (opts.ip !== undefined) out.ip = opts.ip;
+  if (opts.userAgent !== undefined) out.userAgent = opts.userAgent;
+  return out;
 }
 
 export interface GetResult {
@@ -577,14 +626,15 @@ export class FilesApi {
    * nobody.
    */
   private async principal(opts: AsOption, cfg: { orSystem?: boolean } = {}): Promise<Principal> {
+    const audit = auditContext(opts);
     if (opts.as === undefined) {
-      if (!cfg.orSystem) return { actorId: null };
+      if (!cfg.orSystem) return { actorId: null, ...audit };
       // publish/unpublish with no `as` is a server-side administrative action in
       // the default workspace, performed by the service identity that owns it.
-      return { actorId: await this.ids.actor(SYSTEM_ACTOR) };
+      return { actorId: await this.ids.actor(SYSTEM_ACTOR), ...audit };
     }
     const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'file.access');
-    return { actorId };
+    return { actorId, ...audit };
   }
 }
 
@@ -817,10 +867,10 @@ export class OrgsApi {
   /** Audit trail for a tenant. Requires `read_audit`, i.e. admin or owner. */
   async audit(
     org: string,
-    opts: { as: string; decision?: 'allow' | 'deny'; limit?: number },
+    opts: AsOption & { as: string; decision?: 'allow' | 'deny'; limit?: number },
   ) {
     const orgId = await this.requireOrg(org);
-    const principal = await this.requirePrincipal(opts.as);
+    const principal = await this.requirePrincipal(opts.as, opts);
     return this.fl.auditLog(principal, orgId, {
       ...(opts.decision ? { decision: opts.decision } : {}),
       // `opts.limit ? ...` is a TRUTHINESS test, so `limit: 0` was discarded and
@@ -831,9 +881,9 @@ export class OrgsApi {
     });
   }
 
-  async verifyAudit(org: string, opts: { as: string }) {
+  async verifyAudit(org: string, opts: AsOption & { as: string }) {
     const orgId = await this.requireOrg(org);
-    return this.fl.verifyAuditChain(await this.requirePrincipal(opts.as), orgId);
+    return this.fl.verifyAuditChain(await this.requirePrincipal(opts.as, opts), orgId);
   }
 
   private async trio(org: string, user: string, as: string) {
@@ -847,9 +897,9 @@ export class OrgsApi {
     return this.ids.requireOrg(externalId);
   }
 
-  private async requirePrincipal(as: string): Promise<Principal> {
+  private async requirePrincipal(as: string, opts: AsOption = {}): Promise<Principal> {
     const actorId = await resolveActorOrDeny(this.fl, this.ids, as, 'org.access');
-    return { actorId };
+    return { actorId, ...auditContext(opts) };
   }
 }
 
@@ -935,7 +985,7 @@ export class SharesApi {
           ? { type: 'role', orgId: await this.requireOrgId(opts.withOrg), minRole: opts.minRole }
           : { type: 'org', orgId: await this.requireOrgId(opts.withOrg) }
         : { type: 'link' };
-    return this.fl.share({ actorId }, fileId, {
+    return this.fl.share({ actorId, ...auditContext(opts) }, fileId, {
       subject,
       ...(opts.capabilities ? { capabilities: opts.capabilities } : {}),
       ...(opts.expiresIn !== undefined ? { expiresIn: opts.expiresIn } : {}),
@@ -955,9 +1005,9 @@ export class SharesApi {
    * Use `unshare()` to remove a named user's access. Use this when you are
    * revoking a specific share link whose secret you handed out.
    */
-  async revoke(grantId: string, opts: { as: string }) {
+  async revoke(grantId: string, opts: AsOption & { as: string }) {
     const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.revoke');
-    return this.fl.revoke({ actorId }, grantId);
+    return this.fl.revoke({ actorId, ...auditContext(opts) }, grantId);
   }
 
   /**
@@ -976,21 +1026,21 @@ export class SharesApi {
    */
   async unshare(
     fileId: string,
-    opts: { as: string; user: string },
+    opts: AsOption & { as: string; user: string },
   ): Promise<{ revoked: number }> {
     const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.revoke', fileId);
     const target = await this.ids.findActor(opts.user);
     if (!target) return { revoked: 0 };
-    const { revoked } = await this.fl.revokeFor({ actorId }, fileId, {
+    const { revoked } = await this.fl.revokeFor({ actorId, ...auditContext(opts) }, fileId, {
       type: 'actor',
       actorId: target,
     });
     return { revoked: revoked.length };
   }
 
-  async list(fileId: string, opts: { as: string }) {
+  async list(fileId: string, opts: AsOption & { as: string }) {
     const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.list', fileId);
-    return this.fl.listGrants({ actorId }, fileId);
+    return this.fl.listGrants({ actorId, ...auditContext(opts) }, fileId);
   }
 
   /** Redeem a share link. No identity required -- the secret is the credential. */

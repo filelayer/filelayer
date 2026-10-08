@@ -23,6 +23,69 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.21.0] — 2026-10-08
+
+### An agent can operate this now, and the audit trail can tell that it did
+
+`@filelayer/core/mcp` builds an MCP server over an instance. Eight tools by
+default -- list, describe, list grants, share with a person, create a link,
+revoke one grant, remove a person -- plus three that are off unless asked for.
+Both sharing tools require an expiry.
+
+**The subject is fixed at construction and is not a tool parameter.** The
+obvious design is a `user` argument on every call, and it is a backdoor with a
+schema: the agent chooses who it is, so every permission check in the product
+becomes advisory. One server speaks for one subject in one organisation.
+Serving several people means several servers, which is the cost of the property
+and is not hidden.
+
+`allowDestructive`, `returnFileBytes` and `exposeAuditTrail` default to false.
+The third one is off because of the limitation below, not out of caution.
+
+The module needs `@modelcontextprotocol/sdk` and `zod`, both OPTIONAL peer
+dependencies, so `npm install @filelayer/core` still has zero runtime
+dependencies. The factory is async because it loads them dynamically: a static
+import of a missing optional peer fails with Node's `ERR_MODULE_NOT_FOUND`,
+which names one package and neither the second one nor the command. This names
+both and the command, which is what `createTestDb()` already does for PGlite.
+
+### `AsOption` carries audit context
+
+`files.*`, `shares.*` and `orgs.audit` now accept `ip` and `userAgent`, and
+record them on every event the call produces.
+
+`Principal` has carried both since the beginning and the route layer passes
+them, but this tier -- the one the README, the quickstart, the guides and the
+Agent Skill all teach -- did not expose them, so a call made through it wrote an
+event with `user_agent` null. That was survivable while every caller was a web
+request. It stopped being survivable with an MCP server: an agent acting for a
+partner produced a read indistinguishable, in the chain, from the partner
+reading it herself. "The partner opened this document" and "the partner's
+assistant opened this document" are different facts and the library had nowhere
+to put the difference.
+
+Both values are assertions, not measurements. Nothing verifies them and
+**no authorization decision reads either one**, which is the same reasoning as
+`deliveryFetch` refusing to read `X-Forwarded-For` by itself.
+
+### Said out loud: reading the audit trail is not audited
+
+New LIMITATIONS entry 16. `orgs.audit()` and `auditLog()` write nothing, so a
+caller with standing can read an entire organisation's history -- every file
+name, every actor, every denial and its reason -- and leave no trace. The trail
+answers "who touched this file" and does not answer "who read the trail".
+
+Found while writing a test for the MCP server that asserted the opposite. The
+test now pins the current behaviour, so closing the gap fails it and forces the
+published limitation to be deleted in the same commit as the fix.
+
+### Also
+
+A new gate, `check:since`, installs the version cited by every "since 0.X.Y"
+claim on a published surface AND the version published before it, because
+dating a feature late is invisible to a presence check. Two claims in `llms.txt`
+were wrong by two releases.
+
 ## [0.20.1] — 2026-10-08
 
 No code changed. This release exists because the registry needed a publish, and
