@@ -155,79 +155,147 @@ const declared = JSON.parse(
 
 console.log(`  the registry resolved it to ${resolved}; this checkout is ${declared}.`);
 
-if (resolved !== declared) {
+// ---------------------------------------------------------------------------
+// This gate does TWO jobs, and only one of them depends on this checkout being
+// published. Separating them matters, because the first version conflated them
+// and so a release commit could never have a green build: the docs describe the
+// version being prepared, which by definition is not on the registry yet. That
+// is the third time today the same mistake went into a gate -- `check:since`
+// had it, and the first `check:published` compared the served README against
+// the working tree. Verifying against the registry is right; making unreleased
+// work look like a defect is not.
+//
+//   JOB 1, always checkable: `latest` is the newest version on the registry.
+//           This is the one that catches a stuck dist-tag, which is the defect
+//           that started all of this -- `latest` sat on 0.17.0 for two days
+//           while four releases went out under `alpha`.
+//
+//   JOB 2, only when this checkout is published: what a reader installs has the
+//           API these pages document. Before the publish the pages legitimately
+//           run ahead, and after it they must not.
+// ---------------------------------------------------------------------------
+let newestPublished = resolved;
+try {
+  const res = await fetch(`https://registry.npmjs.org/${PKG}`, {
+    headers: { accept: 'application/json' },
+  });
+  const packument = await res.json();
+  const cmp = (a, b) => {
+    const [x, y] = [a, b].map((v) => v.split('.').map(Number));
+    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+  };
+  const all = Object.keys(packument.versions).sort(cmp);
+  newestPublished = all[all.length - 1];
+  const latestTag = packument['dist-tags']?.latest;
+  if (latestTag !== newestPublished) {
+    fail(
+      `the \`latest\` dist-tag is not the newest published version`,
+      `\`latest\` points at ${latestTag} and the newest published version is\n` +
+        `        ${newestPublished}. A reader following the published install command gets\n` +
+        `        the older one. This is the defect that went unnoticed for two days:\n` +
+        `        releases published under another tag do not move \`latest\`, and nothing\n` +
+        `        else in this suite looks at what the registry actually serves.\n` +
+        `        Fix: npm dist-tag add ${PKG}@${newestPublished} latest`,
+    );
+  }
+} catch (e) {
   fail(
-    `the published install does not give a reader this version`,
-    `\`npm install ${SPEC}\` resolves to ${resolved}, while the documentation in this\n` +
-      `        repository describes ${declared}. Either the dist-tag the README's command\n` +
-      `        reads has not been moved, or the release was never published. Until one of\n` +
-      `        those is true, every page here describes software a reader cannot install.`,
+    'the published version list could not be read',
+    `${String(e.message).slice(0, 160)}\n` +
+      '        This check needs it; passing without it would report a verification that\n' +
+      '        did not happen.',
   );
+}
+
+const thisCheckoutIsPublished = resolved === declared;
+
+if (!thisCheckoutIsPublished) {
+  if (declared === newestPublished) {
+    fail(
+      `${declared} is published but \`npm install\` gives ${resolved}`,
+      'So the release happened and the tag did not move. See the dist-tag failure above.',
+    );
+  } else {
+    console.log(
+      `  ${declared} is not on the registry yet, so the API checks below are UNVERIFIED\n` +
+        `  for it. They run against ${resolved}, which is what a reader installs today.\n` +
+        '  This is a pending release, not a defect. After publishing, re-run this gate:\n' +
+        '  that run is what proves the pages and the package agree.',
+    );
+  }
 }
 
 // -----------------------------------------------------------------------------
 // Does the thing they received have the API the pages tell them to import?
 // -----------------------------------------------------------------------------
-let mod;
-try {
-  mod = await import(join(work, 'node_modules', PKG, 'dist/index.js'));
-} catch {
+// JOB 2. Only answerable for a version that is on the registry. When this
+// checkout is unpublished the pages legitimately describe API the installed
+// copy does not have, and the run after the publish is the one that proves
+// they agree.
+if (thisCheckoutIsPublished) {
+  let mod;
   try {
-    mod = await import(PKG, { parent: join(work, 'package.json') });
-  } catch (e) {
-    fail('the installed package could not be imported', String(e.message).slice(0, 300));
-  }
-}
-
-if (mod) {
-  for (const { name, where } of DOCUMENTED_EXPORTS) {
-    if (!(name in mod)) {
-      fail(
-        `${name} is documented but not exported by ${resolved}`,
-        `Described in: ${where}. A reader who follows that page gets an undefined import.`,
-      );
-    }
-  }
-}
-
-// Resolution, from inside the installed tree, exactly as a reader's own code
-// would do it. `createRequire` anchored at the scratch package.json gives the
-// same resolution `exports` governs, without this repository on the path.
-{
-  const require = createRequire(join(work, 'package.json'));
-  const pkgExports = JSON.parse(
-    readFileSync(join(work, 'node_modules', PKG, 'package.json'), 'utf8'),
-  ).exports ?? {};
-  for (const { spec, where } of DOCUMENTED_SUBPATHS) {
-    if (!(`./${spec}` in pkgExports)) {
-      fail(
-        `${PKG}/${spec} is documented as an import but is not in the exports map`,
-        `Referenced by: ${where}. The file may well be in the tarball; the import\n` +
-          `        still throws ERR_PACKAGE_PATH_NOT_EXPORTED, which is the error the\n` +
-          `        reader sees.`,
-      );
-      continue;
-    }
-    try {
-      require.resolve(`${PKG}/${spec}`);
-    } catch (e) {
-      fail(
-        `${PKG}/${spec} is in the exports map but does not resolve`,
-        `Referenced by: ${where}. ${String(e.code || e.message).slice(0, 120)}`,
-      );
-    }
-  }
-}
-
-for (const { path, where } of DOCUMENTED_FILES) {
-  try {
-    readFileSync(join(work, 'node_modules', PKG, path));
+    mod = await import(join(work, 'node_modules', PKG, 'dist/index.js'));
   } catch {
-    fail(
-      `${path} is documented but absent from ${resolved}`,
-      `Referenced by: ${where}.`,
-    );
+    try {
+      mod = await import(PKG, { parent: join(work, 'package.json') });
+    } catch (e) {
+      fail('the installed package could not be imported', String(e.message).slice(0, 300));
+    }
   }
+
+  if (mod) {
+    for (const { name, where } of DOCUMENTED_EXPORTS) {
+      if (!(name in mod)) {
+        fail(
+          `${name} is documented but not exported by ${resolved}`,
+          `Described in: ${where}. A reader who follows that page gets an undefined import.`,
+        );
+      }
+    }
+  }
+
+  // Resolution, from inside the installed tree, exactly as a reader's own code
+  // would do it. `createRequire` anchored at the scratch package.json gives the
+  // same resolution `exports` governs, without this repository on the path.
+  {
+    const require = createRequire(join(work, 'package.json'));
+    const pkgExports = JSON.parse(
+      readFileSync(join(work, 'node_modules', PKG, 'package.json'), 'utf8'),
+    ).exports ?? {};
+    for (const { spec, where } of DOCUMENTED_SUBPATHS) {
+      if (!(`./${spec}` in pkgExports)) {
+        fail(
+          `${PKG}/${spec} is documented as an import but is not in the exports map`,
+          `Referenced by: ${where}. The file may well be in the tarball; the import\n` +
+            `        still throws ERR_PACKAGE_PATH_NOT_EXPORTED, which is the error the\n` +
+            `        reader sees.`,
+        );
+        continue;
+      }
+      try {
+        require.resolve(`${PKG}/${spec}`);
+      } catch (e) {
+        fail(
+          `${PKG}/${spec} is in the exports map but does not resolve`,
+          `Referenced by: ${where}. ${String(e.code || e.message).slice(0, 120)}`,
+        );
+      }
+    }
+  }
+
+  for (const { path, where } of DOCUMENTED_FILES) {
+    try {
+      readFileSync(join(work, 'node_modules', PKG, path));
+    } catch {
+      fail(
+        `${path} is documented but absent from ${resolved}`,
+        `Referenced by: ${where}.`,
+      );
+    }
+  }
+} else {
+  console.log('  SKIPPED the documented-API checks: see the notice above.');
 }
 
 const tarballReadme = (() => {
@@ -324,8 +392,18 @@ if (failures > 0) {
   process.exit(1);
 }
 
-console.log(
-  `  all ${DOCUMENTED_EXPORTS.length} documented export(s), ${DOCUMENTED_SUBPATHS.length} documented ` +
-    `subpath(s) and ${DOCUMENTED_FILES.length} documented file(s) check out in ${resolved}.`,
-);
+if (thisCheckoutIsPublished) {
+  console.log(
+    `  all ${DOCUMENTED_EXPORTS.length} documented export(s), ${DOCUMENTED_SUBPATHS.length} documented ` +
+      `subpath(s) and ${DOCUMENTED_FILES.length} documented file(s) check out in ${resolved}.`,
+  );
+} else {
+  // Saying "all N check out" after skipping them is the exact failure this
+  // gate exists to prevent, one layer up.
+  console.log(
+    `  the registry is coherent: \`latest\` is ${resolved}, the newest published version,\n` +
+      `  and the README it serves is the one in that tarball. ${declared} itself is\n` +
+      '  UNCHECKED here and stays unchecked until it is published.',
+  );
+}
 console.log('check-published-install: clean.');
