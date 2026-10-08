@@ -202,6 +202,17 @@ jobs:
       - name: A reader installing what the README says gets what the docs describe
         run: npm run check:published
 
+      # And `check:versions` says in its own output that historical mentions are
+      # not checked. It rejects a version AHEAD of package.json, which is a
+      # different thing. So a feature dated to the wrong PAST release passed
+      # everything: two of the five dated claims in llms.txt, the file written
+      # so that a model will believe it, were wrong by two releases. Dating a
+      # feature late is invisible to a presence check, because the version named
+      # does have the feature. This step installs the version cited AND the one
+      # published before it, which is what "since" actually asserts.
+      - name: Every "since <version>" claim holds against the published tarballs
+        run: npm run check:since
+
       # THE STRONGEST SENTENCE THIS PROJECT SAYS, EXECUTED. "The tests ship, so
       # every claim is checkable from what you installed" was true of the files
       # and false of the procedure: Node will not strip types under

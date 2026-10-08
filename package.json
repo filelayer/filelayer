@@ -34,7 +34,7 @@
     "verify:release": "node tools/verify-release.mjs",
     "adversarial": "node benchmark/adversarial/run.mjs filelayer",
     "adversarial:all": "node benchmark/adversarial/run.mjs",
-    "verify": "npm run typecheck && npm run test:counted && npm run build && npm run check:ci-coverage && npm run check:boundary && npm run check:language && npm run check:links && npm run check:install && npm run check:copies && npm run check:versions && npm run check:web && npm run check:web-samples && npm run check:guides && npm run check:errors && npm run check:register && npm run check:offline && npm run check:install-reach && npm run check:published && npm run check:suite-install && npm run check:migrations && npm run check:openapi && npm run check:docs && npm run verify:nextjs && npm run adversarial",
+    "verify": "npm run typecheck && npm run test:counted && npm run build && npm run check:ci-coverage && npm run check:boundary && npm run check:language && npm run check:links && npm run check:install && npm run check:copies && npm run check:versions && npm run check:web && npm run check:web-samples && npm run check:guides && npm run check:errors && npm run check:register && npm run check:offline && npm run check:install-reach && npm run check:published && npm run check:since && npm run check:suite-install && npm run check:migrations && npm run check:openapi && npm run check:docs && npm run verify:nextjs && npm run adversarial",
     "example:tier1": "node --experimental-strip-types examples/tier1-avatar/app.ts",
     "example:tier2": "node --experimental-strip-types examples/tier2-user-files/app.ts",
     "example:tier3": "node --experimental-strip-types examples/tier3-org-roles/app.ts",
@@ -62,6 +62,7 @@
     "check:suite-install": "node tools/check-suite-runs-from-install.mjs",
     "check:ci-coverage": "node tools/check-ci-coverage.mjs",
     "verify:nextjs": "node tools/drive-nextjs.mjs",
-    "check:published": "node tools/check-published-install.mjs"
+    "check:published": "node tools/check-published-install.mjs",
+    "check:since": "node tools/check-since-claims.mjs"
   }
 }
