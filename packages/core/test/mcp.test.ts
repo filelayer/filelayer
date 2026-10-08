@@ -30,11 +30,41 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-
 import { Filelayer } from '../src/index.ts';
 import { filelayerMcpServer } from '../src/mcp.ts';
+
+/**
+ * These tests need the two OPTIONAL peer dependencies, so they skip themselves
+ * when the peers are absent -- which is the case in a clean install, because
+ * optional peers are not installed and that is the whole point of them.
+ *
+ * Skipped at the `it` level and not on the `describe`, deliberately. Skipping
+ * the block would change `# tests` between a repository run and an install
+ * run, and the published tally in docs/VERIFY-WHAT-YOU-INSTALLED.md would then
+ * be right in one environment and wrong in the other. At this level the test
+ * count is the same everywhere and only the skip count moves, which is the
+ * same shape as the two suites that need two real database connections.
+ *
+ * This is what `check:suite-install` caught: a static import of an optional
+ * peer in a shipped test file breaks "the tests ship, so every claim is
+ * checkable from what you installed" for the whole suite, not just for this
+ * file.
+ */
+const peers = await (async () => {
+  try {
+    return {
+      Client: (await import('@modelcontextprotocol/sdk/client/index.js')).Client,
+      InMemoryTransport: (await import('@modelcontextprotocol/sdk/inMemory.js'))
+        .InMemoryTransport,
+    };
+  } catch {
+    return null;
+  }
+})();
+
+const SKIP = peers
+  ? false
+  : 'needs the optional peers: npm install @modelcontextprotocol/sdk zod';
 
 const AGENT = 'test-agent/1.0';
 
@@ -55,6 +85,7 @@ type Server = Awaited<ReturnType<typeof filelayerMcpServer>>;
 
 async function connect(serverOrPromise: Server | Promise<Server>) {
   const server = await serverOrPromise;
+  const { Client, InMemoryTransport } = peers!;
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test', version: '1' });
   await Promise.all([client.connect(clientSide), server.connect(serverSide)]);
@@ -93,7 +124,7 @@ const everything = {
 } as const;
 
 describe('the MCP server', () => {
-  it('advertises no way for a tool call to choose the subject', async () => {
+  it('advertises no way for a tool call to choose the subject', { skip: SKIP }, async () => {
     const { fl } = await world();
     const client = await connect(filelayerMcpServer(fl, everything));
 
@@ -122,7 +153,7 @@ describe('the MCP server', () => {
     }
   });
 
-  it('registers the dangerous three only when asked', async () => {
+  it('registers the dangerous three only when asked', { skip: SKIP }, async () => {
     const { fl } = await world();
 
     const quiet = await toolNames(
@@ -139,7 +170,7 @@ describe('the MCP server', () => {
     }
   });
 
-  it('refuses a subject with no standing, through the library rather than itself', async () => {
+  it('refuses a subject with no standing, through the library rather than itself', { skip: SKIP }, async () => {
     const { fl, fileId } = await world();
     const stranger = await connect(
       filelayerMcpServer(fl, { as: 'bob', org: 'acme', agentLabel: AGENT }),
@@ -157,7 +188,7 @@ describe('the MCP server', () => {
     assert.ok(body.fix, 'the error carried no fix, so an agent cannot act on it');
   });
 
-  it('never returns the internal deny reason', async () => {
+  it('never returns the internal deny reason', { skip: SKIP }, async () => {
     const { fl, fileId } = await world();
     const stranger = await connect(
       filelayerMcpServer(fl, { as: 'bob', org: 'acme', agentLabel: AGENT }),
@@ -178,7 +209,7 @@ describe('the MCP server', () => {
     }
   });
 
-  it('attributes every call to the agent in the audit trail', async () => {
+  it('attributes every call to the agent in the audit trail', { skip: SKIP }, async () => {
     const { fl, fileId } = await world();
     const server = await connect(
       filelayerMcpServer(fl, { as: 'alice', org: 'acme', agentLabel: AGENT }),
@@ -208,7 +239,7 @@ describe('the MCP server', () => {
     );
   });
 
-  it('refuses an empty agent label rather than writing unattributable events', async () => {
+  it('refuses an empty agent label rather than writing unattributable events', { skip: SKIP }, async () => {
     const { fl } = await world();
     await assert.rejects(
       () => filelayerMcpServer(fl, { as: 'alice', org: 'acme', agentLabel: '  ' }),
@@ -217,7 +248,7 @@ describe('the MCP server', () => {
     );
   });
 
-  it('declares which tools mutate, so a client can gate them', async () => {
+  it('declares which tools mutate, so a client can gate them', { skip: SKIP }, async () => {
     const { fl } = await world();
     const client = await connect(filelayerMcpServer(fl, everything));
     const { tools } = await client.listTools();
@@ -232,7 +263,7 @@ describe('the MCP server', () => {
     );
   });
 
-  it('refuses a share with no expiry, because the schema has no way to ask for one', async () => {
+  it('refuses a share with no expiry, because the schema has no way to ask for one', { skip: SKIP }, async () => {
     const { fl, fileId } = await world();
     const server = await connect(
       filelayerMcpServer(fl, { as: 'alice', org: 'acme', agentLabel: AGENT }),

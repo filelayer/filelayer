@@ -69,10 +69,10 @@ Three details in there are load-bearing:
 | | |
 |---|---|
 | tests | 627 |
-| pass | 589 |
+| pass | 594 |
 | fail | **0** |
-| skipped | 25 |
-| suites | 144 |
+| skipped | 33 |
+| suites | 146 |
 
 The lines will look different depending on your Node version and whether you are
 piping the output: Node 22 writes `# tests 627`, Node 24 writes `ℹ tests 627`,
@@ -80,8 +80,20 @@ and a terminal gets ticks and timings as well. The numbers are the same. Only
 the reporter changed, and CI reads both, because reading one of them is how this
 gate first reported a passing run as a failure.
 
-The twenty-five skips are two suites that need two real database connections:
-`test/contention.test.ts` stages races between them, and
+The thirty-three skips are three groups.
+
+**Eight** are `test/mcp.test.ts`, which needs the two optional peer
+dependencies of `@filelayer/core/mcp`. They are optional precisely so that an
+ordinary install does not pull them in, so in this run they are absent and the
+file skips itself test by test rather than failing to load. To run them here:
+
+```bash
+npm install --no-save @modelcontextprotocol/sdk zod
+node --test 'test/mcp.test.ts'
+```
+
+The remaining **twenty-five** are two suites that need two real database
+connections: `test/contention.test.ts` stages races between them, and
 `test/audit-retention.test.ts` needs real `SET LOCAL` behaviour across a
 transaction boundary and real advisory locks. PGlite has a single backend and
 can give neither, so both need the `pg` driver and a server. They are not optional for us: CI runs them on every commit against a
