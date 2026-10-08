@@ -32,6 +32,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -57,6 +58,20 @@ const DOCUMENTED_EXPORTS = [
   { name: 'ERROR_CODES', where: 'ERRORS.md, skills/.../references/errors.md' },
   { name: 'isErrorCode', where: 'skills/.../references/errors.md' },
   { name: 'schemaStatus', where: 'README.md, docs/QUICKSTART.md' },
+];
+
+/**
+ * Subpaths a published page tells a reader to IMPORT. Shipping the file is not
+ * the same as the import resolving: `exports` is an allow-list, so a file can
+ * sit in the tarball while `import '@filelayer/core/errors.json'` throws
+ * ERR_PACKAGE_PATH_NOT_EXPORTED. The file list below checks presence; this one
+ * checks reachability, and only this one matches what the reader types.
+ */
+const DOCUMENTED_SUBPATHS = [
+  { spec: 'errors.json', json: true, where: 'skills/.../references/errors.md' },
+  { spec: 'schema.sql', json: false, where: 'README.md, docs/QUICKSTART.md' },
+  { spec: 'llms.txt', json: false, where: 'filelayer.dev, llms.txt' },
+  { spec: 'openapi.json', json: true, where: 'docs/, check:openapi' },
 ];
 
 /** Files that must ship inside the tarball because a page tells a reader to open them. */
@@ -96,7 +111,14 @@ const work = mkdtempSync(join(tmpdir(), 'fl-published-'));
 let resolved;
 try {
   writeFileSync(join(work, 'package.json'), JSON.stringify({ name: 'x', private: true }));
-  execFileSync('npm', ['install', SPEC, '--no-audit', '--no-fund'], {
+  // `--prefer-online` is load-bearing, not tidiness. npm answers dist-tag and
+  // packument reads out of its local cache, so without it this check can report
+  // the state of whoever's laptop it ran on rather than the state of the
+  // registry: green after a bad publish, red after a good one. The first run of
+  // this gate after `latest` was moved to 0.20.0 still said 0.17.0 for exactly
+  // that reason, and a check that can be wrong in the reassuring direction is
+  // the one failure mode this file exists to prevent.
+  execFileSync('npm', ['install', SPEC, '--no-audit', '--no-fund', '--prefer-online'], {
     cwd: work,
     encoding: 'utf8',
     stdio: 'pipe',
@@ -167,6 +189,35 @@ if (mod) {
   }
 }
 
+// Resolution, from inside the installed tree, exactly as a reader's own code
+// would do it. `createRequire` anchored at the scratch package.json gives the
+// same resolution `exports` governs, without this repository on the path.
+{
+  const require = createRequire(join(work, 'package.json'));
+  const pkgExports = JSON.parse(
+    readFileSync(join(work, 'node_modules', PKG, 'package.json'), 'utf8'),
+  ).exports ?? {};
+  for (const { spec, where } of DOCUMENTED_SUBPATHS) {
+    if (!(`./${spec}` in pkgExports)) {
+      fail(
+        `${PKG}/${spec} is documented as an import but is not in the exports map`,
+        `Referenced by: ${where}. The file may well be in the tarball; the import\n` +
+          `        still throws ERR_PACKAGE_PATH_NOT_EXPORTED, which is the error the\n` +
+          `        reader sees.`,
+      );
+      continue;
+    }
+    try {
+      require.resolve(`${PKG}/${spec}`);
+    } catch (e) {
+      fail(
+        `${PKG}/${spec} is in the exports map but does not resolve`,
+        `Referenced by: ${where}. ${String(e.code || e.message).slice(0, 120)}`,
+      );
+    }
+  }
+}
+
 for (const { path, where } of DOCUMENTED_FILES) {
   try {
     readFileSync(join(work, 'node_modules', PKG, path));
@@ -180,6 +231,53 @@ for (const { path, where } of DOCUMENTED_FILES) {
 
 rmSync(work, { recursive: true, force: true });
 
+// -----------------------------------------------------------------------------
+// The packument README: the description an agent reads.
+//
+// npm hoists a version's README into the top of the packument, and it does that
+// ONLY for the version published as `latest`. `npm dist-tag add` does not
+// trigger it. So after moving `latest` from 0.17.0 to 0.20.0, the install was
+// correct and the description was still three releases old -- and the packument
+// is the only description a non-browser client can read, because npmjs.com
+// answers 403 to everything else. That is the copy every coding agent sees.
+//
+// Checked against the exports the current README documents: if the hoisted copy
+// does not mention them, it is not the current README.
+// -----------------------------------------------------------------------------
+try {
+  const res = await fetch(`https://registry.npmjs.org/${PKG}`, {
+    headers: { accept: 'application/json' },
+  });
+  const packument = await res.json();
+  const hoisted = packument.readme ?? '';
+  if (hoisted.length === 0) {
+    fail(
+      'the packument carries no README at all',
+      'Every non-browser client, and every coding agent, reads this field and would\n' +
+        '        find the package undescribed. Fix: publish a version with `--tag latest`.',
+    );
+  } else {
+    const missing = DOCUMENTED_EXPORTS.filter(
+      (e) => readme.includes(e.name) && !hoisted.includes(e.name),
+    ).map((e) => e.name);
+    if (missing.length > 0) {
+      fail(
+        `the packument README is not the current one (missing: ${missing.join(', ')})`,
+        'README.md in this repository documents those; the copy npm serves does not,\n' +
+          '        so it is an older release\'s README still hoisted. A dist-tag move does\n' +
+          '        NOT re-hoist it. Fix: publish a version with `--tag latest`.',
+      );
+    }
+  }
+} catch (e) {
+  fail(
+    'the packument could not be read',
+    `${String(e.message).slice(0, 160)}\n` +
+      '        This check needs it; passing without it would report a verification that\n' +
+      '        did not happen.',
+  );
+}
+
 if (failures > 0) {
   console.error(
     `\ncheck-published-install: ${failures} failure(s). What a reader installs is not\n` +
@@ -189,7 +287,7 @@ if (failures > 0) {
 }
 
 console.log(
-  `  all ${DOCUMENTED_EXPORTS.length} documented export(s) and ${DOCUMENTED_FILES.length} ` +
-    `documented file(s) are present in ${resolved}.`,
+  `  all ${DOCUMENTED_EXPORTS.length} documented export(s), ${DOCUMENTED_SUBPATHS.length} documented ` +
+    `subpath(s) and ${DOCUMENTED_FILES.length} documented file(s) check out in ${resolved}.`,
 );
 console.log('check-published-install: clean.');

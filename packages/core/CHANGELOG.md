@@ -23,6 +23,33 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.20.1] — 2026-10-08
+
+No code changed. This release exists because the registry needed a publish, and
+saying so is cheaper than inventing a reason.
+
+Releases `0.18.0` through `0.20.0` went out under `--tag alpha`, which the
+publish runbook had already ruled against in `0.4.3` and for this exact reason.
+Two things followed.
+
+`latest` stayed on `0.17.0` from 6 October until 8 October. For those two days
+`npm install @filelayer/core` -- the command printed in this README, in the
+quickstart, on the website and in the Agent Skill -- handed a reader a package
+with no `deliveryFetch`, no `auditIntegration` and no error catalogue, while
+five guides, a worked example and a skill all told them to import exactly
+those. Nothing in the suite noticed, because all twenty-three gates packed this
+checkout with `npm pack`; none of them had ever run the command the README
+prints. There is now a gate that does, and it reads the command out of the
+README rather than carrying its own copy.
+
+Moving the dist-tag fixed the install and emptied the description. npm hoists a
+version's README into the packument only for the version published *as*
+`latest`, and `npm dist-tag add` does not trigger it -- so pointing `latest` at
+a version that was published under `alpha` left `"readme": ""` where every
+non-browser client and every coding agent looks. This publish restores it. The
+README content is unchanged from `0.20.0`; it was in the tarball all along and
+simply never hoisted.
+
 ---
 
 ## [0.20.0] — 2026-10-07
