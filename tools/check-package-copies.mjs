@@ -269,6 +269,13 @@ const COPIES = [
     // examples below, because it imports `@filelayer/core` by name -- which is
     // what you paste into your own project, and is also why `verify:nextjs`
     // has to install the tarball to run it.
+    // The MCP example. Same reasoning as the Next.js one: it imports
+    // `@filelayer/core` and `@filelayer/core/mcp` by name, so it is what you
+    // paste into your own project.
+    'examples/mcp/README.md',
+    'examples/mcp/package.json',
+    'examples/mcp/server.ts',
+    'examples/mcp/verify.mjs',
     'examples/nextjs/README.md',
     'examples/nextjs/package.json',
     'examples/nextjs/verify.mjs',

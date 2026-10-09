@@ -63,7 +63,7 @@ precisely because somebody checked the part they were thinking about.
 
 ## What this project is unusually strict about
 
-Three rules account for most review comments here, and they are worth
+Five rules account for most review comments here, and they are worth
 internalising rather than rediscovering.
 
 **A document that is wrong is worse than no document.** The reader trusted it
@@ -78,6 +78,28 @@ really is better, make the list prove it is complete. The checker that enforces
 the register in this very file was itself the example: its list of scanned files
 was hand-written, so `skills/` and this page were both public and both unscanned,
 and it printed `clean` the whole time.
+
+**Verify against the published artifact, not the checkout.** A tarball packed
+locally proves the working tree is coherent and proves nothing about what a
+stranger receives. `npm install @filelayer/core` served a release four versions
+behind for two days while every gate was green, because all of them packed this
+checkout and none had ever run the command the README prints. The same mistake
+at the feature level: the README, llms.txt and a changelog entry all said
+"eight tools by default" over a list of seven, and the number could only be read
+honestly by installing the published package and asking the server.
+
+**A gate asks one of two questions, and only one of them has an answer before a
+publish.** "Is the published state coherent?" is always answerable. "Does this
+checkout match what is published?" has no answer while the release is being
+prepared, and a gate that conflates them makes every release commit unable to
+pass — which is how a suite stops being believed. This went wrong three times in
+one day: `check:published` first compared the served README against the working
+tree, turning every README edit red until a publish; `check:since` tried to
+install the version being prepared; and `check:published` again, comparing the
+installed version against this checkout's. Verifying against the registry is
+right. Making unreleased work look like a defect is not. When a check cannot be
+answered yet, say UNVERIFIED in the output and never print a summary claiming
+you checked something you skipped.
 
 **Say what it does not do.** [`LIMITATIONS.md`](LIMITATIONS.md) is a real
 document and it is not marketing copy with the edges filed off. If you ship a

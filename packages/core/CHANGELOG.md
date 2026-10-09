@@ -21,7 +21,23 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
-Nothing yet.
+### `examples/mcp`, driven over real stdio
+
+A launchable MCP server and a `verify.mjs` that SPAWNS it as a subprocess and
+exchanges protocol frames over its stdin and stdout, in 27 checks, run in CI
+against a freshly packed tarball. The package's unit tests use an in-memory
+transport: faster, and blind to a whole class of failure, because a server that
+writes one stray line to stdout passes every one of them and is unusable from a
+client. This was the one agent surface with no runnable example.
+
+Writing it turned up nothing wrong with the library and one thing worth knowing
+about the MCP audit tool: a probe at a file id that does not exist is recorded
+against the SYSTEM chain rather than the tenant's, because charging an
+enumeration attempt to a tenant would itself leak whether the file is theirs.
+That chain is cross-tenant, so a server scoped to one subject does not expose
+it, and `file_audit` therefore cannot answer "did anyone try ids they should not
+have". Documented in the example rather than filed as a limitation, because the
+library is doing the right thing and the limit belongs to the tool.
 
 ## [0.21.0] — 2026-10-08
 

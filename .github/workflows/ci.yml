@@ -535,6 +535,15 @@ jobs:
       - name: Drive the Next.js example against the packed tarball
         run: npm run verify:nextjs
 
+      # And the MCP example, spawned as a subprocess and driven over its real
+      # stdin and stdout. The package's unit tests use an in-memory transport,
+      # which is blind to a whole class of failure: a server that writes one
+      # stray line to stdout passes every one of them and is unusable from a
+      # client. This also installs the two OPTIONAL peers by hand, because an
+      # ordinary install does not have them and that is the point of them.
+      - name: Spawn the MCP example and drive it over stdio
+        run: npm run verify:mcp
+
       # THE ERROR CATALOGUE, BOTH DIRECTIONS. `src/errors.ts` is the one place
       # the set of codes is decided, and the constructor is typed against it, so
       # a code that is not there does not compile. This checks the two things

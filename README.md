@@ -433,6 +433,12 @@ user agent, which is what lets the chain separate "the partner opened this" from
 "the partner's assistant opened this". Those are different facts and until
 `0.21.0` the library had nowhere to put the difference.
 
+[`examples/mcp/`](https://github.com/filelayer/filelayer/tree/main/examples/mcp)
+is a server you can launch and a script that drives it the way a client does:
+it spawns the server as a subprocess and exchanges protocol frames over its
+real stdin and stdout, in 27 checks that CI runs against a freshly packed
+tarball on every commit.
+
 ### Errors, and proving the integration
 
 Everything throws `FilelayerError`, carrying `status`, a typed `code`, an
@@ -556,6 +562,8 @@ const s = await schemaStatus(pool);   // { state: 'current', at: 10, expects: 10
 | `examples/tier1-avatar` … `tier3-org-roles` | One runnable example per tier |
 | `examples/vault` | A full B2B document workspace over HTTP |
 | `examples/starter` | A deployable server: your Postgres, `FsStorage`, route helpers mounted |
+| `examples/nextjs` | App Router: `deliveryFetch` at a catch-all route, upload, share, revoke |
+| `examples/mcp` | A launchable MCP server, driven over real stdio by its own `verify.mjs` |
 
 ## Documents
 
