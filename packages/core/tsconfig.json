@@ -27,9 +27,17 @@
     // is the one that most needs to compile. These two mappings point the
     // specifiers at what an installed consumer would get.
     "baseUrl": ".",
+    // Third and fourth specifiers to need this, added with examples/mcp. The
+    // MCP example imports the `./mcp` SUBPATH and the MCP SDK, and neither was
+    // reachable for the same reason `pg` was not. Note that `npm run
+    // typecheck` is the only gate that catches this -- it is not in the quick
+    // loop of `check:*` gates, so a run of all of those can be green while
+    // this is broken, which is how it reached CI.
     "paths": {
       "@filelayer/core": ["./src/index.ts"],
-      "pg": ["./node_modules/@types/pg/index.d.ts"]
+      "@filelayer/core/mcp": ["./src/mcp.ts"],
+      "pg": ["./node_modules/@types/pg/index.d.ts"],
+      "@modelcontextprotocol/sdk/*": ["./node_modules/@modelcontextprotocol/sdk/dist/esm/*"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "../../examples/**/*.ts"]

@@ -17,14 +17,31 @@ npm run bootstrap     # once: npm ci inside packages/core
 npm run verify        # everything. ~6 minutes.
 ```
 
-`npm run verify` is the whole contract: the test suite plus 21 gates. CI runs
+`npm run verify` is the whole contract: the test suite plus every gate in this
+repository — `node tools/verify-stepwise.mjs --list` prints them. CI runs
 the same thing, so a green `verify` locally is a green CI, and there is no
 second list of things to remember.
 
-If you are iterating and six minutes is too slow, the gates are individually
-runnable — `npm run check:docs`, `check:web`, `check:versions` and so on — but
-**run the full `verify` before you say you are done.** Several gates exist
-precisely because somebody checked the part they were thinking about.
+If you are iterating, or if your environment will not let one command run for
+six minutes, do not hand-pick gates:
+
+```
+node tools/verify-stepwise.mjs          # every step of `verify`, one at a time
+node tools/verify-stepwise.mjs --list   # which have passed, which have not
+```
+
+It discovers the steps by parsing `verify`, so there is no list to keep in
+agreement, it remembers results against the working tree's hash so you can
+resume across several short runs, and a step that exceeds its time budget is
+reported **UNRUN** rather than counted as a pass.
+
+Both of those matter because both have gone wrong. Running a hand-typed list of
+the quick `check:*` gates leaves out the ones not named `check:` anything:
+eighteen passed, `typecheck` was not among them, and CI failed on `typecheck`
+across three Node versions. And `check:suite-install` takes five minutes, so it
+has twice been the only unrun gate on a commit that CI then rejected — once for
+a real defect. **A gate you could not run is not a gate that passed**, and
+saying which ones you could not run is part of saying you are done.
 
 ---
 
