@@ -124,7 +124,7 @@
     "zod": "^4.6.5"
   },
   "bin": {
-    "filelayer": "./dist/cli.js",
-    "filelayer-mcp": "./dist/mcp-server.js"
+    "filelayer": "dist/cli.js",
+    "filelayer-mcp": "dist/mcp-server.js"
   }
 }

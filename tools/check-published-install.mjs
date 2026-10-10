@@ -300,7 +300,41 @@ if (thisCheckoutIsPublished) {
     }
   }
 
-  for (const { path, where } of DOCUMENTED_FILES) {
+  // The BINARIES, not just the files they point at.
+//
+// The file checks below prove `dist/cli.js` is in the tarball. They would pass
+// with no `bin` field at all, and then `npx filelayer doctor` -- which the
+// README and llms.txt both print -- would fail with an npm error about a
+// missing command. npm 11 warns "bin[...] script name ... was invalid and
+// removed" on a `./`-prefixed path, which is alarming enough that it is worth
+// an assertion rather than a reading of the warning text.
+{
+  const installedPkg = JSON.parse(
+    readFileSync(join(work, 'node_modules', PKG, 'package.json'), 'utf8'),
+  );
+  for (const name of ['filelayer', 'filelayer-mcp']) {
+    const target = installedPkg.bin?.[name];
+    if (!target) {
+      fail(
+        `the published package declares no \`${name}\` binary`,
+        `Its \`bin\` is ${JSON.stringify(installedPkg.bin ?? null)}. The README and
+` +
+          `        llms.txt tell a reader to run it, so this is a command that does not exist.`,
+      );
+      continue;
+    }
+    try {
+      readFileSync(join(work, 'node_modules', PKG, target));
+    } catch {
+      fail(
+        `\`${name}\` points at ${target}, which is not in the tarball`,
+        'The bin field and `files` disagree.',
+      );
+    }
+  }
+}
+
+for (const { path, where } of DOCUMENTED_FILES) {
     try {
       readFileSync(join(work, 'node_modules', PKG, path));
     } catch {
