@@ -23,6 +23,41 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.24.0] — 2026-10-10
+
+### The Agent Skill ships in the package, because nothing could find it
+
+`skills/filelayer-integration/` is in the tarball. Until now it existed only in
+a directory of the repository that nothing pointed at: not the README, not
+`llms.txt`, not the website, not `files`. It had been written, graded over two
+rounds and had its triggering measured across 26 requests -- and none of that
+was worth much, because the measurements all assumed the skill was already
+loaded in a session, when the prior problem was that nobody could load it.
+Aiming was measured and shelf space was not.
+
+Install it by copying it out of your OWN node_modules:
+
+    mkdir -p .claude/skills
+    cp -r node_modules/@filelayer/core/skills/filelayer-integration .claude/skills/
+
+**That channel is the point, not a convenience.** The copy in the package
+carries the version it describes and cannot drift from what you installed. A
+copy taken from the default branch describes whatever is newest, which may be
+API your version does not have -- and a skill that confidently teaches a
+function you cannot call is worse than no skill, because the agent trusts it.
+The stamp is enforced: `check:copies` fails if the shipped SKILL.md stops
+matching the repository's or if its version line goes stale, and
+`check:published` fails if `files` ever stops including `skills`.
+
+Under `.claude/skills/` it applies to every session in that repository and is
+committed, so a colleague's agent gets it too; `~/.claude/skills/` makes it
+personal to one machine.
+
+The README and `llms.txt` now both carry it, which is the half that reaches
+somebody who has not installed anything yet. The website does not, and that is
+the remaining gap in this channel.
+
+
 ## [0.23.0] — 2026-10-10
 
 ### `filelayer doctor` answers the question that actually matters

@@ -86,6 +86,13 @@ const DOCUMENTED_FILES = [
   // from the tarball -- and it would be missing the moment `files` or the build
   // stopped including `dist`.
   { path: 'dist/cli.js', where: 'README.md, llms.txt: `npx filelayer doctor`' },
+  // The Agent Skill. The README and llms.txt both tell a reader to copy it out
+  // of their own node_modules, which is a 'no such file or directory' rather
+  // than a useful error if `files` ever stops including `skills`.
+  {
+    path: 'skills/filelayer-integration/SKILL.md',
+    where: 'README.md, llms.txt: cp -r node_modules/@filelayer/core/skills/...',
+  },
 ];
 
 let failures = 0;

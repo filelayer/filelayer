@@ -1,0 +1,26 @@
+{
+  "skill_name": "filelayer-integration",
+  "evals": [
+    {
+      "id": 0,
+      "name": "nextjs-private-contracts",
+      "prompt": "We have a Next.js 15 app (App Router) where accounting firms upload client documents. Right now everything goes into a public S3 bucket and we just use long random keys, which I've been told is bad. We use Clerk for auth and each firm is an organization. I need uploaded documents to be private, only readable by people in the firm that owns them, and partners need to be able to share a specific document with an external auditor for a couple of weeks and then cut that off. We already have Postgres (Neon). Can you set this up?",
+      "expected_output": "An integration plan and code: install, schema applied, instance built once, deliveryFetch mounted at a catch-all route (NOT deliveryHandler), Clerk id passed as { as }, org-scoped files, an expiring share link, and a verification step.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "avatars-should-say-no",
+      "prompt": "I'm building a small side project, a recipe site. Users can set a profile picture. I want to store the avatars somewhere sensible instead of base64 in my database. Everything on the site is public anyway. What's the right way to do this?",
+      "expected_output": "A clear recommendation NOT to use Filelayer: public assets with no reader to exclude belong in a public bucket plus a CDN. Honest about why.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "express-video-streaming",
+      "prompt": "Express app, Postgres, files in Cloudflare R2. Our users upload training videos that only their team should see. We currently generate a presigned R2 URL and put it in the <video> src, but two problems: the URL expires mid-playback and restarts the video, and when we remove someone from a team they can still watch anything they already loaded. How should we be doing this?",
+      "expected_output": "Diagnose that the URL is the credential; recommend proxying through their own server with fileDownloadRoute mounted beside their routes, Range handled by the route, revocation on the next request. Should mention the CDN cost honestly.",
+      "files": []
+    }
+  ]
+}

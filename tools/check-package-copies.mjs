@@ -128,6 +128,33 @@ const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'skills/filelayer-integration/SKILL.md',
+    why:
+      'the Agent Skill ships so that it can be copied out of the reader\'s OWN ' +
+      'node_modules into .claude/skills/, which is the only channel where the ' +
+      'skill and the installed version cannot drift apart. A copy taken from a ' +
+      'repository describes whatever is newest; this one describes what they have.',
+    versionStamp: /describes `@filelayer\/core` version (\d+\.\d+\.\d+)/,
+  },
+  ...[
+    'skills/filelayer-integration/references/direct-upload.md',
+    'skills/filelayer-integration/references/errors.md',
+    'skills/filelayer-integration/references/node-http.md',
+    'skills/filelayer-integration/references/range-and-media.md',
+    'skills/filelayer-integration/references/sharing-and-links.md',
+    'skills/filelayer-integration/references/whatwg-runtimes.md',
+    // The evidence travels with the package, for the same reason TRUST.md does:
+    // the README quotes 23/24 right next to a link to this file, and a reader
+    // holding only an install is exactly the reader who should be able to check
+    // it -- including the part that says what those numbers do NOT establish.
+    'skills/filelayer-integration/evals/MEASUREMENT.md',
+    'skills/filelayer-integration/evals/evals.json',
+  ].map((file) => ({
+    file,
+    why: 'a reference file of the shipped Agent Skill; SKILL.md points at it by relative path',
+    versionStamp: null,
+  })),
+  {
     file: 'llms.txt',
     why: 'the orientation file for an agent that has only node_modules',
     versionStamp: /\bversion (\d+\.\d+\.\d+)\b/,

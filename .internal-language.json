@@ -66,10 +66,11 @@
     "LIMITATIONS.md",
     "ROADMAP.md",
     "packages/core/LIMITATIONS.md",
-    "skills/*/SKILL.md",
-    "skills/*/references/*.md",
     "AGENTS.md",
-    "skills/*/evals/*.md"
+    "**/skills/*/SKILL.md",
+    "**/skills/*/references/*.md",
+    "**/skills/*/evals/*.md",
+    "**/skills/*/evals/*.json"
   ],
   "includeNote": [
     "`include` is the surface a stranger reads: everything in the npm tarball,",
@@ -85,7 +86,8 @@
     "skills/ is a public product surface -- an Agent Skill ships in the repo and is read by other people's coding agents -- so it is scanned like the guides. The evaluation workspace under skills/*-workspace/ is gitignored and not scanned.",
     "skills/ is a public product surface -- an Agent Skill ships in the repo and is read by other people's coding agents -- so it is scanned like the guides. The evaluation workspace under skills/*-workspace/ is gitignored and not scanned.",
     "This list used to be the whole definition of the scanned surface, which meant a new public document was unscanned by default and nothing said so: skills/ and AGENTS.md were both public and both invisible to this gate until 2026-10-08. Every git-tracked .md must now match either include or notScanned, and the gate fails otherwise. Adding a document is therefore a decision somebody has to write down.",
-    "The coverage assertion covers tracked .md only. Other shipped file types -- .ts, .sql, .json -- are scanned where an include glob names them, and are not forced to be declared, because prose is the thing this gate reads and most of those files have none. A shipped .json that argues a position rather than carrying data should be added to include by hand."
+    "The coverage assertion covers tracked .md only. Other shipped file types -- .ts, .sql, .json -- are scanned where an include glob names them, and are not forced to be declared, because prose is the thing this gate reads and most of those files have none. A shipped .json that argues a position rather than carrying data should be added to include by hand.",
+    "The skills globs are `**/`-prefixed so they cover BOTH the repository copy and the one under packages/core/ that ships. Anchored at the root they covered only the first, and the shipped copy -- the one an adopter actually reads -- was unscanned the moment it existed."
   ],
   "terms": [
     {
@@ -107,7 +109,20 @@
       "allowIfLineMatches": "compliance auditor|'auditor'|\"auditor\"|`auditor`"
     }
   ],
-  "exceptions": [],
+  "exceptions": [
+    {
+      "file": "skills/filelayer-integration/evals/evals.json",
+      "term": "ambiguous-auditor",
+      "lineContains": "share a specific document with an external auditor",
+      "why": "A developer's own words, quoted verbatim as a test scenario. The whole value of the file is that the prompts are what somebody would actually type, and 'share this with an external auditor' is what an accounting firm says. Rewriting it to satisfy a rule about OUR register would change the eval and invalidate two rounds of grading that were run against this exact text. The rule is about how we write; this line is somebody else writing."
+    },
+    {
+      "file": "packages/core/skills/filelayer-integration/evals/evals.json",
+      "term": "ambiguous-auditor",
+      "lineContains": "share a specific document with an external auditor",
+      "why": "The shipped copy of the line above; check:copies keeps the two byte-identical."
+    }
+  ],
   "notScanned": [
     {
       "glob": "architecture/*.md",
