@@ -1,6 +1,6 @@
 {
   "name": "@filelayer/core",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Multi-tenant file authorization middleware and lifecycle for Postgres: a single decision point for public and private files, revocable URLs, delegated share links and a hash-chained audit trail.",
   "license": "Apache-2.0",
   "type": "module",
@@ -73,7 +73,12 @@
     "share-links",
     "rbac",
     "signed-urls",
-    "revocation"
+    "revocation",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "agent-skills",
+    "cli"
   ],
   "publishConfig": {
     "access": "public"
@@ -85,7 +90,8 @@
     "test": "node --test --experimental-strip-types \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm test && npm run build",
-    "test:contention": "FILELAYER_TEST_CONTENTION=1 node --test --experimental-strip-types \"test/contention.test.ts\""
+    "test:contention": "FILELAYER_TEST_CONTENTION=1 node --test --experimental-strip-types \"test/contention.test.ts\"",
+    "test:mcp-server": "node --test --experimental-strip-types \"test/mcp-server.test.ts\""
   },
   "peerDependencies": {
     "@electric-sql/pglite": "^0.3.11",
@@ -118,6 +124,7 @@
     "zod": "^4.6.5"
   },
   "bin": {
-    "filelayer": "./dist/cli.js"
+    "filelayer": "./dist/cli.js",
+    "filelayer-mcp": "./dist/mcp-server.js"
   }
 }

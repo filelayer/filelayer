@@ -23,6 +23,74 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.25.0] — 2026-10-10
+
+### `filelayer-mcp`: a server a client can actually start
+
+A second binary. `filelayerMcpServer()` is for an application that already has
+an instance and a session, and that shape is unusable as a published entry
+because there is nothing to point a client at. This one builds the instance
+from the environment, so a client starts it with a command and an `env` block:
+
+    {
+      "mcpServers": {
+        "filelayer": {
+          "command": "npx",
+          "args": ["-y", "@filelayer/core", "filelayer-mcp"],
+          "env": {
+            "DATABASE_URL": "postgres://...",
+            "FILELAYER_AS": "user_alice",
+            "FILELAYER_ORG": "org_acme",
+            "FILELAYER_DATA_DIR": "/srv/filelayer-data"
+          }
+        }
+      }
+    }
+
+This exists because of a conclusion rather than a plan. The intention was to
+submit the MCP server to the official registry; the registry lists servers
+whose installation method is publicly available, and ours had none -- an entry
+pointing at `npx @filelayer/core` would have done nothing. Registering it would
+have published something that cannot be installed as advertised. So the entry
+point came first, and the registry submission is now a defensible thing to do
+rather than a box to tick.
+
+**`FILELAYER_AS` comes from whoever configures the client, never from a
+conversation.** One process speaks for one subject, fixed before any tool is
+registered. If your product has many users you start a server per user. That is
+the cost of the property and it is the only reason any of this is safe to hand
+to an agent.
+
+**No in-memory storage default.** With neither `FILELAYER_DATA_DIR` nor
+`S3_ENDPOINT` set it refuses to start and says why, because a `MemoryStorage`
+fallback is the worst possible default: it works in the demo and loses the
+first real file when the client restarts the process.
+
+The three dangerous tools stay off unless the operator sets the flag to exactly
+`true`, so a typo is off rather than on.
+
+Six tests. Five are refusals and need no database -- each one is a
+misconfiguration that would otherwise reach the operator as "server failed to
+start" with nothing to act on -- including one asserting that **nothing is
+written to stdout while failing**, because stdout carries protocol frames and a
+diagnostic on the wrong stream is a parse error that reads like a broken server.
+The sixth spawns the binary from a real MCP client over real stdio against a
+real PostgreSQL, gets the default seven tools, calls one, and checks the audit
+trail carries the agent label. It skips where there is no server, as the
+contention suites do.
+
+Writing it left the embedded Postgres running, so the file passed every
+assertion and then hung forever -- reported as a timeout with no failing test.
+The `after` hook now stops it, which is what the two existing suites that use a
+real server already did.
+
+### npm keywords
+
+`mcp`, `model-context-protocol`, `mcp-server`, `agent-skills` and `cli`. Each
+one names something this package actually ships; a search for "mcp file
+storage" could not find it before.
+
+
 ## [0.24.0] — 2026-10-10
 
 ### The Agent Skill ships in the package, because nothing could find it

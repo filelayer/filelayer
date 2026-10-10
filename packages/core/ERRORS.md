@@ -200,4 +200,4 @@ The configured storage adapter cannot sign an upload.
 
 ---
 
-29 codes. Generated for `0.24.0`.
+29 codes. Generated for `0.25.0`.

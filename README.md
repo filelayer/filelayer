@@ -183,7 +183,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **643 tests**, every commit, all of them against a real PostgreSQL |
+| The suite | **649 tests**, every commit, all of them against a real PostgreSQL |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends — races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **27 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -496,6 +496,33 @@ user agent, which is what lets the chain separate "the partner opened this" from
 "the partner's assistant opened this". Those are different facts and until
 `0.21.0` the library had nowhere to put the difference.
 
+If you want a server a client can simply start, there is a second binary that
+builds the instance from the environment:
+
+```json
+{
+  "mcpServers": {
+    "filelayer": {
+      "command": "npx",
+      "args": ["-y", "@filelayer/core", "filelayer-mcp"],
+      "env": {
+        "DATABASE_URL": "postgres://...",
+        "FILELAYER_AS": "user_alice",
+        "FILELAYER_ORG": "org_acme",
+        "FILELAYER_DATA_DIR": "/srv/filelayer-data"
+      }
+    }
+  }
+}
+```
+
+`FILELAYER_AS` comes from whoever configures the client, never from a
+conversation — one process speaks for one subject, and many users means a server
+per user. With neither `FILELAYER_DATA_DIR` nor `S3_ENDPOINT` set it refuses to
+start rather than falling back to memory, which would work in a demo and lose
+the first real file. The three tools above stay off unless the matching
+`FILELAYER_MCP_*` variable is exactly `true`.
+
 [`examples/mcp/`](https://github.com/filelayer/filelayer/tree/main/examples/mcp)
 is a server you can launch and a script that drives it the way a client does:
 it spawns the server as a subprocess and exchanges protocol frames over its
@@ -566,7 +593,7 @@ running in-process, so there is no daemon and no Docker:
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 643 tests
+npm test                 # the security property suite, 649 tests
 npm run typecheck
 npm run verify           # typecheck + tests + build + doc and language checks
 npm run example:tier1    # a public avatar, on :3000

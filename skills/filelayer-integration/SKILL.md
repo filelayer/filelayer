@@ -5,7 +5,7 @@ description: Add user-file infrastructure to a SaaS application with @filelayer/
 
 # Adding user files to somebody else's SaaS
 
-> This copy describes `@filelayer/core` version 0.24.0. It ships inside the
+> This copy describes `@filelayer/core` version 0.25.0. It ships inside the
 > package, so the intended way to get it is to copy it out of your own
 > `node_modules` rather than from a repository: a skill taken from `main`
 > describes whatever is newest, which may be API your installed version does

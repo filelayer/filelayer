@@ -111,6 +111,11 @@ const CLAIMS = [
     note: 'The MCP server. Probed as a shipped file rather than an export, because it is a subpath entry and not re-exported from the main one -- on purpose, so that the SDK is not a hard import for everyone.',
   },
   {
+    match: 'is a second binary that a client can start on its own',
+    probe: { kind: 'ships', file: 'dist/mcp-server.js', text: 'FILELAYER_AS' },
+    note: 'The launchable stdio MCP server.',
+  },
+  {
     match: 'is in the npm tarball',
     probe: { kind: 'ships', file: 'skills/filelayer-integration/SKILL.md', text: 'Adding user files' },
     note: 'The Agent Skill shipping inside the package.',

@@ -68,19 +68,21 @@ Three details in there are load-bearing:
 
 | | |
 |---|---|
-| tests | 643 |
-| pass | 609 |
+| tests | 649 |
+| pass | 614 |
 | fail | **0** |
-| skipped | 34 |
-| suites | 148 |
+| skipped | 35 |
+| suites | 150 |
 
 The lines will look different depending on your Node version and whether you are
-piping the output: Node 22 writes `# tests 643`, Node 24 writes `ℹ tests 643`,
+piping the output: Node 22 writes `# tests 649`, Node 24 writes `ℹ tests 649`,
 and a terminal gets ticks and timings as well. The numbers are the same. Only
 the reporter changed, and CI reads both, because reading one of them is how this
 gate first reported a passing run as a failure.
 
-The thirty-four skips are three groups.
+The thirty-five skips are four groups.
+
+**One** is `test/mcp-server.test.ts`, which launches the MCP server as a client would and needs a real PostgreSQL, because that server builds a `pg.Pool` and PGlite is not a server. CI runs it against a real one in a job that FAILS if it skips there.
 
 **Nine** are `test/mcp.test.ts`, which needs the two optional peer
 dependencies of `@filelayer/core/mcp`. They are optional precisely so that an

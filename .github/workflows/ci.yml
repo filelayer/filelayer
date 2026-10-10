@@ -650,6 +650,28 @@ jobs:
         working-directory: packages/core
         run: npm ci
 
+      # The launchable MCP server, started the way a client starts it. It lives
+      # in this job because it builds a `pg.Pool` and PGlite is not a server, so
+      # it SKIPS ITSELF everywhere else -- including in `test:counted`, where it
+      # was skipped on the maintainer's own machine and would have been skipped
+      # in CI too. A test that never executes is worse than no test: it reports
+      # success and it looks like coverage. The guard below is the same one this
+      # job already applies to the contention suite, for the same reason.
+      - name: The MCP server, launched by a client over stdio
+        working-directory: packages/core
+        env:
+          FILELAYER_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: |
+          set -o pipefail
+          npm run test:mcp-server 2>&1 | tee /tmp/mcp-server.log
+          if ! grep -qE "(^|[^0-9])skipped 0" /tmp/mcp-server.log; then
+            echo "::error::the MCP server suite skipped something here, where a real"
+            echo "::error::PostgreSQL is present. A skip in this job is a failure:"
+            echo "::error::it is the one outcome indistinguishable from passing."
+            grep -E "(^|[^0-9])(tests|pass|fail|skipped) " /tmp/mcp-server.log || true
+            exit 1
+          fi
+
       - name: Contention suite
         working-directory: packages/core
         env:

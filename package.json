@@ -65,6 +65,7 @@
     "check:published": "node tools/check-published-install.mjs",
     "check:since": "node tools/check-since-claims.mjs",
     "verify:mcp": "node tools/drive-mcp.mjs",
-    "example:mcp": "node tools/drive-mcp.mjs"
+    "example:mcp": "node tools/drive-mcp.mjs",
+    "test:mcp-server": "npm run test:mcp-server --prefix packages/core"
   }
 }
