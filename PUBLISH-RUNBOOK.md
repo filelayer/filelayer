@@ -4,7 +4,7 @@ The exact commands to make this repository public and to publish
 `@filelayer/core` to npm.
 
 > **This runbook was written for the first public release, `0.3.0`.** The
-> repository is public and the version being published is **`0.21.0`**. Steps 0,
+> repository is public and the version being published is **`0.22.0`**. Steps 0,
 > 3, 4 and 6 have been updated to that version so the commands are
 > copy-pasteable; steps 1 and 2 are the one-time org and repository setup and
 > are kept as the record of what was done. Everything else — the gate, the
@@ -54,7 +54,7 @@ command never runs.
 git status
 git branch --show-current          # -> main
 
-# The whole gate: typecheck, 628 tests, build, language, links, OpenAPI,
+# The whole gate: typecheck, 636 tests, build, language, links, OpenAPI,
 # doc samples, adversarial suite. Must exit 0.
 npm run verify
 echo "verify exit: $?"

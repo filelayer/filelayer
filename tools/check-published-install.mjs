@@ -81,6 +81,11 @@ const DOCUMENTED_FILES = [
   { path: 'ERRORS.md', where: 'skills/.../references/errors.md' },
   { path: 'errors.json', where: 'skills/.../references/errors.md' },
   { path: 'llms.txt', where: 'filelayer.dev' },
+  // The CLI's `bin` target. Documented as `npx filelayer doctor`, which fails
+  // with a confusing npm error rather than a useful one if the file is missing
+  // from the tarball -- and it would be missing the moment `files` or the build
+  // stopped including `dist`.
+  { path: 'dist/cli.js', where: 'README.md, llms.txt: `npx filelayer doctor`' },
 ];
 
 let failures = 0;

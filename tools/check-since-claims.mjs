@@ -111,6 +111,11 @@ const CLAIMS = [
     note: 'The MCP server. Probed as a shipped file rather than an export, because it is a subpath entry and not re-exported from the main one -- on purpose, so that the SDK is not a hard import for everyone.',
   },
   {
+    match: 'Both are READ-ONLY and neither applies a migration',
+    probe: { kind: 'ships', file: 'dist/cli.js', text: 'filelayer schema status' },
+    note: "The CLI. Probed as a shipped file because it is a `bin` target, not an export.",
+  },
+  {
     match: '**`AsOption` now carries `ip` and `userAgent`**',
     probe: { kind: 'ships', file: 'dist/simple.d.ts', text: 'userAgent?: string' },
     note: 'Audit context on the facade tier.',

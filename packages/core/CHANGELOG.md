@@ -21,6 +21,55 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.22.0] — 2026-10-09
+
+### A CLI, deliberately small
+
+    npx filelayer doctor
+    npx filelayer schema status
+
+Two commands, both read-only. `doctor` reports the Node version, whether
+`DATABASE_URL` is set and reachable, and what state the schema is in, with a
+`fix` line on every problem and `--json` for an agent to parse.
+
+**What it refuses to be, and why.** This tool reads `DATABASE_URL`, and
+whoever holds that string already has complete authority over every file row,
+every grant and the audit chain itself. So unlike the MCP server, which is
+scoped to one subject and enforces, the CLI cannot enforce anything and must
+not pretend to. There is no `filelayer share`, no `filelayer download` and no
+`filelayer delete`: those are an application's operations performed with a
+credential that bypasses the application, and a convincing permission check on
+top of root access is worse than no check, because it reports that something
+was authorized when nothing was.
+
+**Secrets do not come from arguments.** There is no `--database-url`, and
+passing one -- or `--password`, or `--token` -- is an error rather than being
+ignored, so a script that leaks a credential into CI logs fails loudly instead
+of appearing to work. A connection failure prints the driver's message and not
+the connection string; a test asserts that neither the password nor the
+username reaches the output, because that output goes into terminals people
+paste from.
+
+Exit codes separate the two kinds of non-zero: **1** means problems were found,
+**2** means the command could not run. A script that treats every non-zero the
+same cannot tell a misconfigured database from a typo.
+
+`pg` is now declared as an OPTIONAL peer dependency. It is still not a
+dependency and `npm install @filelayer/core` still has zero runtime
+dependencies; the CLI is the only part that needs a driver, and it asks for it
+at runtime and names it, which is what `createTestDb()` already does for
+PGlite.
+
+**It says nothing about your bucket.** Not whether it exists, not whether it is
+reachable, not whether it is private. A public bucket is the most common way
+this product's guarantees get undone, so a clean `doctor` run is not evidence
+about storage, and `--help` says so rather than leaving the silence to be read
+as approval. There is also no `filelayer audit`: reading the trail needs a
+subject, and the subject question is the one this tool cannot answer honestly.
+Both are worth building and neither is worth guessing at.
+
 ### `examples/mcp`, driven over real stdio
 
 A launchable MCP server and a `verify.mjs` that SPAWNS it as a subprocess and

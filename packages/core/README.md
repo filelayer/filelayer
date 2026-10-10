@@ -183,7 +183,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **628 tests**, every commit, all of them against a real PostgreSQL |
+| The suite | **636 tests**, every commit, all of them against a real PostgreSQL |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends — races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **27 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -293,6 +293,32 @@ somewhere for the bytes, and — if you chose a bucket — confirming it is priv
 is all three in one file you can copy, and
 [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md)
 §7 is the prose version.
+
+### Checking a deployment from a terminal
+
+```bash
+npx filelayer doctor          # Node, DATABASE_URL, and what state the schema is in
+npx filelayer schema status   # just the schema, with --json for a script
+```
+
+Both are read-only. Every problem comes with a line saying what to do about it,
+and `--json` gives an agent the same findings in a shape it can branch on.
+
+Two things it will not do, both on purpose. **It takes no credential as an
+argument** — there is no `--database-url`, and passing one is an error rather
+than being ignored, because a credential on a command line is written to shell
+history, visible in `ps`, and echoed by most CI systems. And **it has no
+`share`, `download` or `delete`**: reading `DATABASE_URL` is complete authority
+over every file and grant, so the CLI cannot enforce permissions and does not
+pretend to. A convincing permission check layered on root access is worse than
+none, because it reports that something was authorized when nothing was.
+
+It says nothing about your bucket — not whether it exists, is reachable, or is
+private. A public bucket is the most common way these guarantees get undone, so
+a clean run is not evidence about storage, and `--help` says so.
+
+`pg` is an optional peer dependency: the CLI is the only part of this package
+that needs a driver, and it asks for it by name at runtime.
 
 ### Serving the bytes
 
@@ -503,7 +529,7 @@ running in-process, so there is no daemon and no Docker:
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 628 tests
+npm test                 # the security property suite, 636 tests
 npm run typecheck
 npm run verify           # typecheck + tests + build + doc and language checks
 npm run example:tier1    # a public avatar, on :3000
