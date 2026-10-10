@@ -58,7 +58,15 @@ import { schemaStatus, type SchemaStatus } from './db.ts';
 const VERSION = (() => {
   try {
     const here = dirname(fileURLToPath(import.meta.url));
-    return JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')).version as string;
+    const v = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')).version;
+    // A MISSING FIELD DOES NOT THROW. The first version of this only caught an
+    // exception, so a package.json that parsed and had no `version` printed the
+    // string "undefined" as the version -- which is worse than "unknown",
+    // because it looks like a value. That is not a hypothetical: the published
+    // verification procedure replaces package.json with a minimal stub to prove
+    // the suite needs no development dependencies, and `filelayer --version`
+    // answered `undefined` there.
+    return typeof v === 'string' && v.length > 0 ? v : 'unknown';
   } catch {
     return 'unknown';
   }

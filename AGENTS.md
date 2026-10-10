@@ -35,6 +35,22 @@ agreement, it remembers results against the working tree's hash so you can
 resume across several short runs, and a step that exceeds its time budget is
 reported **UNRUN** rather than counted as a pass.
 
+`check:suite-install` is the slowest and has now caught four defects nothing
+else did, every one of them an assumption about the development environment
+that does not hold in a clean install. It builds the environment a stranger
+gets -- the tarball, nothing else installed, `package.json` replaced with a
+stub -- and you can keep it:
+
+```
+node tools/check-suite-runs-from-install.mjs --keep
+```
+
+It prints the path on stderr. Running one test file in there takes forty
+seconds instead of five minutes, and it is where a test that quietly depends on
+a devDependency, on a `version` field, or on an optional peer being present
+will fail. Reach for it the moment you add a test that spawns something or
+reads a file.
+
 Both of those matter because both have gone wrong. Running a hand-typed list of
 the quick `check:*` gates leaves out the ones not named `check:` anything:
 eighteen passed, `typecheck` was not among them, and CI failed on `typecheck`
