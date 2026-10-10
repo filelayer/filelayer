@@ -89,10 +89,15 @@ Everything here is read-only. This tool holds your database credential, which
 is complete authority over every file and grant, so it does not pretend to
 enforce permissions -- see the comment at the top of src/cli.ts.
 
-Scope: the database only. It says NOTHING about your bucket -- not whether it
-exists, not whether it is reachable, and not whether it is private. A public
-bucket is the most common way this product's guarantees get undone, and a clean
-run here is not evidence about it.
+Scope. \`doctor\` checks the database and, when S3_ENDPOINT and S3_BUCKET are
+set, whether the bucket answers an UNAUTHENTICATED read -- which is the most
+common way this product's guarantees get undone. That probe writes nothing and
+uses no credential: it reads an absent key without signing, and a refusal is
+what a private bucket does.
+
+It does NOT check whether your credentials work, and a refusal is evidence
+about the bucket root only: a policy that opens one prefix answers the same way
+and is still public where it matters.
 `;
 
 type Finding = {
@@ -257,6 +262,115 @@ function describeSchema(s: SchemaStatus): Finding {
   }
 }
 
+/**
+ * Is the bucket readable by anybody?
+ *
+ * ---------------------------------------------------------------------------
+ * HOW THIS WORKS, AND WHY IT USES NO CREDENTIAL
+ * ---------------------------------------------------------------------------
+ *
+ * An unsigned GET of a key that does not exist separates the two cases without
+ * writing anything and without signing anything:
+ *
+ *   403  the store refuses an anonymous reader, and refuses in a way that does
+ *        not reveal whether the key exists. This is what a private bucket does.
+ *   404  the store answered the anonymous reader honestly, which means it is
+ *        willing to serve anonymous readers. For a bucket holding other
+ *        people's documents that is the whole product undone.
+ *
+ * It needs no access key, which is the point: a check that cannot read a
+ * credential cannot leak one. It also writes nothing, so `doctor` stays
+ * read-only and this needs no flag and no confirmation.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT IT DOES NOT ESTABLISH
+ * ---------------------------------------------------------------------------
+ *
+ * A 403 here is evidence about the bucket root only. A policy that grants
+ * anonymous reads on one prefix and refuses everything else answers 403 to this
+ * probe and is still public where it matters. And this says nothing about
+ * whether your credentials work, which needs a signed request and is not here
+ * yet. The finding says so rather than implying a clean bill.
+ */
+async function anonymousReadFinding(): Promise<Finding> {
+  const endpoint = process.env.S3_ENDPOINT;
+  const bucket = process.env.S3_BUCKET;
+
+  if (!endpoint) {
+    return {
+      name: 'storage',
+      state: 'unknown',
+      detail:
+        'S3_ENDPOINT is not set, so no bucket was checked. If this deployment uses ' +
+        'FsStorage that is expected; if it uses a bucket, this check did not run.',
+      fix: 'Set S3_ENDPOINT and S3_BUCKET to have the anonymous-read check run.',
+    };
+  }
+  if (!bucket) {
+    return {
+      name: 'storage',
+      state: 'problem',
+      detail: 'S3_ENDPOINT is set and S3_BUCKET is not, so the bucket cannot be addressed.',
+      fix: 'Set S3_BUCKET.',
+    };
+  }
+
+  // A key nobody will have. Random, so a previous run cannot make this answer
+  // 200 and turn a real finding into a different one.
+  const probe = `filelayer-anonymous-read-probe-${Math.random().toString(36).slice(2)}`;
+  const url = `${endpoint.replace(/\/+$/, '')}/${encodeURIComponent(bucket)}/${probe}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { method: 'GET', redirect: 'manual' });
+  } catch (e) {
+    return {
+      name: 'storage',
+      state: 'problem',
+      detail: `the endpoint could not be reached: ${String((e as Error).message).slice(0, 120)}`,
+      fix: 'Check S3_ENDPOINT, and whether this machine is allowed to reach it.',
+    };
+  }
+
+  if (res.status === 403 || res.status === 401) {
+    return {
+      name: 'storage',
+      state: 'ok',
+      detail:
+        `an unauthenticated read of ${bucket} is refused (${res.status}), which is what a ` +
+        'private bucket does. This covers the bucket root only, and says nothing about ' +
+        'whether your credentials work.',
+    };
+  }
+  if (res.status === 404) {
+    return {
+      name: 'storage',
+      state: 'problem',
+      detail:
+        `an unauthenticated read of ${bucket} was answered honestly (404 for a key that ` +
+        'does not exist) rather than refused, which means this bucket serves anonymous ' +
+        'readers. Every object in it is readable by anyone who knows or guesses a key, ' +
+        'and Filelayer cannot prevent that: it decides who may be GIVEN a URL, not who ' +
+        'the store will answer.',
+      fix: 'Make the bucket private and serve bytes through your application or through signed URLs. On S3 this is Block Public Access plus a policy with no anonymous principal; on R2 it is removing the public development URL and any custom domain that serves it unsigned.',
+    };
+  }
+  if (res.status === 200) {
+    return {
+      name: 'storage',
+      state: 'problem',
+      detail: `an unauthenticated GET of a random key in ${bucket} returned 200, which should be impossible.`,
+      fix: 'Something is answering for this endpoint that is not the object store you think it is. Check S3_ENDPOINT for a proxy or a captive portal.',
+    };
+  }
+  return {
+    name: 'storage',
+    state: 'unknown',
+    detail: `an unauthenticated read of ${bucket} answered ${res.status}, which this check does not interpret.`,
+    fix: 'Neither refused nor answered: inspect it by hand before relying on either reading.',
+  };
+}
+
 function nodeFinding(): Finding {
   const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
   const ok = major > 22 || (major === 22 && minor >= 18);
@@ -296,9 +410,17 @@ const command = positional.join(' ');
 
 if (command === 'doctor') {
   const findings: Finding[] = [nodeFinding()];
+
+  // The storage check runs on EVERY path, including the ones where the database
+  // never answers. The first version of this reported storage only after a
+  // successful connection, so the most common first run -- no DATABASE_URL yet
+  // -- said nothing about the bucket, which is the silence this check exists to
+  // end. The two questions are independent and are answered independently.
+  const storage = await anonymousReadFinding();
+
   const conn = await connect();
   if (!conn.ok) {
-    findings.push(conn.finding);
+    findings.push(conn.finding, storage);
     report(findings);
   }
   findings.push({ name: 'the database', state: 'ok', detail: 'reachable.' });
@@ -312,6 +434,7 @@ if (command === 'doctor') {
     });
   }
   await conn.pool.end().catch(() => {});
+  findings.push(storage);
   report(findings);
 }
 

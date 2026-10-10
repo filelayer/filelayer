@@ -183,7 +183,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **636 tests**, every commit, all of them against a real PostgreSQL |
+| The suite | **643 tests**, every commit, all of them against a real PostgreSQL |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends — races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **27 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -313,9 +313,19 @@ over every file and grant, so the CLI cannot enforce permissions and does not
 pretend to. A convincing permission check layered on root access is worse than
 none, because it reports that something was authorized when nothing was.
 
-It says nothing about your bucket — not whether it exists, is reachable, or is
-private. A public bucket is the most common way these guarantees get undone, so
-a clean run is not evidence about storage, and `--help` says so.
+With `S3_ENDPOINT` and `S3_BUCKET` set, `doctor` also reports whether the bucket
+serves an **unauthenticated** read, which is the most common way everything here
+gets undone: Filelayer decides who may be *given* a URL and has no say in who
+the object store will answer. The probe writes nothing and uses no credential —
+an unsigned GET of a key that does not exist is refused by a private bucket and
+answered honestly by a public one — so a check that cannot read a credential
+cannot leak one. With those variables unset it says the bucket was not checked
+rather than saying nothing.
+
+A refusal is evidence about the bucket root only: a policy that opens one prefix
+answers identically and is still public where it matters. And none of this says
+whether your credentials work, which needs a signed request and is not here
+yet.
 
 `pg` is an optional peer dependency: the CLI is the only part of this package
 that needs a driver, and it asks for it by name at runtime.
@@ -529,7 +539,7 @@ running in-process, so there is no daemon and no Docker:
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 636 tests
+npm test                 # the security property suite, 643 tests
 npm run typecheck
 npm run verify           # typecheck + tests + build + doc and language checks
 npm run example:tier1    # a public avatar, on :3000

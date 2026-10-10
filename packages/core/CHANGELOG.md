@@ -23,6 +23,50 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.23.0] — 2026-10-10
+
+### `filelayer doctor` answers the question that actually matters
+
+It now reports whether the bucket serves an **unauthenticated** read, which is
+the most common way everything this library provides gets undone: Filelayer
+decides who may be GIVEN a URL, and it has no say in who the object store will
+answer.
+
+**The probe writes nothing and uses no credential.** An unsigned GET of a key
+that does not exist separates the two cases on its own:
+
+  403  the store refuses an anonymous reader, and refuses without revealing
+       whether the key exists. This is what a private bucket does.
+  404  the store answered the anonymous reader honestly, which means it is
+       willing to serve them. For a bucket holding other people's documents
+       that is the product undone.
+
+A check that cannot read a credential cannot leak one, and writing nothing
+means `doctor` stays read-only and needs no flag and no confirmation. A test
+asserts that neither `S3_ACCESS_KEY_ID` nor `S3_SECRET_ACCESS_KEY` reaches the
+output even when both are set.
+
+**What it does not establish, and says so.** A refusal is evidence about the
+bucket root only: a policy that opens one prefix answers identically and is
+still public where it matters. And this says nothing about whether your
+credentials work, which needs a signed request and is not here.
+
+**When `S3_ENDPOINT` is unset it says the bucket was not checked**, rather than
+saying nothing -- including on the paths where the database never answers,
+which is the most common first run. The first version of this ran the storage
+check only after a successful connection, so `filelayer doctor` with no
+`DATABASE_URL` yet was silent about storage, which is the silence the check
+exists to end.
+
+Seven new tests, against a stand-in store that answers one fixed status, since
+the three real answers are 403, 404 and anything else. Writing them turned up a
+trap worth recording: the test helper used `spawnSync`, which blocks the test
+process's event loop, so the spawned CLI asked an in-process HTTP server for
+bytes that it could not serve until the spawn returned. A deadlock, which
+presented as the whole test file printing `TAP version 13` and nothing else.
+The helper is asynchronous now.
+
+
 ## [0.22.0] — 2026-10-09
 
 ### A CLI, deliberately small
