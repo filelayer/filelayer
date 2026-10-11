@@ -23,6 +23,40 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.25.1] — 2026-10-11
+
+### The client configuration published in 0.25.0 does not work
+
+The README printed, for a reader to copy into their MCP client:
+
+    "args": ["-y", "@filelayer/core", "filelayer-mcp"]
+
+npm answers that with `could not determine executable to run`. A package with
+two binaries has no default, so the package name selects nothing and the second
+word is passed as an argument to a binary that was never chosen. The form that
+works needs `-p`:
+
+    "args": ["-y", "-p", "@filelayer/core", "filelayer-mcp"]
+
+Corrected in the README and in llms.txt. The wrong one shipped in 0.25.0 and was
+hoisted into the packument, which is why this is a release rather than a commit.
+
+**The copy-paste block is now executed.** `check:published` extracts the `args`
+array out of README.md and runs it against the package it just installed from
+the registry, expecting the server's own refusal about missing storage -- which
+is the only outcome that proves the binary resolved rather than npm failing to
+find one. Verified in both directions: with the broken configuration restored,
+the gate reports `could not determine executable to run` and names the command
+it ran.
+
+Nothing could have caught this by reading, and I did not catch it by reading
+either. It came out of fetching the registry's own schema documentation to
+prepare the submission, reaching the example for an MCP server embedded in a
+CLI tool, and noticing that our two binaries make the documented invocation
+ambiguous. The lesson is the one this project keeps relearning in new costume:
+a configuration block is a claim, and an unexecuted claim is a guess.
+
+
 ## [0.25.0] — 2026-10-10
 
 ### `filelayer-mcp`: a server a client can actually start

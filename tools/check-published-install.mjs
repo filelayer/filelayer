@@ -31,7 +31,7 @@
  * code still reflects that nothing was verified when CI is detected.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -300,7 +300,65 @@ if (thisCheckoutIsPublished) {
     }
   }
 
-  // The BINARIES, not just the files they point at.
+  // THE CLIENT CONFIGURATION IN THE README, EXECUTED.
+//
+// The README prints a JSON block an MCP client copies verbatim. The first one
+// published was `npx -y @filelayer/core filelayer-mcp`, which npm answers with
+// "could not determine executable to run": a package with two binaries has no
+// default, so the package name selects nothing and the second word is passed as
+// an argument rather than choosing a bin. The correct form needs `-p`.
+//
+// Nothing could have caught that by reading. A copy-paste block is an
+// executable claim, so it is extracted from the README and run here against the
+// package that was actually installed above. The expected outcome is the
+// server's own refusal: it got far enough to check its configuration, which is
+// the only thing that proves the binary resolved.
+{
+  const block = /"args":\s*(\[[^\]]*\])/.exec(readme);
+  if (!block) {
+    fail(
+      'no client `args` array found in README.md',
+      'This check runs the configuration the README prints. If the block moved or\n' +
+        '        changed shape, teach it the new one rather than leaving it unchecked.',
+    );
+  } else {
+    let args;
+    try {
+      args = JSON.parse(block[1]);
+    } catch (e) {
+      fail('the README client `args` array is not valid JSON', String(e.message).slice(0, 120));
+      args = null;
+    }
+    if (args) {
+      const r = spawnSync('npx', args, {
+        cwd: work,
+        encoding: 'utf8',
+        timeout: 120000,
+        env: {
+          ...process.env,
+          // Deliberately unconfigured: the server must refuse, and the refusal
+          // is the evidence. Configuring it would need a database and would
+          // test something else.
+          DATABASE_URL: undefined,
+          S3_ENDPOINT: undefined,
+          FILELAYER_DATA_DIR: undefined,
+        },
+      });
+      const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+      if (!/no storage is configured/.test(out)) {
+        fail(
+          `the client configuration in README.md does not start the server`,
+          `Ran: npx ${args.join(' ')}\n` +
+            `        Exit ${r.status}. Expected the server's own refusal about storage, which\n` +
+            `        is what proves the binary resolved. Got:\n` +
+            out.trim().split('\n').slice(0, 6).join('\n').replace(/^/gm, '        '),
+        );
+      }
+    }
+  }
+}
+
+// The BINARIES, not just the files they point at.
 //
 // The file checks below prove `dist/cli.js` is in the tarball. They would pass
 // with no `bin` field at all, and then `npx filelayer doctor` -- which the

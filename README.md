@@ -504,7 +504,7 @@ builds the instance from the environment:
   "mcpServers": {
     "filelayer": {
       "command": "npx",
-      "args": ["-y", "@filelayer/core", "filelayer-mcp"],
+      "args": ["-y", "-p", "@filelayer/core", "filelayer-mcp"],
       "env": {
         "DATABASE_URL": "postgres://...",
         "FILELAYER_AS": "user_alice",
