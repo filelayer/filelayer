@@ -42,6 +42,7 @@
  *   node tools/check-live-site.mjs --self-test  # the extractors, on fixtures
  */
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -201,6 +202,110 @@ try {
 }
 
 const problems = check(html, want);
+let livePages = 0;
+
+// -----------------------------------------------------------------------------
+// EVERY PAGE, NOT JUST THE ONE WITH THE EXTRACTORS
+// -----------------------------------------------------------------------------
+//
+// The extractors above are specific to the landing page -- its eyebrow, its
+// alpha banner, its trust table -- and that is right, because "the version is
+// correct somewhere on the page" is not the property we want. But it meant this
+// gate fetched exactly one URL, so six guide pages and, as of today, the Agent
+// Skill page were never compared against anything served. A deploy that dropped
+// a page, or served last week's copy of one, looked exactly like success.
+//
+// Two questions are asked of each additional page, and deliberately not more:
+//
+//   1. Is the page the host serves actually THAT page? The first version of
+//      this asked only whether the response was 200, and that assertion could
+//      never have fired: this host answers 200 with the LANDING PAGE for any
+//      unknown path. Measured, not assumed -- `/zz-no-existe-nada` returns 200
+//      and the landing page's own title.
+//
+//      A soft 404 is worse than a hard one here, because it means every guide
+//      URL could stop being served and a status check would see nothing wrong.
+//      So the assertion is on the `<title>`: the served title must equal the
+//      one in our copy of that file. That catches the soft 404 and a page
+//      replaced by a different page, and it is exact rather than heuristic.
+//   2. Do the version strings on it match the version strings on OUR copy of
+//      the same page? Not "is every version the current one" -- that was the
+//      first attempt and it was wrong on its first run against production. It
+//      flagged `/guides/private-file-uploads` for serving `0.10.0`, which is
+//      correct: the page says direct upload exists "as of `0.10.0`", a dated
+//      claim that stays true. Asking whether a number is CURRENT needs the
+//      dating logic that `check:versions` already owns, and duplicating that
+//      here would be a second, worse copy of it.
+//
+//      Comparing the served set against the local set needs none of it, and it
+//      is the sharper question anyway: a stale deploy serves a version string
+//      our file does not have, whatever the prose around it says.
+//
+// What it does NOT do is compare the served bytes to the tree. A host that
+// appends a trailing newline or injects anything at all would fail that, and a
+// gate that goes red for a non-defect stops being read.
+{
+  const pages = execFileSync('git', ['ls-files', '-z', '--', 'web'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  })
+    .split('\0')
+    .filter((f) => f.endsWith('.html'))
+    .map((f) => ({ file: f, slug: f.replace(/^web\//, '').replace(/\.html$/, '') }))
+    .filter((p) => p.slug !== 'index') // already fetched above, with the extractors
+    .map((p) => ({
+      ...p,
+      slug: p.slug.endsWith('/index') ? `${p.slug.slice(0, -'/index'.length)}/` : p.slug,
+    }));
+
+  const origin = url.replace(/\/$/, '');
+  const VERSION_RE = /\bv?(0\.\d+\.\d+)\b/g;
+  const versionsIn = (s) => new Set([...s.matchAll(VERSION_RE)].map((m) => m[1]));
+
+  livePages = pages.length;
+  for (const { file, slug } of pages) {
+    const pageUrl = `${origin}/${slug}`;
+    let body;
+    try {
+      const res = await fetch(pageUrl, { headers: { 'user-agent': 'filelayer-check-live-site' } });
+      if (!res.ok) {
+        problems.push(
+          `${pageUrl} answered ${res.status}. It is a tracked page and it is in sitemap.xml, ` +
+            'so this is a 404 we are pointing crawlers at.',
+        );
+        continue;
+      }
+      body = await res.text();
+    } catch (e) {
+      problems.push(`${pageUrl} could not be reached: ${e.message}`);
+      continue;
+    }
+    const local = readFileSync(join(ROOT, file), 'utf8');
+    const titleOf = (s) => (/<title>([^<]*)<\/title>/i.exec(s) ?? [, null])[1];
+    const ourTitle = titleOf(local);
+    const servedTitle = titleOf(body);
+    if (ourTitle !== null && servedTitle !== ourTitle) {
+      problems.push(
+        `${pageUrl} serves a page titled ${JSON.stringify(servedTitle)}; ${file} is titled ` +
+          `${JSON.stringify(ourTitle)}. This host answers 200 with the landing page for ` +
+          'any unknown path, so a title mismatch is how a missing page looks here.',
+      );
+      continue;
+    }
+
+    const ours = versionsIn(local);
+    const extra = [...versionsIn(body)].filter((v) => !ours.has(v));
+    const missing = [...ours].filter((v) => !versionsIn(body).has(v));
+    if (extra.length || missing.length) {
+      problems.push(
+        `${pageUrl} does not carry the same version strings as ${file}.` +
+          (extra.length ? ` Served but not ours: ${extra.join(', ')}.` : '') +
+          (missing.length ? ` Ours but not served: ${missing.join(', ')}.` : '') +
+          ' A served page naming a version our file does not is a stale deploy.',
+      );
+    }
+  }
+}
 
 if (problems.length) {
   console.error(`\ncheck-live-site: FAILED against ${url}\n`);
@@ -208,7 +313,11 @@ if (problems.length) {
   console.error(
     `\n  ${problems.length} problem(s). This repository says version ${want.version}, ` +
       `${want.tests} tests, ${want.suites} suites.\n` +
-      '  Deploys are manual: serve `web/` as the document root and re-run this.\n' +
+      '  The deploy tracks `main`, so a push precedes the served page by a minute or\n' +
+      '  two and this gate runs nightly rather than on push. (It said "deploys are\n' +
+      '  manual" until 11 October 2026, when the Agent Skill page answered 200 minutes\n' +
+      '  after being pushed and settled it. web/README.md had the right version of this\n' +
+      '  fact and this message had the wrong one.)\n' +
       '  A correct file and a stale page are two different things, and only this\n' +
       '  check can tell them apart.\n',
   );
@@ -216,7 +325,10 @@ if (problems.length) {
 }
 
 console.log(
+  // The page count is in here because it was not, and this gate fetched one
+  // URL while printing a sentence that read like it had checked the site.
   `check-live-site: clean. ${url} serves version ${want.version}, ` +
     `${want.tests} tests across ${want.suites} suites, on all ${extractors.length} ` +
-    'surfaces that state them.',
+    `surfaces that state them, and ${livePages} further page(s) serve their own ` +
+    'title and the same version strings as our copies.',
 );
