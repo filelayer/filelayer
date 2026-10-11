@@ -38,7 +38,25 @@ const fail = (what, detail) => {
   console.error(`  FAIL  ${what}\n        ${detail}`);
 };
 
-const read = (rel) => JSON.parse(readFileSync(join(ROOT, rel), 'utf8'));
+const read = (rel) => {
+  // An absent file must explain itself. `server.json` is at the top level of a
+  // repository whose .gitignore is an allow-list, so a new file there is
+  // invisible to a clean checkout until it is allowed -- which is exactly what
+  // happened on its first commit: it synced to the internal mirror and CI saw
+  // nothing. A stack trace from readFileSync would have told whoever read the
+  // CI log almost nothing.
+  try {
+    return JSON.parse(readFileSync(join(ROOT, rel), 'utf8'));
+  } catch (e) {
+    console.error(
+      `check-registry-entry: could not read ${rel}: ${String(e.message).slice(0, 140)}\n\n` +
+        '  If it exists locally but not here, check .gitignore: the top level of this\n' +
+        '  repository is an allow-list, and a file that is not listed is not committed.\n' +
+        `  \`git check-ignore -v ${rel}\` names the rule.`,
+    );
+    process.exit(2);
+  }
+};
 
 const server = read('server.json');
 const pkg = read('packages/core/package.json');

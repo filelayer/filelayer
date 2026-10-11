@@ -30,6 +30,12 @@
 !/architecture/
 !/benchmark/
 !/docs/
+# The MCP registry entry. Public by nature -- it IS the thing published to
+# registry.modelcontextprotocol.io -- and `check:registry` reads it, so CI needs
+# it in the checkout. It landed in the internal mirror first because this
+# allow-list refuses anything new at the top level, which is the design
+# working and also exactly how it got missed.
+!/server.json
 !/skills/
 
 !/examples/

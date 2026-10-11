@@ -1,0 +1,111 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.filelayer/core",
+  "title": "Filelayer",
+  "description": "Operate a SaaS application's user files under one person's authority: list what they can read, describe a file, see who it is shared with, share it with an expiry, create an expiring link, revoke one grant, remove a person entirely. Every call goes through the same authorization path as the application's own routes and is recorded in its audit trail as agent-originated.",
+  "websiteUrl": "https://filelayer.dev",
+  "repository": {
+    "url": "https://github.com/filelayer/filelayer",
+    "source": "github",
+    "subfolder": "packages/core"
+  },
+  "version": "0.26.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@filelayer/core",
+      "version": "0.26.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "-p"
+        },
+        {
+          "type": "positional",
+          "value": "@filelayer/core"
+        },
+        {
+          "type": "positional",
+          "value": "filelayer-mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "DATABASE_URL",
+          "description": "Your own PostgreSQL, where this library keeps file ownership, grants and the audit chain. Apply node_modules/@filelayer/core/schema.sql once before starting.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "FILELAYER_AS",
+          "description": "The ONE subject this server speaks for, in your own id space. Fixed for the life of the process: no tool reads it as an argument and no tool can change it, which is the only reason exposing these tools to an agent is safe. Write it yourself or have your provisioning write it, never derive it from a conversation. Serving several people means starting several servers.",
+          "isRequired": true
+        },
+        {
+          "name": "FILELAYER_ORG",
+          "description": "The organisation this server is scoped to, in your own id space.",
+          "isRequired": true
+        },
+        {
+          "name": "FILELAYER_DATA_DIR",
+          "description": "A local directory for the bytes. Needs no bucket and no IAM user. Set this OR the S3_* block: with neither, the server refuses to start rather than falling back to memory, which would work in a demo and lose the first real file."
+        },
+        {
+          "name": "S3_ENDPOINT",
+          "description": "An S3-compatible endpoint, for example https://<account>.r2.cloudflarestorage.com. Setting it makes S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY required."
+        },
+        {
+          "name": "S3_BUCKET",
+          "description": "The bucket. It must be private: this library decides who may be GIVEN a URL and has no say in who the object store will answer. `npx -p @filelayer/core filelayer doctor` reports whether yours serves unauthenticated reads."
+        },
+        {
+          "name": "S3_REGION",
+          "description": "Region, or `auto` for Cloudflare R2.",
+          "default": "auto"
+        },
+        {
+          "name": "S3_ACCESS_KEY_ID",
+          "description": "Access key id for the bucket.",
+          "isSecret": true
+        },
+        {
+          "name": "S3_SECRET_ACCESS_KEY",
+          "description": "Secret access key for the bucket.",
+          "isSecret": true
+        },
+        {
+          "name": "FILELAYER_MCP_AGENT_LABEL",
+          "description": "How this agent names itself in the audit trail, recorded on every event these tools produce. It is what lets the chain separate \"the partner opened this document\" from \"the partner's assistant opened this document\".",
+          "default": "filelayer-mcp"
+        },
+        {
+          "name": "FILELAYER_MCP_ALLOW_DESTRUCTIVE",
+          "description": "Set to exactly `true` to register delete_file. Off by default because deleting is not recoverable and an agent that misreads a sentence deletes the wrong thing silently.",
+          "default": "false",
+          "choices": ["true", "false"]
+        },
+        {
+          "name": "FILELAYER_MCP_EXPOSE_AUDIT",
+          "description": "Set to exactly `true` to register file_audit. Off by default for a specific reason: reading the audit trail is the one act this library does not itself record, so an agent could read an organisation's entire history and leave nothing behind. See LIMITATIONS.md entry 16.",
+          "default": "false",
+          "choices": ["true", "false"]
+        },
+        {
+          "name": "FILELAYER_MCP_RETURN_BYTES",
+          "description": "Set to exactly `true` to register read_file. Off by default because a document returned by a tool is a document copied into a model's context; file_info plus a share link is usually what was actually needed.",
+          "default": "false",
+          "choices": ["true", "false"]
+        },
+        {
+          "name": "FILELAYER_BASE_URL",
+          "description": "The base of the share URLs this instance mints. Without it, share links come back without a URL."
+        }
+      ]
+    }
+  ]
+}
