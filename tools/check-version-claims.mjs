@@ -45,6 +45,7 @@
  * means adding it to CLAIMS below, in the same commit.
  */
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
@@ -442,21 +443,108 @@ if (recorded) {
 // ever crosses 100 the sweep will fail on it, which is the correct direction
 // for a gate to be wrong in: it stops the build and asks for an exception with
 // a reason, rather than going quiet.
-const SWEEP_SURFACES = [
-  'README.md',
-  'llms.txt',
-  'TRUST.md',
-  'SECURITY.md',
-  'ARCHITECTURE-PROGRESSIVE.md',
-  'PUBLISH-RUNBOOK.md',
-  'web/index.html',
-  'docs/QUICKSTART.md',
-  'packages/core/README.md',
-  'packages/core/llms.txt',
-  'packages/core/SEMANTICS.md',
-  'packages/core/MIGRATIONS.md',
-  'packages/core/docs/QUICKSTART.md',
+/**
+ * THE SURFACES, DISCOVERED -- AND WHY THIS WAS THE LAST LIST TO FALL.
+ *
+ * This was thirteen hand-written paths. The repository tracks eighty-four
+ * documents, and the seventy-one it did not name were never swept at all --
+ * including every shipped guide, both copies of the Agent Skill, the example
+ * READMEs, and `ROADMAP.md`, which claimed "**Done.** 547 tests ship in the
+ * tarball" while the recorded run counted 649.
+ *
+ * The irony is worth keeping. The comment immediately above explains that this
+ * pass exists BECAUSE a list of specific claims leaves the surfaces that
+ * accumulate prose unguarded, and says it "inverts the question" to ask whether
+ * any public surface carries a number that looks like a suite count and is not
+ * the real one. The inversion was right. It was then applied to an enumerated
+ * domain, so it could only ever answer that question about a thirteenth of the
+ * documents, and the one real stale claim in the repository was sitting in the
+ * other eleven-twelfths.
+ *
+ * Fourth list in this repository to do this, and the second today.
+ *
+ * So: every tracked `.md`, `.txt` and `.html` is swept. An exemption goes in
+ * NOT_SWEPT below with a reason, and a dead exemption fails the build.
+ */
+const NOT_SWEPT = [
+  {
+    path: 'packages/core/CHANGELOG.md',
+    why:
+      'Historical by construction: every entry is headed by the version it describes, ' +
+      'and 118 of its lines name a version in the past tense. Sweeping it would ' +
+      'require an exception per release.',
+  },
+  {
+    path: 'web/README.md',
+    why:
+      'The notes on how the site is built and what has gone wrong with it before. ' +
+      'Its version numbers are incident records ("the page carried v0.7.0 in two ' +
+      'places"), which is the one thing a current-state sweep cannot read.',
+  },
+  {
+    path: 'architecture/TIER5-DESIGN-NOTE.md',
+    why: 'A design note dated to the version that prompted it; it argues about 0.3.0 throughout.',
+  },
+  {
+    path: 'benchmark/load/RESULTS.md',
+    why: 'A measurement of a specific past build. The version stamp IS the result.',
+  },
+  {
+    path: 'benchmark/baseline-vercel-blob/REPORT.md',
+    why:
+      "Quantifies the BASELINES' test suites, not ours (\"Baseline 1's 312\"). Checked " +
+      'before exempting: no file under benchmark/baseline-* states a test count for ' +
+      'Filelayer, so nothing of ours goes unguarded by this.',
+  },
+  {
+    path: 'packages/core/migrations/README.md',
+    why:
+      'Describes the schema as it stood at each version, including the 0.4.4 floor ' +
+      'below which there is no earlier schema to migrate from.',
+  },
 ];
+
+const SWEEP_SURFACES = (() => {
+  const tracked = (() => {
+    try {
+      return execFileSync('git', ['ls-files', '-z'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      })
+        .split('\0')
+        .filter((f) => /\.(md|txt|html)$/.test(f))
+        .sort();
+    } catch (e) {
+      // Say WHY, rather than returning an empty list and letting the guard
+      // below report a missing checkout. The first version of this swallowed
+      // the error, `execFileSync` was not imported in this file, and the
+      // message that came out blamed git -- a check that misdiagnoses itself
+      // costs more time than one that crashes.
+      console.error(`check-version-claims: could not list tracked documents: ${e.message}`);
+      process.exit(2);
+    }
+  })();
+  if (tracked.length === 0) {
+    console.error(
+      'check-version-claims: git tracks no documents. This sweep would pass by finding\n' +
+        '  nothing, which is not the same as passing. It needs a checkout.',
+    );
+    process.exit(2);
+  }
+  const dead = NOT_SWEPT.filter((x) => !tracked.includes(x.path));
+  if (dead.length > 0) {
+    console.error(
+      `check-version-claims: ${dead.length} sweep exemption(s) match no tracked document: ` +
+        `${dead.map((x) => x.path).join(', ')}.\n\n` +
+        '  Remove them. An exemption that matches nothing reads as a decision and does\n' +
+        '  nothing, and the next document to land at that path inherits it silently.',
+    );
+    process.exit(2);
+  }
+  const exempt = new Set(NOT_SWEPT.map((x) => x.path));
+  return tracked.filter((f) => !exempt.has(f));
+})();
 
 /**
  * Lines the sweep must not read as a whole-suite claim. Each entry needs a
@@ -507,6 +595,28 @@ if (recorded && Number(recorded.tests) > 0) {
       //  - an HTTP status pair: "206/416", which sits in a sentence about a
       //    test file and so has "tests" within the window.
       if (before.endsWith('/') || /^\/\d/.test(after)) continue;
+      //  - a BARE HTTP status code. The pair form above caught "206/416" and
+      //    nothing else, so a lone `200` or `500` walked straight through -- and
+      //    this collision is sharper than it looks, because the sentences that
+      //    contain a status code are often sentences about tests: "the expiry
+      //    test fails with `200`" puts the word inside the 36-character window
+      //    by itself.
+      //
+      //    Two shapes, both about how the number is WRITTEN rather than which
+      //    number it is, because a list of allowed status codes would be a list
+      //    again:
+      //
+      //      `200`  in backticks is a literal being quoted, not prose counting
+      //             something. A suite count is never written in code font.
+      //      500s   pluralised. "Compiler errors, test failures and 500s" -- a
+      //             test count is never pluralised as a number.
+      const vAt = m.index + m[0].lastIndexOf(value);
+      if (text[vAt - 1] === '`' && text[vAt + value.length] === '`') continue;
+      if (/^s\b/.test(text.slice(vAt + value.length))) continue;
+      //      a 404  an article in front of it. "test 26 asserts it is a 404" --
+      //             a count of tests is never introduced by "a" or "an", and a
+      //             status code almost always is.
+      if (/\b(?:an?)\s+$/.test(text.slice(Math.max(0, vAt - 6), vAt))) continue;
       //  - the SUITE count in "526 tests across 125 suites". It is a real
       //    claim and it is checked, by the `suites` kind, against the same
       //    recorded run. Reading it as a test count would make the gate
@@ -1001,7 +1111,15 @@ if (!control) {
 const t = claims.filter((c) => c.kind === 'tests')[0]?.value ?? '?';
 const s = claims.filter((c) => c.kind === 'suites')[0]?.value ?? '?';
 console.log(
-  `check-version-claims: clean. ${claims.length} current-state claim(s) across ` +
-    `${new Set(claims.map((c) => c.file)).size} public surface(s) all say ${VERSION}, ` +
-    `${t} tests, ${s} suites; negative control correct.`,
+  // Both numbers, because one of them alone was read as the other. "32 claims
+  // across 12 public surfaces" is the DECLARED set -- the claims someone wrote
+  // down -- and it was the only figure printed while the sweep that is supposed
+  // to catch the undeclared ones covered thirteen files out of eighty-four. A
+  // reader checking whether this gate had reach saw "12 public surfaces" and
+  // had no way to learn that it was not the answer to that question.
+  `check-version-claims: clean. ${claims.length} declared claim(s) across ` +
+    `${new Set(claims.map((c) => c.file)).size} surface(s) all say ${VERSION}, ` +
+    `${t} tests, ${s} suites; negative control correct. Swept for undeclared ` +
+    `claims: ${SWEEP_SURFACES.length} of ${SWEEP_SURFACES.length + NOT_SWEPT.length} ` +
+    `tracked document(s), ${NOT_SWEPT.length} exempt with a reason.`,
 );

@@ -14,7 +14,7 @@ Eight of the nine are now done. The ninth is the one we cannot build.
 |---|---|---|
 | 1 | A real open-source licence | **Done.** Apache-2.0. `LICENSE` and `NOTICE` ship in the tarball, and CI fails if either is missing from it |
 | 2 | Published to npm | **Done.** `@filelayer/core`, twenty-one releases |
-| 3 | The test suite in the published tree, with public CI | **Done.** 547 tests ship in the tarball and run from an install; twelve public CI jobs |
+| 3 | The test suite in the published tree, with public CI | **Done.** 649 tests ship in the tarball and run from an install; twelve public CI jobs |
 | 4 | The storage adapter proven against live R2 and S3 | **Done.** Both, on every commit. Twelve tests each, a thirteenth nightly |
 | 5 | A transaction-aware `Queryable`, with the audit write in the same transaction as the mutation | **Done.** The log cannot disagree with the decision it records |
 | 6 | Streaming delivery, or a documented short-TTL redirect mode | **Done.** Both, plus `Range`, `HEAD` and `416` |
@@ -95,9 +95,10 @@ person running this in production.
 - **An independent security review.** Costs money, deferred to January 2027.
   Nothing in this repository has been audited by anyone outside it, and
   `TRUST.md` says so in the one place a reader will look for it.
-- **The agent-facing surfaces that still do not exist.** `0.18.0` closed the one
-  that was blocking: the delivery routes now have a `Request`/`Response` form,
-  so Next.js, Hono, Workers, Deno and Bun can mount them. These remain, listed
+- **The agent-facing surfaces that still do not exist.** In `0.18.0` the one
+  that was blocking closed: the delivery routes now have a
+  `Request`/`Response` form, so Next.js, Hono, Workers, Deno and Bun can mount
+  them. These remain, listed
   rather than implied:
   - **An MCP server**, so an agent can operate a deployment through a tool
     interface rather than by writing code against the API.
@@ -110,9 +111,9 @@ person running this in production.
     status is derived from the code rather than passed alongside it, and
     `errors.json` and `ERRORS.md` are generated from the one place the set is
     decided. It was 29 codes, not the eight the published tables named. The
-    `0.19.1` was because `0.19.0` shipped the catalogue without exporting it
-    from the package entry, which the test did not catch because the test
-    imported the module.
+    follow-up in `0.19.1` was needed because in `0.19.0` the catalogue shipped
+    without being exported from the package entry, which the test did not catch
+    because the test imported the module.
   - **A way for an adopter to verify THEIR integration**, rather than ours.
     Everything runnable today — the shipped suite, the starter's `verify.mjs`,
     the guide proofs — checks this library or this library's examples. Nothing

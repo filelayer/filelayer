@@ -100,9 +100,9 @@ npm run verify:release
   range. `npm run check:install` reads every tracked file and compares each
   command against `packages/core/package.json` as semver intervals, in both
   directions: widening a declared range without updating the instructions fails,
-  and so does the reverse. It exists because 0.4.0 shipped an install command
-  that could not resolve against its own peer range, and every other check here
-  passed.
+  and so does the reverse. It exists because in 0.4.0 we shipped an install
+  command that could not resolve against its own peer range, and every other
+  check here passed.
 
 ## Licensing of contributions
 

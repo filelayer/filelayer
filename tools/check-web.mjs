@@ -31,6 +31,7 @@
  * for. A page can pass every assertion here and still overclaim.
  */
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -239,12 +240,20 @@ function checkPage(page, html) {
 
 // The landing page plus everything generated under web/guides/. Discovered
 // rather than listed, so a sixth guide is covered the moment it is built.
+// Discovered over what git TRACKS, not over the directory. The distinction is
+// small here and it points the same way as everything else today: a guide
+// generated but never committed would be validated by this gate and would
+// never reach the deployed site, so `clean` would be describing a page no
+// reader can open. What ships is what is tracked.
 const PAGES = [['web/index.html', PAGE]];
-const GUIDES = join(WEB, 'guides');
-if (existsSync(GUIDES)) {
-  for (const f of readdirSync(GUIDES).filter((n) => n.endsWith('.html')).sort()) {
-    PAGES.push([`web/guides/${f}`, join(GUIDES, f)]);
-  }
+for (const f of execFileSync('git', ['ls-files', '-z', '--', 'web/guides'], {
+  cwd: ROOT,
+  encoding: 'utf8',
+})
+  .split('\0')
+  .filter((f) => f.endsWith('.html'))
+  .sort()) {
+  PAGES.push([f, join(ROOT, f)]);
 }
 // The landing page's own figures feed the sections below and the summary; the
 // guide pages are checked and their totals added. One number for the whole
