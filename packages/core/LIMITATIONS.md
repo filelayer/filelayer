@@ -167,7 +167,7 @@ Each one is current as of
    by default for this reason, not because reading is dangerous in itself but
    because an agent reading on someone's behalf is exactly the case where the
    missing record would have mattered. And
-   [`test/audit-context.test.ts`](packages/core/test/audit-context.test.ts)
+   [`test/audit-context.test.ts`](https://github.com/filelayer/filelayer/blob/main/packages/core/test/audit-context.test.ts)
    asserts the current behaviour, so closing the gap fails that test and forces
    this entry to be deleted in the same commit as the fix.
 

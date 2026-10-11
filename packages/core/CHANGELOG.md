@@ -1135,8 +1135,9 @@ which is the only audience a shipped suite has.
 
 The copies under `packages/core/examples/` had the mirror-image defect: they
 carried the root's `../../packages/core/src/index.ts` verbatim, which from a
-copy one level deeper resolves to `packages/core/packages/core/src/`. Two wrong
-paths that cancelled out in the repository and failed together everywhere else.
+copy one level deeper resolves to packages/core/packages/core/src — a doubled
+prefix. Two wrong paths that cancelled out in the repository and failed
+together everywhere else.
 
 The tests now import `../examples/`, the copies carry `../../src/`, and
 `tools/check-package-copies.mjs` gained a declared single-line rewrite so the

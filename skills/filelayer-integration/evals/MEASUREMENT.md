@@ -87,12 +87,16 @@ descriptions, never the body.
 | the same 8, with this skill the only one available | not loading just because nothing else would | 8 / 8 |
 | 6 deliberately hard | the boundary | 6 / 6 |
 
-The inputs are kept and the run is reproducible: the exact description under
-test, the five competing skills as the judge saw them, every batch, the hard
-set with its per-item reasoning, and the results, are in
-`skills/filelayer-integration-workspace/trigger-2026-10-08/` (internal). This
-paragraph is here because without it the figures above read as unreproducible,
-which is how they were read on 11 October by the author of the run.
+The inputs are kept and the run is reproducible from them: the exact
+description under test, the five competing skills as the judge saw them, every
+batch, the hard set with its per-item reasoning, and the results. They live in
+this project's internal evaluation workspace, which is not public and is not in
+this package, so they are not something you can open from here — what you can
+check from what you have is the protocol and the figures, which is why both are
+written out above rather than only recorded there.
+
+This paragraph exists because without it the figures read as unreproducible,
+which is how their own author read them on 11 October.
 
 The hard six are the only interesting ones. Two were framed in pure
 infrastructure language with no permission word in them ("generate presigned
@@ -185,8 +189,11 @@ out loud is more deliberate than a harness choosing in passing. 9 / 9 against a
 strong competitor is a reason to stop worrying about this, not a measurement of
 how often it fires in the wild.
 
-Inputs, prediction, threshold and results:
-`skills/filelayer-integration-workspace/trigger-2026-10-11-agent-access/`.
+Inputs, prediction, threshold and results are kept in the same internal
+evaluation workspace as the October run, under a directory named for this date.
+As above: not public, not in this package, and the protocol and thresholds are
+written out here rather than only there so that the part you can check does not
+depend on the part you cannot.
 
 ## Corrections
 

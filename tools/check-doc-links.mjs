@@ -62,25 +62,65 @@ const isTracked = (p) => {
   return TRACKED.has(p) || [...TRACKED].some((f) => f.startsWith(`${p}/`));
 };
 
-/** Docs we ship, and where a relative link from each one is resolved. */
-const DOCS = [
-  'README.md',
-  'docs/QUICKSTART.md',
-  'docs/LIVE-S3-TESTS.md',
-  'docs/guides/expiring-and-revocable-file-links.md',
-  'docs/guides/private-file-uploads.md',
-  'docs/guides/multi-tenant-file-access.md',
-  'docs/guides/deleting-files-and-orphaned-objects.md',
-  'docs/guides/README.md',
-  'packages/core/SEMANTICS.md',
-  'SECURITY.md',
-  'TRUST.md',
-  'CONTRIBUTING.md',
-  'CODE_OF_CONDUCT.md',
-  'llms.txt',
-  'packages/core/CHANGELOG.md',
-  'packages/core/MIGRATIONS.md',
+/**
+ * EVERY TRACKED DOCUMENT, DISCOVERED -- NOT A LIST.
+ *
+ * This was a hand-written array of sixteen paths, and on 11 October 2026 the
+ * repository tracked seventy-seven documents. The sixty-one it did not name
+ * had never had a single link checked, and among them were the whole shipped
+ * Agent Skill -- SKILL.md and six reference files, in both copies -- and two
+ * documents that go out inside the npm tarball with dead relative links in
+ * them: `packages/core/LIMITATIONS.md` and `packages/core/SECURITY.md`. Every
+ * reader who installed the package and followed either link got a 404, for as
+ * long as those lines existed, while this gate printed `clean. 16 document(s)`.
+ *
+ * `clean. 16 document(s)` was the whole problem. It was true, and it read as
+ * coverage. This is the third tool in this repository to have the defect it
+ * was written to prevent, and the rule in AGENTS.md -- registration is not
+ * coverage -- was written against the second one.
+ *
+ * So the set is now discovered, and every tracked `.md` and `.txt` is in it.
+ * An exclusion has to be declared below WITH a reason, and a declaration that
+ * matches nothing fails the build, because a dead exemption is how a list
+ * silently stops covering.
+ */
+/** Top-level directories git tracks. A backticked path starting with one of
+ *  these is a claim about this repository rather than a module specifier. */
+const TOP_LEVEL = new Set(
+  [...(TRACKED ?? [])].map((f) => f.split('/')[0]).filter((d) => d && !d.includes('.')),
+);
+
+const NOT_SCANNED = [
+  // Nothing. Deliberately empty, and kept here rather than deleted so that the
+  // next person tempted to exempt a document has somewhere to write down why,
+  // and so that the empty case is visibly a decision rather than an omission.
 ];
+
+const DOCS = (() => {
+  const tracked = [...(TRACKED ?? [])].filter((f) => /\.(md|txt)$/.test(f)).sort();
+  if (tracked.length === 0) {
+    console.error(
+      'check-doc-links: git tracks no .md or .txt files.\n\n' +
+        '  This gate would pass by finding nothing. It needs a checkout, and note that\n' +
+        '  the top level of this repository is a .gitignore allow-list, so a document\n' +
+        '  that is not allowed is invisible here and to every reader.',
+    );
+    process.exit(2);
+  }
+  const dead = NOT_SCANNED.filter((x) => !tracked.includes(x.path));
+  if (dead.length > 0) {
+    console.error(
+      `check-doc-links: ${dead.length} exclusion(s) match no tracked document: ` +
+        `${dead.map((x) => x.path).join(', ')}.\n\n` +
+        '  Remove them. An exclusion that matches nothing is a line that looks like a\n' +
+        '  decision and does nothing, and the next document to land at that path would\n' +
+        '  be silently exempt.',
+    );
+    process.exit(2);
+  }
+  const excluded = new Set(NOT_SCANNED.map((x) => x.path));
+  return tracked.filter((f) => !excluded.has(f));
+})();
 
 /**
  * The one namespace every public URL must be rooted at.
@@ -101,10 +141,37 @@ const PKG_NAME = corePkg.name;
 const EXPORTED_SUBPATHS = new Set(Object.keys(corePkg.exports ?? {}));
 
 /** package.json files a fenced `npm run` block might be talking about. */
-const SCRIPT_SOURCES = [
-  { dir: '.', scripts: JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).scripts ?? {} },
-  { dir: 'packages/core', scripts: corePkg.scripts ?? {} },
-];
+/**
+ * EVERY TRACKED package.json, DISCOVERED.
+ *
+ * This named two of the twenty this repository tracks, and the consequence
+ * showed up the moment the document set widened: three benchmark reports
+ * document `npm run loc`, the script exists in all four benchmark
+ * package.json files, the runners it points at are tracked and present -- and
+ * this check called all three references dead, because it had never been told
+ * those package.json files exist.
+ *
+ * A gate that invents a defect is worse than one that misses it. It gets
+ * believed once, and then it gets worked around.
+ *
+ * Third enumerated list in this one file, after the documents and the
+ * top-level directories. They were all written by someone who knew the rule.
+ */
+const SCRIPT_SOURCES = [...(TRACKED ?? [])]
+  .filter((f) => f === 'package.json' || f.endsWith('/package.json'))
+  .sort()
+  .map((f) => {
+    const dir = f === 'package.json' ? '.' : dirname(f);
+    try {
+      return { dir, scripts: JSON.parse(readFileSync(join(ROOT, f), 'utf8')).scripts ?? {} };
+    } catch {
+      return { dir, scripts: {} };
+    }
+  });
+if (SCRIPT_SOURCES.length === 0) {
+  console.error('check-doc-links: git tracks no package.json. This gate needs a checkout.');
+  process.exit(2);
+}
 const ALL_SCRIPTS = new Set(SCRIPT_SOURCES.flatMap((s) => Object.keys(s.scripts)));
 
 const problems = [];
@@ -226,9 +293,57 @@ for (const doc of DOCS) {
     // `node_modules/@filelayer/core/schema.sql` matches in FULL and is then
     // skipped by the guard below, rather than matching from the `@` onward and
     // being reported as a missing repository path.
+    // A DIRECTORY is a path claim too, and this check could not see one.
+    //
+    // The matcher below requires a file extension, so
+    // `skills/filelayer-integration-workspace/trigger-2026-10-11-agent-access/`
+    // was never examined at all -- a second, independent reason the same
+    // MEASUREMENT.md line passed. A document that sends the reader to a
+    // directory is making exactly the same promise as one that sends them to a
+    // file, and a directory excluded by .gitignore keeps that promise only for
+    // the author.
+    //
+    // Rooted at a top-level directory git actually tracks, so this is
+    // discovery rather than another list to forget: a backticked token
+    // beginning with one of those is a claim about THIS repository, and
+    // anything else (an npm specifier, a URL fragment, `org:admin`) is not.
+    for (const m of rawLine.matchAll(/`((?:[\w.@-]+\/)+[\w.@-]*)`/g)) {
+      const path = m[1].replace(/\/$/, '');
+      if (!path.includes('/')) continue;
+      if (!TOP_LEVEL.has(path.split('/')[0])) continue;
+      if (/\.(?:ts|mjs|js|sql|json|md|txt)$/.test(path)) continue; // the matcher below
+      if (!isTracked(path)) {
+        fail(
+          doc,
+          n,
+          `references a directory that is not tracked: ${path}` +
+            (existsSync(join(ROOT, path))
+              ? '. It IS on this disk but git does not track it, so the reader cannot\n' +
+                '      reach it. Describe where the material lives in words instead of citing a\n' +
+                '      path: a path in backticks is an instruction to go and look, and a\n' +
+                '      parenthesised "(internal)" next to it does not make it reachable. That\n' +
+                '      exact combination is what this rule was written for.'
+              : ''),
+        );
+      }
+    }
+
     for (const m of rawLine.matchAll(/`((?:[\w./@-]+\/)+[\w.-]+\.(?:ts|mjs|js|sql|json|md))`/g)) {
       const path = m[1];
       if (path.startsWith('node_modules')) continue;
+
+      // Only paths rooted at a top-level directory git tracks are claims about
+      // THIS repository. The benchmark reports describe other people's trees --
+      // Convex's `model/auth.ts`, a Vercel scaffold's `src/storage.mjs` -- and
+      // this check was reporting them as our missing files the moment those
+      // documents came into scope. It has no standing over a competitor's
+      // layout.
+      //
+      // What this gives up: a typo in the FIRST segment (`pacakges/core/...`)
+      // now reads as a foreign path and escapes. That is the honest cost of not
+      // inventing jurisdiction, and it is the narrower failure -- a wrong first
+      // segment is visible to a reader, where a wrong tail looks plausible.
+      if (!TOP_LEVEL.has(path.split('/')[0])) continue;
 
       // A subpath import such as `@filelayer/core/openapi.json` is a MODULE
       // SPECIFIER, not a repository path, and looking for it on disk asks the
@@ -251,13 +366,33 @@ for (const doc of DOCS) {
         continue;
       }
 
-      const candidates = [
-        join(ROOT, path),
-        resolve(dirname(abs), path),
-        join(ROOT, 'packages/core', path),
-      ];
-      if (!candidates.some(existsSync)) {
-        fail(doc, n, `references a path that does not exist: ${path}`);
+      // TRACKED, not existsSync. The header of this file promises that "a
+      // repository self-link now has to resolve to a TRACKED path", and that
+      // was true of the markdown links above and false right here for as long
+      // as both existed -- this line read the filesystem it happened to be
+      // standing in, which is the defect the header describes.
+      //
+      // The difference is not academic. `skills/*-workspace/` is excluded by
+      // .gitignore, so a document citing a path inside it passes on the
+      // author's machine and names a directory that does not exist for anyone
+      // else. MEASUREMENT.md did exactly that on 11 October, in the same commit
+      // that added a rule about published claims the reader cannot reach.
+      //
+      // The relative and packages/core candidates stay on the filesystem: they
+      // resolve to a path whose tracked status is checked by the first
+      // candidate when it is the same file, and keeping them loose avoids
+      // re-deriving repository-root-relative forms here.
+      const candidates = [resolve(dirname(abs), path), join(ROOT, 'packages/core', path)];
+      if (!isTracked(path) && !candidates.some(existsSync)) {
+        fail(
+          doc,
+          n,
+          `references a path that is not tracked and does not exist: ${path}` +
+            (existsSync(join(ROOT, path))
+              ? '. It IS on this disk but git does not track it, so it is a dead ' +
+                'reference for every other reader. `git check-ignore -v` names the rule.'
+              : ''),
+        );
       }
     }
   });

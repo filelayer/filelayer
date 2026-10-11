@@ -109,7 +109,7 @@ We will:
   the affected version had no known users — a quietly patched auth bug is how a
   project teaches people not to trust its changelog;
 - record the finding in
-  [`packages/core/CHANGELOG.md`](packages/core/CHANGELOG.md), which already
+  [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md), which already
   contains the security defects we found in ourselves;
 - credit you by whatever name and link you ask for, or not at all if you prefer.
 
