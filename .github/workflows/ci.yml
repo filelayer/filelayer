@@ -213,6 +213,15 @@ jobs:
       - name: Every "since <version>" claim holds against the published tarballs
         run: npm run check:since
 
+      # The MCP registry entry restates a version in two places, the package
+      # name, the server name and the exact argv a client runs -- none of it
+      # generated. A stale registry entry is the worst kind of stale document
+      # here, because a client reads it and tries to START something. This also
+      # keeps the ownership marker and the server name equal, which is what the
+      # registry compares when verifying that we own the package.
+      - name: The MCP registry entry still describes this package
+        run: npm run check:registry
+
       # THE STRONGEST SENTENCE THIS PROJECT SAYS, EXECUTED. "The tests ship, so
       # every claim is checkable from what you installed" was true of the files
       # and false of the procedure: Node will not strip types under

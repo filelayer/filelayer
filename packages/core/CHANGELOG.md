@@ -23,6 +23,44 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.26.0] — 2026-10-11
+
+### The MCP registry entry, prepared and checked
+
+`server.json` at the repository root, under the namespace `dev.filelayer/core`
+-- DNS-verified on a domain we own rather than tied to a GitHub organisation, so
+the published name does not describe a place the repository might move away
+from.
+
+`package.json` now carries `mcpName`. That is not decoration: the registry
+proves we own `@filelayer/core` by reading that field out of the PUBLISHED
+package and comparing it to the server name in the entry. Which is also why
+this is a release -- the marker has to be in the tarball before the entry can
+be published at all.
+
+The entry documents all fourteen environment variables the server reads, with
+`isRequired` on the three it refuses to start without and `isSecret` on the
+ones that carry credentials, so a client offering a configuration form offers
+one that can work.
+
+**A gate, because that entry restates five things it does not own.** A version
+in two places, the package name, the server name, and the exact argv a client
+will run. A stale registry entry is the worst kind of stale document in this
+project: a client reads it and tries to START something. `check:registry`
+holds down that the ownership marker equals the server name, that both versions
+equal the package's, that the npm identifier is this package, that the argv is
+the same one the README prints -- the README's being the one `check:published`
+actually executes, so a difference means the registry entry is the unverified
+copy -- and that every variable the server reads is documented with the
+required ones marked. Verified by breaking each of those four ways and watching
+it name the right one.
+
+Not submitted. It needs a DNS TXT record on filelayer.dev and an authenticated
+publish, neither of which can be done without the credentials for the domain and
+the registry account, and the registry is in preview with data resets possible.
+Prepared up to that point.
+
+
 ## [0.25.1] — 2026-10-11
 
 ### The client configuration published in 0.25.0 does not work
