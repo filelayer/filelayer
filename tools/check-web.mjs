@@ -245,15 +245,23 @@ function checkPage(page, html) {
 // generated but never committed would be validated by this gate and would
 // never reach the deployed site, so `clean` would be describing a page no
 // reader can open. What ships is what is tracked.
-const PAGES = [['web/index.html', PAGE]];
-for (const f of execFileSync('git', ['ls-files', '-z', '--', 'web/guides'], {
+// EVERY tracked HTML page under web/, which is one step further than the
+// comment above had gone. That comment says "not just the one somebody
+// remembered" and the code then named `web/index.html` and the `guides`
+// directory -- so a page added anywhere else under web/ was still invisible,
+// and the gate would still have printed clean. Discovering the whole tree
+// closes the filename hole instead of widening it by one directory.
+const PAGES = execFileSync('git', ['ls-files', '-z', '--', 'web'], {
   cwd: ROOT,
   encoding: 'utf8',
 })
   .split('\0')
   .filter((f) => f.endsWith('.html'))
-  .sort()) {
-  PAGES.push([f, join(ROOT, f)]);
+  .sort()
+  .map((f) => [f, join(ROOT, f)]);
+
+if (!PAGES.some(([label]) => label === 'web/index.html')) {
+  fail('web/index.html', 'not tracked. The landing page is the one page this site cannot be missing.');
 }
 // The landing page's own figures feed the sections below and the summary; the
 // guide pages are checked and their totals added. One number for the whole
@@ -267,6 +275,44 @@ for (const [label, file] of PAGES) {
   if (label === 'web/index.html') ids = r.ids;
   links = links.concat(r.links);
   repoLinks += r.repoLinks;
+}
+
+// -----------------------------------------------------------------------------
+// 3b. No orphans — a page nothing links to
+// -----------------------------------------------------------------------------
+//
+// Everything above asks whether the links on a page reach something. This asks
+// the reverse, and nothing did: whether anything reaches the PAGE. A page can
+// be well-formed, correctly described, listed in the sitemap, swept for stale
+// versions, and unreachable by anybody who did not already have the URL.
+//
+// Written because `web/skill.html` was exactly that for about ten minutes, and
+// the only thing that noticed was its author remembering. A crawler would have
+// found it through the sitemap and a reader never would.
+//
+// The landing page is exempt by definition: it is what the links come FROM.
+{
+  const linkedTo = new Set();
+  for (const [, file] of PAGES) {
+    const html = readFileSync(file, 'utf8');
+    for (const m of html.matchAll(/href="(\/[^"#?]*)/g)) {
+      let p = m[1];
+      if (p.endsWith('/')) p += 'index.html';
+      else if (!/\.[a-z0-9]+$/i.test(p)) p += '.html';
+      linkedTo.add(`web${p}`);
+    }
+  }
+  for (const [label] of PAGES) {
+    if (label === 'web/index.html') continue;
+    if (!linkedTo.has(label)) {
+      fail(
+        label,
+        'no other page on this site links to it. It is in the sitemap and reachable by ' +
+          'URL, and a reader browsing the site cannot get to it. Link it from the ' +
+          'masthead, the footer, or a page it belongs under -- or delete it.',
+      );
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------

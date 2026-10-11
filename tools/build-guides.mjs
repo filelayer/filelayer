@@ -63,6 +63,7 @@
  * construct outside that set, the build stops and asks for it to be added.
  */
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -642,19 +643,53 @@ for (const f of sources) {
   }
 }
 
+// THE SITEMAP IS A LIST OF THE SITE'S PAGES, SO IT IS DERIVED FROM THEM.
+//
+// It used to be derived from `built` -- the guides THIS tool renders -- plus a
+// hard-coded root URL. That is a different set, and it agreed with the site
+// only for as long as the site was the landing page plus the guides. A page
+// added anywhere else under web/ would have been silently absent from the
+// sitemap, and worse: this tool rewrites sitemap.xml on every build, so it
+// would have been REMOVED again by the next `npm run build:guides` if anyone
+// had added it by hand.
+//
+// Discovered over what git tracks, for the usual reason -- an untracked page
+// does not deploy, and listing it would point crawlers at a 404.
+const pageUrl = (rel) => {
+  const path = rel.replace(/^web\//, '').replace(/\.html$/, '');
+  if (path === 'index') return { url: `${SITE}/`, priority: '1.0', changefreq: 'weekly' };
+  if (path.endsWith('/index')) {
+    return { url: `${SITE}/${path.slice(0, -'/index'.length)}/`, priority: '0.8', changefreq: 'monthly' };
+  }
+  return { url: `${SITE}/${path}`, priority: '0.9', changefreq: 'monthly' };
+};
+
+const sitemapEntries = execFileSync('git', ['ls-files', '-z', '--', 'web'], {
+  cwd: ROOT,
+  encoding: 'utf8',
+})
+  .split('\0')
+  .filter((f) => f.endsWith('.html'))
+  .map(pageUrl)
+  // Root first, then alphabetically, which is what the previous ordering
+  // produced and what keeps the diff on this file readable.
+  .sort((a, b) => (a.priority === '1.0' ? -1 : b.priority === '1.0' ? 1 : a.url.localeCompare(b.url)));
+
+if (!sitemapEntries.some((e) => e.url === `${SITE}/`)) {
+  console.error(
+    'build-guides: web/index.html is not tracked, so the sitemap would have no root URL.',
+  );
+  process.exit(2);
+}
+
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${SITE}/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
-${built
+${sitemapEntries
   .map(
-    (b) => `  <url>
-    <loc>${SITE}/guides/${b.slug}</loc>
-    <changefreq>monthly</changefreq>
-    <priority>${b.isIndex ? '0.8' : '0.9'}</priority>
+    (e) => `  <url>
+    <loc>${e.url}</loc>
+    <changefreq>${e.changefreq}</changefreq>
+    <priority>${e.priority}</priority>
   </url>`,
   )
   .join('\n')}
@@ -687,14 +722,18 @@ if (CHECK) {
     process.exit(1);
   }
   console.log(
-    `build-guides: clean. ${built.length} page(s) in web/guides/ and the sitemap are ` +
-      'byte-identical to what docs/guides/*.md renders to.',
+    `build-guides: clean. ${built.length} page(s) in web/guides/ are byte-identical to ` +
+      `what docs/guides/*.md renders to, and web/sitemap.xml lists the ` +
+      `${sitemapEntries.length} tracked page(s) under web/.`,
   );
 } else {
   mkdirSync(OUT, { recursive: true });
   for (const a of artifacts) writeFileSync(join(ROOT, a.path), a.text);
   console.log(
-    `build-guides: wrote ${built.length} page(s) to web/guides/ and ${built.length + 1} ` +
+    // `built.length + 1` until the sitemap stopped being "the guides plus the
+    // root". It now lists every tracked page under web/, so the only honest
+    // source for this number is the thing that was written.
+    `build-guides: wrote ${built.length} page(s) to web/guides/ and ${sitemapEntries.length} ` +
       'URL(s) to web/sitemap.xml.',
   );
   for (const b of built) console.log(`  /guides/${b.slug}  ${b.title}`);

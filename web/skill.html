@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>The Filelayer Agent Skill</title>
+<meta name="description" content="An Agent Skill that teaches a coding agent to add user files to a SaaS application — and to decide first whether a library is the right answer at all. It ships inside the npm package, so the copy you get describes the version you installed.">
+
+<link rel="canonical" href="https://filelayer.dev/skill">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/skill">
+<meta property="og:title" content="The Filelayer Agent Skill">
+<meta property="og:description" content="An Agent Skill that teaches a coding agent to add user files to a SaaS application — and to decide first whether a library is the right answer at all. It ships inside the npm package.">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The Filelayer Agent Skill">
+<meta name="twitter:description" content="An Agent Skill that teaches a coding agent to add user files to a SaaS application — and to decide first whether a library is the right answer at all.">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "The Filelayer Agent Skill",
+  "description": "An Agent Skill that teaches a coding agent to add user files to a SaaS application, and to decide first whether a library is the right answer at all.",
+  "url": "https://filelayer.dev/skill",
+  "inLanguage": "en",
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "isPartOf": { "@type": "WebSite", "name": "Filelayer", "url": "https://filelayer.dev" }
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+
+<h1>The Filelayer Agent Skill</h1>
+
+<p>An <a href="https://code.claude.com/docs/en/skills" rel="noopener">Agent Skill</a>
+is a folder a coding agent loads on demand when a task looks like one it covers.
+This one covers adding user files to somebody else's SaaS application: private
+uploads, per-user and per-org permissions, share links that expire and can be
+revoked, and an audit trail.</p>
+
+<p>The first thing it does is argue with the request. Most questions that sound
+like <em>&quot;how do I presign an upload&quot;</em> are really about who is
+allowed to read the result, and some of them are better answered without a
+library at all. So the skill opens by deciding honestly whether Filelayer is the
+right answer, and it contains a worked case where the answer is no — a public
+recipe site that wants avatars, which needs a bucket and not an authorization
+layer. A skill that can only conclude <em>&quot;use us&quot;</em> is an
+advertisement, and an agent that has read one is worse off than an agent that
+has not.</p>
+
+<h2>Getting it</h2>
+
+<p>There is nothing to download from this page, and that is deliberate. The
+skill ships <em>inside</em> the npm package, so the way to get it is to install
+the package and copy it out of your own <code>node_modules</code>:</p>
+
+<pre><code>npm install @filelayer/core
+
+cp -r node_modules/@filelayer/core/skills/filelayer-integration \
+      .claude/skills/
+</code></pre>
+
+<p>That destination is where
+<a href="https://code.claude.com/docs/en/skills" rel="noopener">Claude Code</a>
+reads a project's skills from; <code>~/.claude/skills/</code> is the
+machine-wide equivalent. Other agents look elsewhere — their own documentation
+is the authority on that, not ours.</p>
+
+<h3>Why copying beats downloading</h3>
+
+<p>Every copy of this skill carries the version it was written against, on its
+third line:</p>
+
+<pre><code>This copy describes `@filelayer/core` version 0.26.0.
+</code></pre>
+
+<p>A copy taken from your own <code>node_modules</code> starts out matching the
+version in your <code>package.json</code>. A zip from a web page, or a folder
+pulled from the default branch, describes whatever was newest when it was built,
+which may be API your installed version does not have — and an agent does not
+discover that by reading, it discovers it by writing code that does not
+compile.</p>
+
+<p>This is not a claim that copying makes the problem go away. Project skills
+live in your repository and get committed so your team has them, so the copy
+<em>is</em> a copy and it <em>can</em> go stale. What the stamp buys you is that
+staleness is legible: the version on line three either matches your
+<code>package.json</code> or it does not, and when it does not the instruction
+is to copy it again. A download has nothing to compare against.</p>
+
+<h2>What it was measured at</h2>
+
+<p>Two different questions, measured separately, because a skill that answers
+well and never loads is worth nothing and a skill that loads constantly and
+answers badly is worse than nothing.</p>
+
+<h3>Does it improve the answer?</h3>
+
+<p>Three scenarios in a developer's own words, each answered twice by the same
+model — once with the skill available, once without, nothing else different. A
+second model graded both against assertions written before either answer
+existed, and was not told which arm it was reading.</p>
+
+<p>The latest run: <strong>23 of 24 assertions passed with the skill and 13 of
+24 without.</strong> About half of the assertions pass either way, which is the
+honest part of that number — those are things the model already knew and the
+skill is not what produced them. Ten of the twenty-four discriminated.</p>
+
+<h3>Does it load when it should, and stay quiet when it should not?</h3>
+
+<p>Twenty-six requests, judged by a model told that loading a skill costs
+context and that answering from its own knowledge is a good outcome, shown only
+skill names and descriptions. Twelve that should load it did, eight that should
+not stayed quiet alongside five competing skills, the same eight stayed quiet
+with this skill as the only option, and six written specifically to sit on the
+boundary all came out the right way.</p>
+
+<p>A later run added the case the first set could not reach — nine requests
+about an agent or an assistant operating user files, with two competing skills
+written to be attractive answers to exactly those. Five of five loaded it, four
+of four did not.</p>
+
+<h3>What those numbers are not</h3>
+
+<p>One run per cell. Two runs that agree on direction are two anecdotes that
+agree on direction, not a variance measurement, and nothing here supports a
+figure quoted to the assertion. The triggering judge also reasons out loud,
+which makes it more deliberate than a real agent choosing in passing under a
+long system prompt. Treat all of it as evidence the skill is not obviously
+broken.</p>
+
+<p>The protocol, the inputs, the gradings, and the places where the evidence is
+thin are written down in
+<a href="https://github.com/filelayer/filelayer/blob/main/skills/filelayer-integration/evals/MEASUREMENT.md" rel="noopener">MEASUREMENT.md</a>,
+including a correction to three figures this project got wrong in a commit
+message and could not take back.</p>
+
+<h2>If you want the agent to operate files, not write code</h2>
+
+<p>That is a different thing and the package ships it separately: an MCP server,
+<code>filelayer-mcp</code>, whose subject is fixed when the process starts. No
+tool reads it as an argument and no tool can change it, which is the only reason
+exposing those tools to an agent is reasonable. Deleting, reading bytes back,
+and the audit trail are each off until you turn them on.</p>
+
+<pre><code>npx -p @filelayer/core filelayer-mcp
+</code></pre>
+
+<p>A worked client configuration is in
+<a href="https://github.com/filelayer/filelayer/blob/main/examples/mcp/README.md" rel="noopener">examples/mcp</a>.</p>
+
+<h2>Before you ship any of this</h2>
+
+<p>Filelayer is pre-1.0 and nothing in the repository has been reviewed by
+anyone outside it. The skill is instructed to say so unprompted, and to say it
+differently for a side project than for a regulated document store, because
+those are not the same decision. What it does not do is listed in
+<a href="https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md" rel="noopener">LIMITATIONS.md</a>,
+and whether you should depend on it at all is argued in
+<a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">TRUST.md</a>.</p>
+
+<footer class="guide-foot">
+  <p>
+    The skill itself is
+    <a href="https://github.com/filelayer/filelayer/blob/main/skills/filelayer-integration/SKILL.md" rel="noopener"><code>skills/filelayer-integration/SKILL.md</code></a>
+    in a public repository, and the copy in the package is checked byte for byte
+    against it on every commit.
+  </p>
+  <p>
+    <a href="/">Filelayer</a> ·
+    <a href="/guides/">Guides</a> ·
+    <a href="https://www.npmjs.com/package/@filelayer/core" rel="noopener">npm</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.26.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+
+</article>
+</main>
+
+</body>
+</html>

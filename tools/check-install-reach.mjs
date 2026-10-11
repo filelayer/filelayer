@@ -306,6 +306,67 @@ if (process.argv.includes('--self-test')) {
 
 const { findings, resolved } = scan(pkgRoot);
 
+// -----------------------------------------------------------------------------
+// THE `node_modules/@filelayer/core/...` PATHS WE TELL PEOPLE TO TYPE
+// -----------------------------------------------------------------------------
+//
+// Everything above scans files INSIDE the tarball and asks whether their
+// references resolve inside it. This asks a question the whole file is already
+// set up to answer and never did: twenty tracked surfaces print a literal
+// `node_modules/@filelayer/core/<path>`, six of them as the Agent Skill copy
+// command, and nothing checked that `<path>` is in the tarball.
+//
+// Two reasons it slipped through here specifically, both worth writing down:
+// the backticked-path pattern above requires a FILE EXTENSION, so
+// `skills/filelayer-integration` is a directory it cannot see; and `web/` does
+// not ship, so the page making the claim is not among the files scanned.
+//
+// This is the most literal instruction this project gives a stranger. If
+// `files` in package.json ever stops carrying `skills/`, the command on the
+// website becomes `cp: no such file or directory` and every surface still says
+// to run it.
+const copyClaims = [];
+let copyClaimsOk = 0;
+{
+  const tracked = execFileSync('git', ['ls-files', '-z'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  })
+    .split('\0')
+    .filter((f) => /\.(md|txt|html)$/.test(f));
+
+  const RE = /node_modules\/@filelayer\/core\/([\w./-]*[\w-])/g;
+  const seen = new Set();
+  for (const rel of tracked) {
+    const text = readFileSync(join(ROOT, rel), 'utf8');
+    let m;
+    while ((m = RE.exec(text)) !== null) {
+      const sub = m[1];
+      const line = text.slice(0, m.index).split('\n').length;
+      if (!existsSync(join(pkgRoot, sub))) {
+        copyClaims.push({ rel, line, sub });
+      } else if (!seen.has(sub)) {
+        seen.add(sub);
+      }
+    }
+  }
+  copyClaimsOk = seen.size;
+  if (seen.size === 0 && copyClaims.length === 0) {
+    // Not "nothing to check". Every one of those surfaces carries this command
+    // today, so finding none means the pattern stopped matching, not that the
+    // claims went away.
+    console.error(
+      '\ncheck-install-reach: no `node_modules/@filelayer/core/...` path found on any\n' +
+        '  tracked surface. Twenty of them carried one when this check was written -- every\n' +
+        '  document that tells a reader where something lives after an install -- so the\n' +
+        '  likely cause is that the pattern no longer matches how those paths are written,\n' +
+        '  not that the paths are gone.\n',
+    );
+    process.exit(2);
+  }
+}
+
 if (process.argv.includes('--list')) {
   for (const r of resolved) console.log(`ok   [${r.kind}] ${r.rel}  ->  ${r.spec}`);
 }
@@ -317,6 +378,20 @@ if (!control.ok) {
   console.error(
     '\ncheck-install-reach: the negative control did not fail ' +
       `(import=${control.caughtImport}, doc=${control.caughtDoc}). The gate is not working.\n`,
+  );
+  process.exit(1);
+}
+
+if (copyClaims.length) {
+  console.error('\ncheck-install-reach: FAILED\n');
+  console.error('  A PUBLIC SURFACE TELLS A READER TO COPY A PATH THAT IS NOT IN THE TARBALL:\n');
+  for (const c of copyClaims) {
+    console.error(`  - ${c.rel}:${c.line}  names node_modules/@filelayer/core/${c.sub}`);
+  }
+  console.error(
+    '\n    The reader has run `npm install` and nothing else, so for them that path is\n' +
+      '    whatever is in the tarball. Either add it to `files` in\n' +
+      '    packages/core/package.json, or stop printing the command.\n',
   );
   process.exit(1);
 }
@@ -355,5 +430,7 @@ if (findings.length) {
 console.log(
   `check-install-reach: clean. ${resolved.filter((r) => r.kind === 'import').length} relative ` +
     `import(s) and ${resolved.filter((r) => r.kind === 'doc').length} document reference(s) ` +
-    'all resolve inside the extracted tarball; negative control correct.',
+    `all resolve inside the extracted tarball, and ${copyClaimsOk} distinct ` +
+    '`node_modules/@filelayer/core/...` path(s) printed on public surfaces exist in it; ' +
+    'negative control correct.',
 );
