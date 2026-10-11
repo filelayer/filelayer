@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "dev.filelayer/core",
   "title": "Filelayer",
-  "description": "Operate a SaaS application's user files under one person's authority: list what they can read, describe a file, see who it is shared with, share it with an expiry, create an expiring link, revoke one grant, remove a person entirely. Every call goes through the same authorization path as the application's own routes and is recorded in its audit trail as agent-originated.",
+  "description": "User files for a SaaS, under one person's authority: list, share with an expiry, revoke.",
   "websiteUrl": "https://filelayer.dev",
   "repository": {
     "url": "https://github.com/filelayer/filelayer",
@@ -87,19 +87,28 @@
           "name": "FILELAYER_MCP_ALLOW_DESTRUCTIVE",
           "description": "Set to exactly `true` to register delete_file. Off by default because deleting is not recoverable and an agent that misreads a sentence deletes the wrong thing silently.",
           "default": "false",
-          "choices": ["true", "false"]
+          "choices": [
+            "true",
+            "false"
+          ]
         },
         {
           "name": "FILELAYER_MCP_EXPOSE_AUDIT",
           "description": "Set to exactly `true` to register file_audit. Off by default for a specific reason: reading the audit trail is the one act this library does not itself record, so an agent could read an organisation's entire history and leave nothing behind. See LIMITATIONS.md entry 16.",
           "default": "false",
-          "choices": ["true", "false"]
+          "choices": [
+            "true",
+            "false"
+          ]
         },
         {
           "name": "FILELAYER_MCP_RETURN_BYTES",
           "description": "Set to exactly `true` to register read_file. Off by default because a document returned by a tool is a document copied into a model's context; file_info plus a share link is usually what was actually needed.",
           "default": "false",
-          "choices": ["true", "false"]
+          "choices": [
+            "true",
+            "false"
+          ]
         },
         {
           "name": "FILELAYER_BASE_URL",

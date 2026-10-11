@@ -61,6 +61,41 @@ const read = (rel) => {
 const server = read('server.json');
 const pkg = read('packages/core/package.json');
 
+// --- the schema's own limits -----------------------------------------------
+//
+// Read out of server.schema.json rather than inferred from the examples, which
+// is how this was missed: the first entry had a 380-character description, the
+// documentation's examples all have short ones and say nothing about a limit,
+// and the registry rejected the publish with a 422 after the DNS record was
+// already in place. A constraint that only the remote end enforces is one you
+// discover at the worst moment.
+//
+// From https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json
+const LIMITS = [
+  { field: 'description', max: 100, min: 1 },
+  { field: 'title', max: 100, min: 1 },
+  { field: 'version', max: 255, min: 1 },
+  { field: 'name', max: 200, min: 3, pattern: /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/ },
+];
+for (const { field, max, min, pattern } of LIMITS) {
+  const v = server[field];
+  if (typeof v !== 'string') {
+    fail(`server.json has no ${field}`, 'The registry requires it.');
+    continue;
+  }
+  if (v.length > max || v.length < min) {
+    fail(
+      `server.json ${field} is ${v.length} characters; the schema allows ${min}-${max}`,
+      `The registry rejects the publish with a 422, and it does so AFTER the DNS\n` +
+        `        record is in place, so the cost of finding this remotely is not zero.\n` +
+        `        Value: ${JSON.stringify(v.slice(0, 120))}${v.length > 120 ? '…' : ''}`,
+    );
+  }
+  if (pattern && !pattern.test(v)) {
+    fail(`server.json ${field} does not match the schema's pattern`, `${pattern} vs ${JSON.stringify(v)}`);
+  }
+}
+
 // --- the ownership marker --------------------------------------------------
 if (pkg.mcpName !== server.name) {
   fail(
