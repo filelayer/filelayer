@@ -548,3 +548,98 @@ git status
 Then, on GitHub, create a release from the `v0.15.1` tag and paste the `0.15.1`
 section of `packages/core/CHANGELOG.md` into it. Mark it as a **pre-release** —
 the dist-tag says alpha and the release should agree.
+
+---
+
+## 7. The MCP registry entry
+
+Separate from npm, and done after it: the registry hosts metadata only, so the
+package has to exist first. The entry is `server.json` at the repository root
+and `check:registry` keeps it true about the package.
+
+**The namespace is `dev.filelayer/core`**, which is the reverse-DNS form of
+`filelayer.dev` and therefore commits us to domain-based authentication. The
+alternative was `io.github.filelayer/*` with a GitHub login, which is easier and
+ties the published name to a GitHub organisation; a domain we own does not move.
+
+### Before anything: the marker has to be published
+
+The registry proves we own `@filelayer/core` by reading `mcpName` out of the
+published package and comparing it to `name` in `server.json`. Both are checked
+locally by `check:registry`, but the registry reads the **published** one, so a
+release has to go out before an entry can be published at all. `0.26.0` is the
+first one carrying it.
+
+### Install the publisher
+
+```bash
+brew install mcp-publisher
+mcp-publisher --help
+```
+
+### Generate a key and the TXT record
+
+**Use the ECDSA P-384 path on macOS.** The Ed25519 path needs OpenSSL 3.0 and
+macOS ships LibreSSL, whose `genpkey` fails with `Algorithm Ed25519 not found`.
+Working around that means installing `openssl@3` and calling it by absolute
+path; P-384 works with what is already there and the registry accepts both.
+
+```bash
+cd ~/Documents/Claude/Projects/Filelayer
+
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp384r1 -out key.pem
+
+PUBLIC_KEY="$(openssl ec -in key.pem -text -noout -conv_form compressed | grep -A4 "pub:" | tail -n +2 | tr -d ' :\n' | xxd -r -p | base64)"
+echo "filelayer.dev. IN TXT \"v=MCPv1; k=ecdsap384; p=${PUBLIC_KEY}\""
+```
+
+`key.pem` is a private key. It is not committed, and not because anybody
+remembered: the `.gitignore` here is an allow-list at the top level, so a new
+file is ignored until it is explicitly allowed. Do not allow this one.
+
+### Add the record ON THE APEX
+
+The TXT record goes on `filelayer.dev` itself, **not** under a selector like
+`_mcp-auth.filelayer.dev`. MCP DNS auth follows SPF-style placement, not
+DKIM-style. A record under a selector is not found and authentication fails with
+a generic signature error that says nothing about placement — which is the
+single most likely way this goes wrong.
+
+If a key is ever rotated, remove the old TXT record. A stale one is tried first
+and fails verification.
+
+Wait for propagation, then check it:
+
+```bash
+dig +short TXT filelayer.dev | grep MCPv1
+```
+
+### Log in and publish
+
+```bash
+PRIVATE_KEY="$(openssl ec -in key.pem -noout -text | grep -A4 "priv:" | tail -n +2 | tr -d ' :\n')"
+mcp-publisher login dns --algorithm ecdsap384 --domain filelayer.dev --private-key "${PRIVATE_KEY}"
+```
+
+```bash
+mcp-publisher publish
+```
+
+### Verify it, against the registry
+
+```bash
+curl -s "https://registry.modelcontextprotocol.io/v0.1/servers?search=dev.filelayer/core" | head -c 400
+```
+
+And then the thing the entry actually promises: that the command in it starts a
+server. `check:published` already runs the README's argv against the installed
+package, and the registry entry is held equal to it by `check:registry`, so
+those two together cover it — but a client reading the registry for the first
+time is a different reader, and trying it from a real client once is cheap.
+
+### A standing cost to know about
+
+The registry is in **preview**: breaking changes and data resets are possible
+before general availability, so the entry may need republishing for reasons
+that have nothing to do with us. And every release has to republish it anyway,
+because the entry names a version. That is a recurring step, not a one-off.
