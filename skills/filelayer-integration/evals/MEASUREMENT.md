@@ -87,6 +87,13 @@ descriptions, never the body.
 | the same 8, with this skill the only one available | not loading just because nothing else would | 8 / 8 |
 | 6 deliberately hard | the boundary | 6 / 6 |
 
+The inputs are kept and the run is reproducible: the exact description under
+test, the five competing skills as the judge saw them, every batch, the hard
+set with its per-item reasoning, and the results, are in
+`skills/filelayer-integration-workspace/trigger-2026-10-08/` (internal). This
+paragraph is here because without it the figures above read as unreproducible,
+which is how they were read on 11 October by the author of the run.
+
 The hard six are the only interesting ones. Two were framed in pure
 infrastructure language with no permission word in them ("generate presigned
 PUT URLs for user uploads", "user uploads in S3 with long random UUID keys, is
@@ -127,6 +134,59 @@ The `description` field was NOT touched. It now under-describes the skill,
 since operating files through MCP is not in it, and that is deliberate for now:
 editing it would invalidate the triggering measurement below, and nothing has
 established that the omission costs anything.
+
+That last sentence was an argument from absence until 11 October, when the
+absence was tested. See "The omission, measured" below.
+
+## The omission, measured
+
+**11 October 2026.** The MCP paragraph above left the description describing
+less than the skill does, and the 26-request set could not have found out
+whether that cost anything — **the set was enumerated from the cases the
+description claims**, so it cannot discover what the description omits. That is
+the `check:language` defect (an enumerated list silently stops covering)
+pointed at an evaluation rather than at a tool.
+
+So the missing arm was run: 9 requests about an agent or an assistant operating
+user files, against the **unchanged** description. Two competing skills were
+added to the eight the judge could choose from — `mcp-server-authoring` and
+`agent-tool-access`, the second written to be a genuinely attractive answer to
+every request that should load ours — because without a plausible better home,
+"it fired" would only mean "nothing else could take it". Order was shuffled
+under a recorded seed so the fire/silent grouping was not visible.
+
+A prediction and an edit threshold were fixed in writing **before** the run:
+edit if 2 or more of the 5 should-fire requests stayed silent; do not edit at 0
+or 1; and do not add agent language at all if any should-silent request fired,
+since that would mean the description was already over-reaching.
+
+| Set | What it tests | Result |
+|---|---|---|
+| 5 that should load it | agent and MCP framings, the case `/mcp` exists for | 5 / 5 |
+| 4 that should not | authoring a server, agent credentials, a local folder | 4 / 4 silent |
+
+**The prediction was wrong, and that is the finding.** Three of the five were
+predicted at risk because each leads with the agent or MCP framing and reaches
+the file question second. All three fired. The clearest was the one with no
+product and no infrastructure word in it at all — "how do I give an AI agent
+access to a customer's files without it being able to reach any other
+customer's" — with `agent-tool-access` sitting right there as a competitor. It
+went to this skill on the grounds that the authorization boundary was the real
+question, which is the judgement the description's closing clause exists to
+produce.
+
+**Verdict: the description stands, unedited.** The omission is now a tested
+absence rather than an assumed one. The 8 October figures remain valid because
+nothing was changed, and the 100 characters of headroom
+(`check:skill` reports them) stay unspent.
+
+Same caveats as everything else here: one run per cell, and a judge reasoning
+out loud is more deliberate than a harness choosing in passing. 9 / 9 against a
+strong competitor is a reason to stop worrying about this, not a measurement of
+how often it fires in the wild.
+
+Inputs, prediction, threshold and results:
+`skills/filelayer-integration-workspace/trigger-2026-10-11-agent-access/`.
 
 ## Corrections
 

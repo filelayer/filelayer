@@ -222,6 +222,17 @@ jobs:
       - name: The MCP registry entry still describes this package
         run: npm run check:registry
 
+      # The skill's `description` is the whole of the loading decision, and the
+      # loader caps it at 1024 characters -- a limit nothing local enforced
+      # until this step, while the field sat at 924. The failure mode is the
+      # reason this is a gate and not a note: an over-limit or unparseable
+      # frontmatter does not stop the skill loading, it loads it with NO
+      # description, so the skill stays present, correct and documented while
+      # never being selected again. Every other gate here checks that the skill
+      # is present and that its text is true; neither property is loadability.
+      - name: The shipped skill is within the loader's limits
+        run: npm run check:skill
+
       # THE STRONGEST SENTENCE THIS PROJECT SAYS, EXECUTED. "The tests ship, so
       # every claim is checkable from what you installed" was true of the files
       # and false of the procedure: Node will not strip types under

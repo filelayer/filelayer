@@ -112,6 +112,17 @@ the register in this very file was itself the example: its list of scanned files
 was hand-written, so `skills/` and this page were both public and both unscanned,
 and it printed `clean` the whole time.
 
+The same rule applies to measurements, where it is easier to miss because the
+output is a number rather than the word `clean`. **A test set written from a
+document cannot discover what that document omits.** The skill's `description`
+was measured over 26 requests and scored 26/26, and that result was then used
+for three days to justify leaving an undescribed capability undescribed — but
+every request in the set had been derived from the cases the description already
+claimed, so no possible outcome of that run could have spoken to the omission.
+A score of 26/26 and a score of 0/26 would have been equally silent about it.
+When a measurement is used to defend a decision, check that the decision was one
+the measurement could have gone against.
+
 **Verify against the published artifact, not the checkout.** A tarball packed
 locally proves the working tree is coherent and proves nothing about what a
 stranger receives. `npm install @filelayer/core` served a release four versions
