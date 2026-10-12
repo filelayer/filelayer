@@ -265,7 +265,17 @@ npm publish --dry-run --access public --tag latest
 
 # The real thing.
 npm publish --access public --tag latest
-npm dist-tag add @filelayer/core@0.15.1 alpha
+
+# READ FROM package.json, NOT TYPED. This line said `@0.15.1` from the 0.15.1
+# release until 12 October 2026 -- eleven versions -- and it is the one command
+# here that an operator pastes to move a tag on the version they just shipped.
+# The version sweep cannot catch it: this file is deliberately excluded from
+# that sweep (see tools/check-version-claims.mjs, which explains why) because
+# the rollback section's illustrations legitimately name old releases. The
+# exclusion was right about the illustrations and silent about the live
+# commands. Deriving the version makes the exclusion's reasoning true instead
+# of nearly true.
+npm dist-tag add "@filelayer/core@$(node -p 'require("./package.json").version')" alpha
 
 cd ../..
 ```
@@ -347,7 +357,7 @@ So `npm view` is not the check. It will tell you everything is fine while
 
 ```bash
 npm view @filelayer/core
-npm view @filelayer/core dist-tags       # -> { latest: '0.16.0', alpha: '0.16.0' }
+npm view @filelayer/core dist-tags       # -> latest and alpha, BOTH at the version you just published
 npm view @filelayer/core license         # -> Apache-2.0
 npm view @filelayer/core files
 ```
@@ -535,9 +545,13 @@ a time**, and nothing below this line happens until the publish output says
 access` WITHOUT `(dry-run)` after it.
 
 ```bash
-# Tag the released commit and push the tag.
-git tag -a v0.15.1 -m "@filelayer/core 0.15.1 — the README leads with what it does (alpha)"
-git push origin v0.15.1
+# Tag the released commit and push the tag. The version is read, not typed,
+# for the same reason as the dist-tag in §3.3: this said v0.15.1 for eleven
+# releases. Write the message yourself -- that part cannot be derived, and a
+# tag message is the one line somebody reads years later.
+V=$(node -p 'require("./packages/core/package.json").version')
+git tag -a "v$V" -m "@filelayer/core $V — <one line on what this release is>"
+git push origin "v$V"
 
 # Confirm the tree is still clean: `prepack` copies README/LICENSE/NOTICE into
 # packages/core, and .gitignore excludes those copies. `git status` proves the
