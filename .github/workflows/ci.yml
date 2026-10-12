@@ -335,6 +335,20 @@ jobs:
       - name: The deployed page carries this tree's numbers
         run: npm run check:live
 
+      # The OTHER publish. `npm publish` and `mcp-publisher publish` are two
+      # commands and only the first had a gate behind it: on 12 October 2026,
+      # minutes after 0.27.0 went to npm, the MCP registry was still serving
+      # dev.filelayer/core at 0.26.0 and every gate in the repository was green,
+      # because `check:registry` compares server.json with package.json and both
+      # said 0.27.0. An MCP client reads the registry entry and runs what it
+      # names, so the drift sends it to an older tarball than the docs describe.
+      #
+      # Here rather than on push, deliberately: during a release the two are
+      # legitimately different for a few minutes, and a gate that goes red for a
+      # non-defect stops being read.
+      - name: The published MCP entry describes the published package
+        run: npm run check:mcp-live
+
   # ---------------------------------------------------------------------------
   # The counts on the public surfaces, against a run rather than against each
   # other. Its own job because it needs the suite to have run first, and

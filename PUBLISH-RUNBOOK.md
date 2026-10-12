@@ -631,7 +631,15 @@ dig +short TXT filelayer.dev | grep MCPv1
 ### Log in and publish
 
 ```bash
-PRIVATE_KEY="$(openssl ec -in key.pem -noout -text | grep -A4 "priv:" | tail -n +2 | tr -d ' :\n')"
+# THE KEY LIVES OUTSIDE THE REPOSITORY, and this line said `key.pem` -- a path
+# inside it -- until 12 October 2026. That is not a cosmetic difference. On
+# 11 October a `key.pem` at the repository root was picked up by the internal
+# mirror's sync and pushed to a private GitHub repository; the key was rotated
+# and the sync grew two guards, and this runbook went on telling the next
+# operator to put a private key back at the path that caused it.
+#
+# Keys go in ~/.filelayer-keys/, which is not a working copy and is not synced.
+PRIVATE_KEY="$(openssl ec -in ~/.filelayer-keys/mcp-registry-key.pem -noout -text | grep -A4 "priv:" | tail -n +2 | tr -d ' :\n')"
 mcp-publisher login dns --algorithm ecdsap384 --domain filelayer.dev --private-key "${PRIVATE_KEY}"
 ```
 

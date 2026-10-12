@@ -54,6 +54,7 @@
     "verify:starter": "node tools/drive-starter.mjs",
     "test:counted": "node tools/run-suite.mjs",
     "check:live": "node tools/check-live-site.mjs",
+    "check:mcp-live": "node tools/check-mcp-registry-live.mjs",
     "bench:load": "node --experimental-strip-types packages/core/dev/bench-load.ts",
     "build:guides": "node tools/build-guides.mjs",
     "check:guides": "node tools/build-guides.mjs --check",
