@@ -124,6 +124,38 @@ const workflow = readFileSync(join(ROOT, WORKFLOW), 'utf8');
 const gates = gatesInVerify(pkg);
 const problems = [...bad.map((b) => `this gate's own control failed: ${b}`), ...missing(gates, workflow)];
 
+// --- NO FLOATING RUNNER LABEL ------------------------------------------------
+//
+// Every job must name an Ubuntu version. `ubuntu-latest` is a label whose
+// meaning GitHub changes on a date it chooses -- 19 October 2026 for Ubuntu 26
+// -- and this workflow runs a real PostgreSQL in service containers, an
+// embedded PostgreSQL as a process, and a packed-tarball install, all of which
+// have opinions about the machine underneath.
+//
+// Here because eleven pinned literals are a hand-written list, and the twelfth
+// job somebody adds will be copied from a tutorial that says `ubuntu-latest`.
+// The pin is the decision; this is what stops the decision from quietly
+// decaying back.
+const runners = [...workflow.matchAll(/^\s*runs-on:\s*(\S+)\s*$/gm)].map((m) => m[1]);
+if (runners.length === 0) {
+  problems.push(
+    'no `runs-on:` found in the workflow at all, which means this check is reading ' +
+      'something other than a workflow, or the key has been written in a form it ' +
+      'cannot see (a matrix expression, a list). Teach it the new form rather than ' +
+      'removing this.',
+  );
+}
+const floating = [...new Set(runners.filter((r) => /-latest$/.test(r)))];
+if (floating.length > 0) {
+  problems.push(
+    `${floating.join(', ')}: a floating runner label. Name the version, as every other ` +
+      'job here does and as the `postgres:17` service containers already do. GitHub ' +
+      'changes what `-latest` means on a date of its choosing, and a build that moves ' +
+      'underneath you is one you debug on the morning it breaks rather than the day ' +
+      'you chose.',
+  );
+}
+
 if (problems.length) {
   console.error(`\ncheck-ci-coverage: FAILED\n\n${problems.map((p) => `  - ${p}`).join('\n\n')}\n`);
   process.exit(1);
@@ -132,5 +164,6 @@ if (problems.length) {
 console.log(
   `check-ci-coverage: clean. All ${gates.length} gate(s) in \`npm run verify\` have a step in ` +
     `${WORKFLOW} (${Object.keys(RUN_DIFFERENTLY).length} declared as run differently); ` +
+    `${runners.length} job(s) on pinned runner image(s) (${[...new Set(runners)].join(', ')}); ` +
     `${CONTROLS.length} controls correct.`,
 );

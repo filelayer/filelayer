@@ -26,6 +26,26 @@ on:
   schedule:
     - cron: '17 4 * * *'
 
+# -----------------------------------------------------------------------------
+# THE RUNNER IMAGE IS PINNED, like `postgres:17` beside it
+# -----------------------------------------------------------------------------
+#
+# Every job says `ubuntu-24.04` and none says `ubuntu-latest`. GitHub announced
+# that `ubuntu-latest` begins resolving to Ubuntu 26 on 19 October 2026, and
+# this workflow runs a real PostgreSQL in service containers, an embedded
+# PostgreSQL as an ordinary process, and a packed-tarball install -- three
+# things with opinions about the operating system underneath them.
+#
+# The inconsistency this fixes is worth naming: the service containers already
+# pinned `postgres:17`. This repository was pinning the database it depends on
+# and floating the machine it runs on, which is the same dependency with less
+# of a guarantee.
+#
+# Floating was a defensible choice while nothing was announced. What is not
+# defensible is meeting the change on a release morning because an external
+# calendar decided when. Pinned now, moved to 26.04 deliberately when somebody
+# can read the result; `check:ci-coverage` fails if a floating label comes back.
+
 permissions:
   contents: read
 
@@ -48,7 +68,7 @@ jobs:
   # ---------------------------------------------------------------------------
   test:
     name: test (node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -93,7 +113,7 @@ jobs:
   # ---------------------------------------------------------------------------
   adversarial:
     name: adversarial suite
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -127,7 +147,7 @@ jobs:
   # ---------------------------------------------------------------------------
   shipped-surface:
     name: docs and language
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -302,7 +322,7 @@ jobs:
   live-site:
     name: the deployed site matches this tree
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -356,7 +376,7 @@ jobs:
   # ---------------------------------------------------------------------------
   measured-claims:
     name: measured claims
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       # The contention tests need two backends. Without this the suite counts 8
       # fewer tests than it does in a full run, and the claim would be wrong in
@@ -409,7 +429,7 @@ jobs:
   # ---------------------------------------------------------------------------
   packaging:
     name: clean install from the tarball
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -521,7 +541,7 @@ jobs:
   # ---------------------------------------------------------------------------
   release-gate:
     name: full lifecycle from an empty directory
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # A real Postgres, so the production-shaped half of the gate is a real
     # production path and not a second WASM database wearing a disguise.
@@ -625,7 +645,7 @@ jobs:
   # ---------------------------------------------------------------------------
   migrations:
     name: the migration files, executed
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -668,7 +688,7 @@ jobs:
   # ---------------------------------------------------------------------------
   contention:
     name: concurrency against a real PostgreSQL
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -808,7 +828,7 @@ jobs:
   # ---------------------------------------------------------------------------
   s3-live:
     name: live S3/R2 integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -949,7 +969,7 @@ jobs:
   # ---------------------------------------------------------------------------
   s3-live-aws:
     name: the storage adapter against live AWS S3
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
