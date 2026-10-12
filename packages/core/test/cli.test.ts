@@ -268,3 +268,121 @@ describe('the CLI: the anonymous-read probe', () => {
     }
   });
 });
+
+/**
+ * The same stand-in, with a body. `anonymousReadFinding` never reads one; the
+ * credentials probe goes through `S3Storage`, which parses the provider's XML
+ * for an error code -- so what the body contains, and what reaches the
+ * operator's terminal from it, is a decision this suite pins.
+ */
+async function fakeStoreWithBody(status: number, xml: string) {
+  const server = createServer((_req, res) => {
+    res.writeHead(status, { 'content-type': 'application/xml' });
+    res.end(xml);
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address() as AddressInfo;
+  return {
+    endpoint: `http://127.0.0.1:${port}`,
+    close: () => new Promise<void>((r) => server.close(() => r())),
+  };
+}
+
+const CREDS = { S3_BUCKET: 'b', S3_ACCESS_KEY_ID: 'test-key-id', S3_SECRET_ACCESS_KEY: 'test-secret' };
+
+describe('the CLI: the signed-credentials probe', () => {
+  it('signs nothing when no bucket is configured, and says so', async () => {
+    const r = await run(['doctor', '--json']);
+    const creds = JSON.parse(r.stdout).findings.find(
+      (f: { name: string }) => f.name === 'storage credentials',
+    );
+    assert.equal(creds.state, 'unknown');
+    assert.match(creds.detail, /FsStorage/, 'the expected case should be named, not just skipped');
+  });
+
+  it('names the missing variable when an endpoint is set without keys', async () => {
+    const r = await run(['doctor', '--json'], {
+      S3_ENDPOINT: 'http://127.0.0.1:1',
+      S3_BUCKET: 'b',
+      S3_ACCESS_KEY_ID: undefined,
+      S3_SECRET_ACCESS_KEY: undefined,
+    });
+    const creds = JSON.parse(r.stdout).findings.find(
+      (f: { name: string }) => f.name === 'storage credentials',
+    );
+    assert.equal(creds.state, 'problem');
+    assert.match(creds.detail, /S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY/);
+  });
+
+  it('reads a 403 as credentials the store does not accept', async () => {
+    const store = await fakeStore(403);
+    try {
+      const r = await run(['doctor', '--json'], { ...CREDS, S3_ENDPOINT: store.endpoint });
+      const creds = JSON.parse(r.stdout).findings.find(
+        (f: { name: string }) => f.name === 'storage credentials',
+      );
+      assert.equal(creds.state, 'problem');
+      assert.match(creds.detail, /rejected the signed request/);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it('reads a 404 as accepted, and refuses to claim the bucket exists', async () => {
+    const store = await fakeStore(404);
+    try {
+      const r = await run(['doctor', '--json'], { ...CREDS, S3_ENDPOINT: store.endpoint });
+      const creds = JSON.parse(r.stdout).findings.find(
+        (f: { name: string }) => f.name === 'storage credentials',
+      );
+      assert.equal(creds.state, 'ok');
+      // The claim and its limit in the same breath: a missing bucket answers
+      // the same 404, so an `ok` here that implied the bucket was fine would be
+      // the check overstating its own evidence.
+      assert.match(creds.detail, /does not prove the bucket exists/);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it('does not call a 500 an authentication answer', async () => {
+    const store = await fakeStore(500);
+    try {
+      const r = await run(['doctor', '--json'], { ...CREDS, S3_ENDPOINT: store.endpoint });
+      const creds = JSON.parse(r.stdout).findings.find(
+        (f: { name: string }) => f.name === 'storage credentials',
+      );
+      assert.equal(creds.state, 'unknown', 'a broken store is not a credentials verdict');
+    } finally {
+      await store.close();
+    }
+  });
+
+  it('never relays the store\'s own sentence, which can carry credential material', async () => {
+    // A REAL SHAPE. AWS answers SignatureDoesNotMatch with a body that names
+    // the access key id, and `s3Error` folds the provider's <Message> into the
+    // Error's message. The finding reports only the structured code and status
+    // for exactly this reason, and that choice is only worth anything if
+    // something fails when somebody "improves" it by printing the message.
+    const store = await fakeStoreWithBody(
+      403,
+      '<Error><Code>SignatureDoesNotMatch</Code><Message>The request signature we ' +
+        'calculated does not match the signature you provided for key ' +
+        'AKIAIOSFODNN7EXAMPLE</Message></Error>',
+    );
+    try {
+      const r = await run(['doctor', '--json'], { ...CREDS, S3_ENDPOINT: store.endpoint });
+      assert.ok(
+        !r.out.includes('AKIAIOSFODNN7EXAMPLE'),
+        'the provider error body reached the operator output, so an authentication ' +
+          'failure can print credential material into a terminal or a CI log',
+      );
+      const creds = JSON.parse(r.stdout).findings.find(
+        (f: { name: string }) => f.name === 'storage credentials',
+      );
+      assert.match(creds.detail, /SignatureDoesNotMatch/, 'the code itself is what to report');
+    } finally {
+      await store.close();
+    }
+  });
+});

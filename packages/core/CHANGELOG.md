@@ -23,6 +23,53 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.29.0] — 2026-10-12
+
+### `doctor` checks whether the credentials work, not just whether a stranger can read
+
+`anonymousReadFinding` asks whether a STRANGER can read the bucket and needs no
+credentials to ask it. The complementary question was unanswered: whether the
+credentials this deployment holds are accepted at all. An operator with a typo
+in `S3_SECRET_ACCESS_KEY` got a completely clean `doctor` and found out on the
+first upload, from an end user.
+
+One signed GET on a key nobody has. Three outcomes, each reported as what it is:
+accepted, rejected, or not an authentication answer at all -- a 500 from a
+broken store is not a verdict on credentials and does not pretend to be.
+
+**GET rather than HEAD, which is a correction.** HEAD was the obvious choice,
+no bytes to transfer, and it loses the provider's error code: an HTTP HEAD
+response carries no body, so the XML parse finds nothing and every failure
+arrives as a bare status. `AccessDenied` and `SignatureDoesNotMatch` are
+different problems with different fixes -- a key without permission versus a key
+that is wrong -- and collapsing them into "403" makes the operator guess. Found
+because a test asserted the code was reported and it was not.
+
+**The store's own sentence is not relayed.** `s3Error` folds the provider's
+`<Message>` into the Error, and AWS answers `SignatureDoesNotMatch` with a body
+that names the access key id. Only the structured code and status are reported.
+A test asserts that a body carrying `AKIAIOSFODNN7EXAMPLE` does not reach the
+output, so the choice fails loudly if somebody "improves" it by printing the
+message.
+
+**What it still does not prove: that the bucket exists.** A missing bucket
+answers the same 404 as a missing key, to both probes. The `ok` finding says so
+in its own text rather than letting an operator infer more than was measured.
+
+### The header of cli.ts was advertising a gap that had been closed
+
+That file's "what it is not, yet" section said `doctor` "says nothing about
+whether your bucket exists, is reachable or is private, which is a real gap".
+`anonymousReadFinding` had closed the privacy half and runs on every path. The
+paragraph announcing the absence stayed.
+
+Noticed while reading the header to decide what to add next, which is the only
+reason it was noticed at all: no gate here reads prose inside a `.ts` for
+staleness. A document that understates the product is a milder defect than one
+that overstates it, and it is the same defect -- this one would have had a
+reader conclude the tool was less careful than it is, and it had us planning to
+build something that existed.
+
 ## [0.28.0] — 2026-10-12
 
 ### `orgs.audit()` can ask all five questions, not two

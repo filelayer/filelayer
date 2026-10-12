@@ -36,12 +36,25 @@
  * WHAT IT IS NOT, YET
  * =============================================================================
  *
- * No bucket checks. `doctor` says nothing about whether your bucket exists, is
- * reachable or is private, which is a real gap: a public bucket is the single
- * most common way this product's guarantees get undone, and it is exactly the
- * thing an operator would want a one-line answer about. It needs storage
- * credentials and an adapter, and shipping a check that half-works would be
- * worse than saying it is absent.
+ * THIS SECTION SAID "No bucket checks" UNTIL 0.29.0, AND IT WAS WRONG. The gap
+ * it described -- `doctor` saying nothing about whether the bucket is private --
+ * was closed by `anonymousReadFinding`, which runs on every path, and the
+ * paragraph announcing the absence stayed. Noticed on 12 October 2026 while
+ * reading this header to decide what to add next: the section whose entire job
+ * is to say what is missing was advertising a capability the file already had,
+ * and no gate here reads prose inside a `.ts` for staleness. A document that
+ * understates the product is a milder defect than one that overstates it, and
+ * it is the same defect.
+ *
+ * `doctor` now answers two independent storage questions. Whether a STRANGER
+ * can read the bucket (unsigned, needs no credentials) and whether the
+ * credentials this deployment holds are ACCEPTED (one signed HEAD). Neither
+ * stretches past what its own probe shows; read them together.
+ *
+ * What is still absent: nothing proves the bucket EXISTS. A missing bucket and
+ * a missing key answer the same 404 to both probes, and the honest options are
+ * a list call or a bucket-level request, neither of which the adapter offers
+ * today. Said here rather than guessed at in a finding.
  *
  * No `filelayer audit`. Reading the trail needs a Filelayer instance, which
  * needs a storage adapter it would never use, and it needs a subject -- and the
@@ -371,6 +384,116 @@ async function anonymousReadFinding(): Promise<Finding> {
   };
 }
 
+/**
+ * DO THE CONFIGURED CREDENTIALS WORK?
+ *
+ * `anonymousReadFinding` above asks whether a STRANGER can read the bucket, and
+ * it needs no credentials to ask. That left the complementary question
+ * unanswered: whether the credentials this deployment holds are accepted at
+ * all. An operator with a typo in `S3_SECRET_ACCESS_KEY` gets a completely
+ * clean `doctor` today and finds out on the first upload, from an end user.
+ *
+ * One signed GET on a key nobody has -- GET rather than HEAD, and that is a
+ * correction rather than a preference. HEAD was the obvious choice (no bytes to
+ * transfer) and it loses the provider's error code: an HTTP HEAD response
+ * carries no body, so `s3Error`'s XML parse finds nothing and every failure
+ * arrives as a bare status. `AccessDenied` and `SignatureDoesNotMatch` are
+ * different problems with different fixes -- a key without permission versus a
+ * key that is wrong -- and collapsing them into "403" makes the operator guess.
+ * The probe key does not exist, so the GET transfers nothing either way.
+ *
+ * WHAT A NULL RESULT PROVES, AND WHAT IT DOES NOT. The adapter turns 404 into
+ * `null`, and a bucket that does not exist also answers 404 -- so "the probe
+ * key is absent" and "the bucket is absent" arrive identically here. This
+ * finding therefore claims only that a signed request was ACCEPTED, and says
+ * so. The bucket's existence and privacy are what the anonymous probe speaks
+ * to, and the two findings are meant to be read together rather than either
+ * one being stretched.
+ *
+ * THE STORE'S OWN SENTENCE IS NOT PRINTED, on purpose. `s3Error` builds a
+ * message out of the provider's `<Message>` body and also attaches the
+ * structured `s3Code` and `status`. Only the structured pair is reported here.
+ * Relaying a vendor's prose into a terminal, a CI log or a pasted bug report
+ * means trusting that no provider ever echoes credential material into an
+ * authentication-failure body, and that is a bet with no upside: the code and
+ * the status are what an operator acts on anyway.
+ */
+async function credentialsFinding(): Promise<Finding> {
+  const endpoint = process.env.S3_ENDPOINT;
+  const bucket = process.env.S3_BUCKET;
+  const hasKey = Boolean(process.env.S3_ACCESS_KEY_ID);
+  const hasSecret = Boolean(process.env.S3_SECRET_ACCESS_KEY);
+
+  if (!endpoint || !bucket) {
+    return {
+      name: 'storage credentials',
+      state: 'unknown',
+      detail:
+        'no S3 endpoint and bucket are configured, so nothing was signed. Expected if ' +
+        'this deployment uses FsStorage.',
+    };
+  }
+  if (!hasKey || !hasSecret) {
+    const missing = [!hasKey && 'S3_ACCESS_KEY_ID', !hasSecret && 'S3_SECRET_ACCESS_KEY']
+      .filter(Boolean)
+      .join(' and ');
+    return {
+      name: 'storage credentials',
+      state: 'problem',
+      detail: `S3_ENDPOINT is set and ${missing} is not, so no request can be signed.`,
+      fix: `Set ${missing} in the environment. Not as an argument -- see --help.`,
+    };
+  }
+
+  const { S3Storage } = await import('./storage.ts');
+  const probe = `filelayer-credentials-probe-${Math.random().toString(36).slice(2)}`;
+  try {
+    const s3 = new S3Storage({
+      endpoint,
+      bucket,
+      region: process.env.S3_REGION ?? 'auto',
+      accessKeyId: process.env.S3_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY!,
+      ...(process.env.S3_SESSION_TOKEN ? { sessionToken: process.env.S3_SESSION_TOKEN } : {}),
+    });
+    await s3.get(probe);
+    return {
+      name: 'storage credentials',
+      state: 'ok',
+      detail:
+        'the store accepted a signed request. This does not prove the bucket exists: a ' +
+        'missing bucket answers the same 404 as a missing key. Read it with the storage ' +
+        'finding above.',
+    };
+  } catch (e) {
+    const err = e as Error & { s3Code?: string | null; status?: number };
+    const rejected =
+      err.status === 403 ||
+      ['SignatureDoesNotMatch', 'InvalidAccessKeyId', 'AccessDenied'].includes(err.s3Code ?? '');
+    if (rejected) {
+      return {
+        name: 'storage credentials',
+        state: 'problem',
+        detail:
+          `the store rejected the signed request (${err.status ?? 'no status'}` +
+          `${err.s3Code ? ` ${err.s3Code}` : ''}). The credentials in the environment are ` +
+          'not accepted for this bucket.',
+        fix:
+          'Check S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY, and that the key is scoped to ' +
+          'this bucket and region.',
+      };
+    }
+    return {
+      name: 'storage credentials',
+      state: 'unknown',
+      detail:
+        `the signed request did not complete (${err.status ?? 'no status'}` +
+        `${err.s3Code ? ` ${err.s3Code}` : ''}). That is not an authentication answer, so ` +
+        'this check cannot say whether the credentials are good.',
+    };
+  }
+}
+
 function nodeFinding(): Finding {
   const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
   const ok = major > 22 || (major === 22 && minor >= 18);
@@ -417,10 +540,13 @@ if (command === 'doctor') {
   // -- said nothing about the bucket, which is the silence this check exists to
   // end. The two questions are independent and are answered independently.
   const storage = await anonymousReadFinding();
+  // Same reasoning as the line above: the credentials question is independent
+  // of whether the database answers, so it is asked on every path too.
+  const creds = await credentialsFinding();
 
   const conn = await connect();
   if (!conn.ok) {
-    findings.push(conn.finding, storage);
+    findings.push(conn.finding, storage, creds);
     report(findings);
   }
   findings.push({ name: 'the database', state: 'ok', detail: 'reachable.' });
@@ -434,7 +560,7 @@ if (command === 'doctor') {
     });
   }
   await conn.pool.end().catch(() => {});
-  findings.push(storage);
+  findings.push(storage, creds);
   report(findings);
 }
 
