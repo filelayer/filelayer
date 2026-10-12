@@ -9,13 +9,13 @@
     "source": "github",
     "subfolder": "packages/core"
   },
-  "version": "0.26.0",
+  "version": "0.27.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@filelayer/core",
-      "version": "0.26.0",
+      "version": "0.27.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -94,7 +94,7 @@
         },
         {
           "name": "FILELAYER_MCP_EXPOSE_AUDIT",
-          "description": "Set to exactly `true` to register file_audit. Off by default for a specific reason: reading the audit trail is the one act this library does not itself record, so an agent could read an organisation's entire history and leave nothing behind. See LIMITATIONS.md entry 16.",
+          "description": "Set to exactly `true` to register file_audit. Off by default because the trail is an organisation's whole history and a tool that returns it copies every file name, actor and denial into the model's context. Reading it is itself audited since 0.27.0, which was the previous reason; the default did not move.",
           "default": "false",
           "choices": [
             "true",

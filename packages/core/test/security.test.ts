@@ -900,9 +900,21 @@ describe('PROPERTY 11: denials are audited (P5)', () => {
 
     await rejects(() => s.fl.read(P(s.alice), s.fileB.id), 404);
 
-    const after = await s.fl.auditLog(P(s.bob), s.orgB, {});
-    assert.equal(after.length - before, 1, 'exactly one event, not zero and not two');
-    const e = after[after.length - 1]!;
+    // COUNTED IN THE DATABASE ON BOTH SIDES, and the reason is a consequence of
+    // 0.27.0 worth stating: since reading the trail is itself an audited act,
+    // `auditLog()` WRITES a row before it selects. This test used to count with
+    // `countAudit` before and with `auditLog().length` after, so the instrument
+    // started perturbing the measurement and the delta read 2 instead of 1. The
+    // event it added was real and correct; mixing two instruments was the bug.
+    const after = await countAudit(s.db, s.orgB);
+    assert.equal(after - before, 1, 'exactly one event, not zero and not two');
+
+    // Fetched separately, and the deny is SELECTED rather than taken as the last
+    // row: the read above now appends its own `audit.read`, so "the newest row"
+    // is no longer the event under test.
+    const rows = await s.fl.auditLog(P(s.bob), s.orgB, {});
+    const e = rows.find((r) => r.action === 'file.read' && r.decision === 'deny')!;
+    assert.ok(e, 'the denied read was not in the trail');
     assert.equal(e.decision, 'deny');
     assert.equal(e.reason, 'no_membership');
     assert.equal(e.action, 'file.read');

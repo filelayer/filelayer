@@ -100,31 +100,82 @@ describe('audit context on the facade', () => {
     );
   });
 
-  it('does not record the act of reading the trail, with or without context', async () => {
+  it('records the act of reading the trail, and attributes it', async () => {
     const fl = await Filelayer.quickstart();
     await scenario(fl);
 
-    const before = (await fl.orgs.audit('acme', { as: 'alice' })).length;
-    await fl.orgs.audit('acme', { as: 'alice', userAgent: AGENT });
-    const after = await fl.orgs.audit('acme', { as: 'alice' });
+    // THIS ASSERTION WAS THE OTHER WAY ROUND UNTIL 0.27.0, and the turn is the
+    // point. It used to pin the gap -- reading the trail wrote nothing -- so
+    // that closing the gap would break this test and force the published
+    // limitation to be deleted in the same commit. That is what happened, and
+    // LIMITATIONS.md entry 16 is gone.
+    const first = await fl.orgs.audit('acme', { as: 'alice' });
 
-    // This asserts the CURRENT behaviour, and the behaviour is a gap rather
-    // than a decision: reading the audit trail is not itself an audited act,
-    // so an agent can read an entire organisation's history and leave nothing
-    // behind. The context passed above is accepted and then has nothing to
-    // attach to. LIMITATIONS.md carries this; the test exists so that if
-    // somebody makes reading auditable, this fails and tells them to go and
-    // delete the limitation rather than leaving a stale one published.
-    assert.equal(
-      after.length,
-      before,
-      'reading the trail now writes an event: make `orgs.audit` reads auditable on ' +
-        'purpose, update LIMITATIONS.md, and turn this assertion around',
-    );
+    // A read sees ITSELF: the event is written during authorization, before the
+    // query runs, so the first read already contains its own `audit.read`.
+    // Asserted rather than assumed, because the alternative -- a read that is
+    // recorded but invisible until the next one -- would be a chain that lies
+    // about its own latest state.
     assert.ok(
-      !after.some((e) => e.userAgent === AGENT),
-      'a read of the trail was attributed, which contradicts the limitation above',
+      first.some((e) => e.action === 'audit.read'),
+      'a read did not contain its own audit.read event, so reads are recorded ' +
+        'after the query rather than during authorization. That ordering loses an ' +
+        'authorized read that then fails.',
     );
+
+    const second = await fl.orgs.audit('acme', { as: 'alice', userAgent: AGENT, ip: IP });
+    assert.equal(
+      second.length,
+      first.length + 1,
+      'one read must write exactly one event. More than one is a bug; fewer is the ' +
+        'coalescing that `filelayer.ts` refuses, which would let a reader who looked ' +
+        'fifty times leave a record saying they looked once.',
+    );
+
+    const third = await fl.orgs.audit('acme', { as: 'alice', decision: 'allow', limit: 50 });
+    const reads = third.filter((e) => e.action === 'audit.read');
+
+    // The context the caller passes now has something to attach to, which is
+    // the whole of the MCP case: "the partner read her own history" and "the
+    // partner's agent read it for her" are different facts and the chain can
+    // now tell them apart.
+    const byAgent = reads.filter((e) => e.userAgent === AGENT);
+    assert.equal(byAgent.length, 1, 'exactly the one read made with an agent should carry it');
+    assert.equal(byAgent[0]!.ip, IP);
+    assert.equal(byAgent[0]!.decision, 'allow');
+
+    // The filter asked for is recorded; the rows returned are not. The shape of
+    // the question separates "read everything for actor X" from "read one file",
+    // and that difference is what an investigator needs.
+    assert.deepEqual(
+      byAgent[0]!.context.filter,
+      {},
+      'the second read passed no filter, so the recorded filter should be empty rather ' +
+        'than a normalised one with defaults invented into it',
+    );
+    // The third read passed a filter, and since a read sees itself it must
+    // contain its own event carrying that filter. The first draft of this test
+    // asserted the opposite here and contradicted its own earlier assertion
+    // eight lines up; the suite caught it.
+    const withFilter = reads.find(
+      (e) => (e.context.filter as { limit?: number } | undefined)?.limit === 50,
+    );
+    assert.ok(withFilter, 'the filter the third read asked for was not recorded');
+    assert.equal(
+      (withFilter.context.filter as { decision?: string }).decision,
+      'allow',
+      'the recorded filter should carry every field the caller passed, not just some',
+    );
+
+    // The facade accepts only `decision` and `limit` of AuditFilter's five
+    // fields, which is why this asserts on `decision` rather than on `action`.
+    // The first draft of this test passed `action` and typecheck refused it --
+    // correctly, and it is how that gap was noticed. `fileId`, `actorId` and
+    // `action` are exactly the filters an investigator reaches for, and
+    // `action: 'audit.read'` is the one this very feature creates demand for.
+    // Not bolted on here: resolving an external user id needs a LOOKUP-ONLY
+    // resolver, because `ids.actor()` upserts and filtering by an unknown name
+    // would create an actor row as a side effect of a read.
   });
 
   it('is not an authorization input', async () => {

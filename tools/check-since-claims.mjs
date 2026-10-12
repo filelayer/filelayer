@@ -76,6 +76,19 @@ const SINCE = /\b[Ss]ince\s+`?(\d+\.\d+\.\d+)`?/g;
  */
 const CLAIMS = [
   {
+    match: 'audited since 0.27.0, which was the previous reason this was off',
+    // A BEHAVIOURAL claim, so it is tied to the shipped test that asserts it
+    // rather than to an export. `auditLog()` existed before 0.27.0 and still
+    // does; what changed is what it writes, and the only honest probe for that
+    // is the assertion itself, which travels in the tarball.
+    probe: {
+      kind: 'ships',
+      file: 'test/audit-context.test.ts',
+      text: 'records the act of reading the trail, and attributes it',
+    },
+    note: 'Reading the audit trail appends an event; closed LIMITATIONS entry 16.',
+  },
+  {
     match: 'it REFUSES a database that already has the schema',
     probe: { kind: 'ships', file: 'schema.sql', text: 'filelayer_schema_version' },
     note: 'schema.sql stamps a version table and refuses a database that has one.',

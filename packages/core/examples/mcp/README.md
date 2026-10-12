@@ -70,10 +70,11 @@ model's context — `file_info` plus a share link is usually what the agent
 actually needed.
 
 `file_audit` IS on here, so the example can show the attribution, which is the
-point of the whole thing. Think before turning it on in production: reading the
-audit trail is the one act Filelayer does not itself record, so an agent can
-read an organisation's entire history and leave nothing behind
-([`LIMITATIONS.md`](../../LIMITATIONS.md) entry 16).
+point of the whole thing. Think before turning it on in production: the trail is
+the organisation's entire history, and a tool that returns it copies every file
+name, actor and denial into the model's context. Since 0.27.0 the read is itself
+recorded, so you can see afterwards that it happened — which is a different
+thing from it being a good idea.
 
 ## What the checks establish
 

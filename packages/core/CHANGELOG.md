@@ -23,6 +23,81 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.27.0] — 2026-10-12
+
+### Reading the audit trail is itself an audited act
+
+`LIMITATIONS.md` entry 16 is closed and gone. A successful read of the trail
+used to write nothing, so a caller with standing could read an organisation's
+entire history -- every file name, every actor, every denial and its reason --
+and leave no trace. The trail answered "who touched this file" and not "who
+read the trail", which is a hole in the shape of the person most likely to use
+it: several compliance regimes treat access to an audit log as a loggable event
+precisely because it is the record an insider consults first.
+
+`auditLog()`, `verifyAuditChain()` and `auditCheckpoints()` each now append one
+event. The code carried `emitAllow: false` with the comment "reading the log
+should not spam the log", and that sentence was the whole of the argument
+against doing this.
+
+**One correction to what the limitation said.** It claimed `orgs.audit()` and
+`auditLog()` "write nothing". That was imprecise in our own favour: a DENIED
+read has always been recorded, because `emitAllow: false` suppresses only the
+allow. The gap was the successful read.
+
+**What is recorded:** one row per call, with the filter the caller asked for in
+`context`. `AuditFilter` is five scalars and none is sensitive, and the shape of
+the question is the part that matters -- "read everything for actor X" and "read
+one file" are different acts.
+
+**What is not, and why, because it is the obvious next field:** the number of
+rows returned. The event is written during authorization, before the query runs.
+Counting rows means writing after it instead, and then an authorized read that
+subsequently fails leaves no trace at all -- when the authorization is precisely
+what happened. The row count is a property of the data; the row is a record of
+the act.
+
+**On volume.** A dashboard polling the trail every thirty seconds adds about
+2 880 rows a day per viewer, and the tempting answer is to coalesce identical
+reads by one actor into a single row with a count. Refused: it makes the record
+lie exactly where an insider would lean on it -- "I only looked once" when they
+looked fifty times. A polling dashboard is an application design problem, and
+`audit_checkpoint`'s `trim` is already the designed answer to a chain that has
+grown. No schema change: `action` is free text.
+
+**A read sees itself**, since the event is written before the query. Asserted
+rather than assumed, because the alternative -- recorded but invisible until the
+next read -- would be a chain that lies about its own latest state.
+
+### The MCP audit tool stays off, for a different reason
+
+`exposeAuditTrail` was off *because* of entry 16. That reason is gone, and
+reusing a default whose justification has gone is how a default becomes
+superstition. It stays off on the argument that always sat underneath and never
+depended on the gap: the trail is an organisation's whole history, and a tool
+that returns it copies all of it into a model's context. That is the same
+argument as `returnFileBytes`, applied to the record instead of the document.
+Said in all five places that carried the old reason.
+
+### Two things found while doing it, both recorded rather than bundled in
+
+- **`test/audit-context.test.ts` was written to fail when this shipped**, and it
+  did. Turning its assertion around is what forced the published limitation to
+  be deleted in the same commit, which is what it was for.
+- **`PROPERTY 11` in the security suite counted with two instruments** --
+  `countAudit` before and `auditLog().length` after -- so the moment reading
+  became auditable the instrument began perturbing the measurement and the delta
+  read 2 instead of 1. The added event was correct; mixing instruments was the
+  bug. It now counts in the database on both sides and selects the denial rather
+  than taking the newest row.
+- **The simple facade exposes two of `AuditFilter`'s five fields** (`decision`,
+  `limit`; not `fileId`, `actorId`, `action`). Found because a draft of the test
+  passed `action` and typecheck refused it. Those three are exactly what an
+  investigator reaches for, and `action: 'audit.read'` is the filter this very
+  change creates demand for. Not bolted on here: it needs a lookup-only actor
+  resolver first, because `ids.actor()` upserts and filtering by an unknown name
+  would create an actor row as a side effect of a read.
+
 ## [0.26.0] — 2026-10-11
 
 ### The MCP registry entry, prepared and checked

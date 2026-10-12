@@ -475,10 +475,10 @@ the `meaning` and `fix` from the catalogue, and never with `reason`.
 Three things are off by default, each for its own reason: `allowDestructive`
 (deleting is not recoverable), `returnFileBytes` (a document returned by a tool
 is a document copied into a model's context), and `exposeAuditTrail` — because
-reading the trail is the one act Filelayer does not itself record, so an agent
-could read an organisation's whole history and leave nothing behind
-([`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md)
-entry 16).
+the trail is an organisation's whole history, and a tool that returns it copies
+every file name, actor and denial into that context too. Reading the trail is
+itself audited since 0.27.0, which was the previous reason this was off; the
+default did not move, because the context argument never depended on it.
 
 This module is the only part of the package with dependencies, and they are
 optional peers, so the install above stays at zero:

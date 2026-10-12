@@ -1240,7 +1240,7 @@ export async function authorizeOrg(
   principal: Principal,
   orgId: string,
   capability: OrgCapability,
-  opts: { action?: string; emitAllow?: boolean } = {},
+  opts: { action?: string; emitAllow?: boolean; context?: Record<string, unknown> } = {},
 ): Promise<Decision> {
   const action = opts.action ?? `org.${capability}`;
   const emitAllow = opts.emitAllow ?? true;
@@ -1268,7 +1268,10 @@ export async function authorizeOrg(
       fileId: null,
       ...(principal.ip !== undefined ? { ip: principal.ip } : {}),
       ...(principal.userAgent !== undefined ? { userAgent: principal.userAgent } : {}),
-      context: { via: 'role', role, capability },
+      // The caller's own context is merged UNDER the three fields this function
+      // owns, so a caller cannot overwrite `via`, `role` or `capability` with
+      // something more flattering by passing them in.
+      context: { ...(opts.context ?? {}), via: 'role', role, capability },
     });
   }
   return { allow: true, via: 'role' };

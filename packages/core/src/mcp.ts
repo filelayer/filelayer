@@ -39,10 +39,17 @@
  *
  *   - **Deleting** is not recoverable and an agent that misreads a sentence
  *     deletes the wrong thing silently.
- *   - **The audit trail** is the one surface where reading is not itself
- *     recorded (LIMITATIONS.md entry 16), so an agent reading an entire
- *     organisation's history leaves nothing behind. Until that gap is closed,
- *     turning this on is a decision somebody should make on purpose.
+ *   - **The audit trail** is an organisation's whole history -- every file
+ *     name, every actor, every denial and its reason -- and a tool that returns
+ *     it copies all of that into a model's context. Same argument as file bytes
+ *     below, applied to the record instead of the document.
+ *
+ *     THE REASON CHANGED IN 0.27.0 and the old one is worth stating, because
+ *     reusing a default whose justification has gone is how a default becomes
+ *     superstition. This used to be off because reading the trail was not
+ *     itself recorded, so an agent could read everything and leave nothing
+ *     behind. That gap is closed: reads are audited now. The default did not
+ *     move, on the context argument above, which was always independent.
  *   - **File bytes** returned by a tool go into a model's context, and from
  *     there into whatever that context reaches. `file_info` plus a share link
  *     gives an agent what it needs to be useful without copying the document

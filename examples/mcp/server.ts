@@ -71,9 +71,11 @@ const server = await filelayerMcpServer(fl, {
   agentLabel: 'filelayer-example-mcp/1.0',
 
   // On here so the example can show the audit trail, which is the point of the
-  // whole thing. Think before turning it on in a real deployment: reading the
-  // trail is not itself recorded, so an agent can read an organisation's entire
-  // history and leave nothing behind. See LIMITATIONS.md entry 16.
+  // whole thing. Think before turning it on in a real deployment: the trail is
+  // the organisation's entire history, and a tool that returns it puts every
+  // file name, actor and denial into the model's context. Since 0.27.0 the read
+  // is itself recorded, so at least you can see afterwards that it happened --
+  // which is a different thing from it being a good idea.
   exposeAuditTrail: true,
 
   // Left off, as they default. `allowDestructive` because deleting is not

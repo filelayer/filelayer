@@ -2676,9 +2676,40 @@ export class Filelayer {
     orgId: string,
     filter: AuditFilter = {},
   ): Promise<ResolvedAuditRow[]> {
+    // READING THE TRAIL IS ITSELF AN AUDITED ACT, since 0.27.0.
+    //
+    // This used to pass `emitAllow: false` with the comment "reading the log
+    // should not spam the log", and that sentence was the whole of the
+    // argument. It is the wrong trade, and LIMITATIONS.md carried the gap as
+    // entry 16 for several releases while saying so: the audit trail is the
+    // record an insider consults FIRST, several compliance regimes treat
+    // access to it as a loggable event for exactly that reason, and a log that
+    // answers "who touched this file" but not "who read the trail" has a hole
+    // in the shape of the person most likely to use it.
+    //
+    // WHAT IS RECORDED: one row per call, with the filter the caller asked for
+    // in `context`. Not the rows it returned. `AuditFilter` is five scalars
+    // and none of them is sensitive, so the shape of the question is safe to
+    // keep and is the part that matters -- "read everything for actor X" and
+    // "read one file" are different acts.
+    //
+    // WHAT IS NOT RECORDED, and why, because the obvious next field is a trap:
+    // the number of rows returned. The event is written during authorization,
+    // BEFORE the query runs. Counting rows means writing after it instead, and
+    // then an authorized read that subsequently fails leaves no trace at all --
+    // when the authorization is precisely the thing that happened. The row
+    // count is a property of the data; this row is a record of the act.
+    //
+    // ON VOLUME: a dashboard polling this every thirty seconds adds about 2 880
+    // rows a day per viewer, and the temptation is to coalesce identical reads
+    // by the same actor into one row with a count. That is refused. It makes
+    // the record lie exactly where an insider would lean on it -- "I only
+    // looked once" when they looked fifty times. A polling dashboard is an
+    // application design problem, and `audit_checkpoint`'s `trim` is already
+    // the designed answer to a chain that has grown.
     const decision = await authorizeOrg(this.store, principal, orgId, 'read_audit', {
       action: 'audit.read',
-      emitAllow: false, // reading the log should not spam the log
+      context: { filter },
     });
     this.#raise(decision);
     return this.store.listAuditResolved(orgId, filter);
@@ -2692,9 +2723,12 @@ export class Filelayer {
    * measure another tenant's activity.
    */
   async verifyAuditChain(principal: Principal, orgId: string): Promise<AuditChainResult> {
+    // Audited since 0.27.0, like `auditLog()` above and for the same reason.
+    // Verifying is a read of the whole chain: it is how somebody would learn
+    // that a chain had been tampered with, and also how they would learn that
+    // it had not, which is information about the tenant either way.
     const decision = await authorizeOrg(this.store, principal, orgId, 'read_audit', {
       action: 'audit.verify',
-      emitAllow: false,
     });
     this.#raise(decision);
     return this.store.verifyAuditChain(orgId);
@@ -2708,9 +2742,11 @@ export class Filelayer {
    * timing of a tenant's retention runs is information about that tenant.
    */
   async auditCheckpoints(principal: Principal, orgId: string): Promise<AuditCheckpoint[]> {
+    // Audited since 0.27.0. The comment above already says the number and
+    // timing of a tenant's retention runs is information about that tenant;
+    // reading it is therefore an act worth recording, by the same argument.
     const decision = await authorizeOrg(this.store, principal, orgId, 'read_audit', {
       action: 'audit.checkpoints',
-      emitAllow: false,
     });
     this.#raise(decision);
     return this.store.auditCheckpoints(orgId);
