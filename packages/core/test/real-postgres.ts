@@ -162,7 +162,35 @@ export async function probeRealPostgres(): Promise<{ ok: true } | { ok: false; w
     await c.end();
     return { ok: true };
   } catch (e) {
-    return { ok: false, why: `no server answered: ${(e as Error).message}` };
+    // A THIRD REASON, which used to be reported as the second one.
+    //
+    // `embedded-postgres` keeps one optional package per platform and imports
+    // the matching one when it starts, so a `node_modules` installed on a
+    // different platform satisfies every import except that one. The failure
+    // arrives here, inside the connection attempt, and came out as "no server
+    // answered" -- which is true and useless. The comment above this function
+    // says reporting the wrong reason sends a reader to check their
+    // `DATABASE_URL` when they need to install something, and this was that
+    // mistake with a third case it had not been told about.
+    //
+    // It happened on 12 October 2026 on the machine that publishes this
+    // package: a Linux environment had installed into that checkout nine days
+    // earlier, so every suite needing a real server skipped there while
+    // running everywhere else.
+    const msg = (e as Error).message;
+    const platform = /@embedded-postgres\/([a-z0-9-]+)/.exec(msg);
+    if (platform) {
+      return {
+        ok: false,
+        why:
+          `the embedded PostgreSQL binary for this platform is not installed ` +
+          `(${platform[0]}). This is not a missing server and not a bad ` +
+          `DATABASE_URL: \`embedded-postgres\` ships one optional package per ` +
+          `platform, so a node_modules installed on a different platform looks ` +
+          `complete and is not. Run \`npm ci\` where you need the tests to run.`,
+      };
+    }
+    return { ok: false, why: `no server answered: ${msg}` };
   }
 }
 

@@ -415,7 +415,43 @@ try {
     );
   }
 } catch (err) {
-  problems.push(`harness: ${err?.stack ?? String(err)}`);
+  // A MISSING PLATFORM BINARY EXPLAINS ITSELF, rather than arriving as a stack
+  // trace from inside somebody else's `dist/binary.js`.
+  //
+  // `embedded-postgres` ships one optional dependency per platform
+  // (`@embedded-postgres/darwin-arm64`, `linux-x64`, ...), and the package
+  // itself imports the matching one LAZILY, at start rather than at import. So
+  // the `npm ci` hint fifteen lines up -- which guards the import of
+  // `embedded-postgres` -- cannot catch this: the package is there and only its
+  // binary is not.
+  //
+  // HOW THIS HAPPENS, because it is not a corrupt install and the obvious guess
+  // is wrong. `node_modules` installed on one platform contains that platform's
+  // binary and not the others', by design. If the directory is shared between
+  // machines -- a mounted working copy, a synced folder, a container writing
+  // into the host's checkout -- then whichever machine ran `npm ci` last is the
+  // only one that can run this gate. It fails on 12 October 2026 on the macOS
+  // machine that publishes this package, because a Linux environment had
+  // installed into that checkout on 3 October and nobody noticed for nine days:
+  // the gate was green wherever it was being run and red where it mattered.
+  const missing = /@embedded-postgres\/([a-z0-9-]+)/.exec(String(err?.message ?? ''));
+  if (missing && /ERR_MODULE_NOT_FOUND/.test(String(err?.code ?? err?.message ?? ''))) {
+    problems.push(
+      `harness: the PostgreSQL binary for this platform is not installed ` +
+        `(${missing[0]}).\n` +
+        `      This is not a corrupt install. \`embedded-postgres\` keeps one optional\n` +
+        `      package per platform and imports the matching one when it starts, so a\n` +
+        `      node_modules installed on a DIFFERENT platform satisfies every import\n` +
+        `      except this one.\n\n` +
+        `      Fix it where you need it to run:\n` +
+        `        npm ci --prefix packages/core\n\n` +
+        `      And if this checkout is shared with another machine or a container, note\n` +
+        `      that the fix removes the other platform's binary. Whichever side ran the\n` +
+        `      install last is the only one that can run this gate.`,
+    );
+  } else {
+    problems.push(`harness: ${err?.stack ?? String(err)}`);
+  }
 }
 
 await cleanup();
