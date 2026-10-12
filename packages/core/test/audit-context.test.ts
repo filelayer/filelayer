@@ -198,3 +198,79 @@ describe('audit context on the facade', () => {
     assert.ok(denied, 'the refused call recorded no context, so the claim is unreviewable');
   });
 });
+
+describe('the facade can ask all five audit filter questions', () => {
+  it('filters by action, by file and by user, and refuses an unknown name', async () => {
+    const fl = await Filelayer.quickstart();
+    const id = await scenario(fl);
+    await fl.orgs.setRole('acme', 'bob', 'admin', { as: 'alice' });
+    await fl.files.get(id, { as: 'alice' });
+
+    // `action`, the filter this library's own 0.27.0 change created demand for:
+    // now that reading the trail is recorded, "who read the trail" is a question
+    // somebody will ask, and until 0.28.0 this tier could not express it.
+    const reads = await fl.orgs.audit('acme', { as: 'alice', action: 'audit.read' });
+    assert.ok(reads.length > 0, 'no audit.read events came back');
+    assert.ok(
+      reads.every((e) => e.action === 'audit.read'),
+      'the action filter let other actions through',
+    );
+
+    const onFile = await fl.orgs.audit('acme', { as: 'alice', file: id });
+    assert.ok(onFile.length > 0);
+    assert.ok(
+      onFile.every((e) => e.fileId === id),
+      'the file filter let other files through',
+    );
+
+    const byAlice = await fl.orgs.audit('acme', { as: 'alice', user: 'alice' });
+    assert.ok(byAlice.length > 0);
+    assert.ok(
+      byAlice.every((e) => e.actor.label === 'alice'),
+      'the user filter let other actors through',
+    );
+
+    // A MISTYPED NAME THROWS. Returning an empty list would read as "this
+    // person did nothing", which in an audit context is a false exoneration
+    // rather than a null result.
+    await assert.rejects(
+      () => fl.orgs.audit('acme', { as: 'alice', user: 'alicce' }),
+      (e: Error & { code?: string }) => e.code === 'not_found',
+      'a filter on an unknown user should refuse, not quietly match nothing',
+    );
+  });
+
+  it('does not let a soft-deleted actor act, while still auditing them', async () => {
+    const fl = await Filelayer.quickstart();
+    await scenario(fl);
+    await fl.orgs.setRole('acme', 'carol', 'admin', { as: 'alice' });
+    await fl.files.put(new TextEncoder().encode('x'), {
+      org: 'acme',
+      owner: 'carol',
+      name: 'c.txt',
+    });
+    // No facade method soft-deletes an actor, so this reaches for the verbose
+    // API through the id resolver -- which is itself the honest way to say that
+    // deactivating a user is an operator action and not a tenant one.
+    const carolId = await fl.ids.ensureActor('carol');
+    await fl.softDeleteActor(carolId);
+
+    // THE TRAP THIS SUITE EXISTS TO PIN. `findActorIncludingDeleted` was first
+    // written as a widening of `findActor`, which also resolves the principal
+    // that ACTS -- so relaxing its deletion check would have let a deactivated
+    // user keep operating: a privilege escalation reached through a convenience
+    // for an audit filter.
+    await assert.rejects(
+      () => fl.files.put(new TextEncoder().encode('y'), { org: 'acme', owner: 'carol', name: 'd.txt' }),
+      'a soft-deleted actor was able to act',
+    );
+
+    // And the half that must still work: what she did remains answerable.
+    const byCarol = await fl.orgs.audit('acme', { as: 'alice', user: 'carol' });
+    assert.ok(
+      byCarol.length > 0,
+      'a deleted actor filtered to nothing, which is a false exoneration of the ' +
+        'person most likely to be investigated',
+    );
+  });
+});

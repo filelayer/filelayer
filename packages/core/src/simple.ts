@@ -337,6 +337,49 @@ class Identities {
   }
 
   /**
+   * An actor's internal id, or null. LOOKUP ONLY, which is what separates it
+   * from `actor()` above -- and that difference is the whole reason this
+   * exists.
+   *
+   * `actor()` UPSERTS. It is the right thing when an external id is arriving to
+   * own a file or be given a grant, because the identity is whatever the host
+   * application says it is. It is the wrong thing on a read path: filtering an
+   * audit trail by a name that has never been seen would CREATE that actor as a
+   * side effect of a question. A read must not write.
+   *
+   * SOFT-DELETED ACTORS RESOLVE HERE, which is why this is a SEPARATE METHOD
+   * from `findActor` below and not a widening of it.
+   *
+   * Auditing somebody who has left is not an edge case, it is the main case:
+   * the trail exists precisely so that what a departed employee did remains
+   * answerable, and `audit_event.actor_id` carries no foreign key for exactly
+   * that reason ("an audit log that forgets who did something is not an audit
+   * log", as schema.sql puts it). A filter that excluded them would answer "no
+   * events" about the person most likely to be investigated, which is not an
+   * empty result but a false exoneration.
+   *
+   * AND THE REASON IT IS NOT ONE METHOD WITH THE WIDER BEHAVIOUR. `findActor`
+   * also resolves the principal that ACTS -- `resolveActorOrDeny` calls it for
+   * every `as:` on this tier -- where `deleted_at IS NULL` is what stops a
+   * deactivated user from continuing to operate. Relaxing it there would be a
+   * privilege escalation reached through a convenience, and the first draft of
+   * this change did exactly that by writing one method and expecting the other
+   * callers not to mind. Two semantics, two names, and the longer name is the
+   * one that bypasses a deletion check so that nobody reaches for it by accident.
+   */
+  async findActorIncludingDeleted(externalId: string): Promise<string | null> {
+    const { rows } = await this.fl.store.db.query<{ id: string }>(
+      `SELECT a.id FROM actor a
+         JOIN project p ON p.id = a.project_id
+        WHERE a.external_id = $1
+          AND a.project_id = $2
+          AND p.deleted_at IS NULL`,
+      [externalId, this.project],
+    );
+    return rows[0]?.id ?? null;
+  }
+
+  /**
    * The same, but a miss DENIES AND IS RECORDED.
    *
    * Two classes carried an identical copy of this query and of the audit write
@@ -864,15 +907,56 @@ export class OrgsApi {
     await this.fl.removeMember(principal, orgId, actorId);
   }
 
-  /** Audit trail for a tenant. Requires `read_audit`, i.e. admin or owner. */
+  /**
+   * Audit trail for a tenant. Requires `read_audit`, i.e. admin or owner.
+   *
+   * ALL FIVE FILTER FIELDS, since 0.28.0. This took `decision` and `limit` and
+   * dropped the other three that `AuditFilter` has always had, on the tier the
+   * README, the quickstart, the guides and the Agent Skill all teach. So the
+   * documented way to use this library could not ask "who read this file's
+   * history" or "what did this person do" -- the two questions an investigator
+   * starts from. Found when a draft test passed `action` and typecheck refused
+   * it, which is the type system doing its job about a gap nobody had named.
+   *
+   * `user` AND `file` SPEAK THE FACADE'S VOCABULARY, like everything else here:
+   * `user` is your own external id and is resolved; `file` is the id this API
+   * handed you from `files.put()`, which is already the internal one.
+   *
+   * AN UNKNOWN `user` THROWS rather than returning nothing, and that is a
+   * deliberate asymmetry with `file`, which is passed through unchecked. The
+   * reason is what a wrong answer would mean. A mistyped name silently matching
+   * no events reads as "this person did nothing", which in an audit context is
+   * not an empty result, it is a false exoneration. A file id, by contrast, is
+   * an opaque uuid a caller got from this API rather than typed, and -- more
+   * importantly -- a DELETED file still has events: requiring it to exist would
+   * break auditing the one thing most worth auditing.
+   */
   async audit(
     org: string,
-    opts: AsOption & { as: string; decision?: 'allow' | 'deny'; limit?: number },
+    opts: AsOption & {
+      as: string;
+      decision?: 'allow' | 'deny';
+      limit?: number;
+      action?: string;
+      file?: string;
+      user?: string;
+    },
   ) {
     const orgId = await this.requireOrg(org);
     const principal = await this.requirePrincipal(opts.as, opts);
+    let actorId: string | undefined;
+    if (opts.user !== undefined) {
+      const found = await this.ids.findActorIncludingDeleted(opts.user);
+      if (found === null) {
+        throw new FilelayerError('not_found', 'unknown_actor');
+      }
+      actorId = found;
+    }
     return this.fl.auditLog(principal, orgId, {
       ...(opts.decision ? { decision: opts.decision } : {}),
+      ...(opts.action !== undefined ? { action: opts.action } : {}),
+      ...(opts.file !== undefined ? { fileId: opts.file } : {}),
+      ...(actorId !== undefined ? { actorId } : {}),
       // `opts.limit ? ...` is a TRUTHINESS test, so `limit: 0` was discarded and
       // the caller got the default page instead of nothing. The verbose
       // `fl.auditLog` handles 0 correctly, which made the two documented

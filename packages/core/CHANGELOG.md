@@ -23,6 +23,57 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.28.0] — 2026-10-12
+
+### `orgs.audit()` can ask all five questions, not two
+
+`AuditFilter` has always had five fields. The facade exposed `decision` and
+`limit` and dropped `fileId`, `actorId` and `action` -- on the tier the README,
+the quickstart, the guides and the Agent Skill all teach. So the documented way
+to use this library could not ask "who read this file's history" or "what did
+this person do", which are the two questions an investigator starts from.
+
+Found while shipping 0.27.0: a draft test passed `action` and typecheck refused
+it. The type system was doing its job about a gap nobody had named.
+
+`file` and `user` speak the facade's vocabulary. `file` is the id `files.put()`
+returned, which is already the internal one. `user` is an external id and is
+resolved by a NEW LOOKUP-ONLY resolver, which is the part that needed thought:
+`ids.actor()` upserts, by design, because an external id arriving to own a file
+is whatever the host application says it is. On a read path that is wrong --
+filtering by a name never seen would CREATE that actor as a side effect of a
+question.
+
+**An unknown `user` throws rather than matching nothing.** Deliberately
+asymmetric with `file`, which is passed through unchecked, and the asymmetry is
+about what a wrong answer would mean. A mistyped name silently matching no
+events reads as "this person did nothing", which in an audit context is not an
+empty result but a false exoneration. A file id is an opaque uuid the caller got
+from this API rather than typed -- and a DELETED file still has events, so
+requiring it to exist would break auditing the thing most worth auditing.
+
+### A privilege escalation this nearly introduced, written down because it was close
+
+The new resolver was first written as a WIDENING of the existing `findActor`,
+which looked like the same query with one condition relaxed. It is not.
+`findActor` also resolves the principal that ACTS -- `resolveActorOrDeny` calls
+it for every `as:` on this tier -- where `deleted_at IS NULL` is what stops a
+deactivated user from continuing to operate. Relaxing it there would have let a
+soft-deleted actor keep acting: a privilege escalation reached through a
+convenience for an audit filter.
+
+Caught by `typecheck` complaining about a duplicate implementation, which is a
+lucky way to find it rather than a good one.
+
+Two semantics, two names, and the longer one --
+`findActorIncludingDeleted` -- is the one that bypasses a deletion check, so
+nobody reaches for it by accident. Soft-deleted actors resolve THERE and only
+there, because auditing somebody who has left is not an edge case: it is the
+main case, and it is why `audit_event.actor_id` carries no foreign key.
+
+A test now pins both halves: a soft-deleted actor cannot act, and what she did
+is still answerable.
+
 ## [0.27.0] — 2026-10-12
 
 ### Reading the audit trail is itself an audited act
