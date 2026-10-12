@@ -27,6 +27,41 @@ nothing here runs itself.
 
 ---
 
+## The whole release, in four steps and the order they depend on
+
+This list did not exist until 12 October 2026, and both releases that day went
+wrong in the gap it fills. The sections below each describe one step with its
+own reasoning, and nothing said that there are four, that they have an order,
+or that the fourth VALIDATES the second.
+
+1. **Preflight** — §0. `npm whoami`, then `npm run verify` and
+   `npm run verify:release`. Both must exit 0. On 0.28.0 the chain stopped on a
+   red gate and the publish went ahead anyway, because `&&` breaking looks like
+   the command finishing.
+2. **Publish to npm** — §3.3. `npm publish`, then the `dist-tag add`.
+3. **Tag the commit** — §6.
+4. **Publish the MCP registry entry** — §7. **This step reads npm.** The
+   registry refuses the entry with a 400 if the version is not yet visible
+   there, which is a correct refusal and not an error to work around: it is the
+   registry declining to point clients at a tarball that does not exist. Wait a
+   minute and retry the step.
+
+> **A READ OF npm IS NOT PROOF OF ABSENCE.** Step 4 failing with *"version
+> 0.29.0 was not found"* twice in a row looked like step 2 never happening. It
+> was checked by fetching the packument, which reported 0.29.0 absent and the
+> dist-tags one release behind — and step 2 HAD succeeded. The write path then
+> refused the re-publish with *"You cannot publish over the previously published
+> versions"*, which is the authoritative answer. npm's read replicas lag and
+> have lied in both directions here: §4 already records a publish that reported
+> 404 on its own tarball minutes after succeeding.
+>
+> So when the question is "did it publish?", ask the thing that cannot be
+> stale: `npm publish` again. A 403 *cannot publish over* means yes. Or HEAD the
+> tarball URL directly rather than reading the packument, which is a different
+> code path and answered correctly while the packument did not.
+
+---
+
 ## 0. Before you start — the five-minute preflight
 
 Run this first. If any of it is not green, stop; publishing is not a step you
