@@ -66,10 +66,26 @@ async function mcpEntry() {
   if (!res.ok) return { error: `${url} answered ${res.status}` };
   const body = await res.json();
   const list = body.servers ?? body.data ?? [];
-  const found = list
-    .map((x) => x.server ?? x)
-    .find((x) => x.name === NAME);
-  if (!found) {
+
+  // THE REGISTRY KEEPS EVERY VERSION, AND ONE OF THEM IS FLAGGED.
+  //
+  // The first version of this file took the first result whose name matched,
+  // and that was wrong within minutes of being committed: publishing 0.27.0 did
+  // not replace the 0.26.0 entry, it added to it, and the search returned both.
+  // Taking the first gave 0.26.0 -- so the gate reported a stale entry at the
+  // exact moment the entry had just been brought up to date, which is the
+  // false-positive direction, and the worse one: a gate that cries about a
+  // defect that was just fixed is a gate somebody turns off.
+  //
+  // `isLatest` lives under the registry's own namespaced metadata key, and it is
+  // read rather than inferred by sorting versions ourselves. Sorting would be a
+  // second opinion about something the registry already states, and it would be
+  // wrong the first time a release is published out of order or yanked.
+  const mine = list
+    .map((x) => ({ server: x.server ?? x, meta: x._meta ?? x.meta ?? {} }))
+    .filter((x) => x.server.name === NAME);
+
+  if (mine.length === 0) {
     return {
       error:
         `the registry returned ${list.length} result(s) for ${NAME} and none of them ` +
@@ -77,7 +93,19 @@ async function mcpEntry() {
         `published under a different name than server.json carries.`,
     };
   }
-  return { version: found.version };
+
+  const OFFICIAL = 'io.modelcontextprotocol.registry/official';
+  const latest = mine.filter((x) => x.meta[OFFICIAL]?.isLatest === true);
+  if (latest.length !== 1) {
+    return {
+      error:
+        `${mine.length} entr(ies) are named ${NAME} and ${latest.length} of them are ` +
+        `flagged isLatest. Exactly one should be.\n  Versions present: ` +
+        `${mine.map((x) => `${x.server.version}${x.meta[OFFICIAL]?.isLatest ? ' (latest)' : ''}`).join(', ')}\n` +
+        `  This check will not guess which one a client resolves.`,
+    };
+  }
+  return { version: latest[0].server.version };
 }
 
 /** What npm serves as `latest`, read past any cache. */
@@ -95,16 +123,43 @@ function npmLatest() {
 }
 
 if (process.argv.includes('--self-test')) {
-  // The negative control: the exact-name match must reject a result that is not
-  // ours. A search endpoint returning a near-miss is the failure this guards.
-  const list = [{ name: 'dev.example/other', version: '9.9.9' }];
-  const found = list.map((x) => x.server ?? x).find((x) => x.name === NAME);
+  // Two controls, and the second exists because the first was not enough.
+  //
+  // Control 1 checked that a foreign name is rejected, and it passed while the
+  // selection logic was still broken: the real registry returns EVERY version
+  // of our own server, and taking the first match gave the oldest. A negative
+  // control that only tests the case you thought of is the shape of defect this
+  // whole repository keeps finding.
+  const OFFICIAL = 'io.modelcontextprotocol.registry/official';
+  const pick = (list) => {
+    const mine = list
+      .map((x) => ({ server: x.server ?? x, meta: x._meta ?? {} }))
+      .filter((x) => x.server.name === NAME);
+    const latest = mine.filter((x) => x.meta[OFFICIAL]?.isLatest === true);
+    return latest.length === 1 ? latest[0].server.version : null;
+  };
+
+  const foreign = pick([{ server: { name: 'dev.example/other', version: '9.9.9' } }]);
+  // Oldest FIRST, which is the order the registry actually returned on
+  // 12 October 2026 and the order that broke the first version of this file.
+  const history = pick([
+    { server: { name: NAME, version: '0.26.0' }, _meta: { [OFFICIAL]: { isLatest: false } } },
+    { server: { name: NAME, version: '0.27.0' }, _meta: { [OFFICIAL]: { isLatest: true } } },
+  ]);
+  const ambiguous = pick([
+    { server: { name: NAME, version: '0.26.0' }, _meta: { [OFFICIAL]: { isLatest: true } } },
+    { server: { name: NAME, version: '0.27.0' }, _meta: { [OFFICIAL]: { isLatest: true } } },
+  ]);
+
+  const ok = foreign === null && history === '0.27.0' && ambiguous === null;
   console.log(
-    found === undefined
-      ? 'check-mcp-registry-live: negative control passed (a foreign search hit is not accepted).'
-      : 'control DID NOT FAIL: a foreign entry was accepted as ours.',
+    ok
+      ? 'check-mcp-registry-live: controls passed (a foreign name is rejected, the ' +
+          'flagged version wins over an earlier one listed first, and two flagged ' +
+          'latests refuse to be guessed between).'
+      : `controls FAILED: foreign=${foreign} history=${history} ambiguous=${ambiguous}`,
   );
-  process.exit(found === undefined ? 0 : 1);
+  process.exit(ok ? 0 : 1);
 }
 
 const entry = await mcpEntry();
