@@ -96,7 +96,7 @@ saying which ones you could not run is part of saying you are done.
 
 ## What this project is unusually strict about
 
-Five rules account for most review comments here, and they are worth
+Six rules account for most review comments here, and they are worth
 internalising rather than rediscovering.
 
 **A document that is wrong is worse than no document.** The reader trusted it
@@ -144,6 +144,19 @@ installed version against this checkout's. Verifying against the registry is
 right. Making unreleased work look like a defect is not. When a check cannot be
 answered yet, say UNVERIFIED in the output and never print a summary claiming
 you checked something you skipped.
+
+**`git add -A` BEFORE `npm run verify`, not after.** Several gates here read
+the TRACKED set rather than the filesystem, on purpose: an untracked file is
+invisible to a clean checkout and to every reader, so a document that only
+exists on your disk is a dead reference for everybody else. The consequence is
+easy to meet and confusing when you do. A file you have just created is
+invisible to those gates until it is staged, so a green `verify` followed by
+`git add -A && git commit` can produce a commit that fails the same gates on the
+next run. That happened on 12 October 2026: a `cp` with no guard left a stray
+copy of ARCHITECTURE-PROGRESSIVE.md under packages/core, the battery ran before
+staging
+and reported clean, and `check:language`'s coverage assertion caught it only
+once the commit had made it tracked -- during a release preflight.
 
 **Say what it does not do.** [`LIMITATIONS.md`](LIMITATIONS.md) is a real
 document and it is not marketing copy with the edges filed off. If you ship a
