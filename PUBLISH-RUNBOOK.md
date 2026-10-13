@@ -677,6 +677,25 @@ dig +short TXT filelayer.dev | grep MCPv1
 
 ### Log in and publish
 
+> **`mcp-publisher login github` does not authorize this name.** It is the
+> obvious command, it succeeds, it prints `✓ Successfully logged in`, and then
+> `publish` answers:
+>
+> ```
+> 403 Forbidden: You do not have permission to publish this server.
+> You have permission to publish: io.github.jorgeurios/*
+> Attempting to publish: dev.filelayer/core
+> ```
+>
+> The GitHub device flow grants the `io.github.<user>/*` namespace and nothing
+> else. `dev.filelayer/core` is a DNS-namespaced name, so it is authorized by
+> the TXT record above and only by it. This happened on 13 October 2026 while
+> publishing `0.31.0`, from this runbook, by someone who had read it — the DNS
+> command was three lines below and the GitHub one was in muscle memory. The
+> 403 is the registry working: it refused a name the credential did not cover.
+> Nothing was half-published, because the login and the publish are separate
+> calls.
+
 ```bash
 # THE KEY LIVES OUTSIDE THE REPOSITORY, and this line said `key.pem` -- a path
 # inside it -- until 12 October 2026. That is not a cosmetic difference. On
