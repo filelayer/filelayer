@@ -33,7 +33,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -314,20 +314,61 @@ if (thisCheckoutIsPublished) {
 // package that was actually installed above. The expected outcome is the
 // server's own refusal: it got far enough to check its configuration, which is
 // the only thing that proves the binary resolved.
+//
+// SEARCHED ACROSS THE SURFACES THAT COULD CARRY IT, not read out of the README.
+// It was read out of the README until 14 October 2026, when the README was
+// thinned and the block moved to docs/MCP.md -- and this gate failed saying
+// "no client `args` array found in README.md", which was true and was not the
+// defect. A check pinned to one file reports a move as a regression.
+//
+// If two surfaces print the block they must print the SAME one: two
+// copy-paste configurations that disagree is a worse defect than either being
+// wrong, because a reader has no way to tell which they got.
 {
-  const block = /"args":\s*(\[[^\]]*\])/.exec(readme);
-  if (!block) {
+  const CONFIG_SURFACES = [
+    'README.md',
+    'llms.txt',
+    ...readdirSync(join(ROOT, 'docs'))
+      .filter((f) => f.endsWith('.md'))
+      .map((f) => `docs/${f}`),
+  ];
+
+  const seen = [];
+  for (const rel of CONFIG_SURFACES) {
+    const hit = /"args":\s*(\[[^\]]*\])/.exec(readFileSync(join(ROOT, rel), 'utf8'));
+    if (hit) seen.push({ rel, raw: hit[1] });
+  }
+
+  const distinct = new Set(seen.map((s) => s.raw.replace(/\s+/g, ' ')));
+  const block = seen.length > 0 ? [null, seen[0].raw] : null;
+
+  if (seen.length === 0) {
     fail(
-      'no client `args` array found in README.md',
-      'This check runs the configuration the README prints. If the block moved or\n' +
-        '        changed shape, teach it the new one rather than leaving it unchecked.',
+      `no client \`args\` array found on any of ${CONFIG_SURFACES.length} surface(s)`,
+      'This check runs the configuration the documentation prints. If the block\n' +
+        '        moved somewhere new, add that surface here rather than leaving it\n' +
+        '        unchecked.',
+    );
+  } else if (distinct.size > 1) {
+    fail(
+      `${distinct.size} DIFFERENT client \`args\` arrays across ` +
+        `${seen.map((s) => s.rel).join(', ')}`,
+      'A reader copies one of them and cannot tell which. Make them the same, or\n' +
+        '        keep the configuration on one surface and link to it from the others.',
     );
   } else {
+    console.log(`  the client configuration is printed on ${seen[0].rel}.`);
+  }
+
+  if (block) {
     let args;
     try {
       args = JSON.parse(block[1]);
     } catch (e) {
-      fail('the README client `args` array is not valid JSON', String(e.message).slice(0, 120));
+      fail(
+        `the client \`args\` array on ${seen[0].rel} is not valid JSON`,
+        String(e.message).slice(0, 120),
+      );
       args = null;
     }
     if (args) {
@@ -348,7 +389,7 @@ if (thisCheckoutIsPublished) {
       const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
       if (!/no storage is configured/.test(out)) {
         fail(
-          `the client configuration in README.md does not start the server`,
+          `the client configuration printed on ${seen[0].rel} does not start the server`,
           `Ran: npx ${args.join(' ')}\n` +
             `        Exit ${r.status}. Expected the server's own refusal about storage, which\n` +
             `        is what proves the binary resolved. Got:\n` +
@@ -495,8 +536,12 @@ try {
 
 if (failures > 0) {
   console.error(
-    `\ncheck-published-install: ${failures} failure(s). What a reader installs is not\n` +
-      'what this repository documents. The fix is a publish or a dist-tag, not a doc edit.',
+    `\ncheck-published-install: ${failures} failure(s). Usually this means what a reader\n` +
+      'installs is not what this repository documents, and the fix is a publish or a\n' +
+      'dist-tag rather than a doc edit. Read the FAIL lines before assuming that:\n' +
+      'this footer told an operator to publish on 14 October 2026 when the actual\n' +
+      'failure was that a documented block had moved to another file, and a check\n' +
+      'that names the wrong remedy confidently is worse than one that names none.',
   );
   process.exit(1);
 }
