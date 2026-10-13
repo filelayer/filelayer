@@ -68,6 +68,27 @@ or that the fourth VALIDATES the second.
 > agrees or says it cannot, and exits 2 on disagreement rather than picking the
 > convenient one.
 >
+> | Exit | Means | Do |
+> |---|---|---|
+> | 0 | Published; both paths agree it is there | Continue |
+> | 1 | Not published, **and no upload was attempted from this tree** | Publish |
+> | 2 | No clean answer: paths disagree, one is unreachable, or an attempted upload is still invisible well past replica lag | Read the message; it says which |
+> | 3 | Absent, but an upload was attempted minutes ago | Wait and ask again |
+>
+> **Exit 1 is the one to read carefully, and 3 exists because of it.** On
+> 13 October 2026, four minutes after `npm publish` printed
+> `+ @filelayer/core@0.31.0`, this tool said *"is NOT published. Both the
+> packument and the tarball agree."* Both replicas were equally behind. Two
+> reads of a system that propagates in order are not two witnesses while
+> neither has arrived — agreement that something is absent is evidence only
+> AFTER you have seen the two paths disagree. It is the 12 October defect with
+> the count changed: one read taken as proof, then two.
+>
+> `prepublishOnly` now records the upload attempt, so an absence is reported
+> against it. That record is local and uncommitted, so exit 1 says so: a
+> publish from another machine leaves nothing here, and the absence is then
+> worth no more than the two reads behind it.
+>
 > And if it cannot get agreement, the only answer that cannot be stale is the
 > write path: `npm publish` again, where a 403 *cannot publish over the
 > previously published versions* means yes.

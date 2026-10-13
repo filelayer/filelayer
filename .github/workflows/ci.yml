@@ -302,6 +302,14 @@ jobs:
       - name: Every gate in `npm run verify` has a step in this workflow
         run: npm run check:ci-coverage
 
+      # THE SAME DEFECT ONE LEVEL IN. The step above makes sure every gate runs
+      # somewhere. It cannot see that a gate's own controls do not: the
+      # `--self-test` in `refuse-unverified-publish.mjs` had never been executed
+      # by anything, found by grep on 13 October 2026. This runs the publish
+      # guards' controls and asserts how many there are, so gutting one fails.
+      - name: The publish guards' own controls, run and counted
+        run: npm run check:publish-guards
+
       # Register density on the public prose. See tools/check-register.mjs for
       # what it measures and what a clean run does not mean.
       - name: Register density on the public surfaces

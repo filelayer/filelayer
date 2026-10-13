@@ -36,7 +36,11 @@
  * passed" to "the upload is allowed", and that connection is this file.
  */
 
-import { REQUIRED, readStamp, treeHash } from './verified-stamp.mjs';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { record } from './publish-attempt.mjs';
+import { REQUIRED, ROOT, readStamp, treeHash } from './verified-stamp.mjs';
 
 if (process.argv.includes('--self-test')) {
   // The control: a stamp from a DIFFERENT tree must not satisfy the guard. That
@@ -92,8 +96,22 @@ if (missing.length > 0) {
   );
 }
 
+// EVERY CHECK PASSED, so npm is about to upload. Recorded here and nowhere
+// else, because this is the last point before the bytes move and a non-zero
+// exit above means no upload happens -- so a record written here means an
+// attempt really was made, and the absence of one means it was not.
+//
+// `is-published.mjs` reads this so it stops answering "NOT published, both
+// paths agree" four minutes after a successful upload. See publish-attempt.mjs
+// for why the verification stamp is the wrong signal for that and this is the
+// right one.
+const pkg = JSON.parse(readFileSync(join(ROOT, 'packages/core/package.json'), 'utf8'));
+const at = record(pkg.name, pkg.version);
+
 console.log(
   `refuse-unverified-publish: ok. ${REQUIRED.map((r) => r.chain).join(' and ')} both ` +
     `completed for tree ${tree.slice(0, 12)} ` +
-    `(${REQUIRED.map((r) => `${r.chain} ${stamp.chains[r.chain]}`).join(', ')}).`,
+    `(${REQUIRED.map((r) => `${r.chain} ${stamp.chains[r.chain]}`).join(', ')}).\n` +
+    `  Recorded an upload attempt for ${pkg.name}@${pkg.version} at ${at}, so a later\n` +
+    '  `npm run is-published` will not mistake replica lag for an absence.',
 );
