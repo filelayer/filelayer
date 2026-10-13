@@ -2,12 +2,12 @@
 
 **Does the Filelayer primitive scale DOWN as well as up?**
 
-Current as of `@filelayer/core` **0.29.0**. Everything below is measured against
+Current as of `@filelayer/core` **0.30.0**. Everything below is measured against
 code in this repository, from the repository root. Reproduce with:
 
 ```bash
 npm run bootstrap                  # npm ci in packages/core
-npm test                     # 657 tests, 0 failures
+npm test                     # 664 tests, 0 failures
 npm run dev:fracture               # the four §2 experiments
 npm run loc:tiers                  # LOC per tier (§4.2)
 node benchmark/count-loc.mjs       # LOC for the full-vault implementations
@@ -15,7 +15,7 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **657 / 657 passing** across 152 suites:
+**Test status.** `npm test` is **664 / 664 passing** across 153 suites:
 
 | Suite | Tests |
 |---|---|
@@ -33,9 +33,9 @@ npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 | `test/mcp-server.test.ts` — the launchable MCP server, started by a client | 6 |
 | `test/audit-context.test.ts` — an agent's reads are distinguishable from a person's | 5 |
 | everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 318 |
-| **total** | **657** |
+| **total** | **664** |
 
-Eight of the 657 are the contention tests, which need a real PostgreSQL with
+Eight of the 664 are the contention tests, which need a real PostgreSQL with
 two backends. CI provides one, so all 526 run there; on a machine without one
 they skip and you will see **397 passing, 8 skipped**. Two further suites — the
 live S3 ones — skip unless the five `FILELAYER_TEST_S3_*` variables are set.
@@ -422,7 +422,7 @@ the developer to decide who may read a file, at any tier.
 
 Written by the people who built it. This section is meant to be quoted against
 Filelayer, and it is kept current on purpose: every item below was re-checked
-against `0.29.0`.
+against `0.30.0`.
 
 1. **Public, high-volume, cacheable media — avatars, marketing images, product
    photos, anything a CDN should serve.** The default byte path proxies every

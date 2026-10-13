@@ -56,10 +56,22 @@
  * a list call or a bucket-level request, neither of which the adapter offers
  * today. Said here rather than guessed at in a finding.
  *
- * No `filelayer audit`. Reading the trail needs a Filelayer instance, which
- * needs a storage adapter it would never use, and it needs a subject -- and the
- * subject question is exactly the one the paragraph above says this tool cannot
- * answer honestly. It is worth building and it is not worth guessing at.
+ * No `filelayer audit`, and HALF OF THE REASON THIS GAVE WAS WRONG. It said
+ * reading the trail "needs a Filelayer instance, which needs a storage adapter
+ * it would never use". The three audit reads reference storage zero times and
+ * `PostgresStore` takes a connection and nothing else, so the requirement came
+ * from where the methods lived rather than from what they do. `auditReader(db)`
+ * now exists for exactly this, and needs no adapter.
+ *
+ * The other half stands, and it is the half that matters: this tool would have
+ * to decide WHOSE authority it reads on. `--as <admin>` runs a real
+ * `read_audit` check that cannot mean anything here -- the operator can pass a
+ * different name, or open `psql` -- which is the convincing check on top of
+ * root access that the section above refuses. Reading as an operator identity
+ * instead is defensible and is a new concept in the authorization model, not a
+ * CLI flag.
+ *
+ * So the obstacle is gone and the question is not. Still absent on purpose.
  */
 
 import { readFileSync } from 'node:fs';

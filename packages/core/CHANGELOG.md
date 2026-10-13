@@ -23,6 +23,73 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.30.0] — 2026-10-13
+
+### `auditReader(db)`: reading the trail needs a database and nothing else
+
+`cli.ts` has said since the CLI shipped that there is no `filelayer audit`
+because "reading the trail needs a Filelayer instance, which needs a storage
+adapter it would never use". That was right about the obstacle and wrong about
+where it was.
+
+The three reads -- `auditLog`, `verifyAuditChain`, `auditCheckpoints` --
+reference `this.storage` **zero times**. `PostgresStore` takes a `Queryable` and
+options. `authorizeOrg` takes the store, which is the entire authorization path.
+Nothing on the audit read path touches storage: the requirement came from where
+the methods LIVE, not from what they DO. A file engine needs somewhere to put
+bytes, and these three methods were sitting inside one, inheriting a
+precondition that is none of their business.
+
+`auditReader(pool)` returns `{ log, verify, checkpoints }`, taking the same
+`Principal` and org id as the long path.
+
+**It is narrower, not more trusting**, and that is the half worth testing.
+`read_audit` is enforced, so a plain member of the org gets a 404 and a
+cross-tenant read is refused; a successful read still appends the `audit.read`
+event 0.27.0 added; and a DENIED read is recorded too, so an attempt through the
+narrow door is not invisible. Holding a connection is not standing. Four of the
+seven new tests exist for that sentence, because "fewer dependencies" quietly
+becoming "fewer checks" is the shape of the privilege escalation this project
+nearly shipped in 0.28.0 through a lookup helper.
+
+**One implementation, two doors.** The functions live in `audit-read.ts` and
+`Filelayer`'s three methods delegate to them, so there is one authorization path
+and one place the event is written. Two copies of an authorization decision
+would have been a worse defect than the one being fixed.
+
+### The three things not done instead
+
+- **A memory or null adapter.** It constructs a lie: the object declares a
+  `provider`, which is half of `UNIQUE (storage_provider, storage_key)` and so
+  part of an object's identity, for a store it never writes to. And an adapter
+  that is present is an adapter somebody uses.
+- **Querying `audit_event` directly.** Skips `authorizeOrg`, so the read is not
+  authorized, and since 0.27.0 it would also not be recorded. Going around a
+  feature is not a shortcut.
+- **Making `storage` optional and throwing on use.** An object that claims to be
+  a file engine and refuses half its methods is a partial truth. The honest
+  shape for "less than a Filelayer" is a smaller object.
+
+### What this does NOT settle
+
+Whether `filelayer audit` should exist. The obstacle is gone; the question is
+not. That command would have to decide whose authority it reads on, and
+`--as <admin>` runs a real `read_audit` check that cannot mean anything in a
+tool whose own header says "if you can run it, you were already root" -- the
+convincing check on top of root access that the same header refuses. Reading as
+an operator identity is defensible and is a new concept in the authorization
+model rather than a flag. `cli.ts` now says which half of its old reasoning was
+wrong and which half stands.
+
+### Also
+
+A draft of the new suite asserted `file.put` and `org.create` as action names,
+which are the facade's method names and not what the engine records
+(`file.create`, `member.bootstrap`), and read the chain result as `ok` where the
+field is `valid`. Both were invented rather than measured, which is the third
+time in three days a test of mine has asserted a vocabulary I did not check. The
+names are now read off a run and the test says so.
+
 ## [0.29.0] — 2026-10-12
 
 ### `doctor` checks whether the credentials work, not just whether a stranger can read

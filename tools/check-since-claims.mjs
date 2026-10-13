@@ -76,6 +76,25 @@ const SINCE = /\b[Ss]ince\s+`?(\d+\.\d+\.\d+)`?/g;
  */
 const CLAIMS = [
   {
+    match: 'reads the trail with NO storage adapter',
+    // An EXPORT probe, which is the right shape here: what changed is that a
+    // name became importable without a storage adapter, and `export` is exactly
+    // "is this name on the package surface". The behavioural half -- that it
+    // still authorizes and still records -- is held by the shipped
+    // `test/audit-read.test.ts`, which travels in the tarball.
+    probe: { kind: 'export', name: 'auditReader' },
+    note: 'The audit trail is readable from a connection alone.',
+  },
+  {
+    // The same claim, worded for a human on the README rather than for an agent
+    // in llms.txt. Two entries because the sentences share no substring, which
+    // is the honest reason: this check matches text, and the two surfaces were
+    // written for different readers.
+    match: 'Reading the audit trail needs a database and nothing else',
+    probe: { kind: 'export', name: 'auditReader' },
+    note: 'The same claim as above, on the README.',
+  },
+  {
     match: 'audited since 0.27.0, which was the previous reason this was off',
     // A BEHAVIOURAL claim, so it is tied to the shipped test that asserts it
     // rather than to an export. `auditLog()` existed before 0.27.0 and still

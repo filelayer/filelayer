@@ -58,6 +58,7 @@ const DOCUMENTED_EXPORTS = [
   { name: 'ERROR_CODES', where: 'ERRORS.md, skills/.../references/errors.md' },
   { name: 'isErrorCode', where: 'skills/.../references/errors.md' },
   { name: 'schemaStatus', where: 'README.md, docs/QUICKSTART.md' },
+  { name: 'auditReader', where: 'README.md, llms.txt' },
 ];
 
 /**

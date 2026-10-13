@@ -183,7 +183,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **657 tests**, every commit, all of them against a real PostgreSQL |
+| The suite | **664 tests**, every commit, all of them against a real PostgreSQL |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends — races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **27 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -593,7 +593,7 @@ running in-process, so there is no daemon and no Docker:
 ```bash
 git clone https://github.com/filelayer/filelayer && cd filelayer
 npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 657 tests
+npm test                 # the security property suite, 664 tests
 npm run typecheck
 npm run verify           # typecheck + tests + build + doc and language checks
 npm run example:tier1    # a public avatar, on :3000
@@ -635,6 +635,22 @@ application owns the migration runner, which is the position
 ```ts
 import { schemaStatus } from '@filelayer/core';
 const s = await schemaStatus(pool);   // { state: 'current', at: 10, expects: 10, ... }
+```
+
+**Reading the audit trail needs a database and nothing else.** Since `0.30.0`,
+`auditReader(db)` gives you `log`, `verify` and `checkpoints` without a storage
+adapter — because none of the three touches storage, and a compliance dashboard
+or a report job should not have to construct something that claims to hold bytes
+in order to read a table. It is narrower than a `Filelayer`, not more trusting:
+`read_audit` is still enforced, a caller without it gets a 404, a cross-tenant
+read is refused, and a successful read still appends its own `audit.read` event.
+
+<!-- doccheck: skip reason="takes the `pg.Pool` you own; `pg` is deliberately not a dependency of this package, so there is nothing here to construct one from" -->
+
+```ts
+import { auditReader } from '@filelayer/core';
+const audit = auditReader(pool);
+const rows = await audit.log({ actorId: adminId }, orgId, { limit: 50 });
 ```
 
 ---
