@@ -56,22 +56,30 @@
  * a list call or a bucket-level request, neither of which the adapter offers
  * today. Said here rather than guessed at in a finding.
  *
- * No `filelayer audit`, and HALF OF THE REASON THIS GAVE WAS WRONG. It said
- * reading the trail "needs a Filelayer instance, which needs a storage adapter
- * it would never use". The three audit reads reference storage zero times and
- * `PostgresStore` takes a connection and nothing else, so the requirement came
- * from where the methods lived rather than from what they do. `auditReader(db)`
- * now exists for exactly this, and needs no adapter.
+ * No `filelayer audit`, DECIDED RATHER THAN PENDING, and the old note here was
+ * half wrong. It said reading the trail "needs a Filelayer instance, which
+ * needs a storage adapter it would never use". The three audit reads reference
+ * storage zero times and `PostgresStore` takes a connection and nothing else,
+ * so that requirement came from where the methods lived rather than from what
+ * they do. `auditReader(db)` exists for exactly this since 0.30.0 and needs no
+ * adapter.
  *
- * The other half stands, and it is the half that matters: this tool would have
- * to decide WHOSE authority it reads on. `--as <admin>` runs a real
- * `read_audit` check that cannot mean anything here -- the operator can pass a
- * different name, or open `psql` -- which is the convincing check on top of
- * root access that the section above refuses. Reading as an operator identity
- * instead is defensible and is a new concept in the authorization model, not a
- * CLI flag.
+ * With the obstacle gone the question was decided, and the answer is no command.
+ * Running `filelayer audit` prints why and the three lines to use instead; the
+ * long reasoning is at that branch near the bottom of this file. The short
+ * version: a `--as <admin>` flag would run a permission check that cannot mean
+ * anything in a tool that holds `DATABASE_URL`, and would put an
+ * administrator's name on the chain for a read they did not make. In the
+ * operator's own script the identity is theirs and visible, which is the honest
+ * version of the same act.
  *
- * So the obstacle is gone and the question is not. Still absent on purpose.
+ * A NOTE ON THIS SECTION ITSELF, because it has now been wrong twice. It said
+ * `doctor` checked nothing about the bucket after `anonymousReadFinding` had
+ * shipped, and the usage text said credentials were unchecked after 0.29.0
+ * checked them. Both understated the product and both were found by reading the
+ * file for another reason. A "what it is not, yet" section is a claim with a
+ * shelf life: re-read it whenever you touch this file, because no gate here
+ * reads prose inside a `.ts`.
  */
 
 import { readFileSync } from 'node:fs';
@@ -120,9 +128,16 @@ common way this product's guarantees get undone. That probe writes nothing and
 uses no credential: it reads an absent key without signing, and a refusal is
 what a private bucket does.
 
-It does NOT check whether your credentials work, and a refusal is evidence
-about the bucket root only: a policy that opens one prefix answers the same way
-and is still public where it matters.
+Since 0.29.0 it ALSO signs one request, to say whether the credentials in the
+environment are accepted at all -- a typo in S3_SECRET_ACCESS_KEY used to give a
+completely clean \`doctor\` and surface on a user's first upload.
+
+Neither probe proves the bucket exists: a missing bucket answers the same 404 as
+a missing key. And a refusal is evidence about the bucket root only -- a policy
+that opens one prefix answers the same way and is still public where it matters.
+
+There is no \`filelayer audit\`, and that is a decision rather than a gap: run
+\`filelayer audit\` to read why, and what to do instead.
 `;
 
 type Finding = {
@@ -598,6 +613,49 @@ if (command === 'schema status') {
     process.exit(status.state === 'current' ? 0 : 1);
   }
   report([describeSchema(status)]);
+}
+
+// A DECIDED ABSENCE EXPLAINS ITSELF WHERE SOMEBODY LOOKS FOR IT.
+//
+// `filelayer audit` is the command an operator reaches for, and answering
+// `unknown command` would tell them it was forgotten. It was not: it was
+// decided against, twice, and the second time with the obstacle already
+// removed.
+//
+// The storage obstacle is gone -- `auditReader(db)` needs no adapter, since
+// 0.30.0. What remains is the authority question, and this tool cannot answer
+// it honestly. `--as <admin>` would run a real `read_audit` check that means
+// nothing here, because the operator can pass a different name or open `psql`:
+// the convincing check on top of root access that the header of this file
+// refuses. Attributing the read to that admin would also put their name on the
+// chain for something they did not do, which attacks the property 0.27.0
+// shipped.
+//
+// Reading as an operator with no principal is defensible and is a NEW authority
+// in the library, not a flag -- and `SYSTEM_ACTOR` cannot stand in for it: it is
+// deliberately a plain `member` of any named org, precisely so that being used
+// for an unowned upload does not hand it admin read over a tenant's documents.
+//
+// So the operator supplies the identity in their own code, where the
+// impersonation is theirs and visible, and this tool stays what it says it is.
+if (command === 'audit') {
+  process.stderr.write(
+    `filelayer: there is no \`audit\` command, on purpose.\n\n` +
+      `Reading the trail is three lines against your own database, and\n` +
+      `\`auditReader\` needs no storage adapter:\n\n` +
+      `  import { auditReader } from '@filelayer/core';\n` +
+      `  const audit = auditReader(pool);\n` +
+      `  console.log(await audit.log({ actorId: adminId }, orgId, { limit: 50 }));\n\n` +
+      `WHY NOT A COMMAND. This tool holds DATABASE_URL, which is complete\n` +
+      `authority over every row -- so a \`--as <admin>\` flag here would run a\n` +
+      `permission check that cannot mean anything, and would attribute the read\n` +
+      `to an administrator who did not make it. Reading the trail is itself an\n` +
+      `audited act since 0.27.0, and that record is worth more than the\n` +
+      `convenience.\n\n` +
+      `In your own script the identity is yours and visible, which is the\n` +
+      `honest version of the same thing.\n`,
+  );
+  process.exit(2);
 }
 
 process.stderr.write(`filelayer: unknown command "${command}".\n\n${USAGE}`);

@@ -386,3 +386,46 @@ describe('the CLI: the signed-credentials probe', () => {
     }
   });
 });
+
+describe('the CLI: the absence of `audit` explains itself', () => {
+  it('answers `filelayer audit` with the reason, not "unknown command"', async () => {
+    const r = await run(['audit']);
+    assert.equal(r.status, 2);
+    assert.doesNotMatch(
+      r.out,
+      /unknown command/,
+      'an operator who types the command they expected should be told it was ' +
+        'decided against, not that they mistyped',
+    );
+    assert.match(r.out, /on purpose/);
+    // The three lines are the deliverable of that decision, so they are in the
+    // message rather than in a document the reader is not currently looking at.
+    assert.match(r.out, /auditReader/);
+    assert.match(r.out, /audit\.log\(\{ actorId/);
+  });
+
+  it('says why a flag would not help, which is the part a reader will argue with', async () => {
+    const r = await run(['audit']);
+    assert.match(r.out, /--as <admin>/);
+    assert.match(
+      r.out,
+      /cannot mean anything/,
+      'the refusal has to carry its reason: this tool holds DATABASE_URL, so a ' +
+        'permission check inside it proves nothing',
+    );
+  });
+
+  it('still rejects a genuinely unknown command as unknown', async () => {
+    // The control. Teaching the CLI one friendly absence must not turn every
+    // typo into a lecture about the audit trail.
+    const r = await run(['audti']);
+    assert.equal(r.status, 2);
+    assert.match(r.out, /unknown command "audti"/);
+    assert.doesNotMatch(r.out, /auditReader/);
+  });
+
+  it('usage mentions the absence, so it is discoverable without guessing', async () => {
+    const r = await run(['--help']);
+    assert.match(r.stdout, /no `filelayer audit`/);
+  });
+});
