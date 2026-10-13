@@ -23,6 +23,75 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.31.0] — 2026-10-13
+
+### The audit read takes a time window, and its absence was found by an eval
+
+`AuditFilter` had `decision`, `fileId`, `actorId`, `action` and `limit`. No time
+range -- while `trimAuditChain` has taken a `before` instant since 0.16.0. **This
+API could DELETE history by time and could not READ it by time.** "Show me the
+last ninety days", which is the first thing any compliance screen asks, had no
+expression: a caller pulled rows under a guessed `limit` and filtered in
+JavaScript.
+
+`{ since, until }` on `fl.auditLog()` and `fl.orgs.audit()`, and
+half-open -- `[since, until)` -- so consecutive windows tile without
+double-counting the row that lands exactly on a boundary. A closed range is
+right eleven months a year and wrong on the twelfth. Passed as `Date` objects
+and sent as `timestamptz`, so no string formatting and no client timezone can
+reinterpret them. A test asserts the tiling property rather than only the two
+bounds.
+
+**HOW IT WAS FOUND, because the method is the point.** A scenario ending in a
+compliance screen was added to the Agent Skill's eval set and answered twice,
+with and without the skill, graded blind against ten assertions written first.
+The with-skill answer invented a `since` option and flagged it as a guess to
+verify. It was a good guess at an API that should have existed.
+
+A mechanical check -- the facade's method names against the skill's text -- had
+run the day before and could only ever find the SKILL wrong. This run found the
+PACKAGE wrong, by asking it to do the obvious thing.
+
+### What the same run found in the skill
+
+Two gaps, both now closed where the compliance screen is discussed:
+
+- **The 404-not-403 rule did not transfer.** The skill states it once, about
+  file reads. A capability denial behaves identically -- `orgs.audit` without
+  `read_audit` is `404 insufficient_role`, the same answer a stranger gets --
+  and the answer never said so, so a reader would branch on a thrown error
+  rather than on their own session.
+- **The resolved audit view was never described**, so the answer invented field
+  names (`e.at`, `e.actor`, `e.fileName`) and flagged them as guesses. Now the
+  skill names `row.actor.label`, `.externalId`, `row.file.name`, `row.summary`
+  and the `resolution: 'unresolved'` case.
+
+Grades: 7/10 with the skill, 2/10 without, seven of ten assertions
+discriminating -- the largest gap any run in this project has produced. The
+without-skill answer designed a second audit table from scratch for a developer
+who had opened by saying they already use the library.
+
+`skills/filelayer-integration/evals/MEASUREMENT.md` carries the run, including what is thin about it: one run
+per arm, and the author of the scenario had written the paragraph it rewards
+hours earlier, which makes the three FAILURES the trustworthy part and the seven
+passes partly a check that a fresh edit reads as intended.
+
+### Also
+
+The skill's audit-growth warning predated the thing that grows it fastest.
+Reading the trail has appended an event since 0.27.0, so the compliance screen a
+developer builds next is itself a growth source -- about 2 880 rows a day per
+viewer at a thirty-second poll -- and the warning named only `trimAuditChain`.
+Fixed with the answer attached rather than just the caution: do not poll, load
+on open.
+
+And `filelayer audit` is now a decided absence rather than a pending one. The
+command exits 2 and prints the three lines to use instead, because answering
+`unknown command` would tell an operator they mistyped. The reasoning is in
+`cli.ts`: this tool holds `DATABASE_URL`, so a `--as <admin>` flag would run a
+permission check that cannot mean anything and would put an administrator's name
+on the chain for a read they did not make.
+
 ## [0.30.0] — 2026-10-13
 
 ### `auditReader(db)`: reading the trail needs a database and nothing else

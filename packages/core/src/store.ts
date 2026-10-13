@@ -1719,6 +1719,27 @@ export interface AuditFilter {
   fileId?: string;
   actorId?: string;
   action?: string;
+  /**
+   * Events at or after this instant. HALF-OPEN with `until`, deliberately:
+   * `[since, until)` means consecutive windows tile without double-counting
+   * the row that lands exactly on a boundary, which is what a monthly export
+   * needs and what a closed range gets wrong once a year.
+   *
+   * ADDED IN 0.31.0, AND ITS ABSENCE WAS THE SHARPEST KIND. `trimAuditChain`
+   * has taken a `before` instant since 0.16.0 -- so this API could DELETE
+   * history by time and could not READ it by time. "Show me the last ninety
+   * days", which is the first thing any compliance screen asks, had no
+   * expression: a caller had to pull rows under `limit` and filter in
+   * JavaScript, guessing a limit large enough to cover the window.
+   *
+   * Found by a graded evaluation, not by review. A scenario ending in a
+   * compliance screen was added to the Agent Skill's eval set, and the answer
+   * written WITH the skill invented a `since` option and flagged it as a guess
+   * to verify. It was a good guess at an API that should have existed.
+   */
+  since?: Date;
+  /** Events strictly before this instant. See `since` for the half-open range. */
+  until?: Date;
   limit?: number;
 }
 
@@ -1751,6 +1772,18 @@ function auditFilterClauses(
   if (filter.action) {
     params.push(filter.action);
     clauses.push(`${prefix}action = $${params.length}`);
+  }
+  // `>=` and `<`, not BETWEEN: see `AuditFilter.since` for why the range is
+  // half-open. The parameters are passed as Date objects and the driver sends
+  // them as timestamptz, so no string formatting is involved and no client
+  // timezone can reinterpret them.
+  if (filter.since !== undefined) {
+    params.push(filter.since);
+    clauses.push(`${prefix}occurred_at >= $${params.length}`);
+  }
+  if (filter.until !== undefined) {
+    params.push(filter.until);
+    clauses.push(`${prefix}occurred_at < $${params.length}`);
   }
   return clauses;
 }

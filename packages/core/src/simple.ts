@@ -940,6 +940,9 @@ export class OrgsApi {
       action?: string;
       file?: string;
       user?: string;
+      /** See `AuditFilter.since`: half-open with `until`, so windows tile. */
+      since?: Date;
+      until?: Date;
     },
   ) {
     const orgId = await this.requireOrg(org);
@@ -957,6 +960,8 @@ export class OrgsApi {
       ...(opts.action !== undefined ? { action: opts.action } : {}),
       ...(opts.file !== undefined ? { fileId: opts.file } : {}),
       ...(actorId !== undefined ? { actorId } : {}),
+      ...(opts.since !== undefined ? { since: opts.since } : {}),
+      ...(opts.until !== undefined ? { until: opts.until } : {}),
       // `opts.limit ? ...` is a TRUTHINESS test, so `limit: 0` was discarded and
       // the caller got the default page instead of nothing. The verbose
       // `fl.auditLog` handles 0 correctly, which made the two documented

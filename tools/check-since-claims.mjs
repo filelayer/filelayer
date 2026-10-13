@@ -76,6 +76,33 @@ const SINCE = /\b[Ss]ince\s+`?(\d+\.\d+\.\d+)`?/g;
  */
 const CLAIMS = [
   {
+    match: 'The audit read takes a TIME WINDOW',
+    // `ships` on the compiled store rather than an export: nothing new is
+    // exported, the CHANGE is a field on an existing interface, and the
+    // compiled clause is the only artifact that proves the field is wired to
+    // SQL rather than merely declared in a type.
+    probe: { kind: 'ships', file: 'dist/store.js', text: 'occurred_at >= $' },
+    note: 'A half-open time window on the audit read.',
+  },
+  {
+    // The same fact on the Agent Skill, worded for the compliance-screen path.
+    match: '**The window is a filter argument**, since `0.31.0`',
+    probe: { kind: 'ships', file: 'dist/store.js', text: 'occurred_at >= $' },
+    note: 'The same claim as above, on the skill.',
+  },
+  {
+    // The 0.16.0 half of the same sentence, which is what makes the point: the
+    // API could delete by time long before it could read by time. Probed
+    // against the migration that produced 0.16.0.
+    match: 'has taken a `before` instant since 0.16.0',
+    probe: {
+      kind: 'ships',
+      file: 'migrations/011-audit-retention.sql',
+      text: 'audit_checkpoint',
+    },
+    note: 'Audit retention, and its `before` instant, arrived in 0.16.0.',
+  },
+  {
     // The same two facts as further down, worded for the Agent Skill. Three
     // surfaces now carry each of these -- README, llms.txt and the skill -- and
     // they share no substring because each was written for a different reader,

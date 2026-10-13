@@ -240,6 +240,72 @@ needs the graded runs rather than a grep. The next quality run should include a
 scenario that ends in a compliance screen, because that is the path this check
 found unguarded.
 
+## The compliance-screen scenario (13 October 2026)
+
+Added because the mechanical check above found a hole a grep could see and no
+graded run could: the skill warned about audit growth without mentioning that
+reading the trail now causes it. A scenario was written to walk that path -- an
+accounting firm with the library already in place, asking for a compliance
+screen with a 90-day window, CSV export, and "stay current while she has it
+open".
+
+Ten assertions, written before either answer existed. Both arms answered by the
+same model, once with the skill and once without, and graded by a third which
+was not told which arm was which or that a skill existed at all.
+
+| Arm | Passes |
+|---|---|
+| with the skill | 7 / 10 |
+| without | 2 / 10 |
+
+Seven of the ten assertions discriminated, which is the largest gap any run
+here has produced -- and the reason is not that the skill is better written
+than it was. It is that the question lands squarely on material the skill names
+and a model has no other way to know: that reading the trail appends an event,
+that `auditReader` exists, that `trimAuditChain` is a job nobody runs for you.
+
+**The answer without the skill proposed building a second audit table.** Given a
+developer who opened by saying they already use the library, it designed
+`document_access_event` from scratch, with its own denormalised actor columns
+and its own `"audit:read"` permission string. That is a reasonable answer to a
+different question, and it is what this skill exists to prevent.
+
+### What the WITH-skill arm got wrong, which is the useful half
+
+Three assertions failed, and each named something real.
+
+- **The 404-not-403 rule did not transfer.** The skill states it, once, about
+  file reads. A capability denial behaves the same way -- `orgs.audit` without
+  `read_audit` is `404 insufficient_role` -- and the answer never said so, so a
+  reader would branch on a thrown error. Now stated where the screen is
+  discussed.
+- **It invented the audit row's field shape** (`e.at`, `e.actor`, `e.fileName`)
+  and flagged them as guesses to verify. The skill never described the resolved
+  view, so there was nothing to be faithful to. Now described.
+- **It invented a `since` option, and that one was the library's fault.**
+  `AuditFilter` had `decision`, `fileId`, `actorId`, `action` and `limit` and no
+  time range at all -- while `trimAuditChain` has taken a `before` instant since
+  0.16.0. The API could DELETE history by time and not READ it by time, and "the
+  last ninety days" had no expression. Added in 0.31.0 as `{ since, until }`,
+  half-open. It was a good guess at an API that should have existed.
+
+That last one is the argument for scenarios over greps. A mechanical check
+compares the skill to the package and can only find the skill wrong. This run
+found the PACKAGE wrong, by asking it to do the obvious thing.
+
+### What is thin about it
+
+One run per arm, as always. And the author of the scenario had just written the
+audit-growth paragraph the scenario rewards, which is a conflict worth naming:
+assertions A2, A3 and A4 test material added hours earlier by the same person
+who wrote the assertions. The three failures are the trustworthy part of this
+run; the seven passes are partly a check that a fresh edit reads as intended.
+
+The inputs are in this project's internal evaluation workspace, with one
+honest gap: the two full answers were not archived to disk, so this run is
+reproducible from the prompt and the assertions but not re-gradable against the
+exact text that was graded.
+
 ## Corrections
 
 **2026-10-08.** The commit that added this skill

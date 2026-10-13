@@ -14,7 +14,7 @@ Eight of the nine are now done. The ninth is the one we cannot build.
 |---|---|---|
 | 1 | A real open-source licence | **Done.** Apache-2.0. `LICENSE` and `NOTICE` ship in the tarball, and CI fails if either is missing from it |
 | 2 | Published to npm | **Done.** `@filelayer/core`, twenty-one releases |
-| 3 | The test suite in the published tree, with public CI | **Done.** 668 tests ship in the tarball and run from an install; twelve public CI jobs |
+| 3 | The test suite in the published tree, with public CI | **Done.** 672 tests ship in the tarball and run from an install; twelve public CI jobs |
 | 4 | The storage adapter proven against live R2 and S3 | **Done.** Both, on every commit. Twelve tests each, a thirteenth nightly |
 | 5 | A transaction-aware `Queryable`, with the audit write in the same transaction as the mutation | **Done.** The log cannot disagree with the decision it records |
 | 6 | Streaming delivery, or a documented short-TTL redirect mode | **Done.** Both, plus `Range`, `HEAD` and `416` |

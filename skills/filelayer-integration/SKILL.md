@@ -5,7 +5,7 @@ description: Add user-file infrastructure to a SaaS application with @filelayer/
 
 # Adding user files to somebody else's SaaS
 
-> This copy describes `@filelayer/core` version 0.30.0. It ships inside the
+> This copy describes `@filelayer/core` version 0.31.0. It ships inside the
 > package, so the intended way to get it is to copy it out of your own
 > `node_modules` rather than from a repository: a skill taken from `main`
 > describes whatever is newest, which may be API your installed version does
@@ -293,6 +293,26 @@ is a cost that arrives later:
   storage adapter, because none of the three touches storage. It still enforces
   `read_audit` and still records the read, so it is narrower than a `Filelayer`
   rather than a way around one.
+
+  Three things to get right on that screen, because guessing them produces
+  code that compiles and lies:
+
+  - **`read_audit` is admin or owner.** A member who lacks it gets **404, not
+    403** — the same answer a stranger gets, for the same reason a file read
+    does. So decide whether to render the screen from your own session, not
+    from whether the call threw.
+  - **Do not join audit rows to your own user table.** Every row carries the
+    uuids it always did AND a resolved view: `row.actor.label` and
+    `.externalId`, `row.file.label` and `.name`, `row.org.label`, plus
+    `row.summary` — one printable line. `label` is never null: an access with
+    no principal reads `anonymous`, an event with no tenant reads `system`, and
+    an id that resolves to nothing keeps its uuid and says
+    `resolution: 'unresolved'`. Resolution is project-scoped and costs no extra
+    query.
+  - **The window is a filter argument**, since `0.31.0`: `{ since, until }` on
+    the same call, half-open so consecutive windows tile without
+    double-counting a row on the boundary. Do not pull everything under a large
+    `limit` and slice it in JavaScript.
 - **Rate limiting at ingest.** An unauthenticated caller can append denial
   events to an audit chain in a project they can reach. That is deliberate —
   denials are the events worth recording — and it is a reason to rate-limit.
