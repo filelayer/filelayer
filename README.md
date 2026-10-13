@@ -9,18 +9,6 @@
      npmjs.com/package/@filelayer/core, so the badges resolve on their own with
      no edit here. -->
 
-> **Alpha — developer preview, not production software.** Nobody is running it
-> in production, including us. [**Should you depend on this?**](https://github.com/filelayer/filelayer/blob/main/TRUST.md)
-> has the real numbers, including the ones that are zero, and exactly what would
-> change them. [Limitations](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) is the complete list of what it
-> does not do.
->
-> **We are looking for three to five design partners.** If you are building
-> something with private user files, we will help you integrate this and stay on
-> hand while you do, in exchange for telling us where it breaks. That is the only
-> thing on our [roadmap to 1.0](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md) we cannot build ourselves.
-> [Open an issue](https://github.com/filelayer/filelayer/issues) or say hello.
-
 **The file layer for SaaS applications.** Public files and private files, with
 one authorization model behind both.
 
@@ -31,16 +19,11 @@ file access that goes through Filelayer, that decision is made in one place,
 handlers, no presigned-URL expiry logic, and no per-route access rules of your
 own.
 
-**Filelayer is authorization middleware, not row-level security.** It runs in
-your application process, in front of Postgres and your bucket. Code that
-queries these tables directly does not go through it. The schema does enforce a
-set of invariants against *every* writer: cross-tenant grants, cross-project
-identities, and delegation that amplifies authority or subject breadth are
-refused by constraints and triggers, so a migration or a `psql` session cannot
-write them. But there is no RLS policy in `schema.sql`, and a direct `SELECT` is
-not filtered by anything. If you need enforcement that survives arbitrary
-database clients, use database-level enforcement; Filelayer is the layer above
-it, and the two compose.
+> **Alpha, and looking for three to five design partners** — we will help you
+> integrate this and stay on hand while you do, in exchange for hearing where it
+> breaks. [Should you depend on this?](https://github.com/filelayer/filelayer/blob/main/TRUST.md) ·
+> [what it does not do](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) ·
+> [roadmap to 1.0](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md)
 
 <!-- doccheck-setup
 import { Filelayer } from '@filelayer/core';
@@ -223,7 +206,8 @@ apply to you:
    and legal hold are useless if the people accountable for them cannot see
    what they are holding. But it is a policy decision, and if you need to
    exclude the operator you need envelope encryption, which we do not have.
-5. **Alpha, and the schema has changed six times.** Any `0.x` → `0.(x+1)` may
+5. **Alpha, nobody is running it in production including us, and the schema has
+   changed six times.** Any `0.x` → `0.(x+1)` may
    break the API, the schema or both. Every break has a numbered entry in
    [`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) and a runnable file
    under `migrations/` that CI applies to the previous release's schema and
@@ -272,96 +256,11 @@ const { url: avatarUrl } = await fl2.files.put(bytes, { public: true });
 
 `quickstart()` is **ephemeral**: everything is lost when the process exits.
 
-### Where the bytes go
-
-Three adapters, and the one you want depends on whether you have a bucket:
-
-| | |
-|---|---|
-| `new MemoryStorage()` | A Map. Dies with the process. For tests. |
-| `new FsStorage('./data')` | A real directory. Survives a restart, needs no bucket and no IAM user. One process on one disk: no locking between writers, and no `presignGet`, so redirect delivery is unavailable and `canPresign()` says so before a request rather than during one. |
-| `new S3Storage({ endpoint, bucket, region, accessKeyId, secretAccessKey })` | S3 or R2. The one to use the moment you run two application servers. |
-
-`FsStorage` exists because we measured the gap: an agent integrating the
-published package, reading only the published documentation, wanted bytes that
-survive a restart without creating a bucket, found nothing between a Map and
-IAM credentials, and wrote the adapter itself from the type definitions.
-
-Production is three configuration steps and is not hidden: your Postgres,
-somewhere for the bytes, and — if you chose a bucket — confirming it is private.
-[`examples/starter/`](https://github.com/filelayer/filelayer/tree/main/examples/starter)
-is all three in one file you can copy, and
-[`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md)
-§7 is the prose version.
-
-### Checking a deployment from a terminal
-
-```bash
-npx filelayer doctor          # Node, DATABASE_URL, and what state the schema is in
-npx filelayer schema status   # just the schema, with --json for a script
-```
-
-Both are read-only. Every problem comes with a line saying what to do about it,
-and `--json` gives an agent the same findings in a shape it can branch on.
-
-Two things it will not do, both on purpose. **It takes no credential as an
-argument** — there is no `--database-url`, and passing one is an error rather
-than being ignored, because a credential on a command line is written to shell
-history, visible in `ps`, and echoed by most CI systems. And **it has no
-`share`, `download` or `delete`**: reading `DATABASE_URL` is complete authority
-over every file and grant, so the CLI cannot enforce permissions and does not
-pretend to. A convincing permission check layered on root access is worse than
-none, because it reports that something was authorized when nothing was.
-
-With `S3_ENDPOINT` and `S3_BUCKET` set, `doctor` also reports whether the bucket
-serves an **unauthenticated** read, which is the most common way everything here
-gets undone: Filelayer decides who may be *given* a URL and has no say in who
-the object store will answer. The probe writes nothing and uses no credential —
-an unsigned GET of a key that does not exist is refused by a private bucket and
-answered honestly by a public one — so a check that cannot read a credential
-cannot leak one. With those variables unset it says the bucket was not checked
-rather than saying nothing.
-
-A refusal is evidence about the bucket root only: a policy that opens one prefix
-answers identically and is still public where it matters. And none of this says
-whether your credentials work, which needs a signed request and is not here
-yet.
-
-`pg` is an optional peer dependency: the CLI is the only part of this package
-that needs a driver, and it asks for it by name at runtime.
-
-### An Agent Skill, which ships in the package
-
-If a coding agent is going to do the integration, there is a skill for it:
-
-```bash
-mkdir -p .claude/skills
-cp -r node_modules/@filelayer/core/skills/filelayer-integration .claude/skills/
-```
-
-Committed under `.claude/skills/` it applies to every session in that
-repository, so a colleague's agent gets it too. `~/.claude/skills/` instead
-makes it personal to one machine.
-
-**Copy it out of your own `node_modules`, not out of a repository.** The copy
-in the package carries the version it describes and cannot drift from what you
-installed; a copy taken from the default branch describes whatever is newest,
-which may be API your version does not have. A build gate keeps the shipped
-copy byte-identical to the one here and keeps its version stamp current.
-
-What it does: decides out loud whether a library is the right answer at all,
-finds out what the project already has, picks the API tier, mounts the handler
-that matches the runtime, and then proves the result with `auditIntegration()`
-rather than declaring success. Graded blind against the same scenarios with and
-without it, it scored 23/24 against 13/24; the numbers, what they do not
-establish, and the mistakes found while measuring are in
-[`skills/filelayer-integration/evals/MEASUREMENT.md`](https://github.com/filelayer/filelayer/blob/main/skills/filelayer-integration/evals/MEASUREMENT.md).
-
 ### Serving the bytes
 
-Authorizing a read is not the same as answering the request, and this page used
-to stop at the first one. Two handlers do the second, and which one you want is
-decided by your runtime, not by preference:
+Authorizing a read is not the same as answering the request. Two handlers do
+the second, and which one you want is decided by your runtime, not by
+preference:
 
 | | |
 |---|---|
@@ -407,201 +306,24 @@ URL; it requires a storage adapter that can sign, and it refuses with
 [`docs/guides/serving-private-files.md`](https://github.com/filelayer/filelayer/blob/main/docs/guides/serving-private-files.md)
 is the measured comparison of the two.
 
-### Uploading straight to the bucket
+### Everything else, one page per thing
 
-For files measured in hundreds of megabytes, `createUpload()` mints a presigned
-PUT so the bytes never travel through your process:
+That is the whole integration for most applications: install, `quickstart()` to
+see it work, then a real database and one of these handlers. The rest is a page
+each, and every one of them ships inside the npm tarball, so an install has them
+on disk.
 
-<!-- doccheck: skip reason="direct upload is opt-in and needs a storage adapter that can sign plus the verbatim acknowledgement; the throwaway instance on this page has neither, by design" -->
-```ts
-const { file, upload } = await fl.createUpload(principal, orgId, {
-  name: 'recording.mp4',
-  contentType: 'video/mp4',
-  size: declaredSize,            // required and exact
-});
-// the client PUTs to upload.url with upload.headers, then:
-const ready = await fl.completeUpload(principal, file.id);
-```
-
-A presigned PUT signs the method, the key and the expiry, and **does not
-constrain the body**: a URL minted for a 200 KB avatar accepts three gigabytes.
-`createUpload()` signs `content-length` and `content-type` into the credential
-so the object store rejects the wrong size or type before accepting it, which on
-Cloudflare R2 is the only way to bound the body at all. Until
-`completeUpload()` succeeds the row is `pending` and refuses `read`, and
-`completeUpload()` asks the store what arrived rather than believing the client.
-
-It is off until the configuration carries the verbatim
-`DIRECT_UPLOAD_ACKNOWLEDGEMENT` string, and `maxUploadBytes` has no default.
-Below a few tens of megabytes `fl.files.put()` is simpler and strictly safer,
-because you see the bytes.
-
-### Letting an agent operate it
-
-`@filelayer/core/mcp` builds an MCP server over an instance, so an agent can
-answer "which contracts can Alice see", "share this one with the external
-accountant for two weeks", "take that back" — through the same authorization
-code path as your HTTP routes, with no second set of rules to keep in agreement.
-You construct it and you run it; there is nothing hosted and nothing to sign up
-for.
-
-<!-- doccheck: skip reason="it connects a server to stdio and never returns, and it imports the MCP SDK, which is an optional peer this checker does not install" -->
-```ts
-import { filelayerMcpServer } from '@filelayer/core/mcp';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-
-const server = await filelayerMcpServer(fl, {
-  as: 'user_partner_alice',          // fixed here, not a tool argument
-  org: 'org_acme',
-  agentLabel: 'acme-assistant/1.0',  // how the audit trail names the agent
-});
-await server.connect(new StdioServerTransport());
-```
-
-**The subject is fixed at construction.** It is not a tool parameter and no
-tool changes it, because the obvious design — a `user` argument on every call —
-lets the agent choose who it is, which makes every permission check advisory. An
-MCP server that can act as anyone is an admin backdoor with a schema. One server
-speaks for one subject in one organisation; serving several people means
-constructing several servers, and that cost is the property.
-
-Seven tools by default: list files, describe one, list its grants, share with a
-person, create a link, revoke one grant, remove a person entirely. Expiry is
-required on both sharing tools, because a permanent grant is a decision a person
-should make. Each tool declares `readOnlyHint` and `destructiveHint` so a client
-can gate the ones that write. Failures come back as the stable error `code` with
-the `meaning` and `fix` from the catalogue, and never with `reason`.
-
-Three things are off by default, each for its own reason: `allowDestructive`
-(deleting is not recoverable), `returnFileBytes` (a document returned by a tool
-is a document copied into a model's context), and `exposeAuditTrail` — because
-the trail is an organisation's whole history, and a tool that returns it copies
-every file name, actor and denial into that context too. Reading the trail is
-itself audited since 0.27.0, which was the previous reason this was off; the
-default did not move, because the context argument never depended on it.
-
-This module is the only part of the package with dependencies, and they are
-optional peers, so the install above stays at zero:
-
-```bash
-npm install @modelcontextprotocol/sdk zod
-```
-
-`zod` is not a preference: the SDK accepts Zod schemas for a tool's inputs and
-nothing else. Calling the factory without either one throws and names what is
-missing and the command.
-
-Every call made through these tools records `agentLabel` as the audit event's
-user agent, which is what lets the chain separate "the partner opened this" from
-"the partner's assistant opened this". Those are different facts and until
-`0.21.0` the library had nowhere to put the difference.
-
-If you want a server a client can simply start, there is a second binary that
-builds the instance from the environment:
-
-```json
-{
-  "mcpServers": {
-    "filelayer": {
-      "command": "npx",
-      "args": ["-y", "-p", "@filelayer/core", "filelayer-mcp"],
-      "env": {
-        "DATABASE_URL": "postgres://...",
-        "FILELAYER_AS": "user_alice",
-        "FILELAYER_ORG": "org_acme",
-        "FILELAYER_DATA_DIR": "/srv/filelayer-data"
-      }
-    }
-  }
-}
-```
-
-`FILELAYER_AS` comes from whoever configures the client, never from a
-conversation — one process speaks for one subject, and many users means a server
-per user. With neither `FILELAYER_DATA_DIR` nor `S3_ENDPOINT` set it refuses to
-start rather than falling back to memory, which would work in a demo and lose
-the first real file. The three tools above stay off unless the matching
-`FILELAYER_MCP_*` variable is exactly `true`.
-
-[`examples/mcp/`](https://github.com/filelayer/filelayer/tree/main/examples/mcp)
-is a server you can launch and a script that drives it the way a client does:
-it spawns the server as a subprocess and exchanges protocol frames over its
-real stdin and stdout, in 27 checks that CI runs against a freshly packed
-tarball on every commit.
-
-### Errors, and proving the integration
-
-Everything throws `FilelayerError`, carrying `status`, a typed `code`, an
-internal `reason` that must never be serialized, and `headers` where a status is
-defined in terms of one. **The status is a function of the code**, so branching
-on `code` never means also branching on `status`.
-
-```ts
-import { FilelayerError } from '@filelayer/core';
-
-async function readOrRespond(id: string, as: string): Promise<Response> {
-  try {
-    const file = await fl.files.get(id, { as });
-    return new Response(JSON.stringify({ id: file.id }), { status: 200 });
-  } catch (e) {
-    if (!(e instanceof FilelayerError)) throw e;
-    return new Response(JSON.stringify({ error: e.code }), {
-      status: e.status,
-      headers: { 'content-type': 'application/json', ...(e.headers ?? {}) },
-    });
-  }
-}
-
-// A file that is not there, and a caller who may not know that:
-const denied = await readOrRespond('00000000-0000-0000-0000-000000000000', 'user_123');
-console.assert(denied.status === 404, 'a stranger gets 404, never 403');
-```
-
-There are 29 codes. The full table ships in the package as `ERRORS.md` and
-machine-readably as `errors.json`, both resolvable from an install
-(`@filelayer/core/errors.json`), both generated from the source, and a build
-gate fails if they drift. `ERROR_CODES` and `isErrorCode()` are exported for
-narrowing a code that arrived as a string.
-
-`auditIntegration()` then checks **your** routes rather than ours. You give it
-an owner, a stranger and four callbacks onto your own endpoints, and it drives
-them over HTTP:
-
-<!-- doccheck: skip reason="it drives an application over HTTP; there is no application here, and inventing one would check this library rather than the reader's" -->
-```ts
-import { auditIntegration, formatAuditReport } from '@filelayer/core';
-
-const report = await auditIntegration({ owner, stranger, app });
-console.log(formatAuditReport(report));
-```
-
-It is there because the library being correct and the integration being correct
-are different claims, and the second one is the one your users depend on. It
-checks, among other things, that a stranger gets `404` and not `403` — a `403`
-confirms the file exists and turns your ids into an enumeration oracle, and an
-application error handler that helpfully maps `not_found` back to a `403` undoes
-the property the library was providing.
-
-### Running the suite
-
-The tests are in the tarball but they cannot be executed from inside
-`node_modules`: Node refuses to strip types from files under `node_modules`, and
-the tests import the TypeScript source directly. To run them, clone the
-repository. Tests run against PGlite, PostgreSQL 17 compiled to WebAssembly and
-running in-process, so there is no daemon and no Docker:
-
-```bash
-git clone https://github.com/filelayer/filelayer && cd filelayer
-npm run bootstrap        # npm ci in packages/core
-npm test                 # the security property suite, 672 tests
-npm run typecheck
-npm run verify           # typecheck + tests + build + doc and language checks
-npm run example:tier1    # a public avatar, on :3000
-npm run example:vault    # the full Vault app, on :8787
-npm run example:starter  # a deployable server against your own Postgres
-```
-
----
+| | |
+|---|---|
+| Which storage adapter, and making the bucket private | [QUICKSTART §7](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) |
+| Checking a deployment from a terminal (`filelayer doctor`) | [`docs/CLI.md`](https://github.com/filelayer/filelayer/blob/main/docs/CLI.md) |
+| The Agent Skill, if an agent is doing the integration | [`docs/AGENT-SKILL.md`](https://github.com/filelayer/filelayer/blob/main/docs/AGENT-SKILL.md) |
+| Browser → bucket upload, with your server out of the path | [`docs/DIRECT-UPLOAD.md`](https://github.com/filelayer/filelayer/blob/main/docs/DIRECT-UPLOAD.md) |
+| An MCP server, so an agent can operate files | [`docs/MCP.md`](https://github.com/filelayer/filelayer/blob/main/docs/MCP.md) |
+| The 29 error codes, and `FilelayerError` | [QUICKSTART §9](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) · [`ERRORS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/ERRORS.md) |
+| Proving **your** routes hold, not ours (`auditIntegration()`) | [QUICKSTART §8](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) |
+| Reading the audit trail, with a time window and no storage adapter | [QUICKSTART §4](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) |
+| Running the suite yourself, from a clone | [CONTRIBUTING](https://github.com/filelayer/filelayer/blob/main/CONTRIBUTING.md) · [from an install](https://github.com/filelayer/filelayer/blob/main/docs/VERIFY-WHAT-YOU-INSTALLED.md) |
 
 ## Versioning
 
@@ -615,43 +337,16 @@ Pre-1.0. The version is `0.MINOR.PATCH` and the promise is deliberately narrow:
   action, no signature change.
 - There is no long-term support branch and no backporting before 1.0.
 
-**The schema has changed six times**, not once. This section said "one breaking
-change (per-project identifier namespaces)" until `0.15.0`, counting the first
-and largest; `MIGRATIONS.md` has ten numbered entries of which six carry
-forward SQL. Budget an upgrade against that file, not against this paragraph —
-the discrepancy was found by an outside analyst reading only the published
-package, and it was understating the cost of adopting us.
+**The schema has changed six times.** `MIGRATIONS.md` has ten numbered entries,
+six of which carry forward SQL. Budget an upgrade against that file rather than
+against this paragraph.
 
-**Which version a database is at is now readable off the database.** Since
-`0.15.0` `schema.sql` creates `filelayer_schema_version` and stamps it, and
+**Which version a database is at is readable off the database.**
 `schemaStatus(db)` reports where a database is, what this build expects, and
 which files under `migrations/` are outstanding. It issues no DDL: your
 application owns the migration runner, which is the position
 [`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md)
-§2 has always taken and is keeping.
-
-<!-- doccheck: skip reason="takes the `pg.Pool` you own; `pg` is deliberately not a dependency of this package, so there is nothing here to construct one from" -->
-
-```ts
-import { schemaStatus } from '@filelayer/core';
-const s = await schemaStatus(pool);   // { state: 'current', at: 10, expects: 10, ... }
-```
-
-**Reading the audit trail needs a database and nothing else.** Since `0.30.0`,
-`auditReader(db)` gives you `log`, `verify` and `checkpoints` without a storage
-adapter — because none of the three touches storage, and a compliance dashboard
-or a report job should not have to construct something that claims to hold bytes
-in order to read a table. It is narrower than a `Filelayer`, not more trusting:
-`read_audit` is still enforced, a caller without it gets a 404, a cross-tenant
-read is refused, and a successful read still appends its own `audit.read` event.
-
-<!-- doccheck: skip reason="takes the `pg.Pool` you own; `pg` is deliberately not a dependency of this package, so there is nothing here to construct one from" -->
-
-```ts
-import { auditReader } from '@filelayer/core';
-const audit = auditReader(pool);
-const rows = await audit.log({ actorId: adminId }, orgId, { limit: 50 });
-```
+§2 takes and is keeping.
 
 ---
 
@@ -676,13 +371,7 @@ const rows = await audit.log({ actorId: adminId }, orgId, { limit: 50 });
 - [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) — install → first file → the advanced capabilities
 - [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) — the complete list of what this does not do, fourteen entries with their reasoning
 - [`ROADMAP.md`](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md) — the nine things an outside evaluator said would change its answer, eight of them done, and what is deliberately not coming
-- [`docs/guides/`](https://github.com/filelayer/filelayer/tree/main/docs/guides) — answers to
-  questions people actually ask, written to be useful whether or not you use this
-  library. The code in them is executed in CI.
-  Four so far: why a presigned URL cannot be taken back, why a presigned PUT
-  does not limit what gets uploaded, why Row-Level Security does not stop a
-  cross-tenant grant from being written, and why the job that reclaims orphaned
-  objects is the most dangerous one in the system.
+- [`docs/guides/`](https://github.com/filelayer/filelayer/tree/main/docs/guides) — four answers to questions people actually ask, useful whether or not you use this library; the code in them is executed in CI
 - [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md) — the exact behaviour of every edge: liveness, delegation, deletion, the audit chain
 - [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) — how schema changes are delivered and what the pre-1.0 compatibility promise is
 - [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) — the real history, including the security defects we found in ourselves
@@ -692,43 +381,32 @@ const rows = await audit.log({ actorId: adminId }, orgId, { limit: 50 });
 - [`openapi.yaml`](https://github.com/filelayer/filelayer/blob/main/openapi.yaml) — the two HTTP routes the library serves, as OpenAPI 3.1
 
 Every link above points at GitHub, and an installed consumer may have no network
-and no browser. The npm package therefore carries the same files on disk, under
-`node_modules/@filelayer/core/`: this README, `docs/QUICKSTART.md`, `llms.txt`,
-`openapi.json`, `schema.sql`, `SEMANTICS.md`, `MIGRATIONS.md`, `CHANGELOG.md`,
-`LICENSE` and `NOTICE`, alongside `src/`, `test/` and `examples/`. Three of them also resolve as subpath
-imports: `@filelayer/core/llms.txt`, `@filelayer/core/openapi.json` and
-`@filelayer/core/schema.sql`, so a reader does not have to guess at the layout
+and no browser. The npm package therefore carries the same files on disk under
+`node_modules/@filelayer/core/`, and three resolve as subpath imports —
+`@filelayer/core/llms.txt`, `@filelayer/core/openapi.json` and
+`@filelayer/core/schema.sql` — so a reader does not have to guess at the layout
 of `node_modules`.
 
 ## License
 
-**[Apache-2.0](https://github.com/filelayer/filelayer/blob/main/LICENSE).**
-Commercial use, modification, distribution and private use are permitted, with
-an express patent grant and a patent-retaliation termination clause. You must
-preserve the copyright and licence notices and state significant changes; there
-is no copyleft obligation on your own code.
+**[Apache-2.0](https://github.com/filelayer/filelayer/blob/main/LICENSE)**, with
+an express patent grant and a patent-retaliation termination clause. No copyleft
+obligation on your own code; preserve the notices and state significant changes.
+`LICENSE` and [`NOTICE`](https://github.com/filelayer/filelayer/blob/main/NOTICE)
+both ship in the tarball, so the grant travels with the artifact.
 
 ```
 SPDX-License-Identifier: Apache-2.0
 Copyright 2026 Technology Pro Bono S.L.
 ```
 
-`LICENSE` is the unmodified licence text from apache.org.
-[`NOTICE`](https://github.com/filelayer/filelayer/blob/main/NOTICE) carries the
-attribution notice required by section 4(d); both are inside the published npm
-tarball, so the grant travels with the artifact rather than only with the
-repository. There are no per-file licence headers. The grant is carried by
-`LICENSE`, `NOTICE` and the `license` field of every `package.json`.
-
-**Dependencies.** Filelayer has **no runtime dependencies**, and a job in CI
-fails the build if one appears. Its third-party packages are all
-`devDependencies`: [`@electric-sql/pglite`](https://github.com/electric-sql/pglite)
-(Apache-2.0), which is also an *optional peer dependency* and is what
-`quickstart()` and most of the suite run on, plus `pg` and `embedded-postgres`
-for the eight contention tests that need a server with two real backends. A
-production install contains none of them. It is installed from the registry rather than vendored, ships no `NOTICE`
-file of its own, and is recorded in ours for convenience. No third-party code is
-copied or embedded anywhere in this repository.
+**Dependencies.** **No runtime dependencies**, and a job in CI fails the build
+if one appears. The third-party packages are all `devDependencies`:
+[`@electric-sql/pglite`](https://github.com/electric-sql/pglite) (Apache-2.0),
+also an optional peer dependency and what `quickstart()` runs on, plus `pg` and
+`embedded-postgres` for the contention tests that need two real backends. A
+production install contains none of them, and no third-party code is copied or
+embedded anywhere in this repository.
 
 ## Contributing, security and conduct
 

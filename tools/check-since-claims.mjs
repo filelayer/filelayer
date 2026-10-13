@@ -134,13 +134,19 @@ const CLAIMS = [
     note: 'The audit trail is readable from a connection alone.',
   },
   {
-    // The same claim, worded for a human on the README rather than for an agent
-    // in llms.txt. Two entries because the sentences share no substring, which
-    // is the honest reason: this check matches text, and the two surfaces were
-    // written for different readers.
-    match: 'Reading the audit trail needs a database and nothing else',
+    // The same claim, worded for a human rather than for an agent in llms.txt.
+    // Two entries because the sentences share no substring, which is the honest
+    // reason: this check matches text, and the two surfaces were written for
+    // different readers.
+    //
+    // It was on the README until 14 October 2026 and is now in QUICKSTART §4,
+    // next to the rest of the audit API. The README was thinned to install,
+    // quickstart and delivery, and this check is what noticed the sentence had
+    // moved -- a declaration pointing at text that no longer exists fails here
+    // rather than silently vouching for nothing.
+    match: 'Reading the trail needs a database and nothing else',
     probe: { kind: 'export', name: 'auditReader' },
-    note: 'The same claim as above, on the README.',
+    note: 'The same claim as above, for a human reader.',
   },
   {
     match: 'audited since 0.27.0, which was the previous reason this was off',

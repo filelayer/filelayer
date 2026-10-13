@@ -76,7 +76,22 @@ if (GUIDES.length === 0) {
   process.exit(1);
 }
 
-const DOCS = ['README.md', 'docs/QUICKSTART.md', ...GUIDES];
+// AND THE SAME FOR `docs/` ITSELF, which was enumerated as exactly
+// `docs/QUICKSTART.md` until 14 October 2026. That was defensible while docs/
+// held one prose page; it stopped being defensible the moment the README was
+// thinned and four pages of it -- the CLI, the Agent Skill, direct upload and
+// MCP -- moved here carrying their `ts` samples with them. Every one of those
+// samples had been under this checker's eye in the README, and an enumerated
+// list would have quietly stopped looking at them, which is the exact trade
+// the thinning was not supposed to make.
+//
+// Discovered, therefore, with the same shape as the guides above.
+const TOP_DOCS = readdirSync(join(ROOT, 'docs'))
+  .filter((f) => f.endsWith('.md'))
+  .sort()
+  .map((f) => `docs/${f}`);
+
+const DOCS = ['README.md', ...TOP_DOCS, ...GUIDES];
 
 // -----------------------------------------------------------------------------
 // Parse

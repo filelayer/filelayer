@@ -220,6 +220,38 @@ const COPIES = [
       'verifies something other than what they were sent.',
     versionStamp: null,
   },
+  // THE FOUR PAGES THE README SHED on 14 October 2026. Each one is prose a
+  // reader used to find in the README, so the tarball has to keep carrying it:
+  // an install whose README now says "see docs/MCP.md" and whose `docs/` has no
+  // such file is a worse state than the long README it replaced.
+  {
+    file: 'docs/CLI.md',
+    why:
+      '`filelayer doctor` is the thing you run when a deployment is wrong, which is exactly ' +
+      'the moment you have the install and not the repository.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/AGENT-SKILL.md',
+    why:
+      'it tells you to copy the skill out of your own node_modules, so it has to be readable ' +
+      'from that same node_modules.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/DIRECT-UPLOAD.md',
+    why:
+      'direct upload is off until the configuration carries a verbatim acknowledgement string, ' +
+      'and the page that explains why must ship with the code that refuses.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/MCP.md',
+    why:
+      'the MCP server ships in the package and its one load-bearing property -- the subject is ' +
+      'fixed at construction -- is argued here and nowhere else in the tarball.',
+    versionStamp: null,
+  },
   {
     file: 'docs/guides/deleting-files-and-orphaned-objects.md',
     why: 'the fourth guide: the sweeper deletes on an absence, and a partial answer is an absence.',
@@ -374,12 +406,23 @@ const fail = (where, msg) => problems.push({ where, msg });
 // -----------------------------------------------------------------------------
 {
   const listed = new Set(COPIES.map((c) => c.file));
-  const onDisk = readdirSync(join(ROOT, 'docs/guides')).map((f) => `docs/guides/${f}`);
+  // BOTH LEVELS OF `docs/`, not just the guides. The directory itself was
+  // enumerated here -- QUICKSTART, LIVE-S3-TESTS, VERIFY-WHAT-YOU-INSTALLED --
+  // with discovery only one level down, so a new page at `docs/` top level
+  // would have been checked by nothing while `files: ["docs"]` happily shipped
+  // whatever was in `packages/core/docs/` instead. Four such pages arrived on
+  // 14 October 2026 when the README was thinned.
+  const onDisk = [
+    ...readdirSync(join(ROOT, 'docs'))
+      .filter((f) => f.endsWith('.md'))
+      .map((f) => `docs/${f}`),
+    ...readdirSync(join(ROOT, 'docs/guides')).map((f) => `docs/guides/${f}`),
+  ];
   for (const file of onDisk.sort()) {
     if (!listed.has(file)) {
       fail(
         file,
-        'exists in docs/guides/ and is not in COPIES, so nothing checks that the npm package ' +
+        'exists under docs/ and is not in COPIES, so nothing checks that the npm package ' +
           'ships it or that the two copies agree. Add an entry saying why it ships -- or, if it ' +
           'genuinely should not ship, say THAT in the entry and give it no package copy.',
       );

@@ -417,6 +417,37 @@ its uuid and says `resolution: 'unresolved'` instead of inventing a name.
 `.actor.externalId`, `.org.externalId` and `.file.name` are the same values with
 no fallback, for when you want the null.
 
+**Reading the trail needs a database and nothing else.** Since `0.30.0`,
+`auditReader(db)` gives
+you `log`, `verify` and `checkpoints` without a storage adapter, because none of
+the three touches storage — and a compliance dashboard or a report job should
+not have to construct something that claims to hold bytes in order to read a
+table.
+
+<!-- doccheck: skip reason="takes the `pg.Pool` you own; `pg` is deliberately not a dependency of this package, so there is nothing here to construct one from" -->
+
+```ts
+import { auditReader } from '@filelayer/core';
+
+const audit = auditReader(pool);
+const rows  = await audit.log({ actorId: adminId }, orgId, { limit: 50 });
+```
+
+It is narrower than a `Filelayer`, not more trusting: `read_audit` is still
+enforced, a caller without it gets a `404`, a cross-tenant read is refused, and
+a successful read still appends its own `audit.read` event to the same chain.
+
+`log` takes a window as well as the filters above — `{ since, until }`, with
+`since` inclusive and `until` exclusive, so two consecutive windows tile without
+counting the row on the boundary twice:
+
+<!-- doccheck: skip reason="takes the `pg.Pool` you own; `pg` is deliberately not a dependency of this package, so there is nothing here to construct one from" -->
+
+```ts
+const q1 = await audit.log({ since: jan, until: apr }, orgId);
+const q2 = await audit.log({ since: apr, until: jul }, orgId);
+```
+
 ### Lifecycle
 
 ```ts
