@@ -42,6 +42,23 @@ const WORKFLOW = '.github/workflows/ci.yml';
  * command the workflow actually uses, which is checked for, so this cannot
  * become a place to park things that stopped running.
  */
+/**
+ * Steps of `verify` that must NOT appear in CI, each with the reason.
+ *
+ * Declared rather than exempted silently, and checked for deadness below: an
+ * entry naming a step that is no longer in `verify` fails, which is the same
+ * rule every other list in this repository now follows.
+ */
+const NOT_IN_CI = {
+  'stamp:verified': {
+    why:
+      'a stamp attests that a chain ran HERE, against this working tree, and it is ' +
+      'what `prepublishOnly` reads before allowing an upload. CI does not publish, ' +
+      'and a stamp written on a runner would attest to a tree nobody is about to ' +
+      'release from. `.measured/` is ignored for the same reason.',
+  },
+};
+
 const RUN_DIFFERENTLY = {
   adversarial: {
     runs: 'node benchmark/adversarial/run.mjs filelayer',
@@ -67,6 +84,12 @@ function missing(gates, workflow) {
   const out = [];
   for (const g of gates) {
     if (new RegExp(`npm run ${g.replace(/[:]/g, '[:]')}(\\s|$)`, 'm').test(workflow)) continue;
+    // A step that must NOT run in CI is a third case, and it was missing. Both
+    // existing outcomes assume the step belongs in the workflow -- either
+    // directly or under another name -- so a step whose correctness depends on
+    // NOT being there had nowhere honest to go, and the only way to satisfy the
+    // gate would have been to add it to CI and make it lie.
+    if (NOT_IN_CI[g]) continue;
     const alt = RUN_DIFFERENTLY[g];
     if (alt && workflow.includes(alt.runs)) continue;
     out.push(
@@ -124,6 +147,17 @@ const workflow = readFileSync(join(ROOT, WORKFLOW), 'utf8');
 const gates = gatesInVerify(pkg);
 const problems = [...bad.map((b) => `this gate's own control failed: ${b}`), ...missing(gates, workflow)];
 
+// A dead exemption is how an allow-list grows back: an entry for a step that is
+// no longer in `verify` would silently exempt whatever took that name next.
+for (const g of Object.keys(NOT_IN_CI)) {
+  if (!gates.includes(g)) {
+    problems.push(
+      `${g}: declared as deliberately absent from CI, but it is not a step of ` +
+        '`npm run verify` any more. Remove the declaration.',
+    );
+  }
+}
+
 // --- NO FLOATING RUNNER LABEL ------------------------------------------------
 //
 // Every job must name an Ubuntu version. `ubuntu-latest` is a label whose
@@ -164,6 +198,7 @@ if (problems.length) {
 console.log(
   `check-ci-coverage: clean. All ${gates.length} gate(s) in \`npm run verify\` have a step in ` +
     `${WORKFLOW} (${Object.keys(RUN_DIFFERENTLY).length} declared as run differently); ` +
+    `${Object.keys(NOT_IN_CI).length} deliberately absent with a reason; ` +
     `${runners.length} job(s) on pinned runner image(s) (${[...new Set(runners)].join(', ')}); ` +
     `${CONTROLS.length} controls correct.`,
 );

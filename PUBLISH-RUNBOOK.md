@@ -38,6 +38,13 @@ or that the fourth VALIDATES the second.
    `npm run verify:release`. Both must exit 0. On 0.28.0 the chain stopped on a
    red gate and the publish went ahead anyway, because `&&` breaking looks like
    the command finishing.
+
+   **You no longer have to remember this.** Each chain ends by stamping the
+   content of the tree it verified, and `npm publish` runs
+   `tools/refuse-unverified-publish.mjs` as `prepublishOnly` — so a publish
+   without both stamps, or with a stamp for different content, is refused before
+   anything is uploaded. A chain that breaks leaves no stamp, which makes the
+   mechanism that hid the failure the one that now prevents it.
 2. **Publish to npm** — §3.3. `npm publish`, then the `dist-tag add`.
 3. **Tag the commit** — §6.
 4. **Publish the MCP registry entry** — §7. **This step reads npm.** The
@@ -55,10 +62,15 @@ or that the fourth VALIDATES the second.
 > have lied in both directions here: §4 already records a publish that reported
 > 404 on its own tarball minutes after succeeding.
 >
-> So when the question is "did it publish?", ask the thing that cannot be
-> stale: `npm publish` again. A 403 *cannot publish over* means yes. Or HEAD the
-> tarball URL directly rather than reading the packument, which is a different
-> code path and answered correctly while the packument did not.
+> So when the question is "did it publish?", do not answer it by reading one
+> endpoint. **Run `npm run is-published`** (optionally with a version). It asks
+> down two independent paths — the packument and a HEAD on the tarball URL —
+> agrees or says it cannot, and exits 2 on disagreement rather than picking the
+> convenient one.
+>
+> And if it cannot get agreement, the only answer that cannot be stale is the
+> write path: `npm publish` again, where a 403 *cannot publish over the
+> previously published versions* means yes.
 
 ---
 

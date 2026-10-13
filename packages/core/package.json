@@ -91,7 +91,8 @@
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm test && npm run build",
     "test:contention": "FILELAYER_TEST_CONTENTION=1 node --test --experimental-strip-types \"test/contention.test.ts\"",
-    "test:mcp-server": "node --test --experimental-strip-types \"test/mcp-server.test.ts\""
+    "test:mcp-server": "node --test --experimental-strip-types \"test/mcp-server.test.ts\"",
+    "prepublishOnly": "node ../../tools/refuse-unverified-publish.mjs"
   },
   "peerDependencies": {
     "@electric-sql/pglite": "^0.3.11",
