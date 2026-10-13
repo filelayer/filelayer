@@ -40,8 +40,20 @@
  *   1. The PACKUMENT (`registry.npmjs.org/<pkg>`). What npm clients read to
  *      resolve a range. Served from replicas that lag.
  *   2. The TARBALL URL (`.../-/<name>-<version>.tgz`), with HEAD. A different
- *      code path, and the one that answered correctly on 12 October while the
- *      packument did not.
+ *      code path, and the one a reader's `npm install` has to actually fetch.
+ *
+ * THEY PROPAGATE IN ORDER, AND THE ORDER MATTERS. This file first said the
+ * tarball is "the one that answered correctly" on 12 October, as though one
+ * endpoint were simply more reliable. Watching the 0.30.0 publish settled it
+ * properly: minutes after the upload both said absent; a minute later the
+ * packument said present with both dist-tags moved while the tarball still
+ * answered 404; a minute after that they agreed.
+ *
+ * So the metadata lands before the bytes, and the dangerous read is the
+ * PACKUMENT -- it says a version exists while what an install must download is
+ * not there yet. That is the endpoint the wrong diagnosis on 12 October leaned
+ * on. Neither is authoritative alone: the disagreement tells you where in the
+ * sequence you are, which is information a single read destroys.
  *
  * When they disagree this exits 2 and says so, rather than trusting whichever
  * is convenient. That is the whole correction: the failure was not reading the
