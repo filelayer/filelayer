@@ -76,6 +76,27 @@ const SINCE = /\b[Ss]ince\s+`?(\d+\.\d+\.\d+)`?/g;
  */
 const CLAIMS = [
   {
+    // The same two facts as further down, worded for the Agent Skill. Three
+    // surfaces now carry each of these -- README, llms.txt and the skill -- and
+    // they share no substring because each was written for a different reader,
+    // which is why this list has an entry per surface rather than per fact.
+    match: 'a read of the trail appends an event too',
+    probe: {
+      kind: 'ships',
+      file: 'test/audit-context.test.ts',
+      text: 'records the act of reading the trail, and attributes it',
+    },
+    note: 'Reading the trail is audited; on the skill, in the audit-growth warning.',
+  },
+  {
+    // One LINE, not one sentence: this check matches per line and the sentence
+    // wraps. The first attempt spanned the break and was reported as a dead
+    // declaration, which is the rule working on its author.
+    match: '`auditReader(db)` since `0.30.0` is what it',
+    probe: { kind: 'export', name: 'auditReader' },
+    note: 'The audit reader needs no storage adapter; on the skill.',
+  },
+  {
     match: 'reads the trail with NO storage adapter',
     // An EXPORT probe, which is the right shape here: what changed is that a
     // name became importable without a storage adapter, and `export` is exactly

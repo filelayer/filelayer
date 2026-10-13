@@ -195,6 +195,51 @@ As above: not public, not in this package, and the protocol and thresholds are
 written out here rather than only there so that the part you can check does not
 depend on the part you cannot.
 
+## Does the BODY still describe the product? (13 October 2026)
+
+Everything above measures the description and the answers. None of it asks
+whether the skill still describes the package, and four releases landed in three
+days — `audit.read`, the full audit filter, `auditReader`, the signed-credentials
+probe — so the body could have drifted without a single figure moving.
+
+Checked mechanically rather than by reading: the facade's public method names
+were taken off the built package at runtime and matched against SKILL.md plus
+every reference file.
+
+| Surface | Methods | Not mentioned anywhere in the skill |
+|---|---|---|
+| `fl.files` | 9 | `delete`, `list`, `publish`, `unpublish` |
+| `fl.orgs` | 5 | `audit`, `removeMember`, `verifyAudit` |
+| `fl.shares` | 5 | `list`, `redeem` |
+| `fl.ids` | 3 | `actorId`, `ensureActor`, `orgId` |
+
+**Most of those absences are correct and the measurement is the wrong tool for
+them.** This skill is a decision guide — seven steps, ending in what the library
+does NOT do for you — not an API reference. An integration that never publishes
+a file does not need `publish` explained, and a guide that listed every method
+would be the answer a developer skims, which the "How to present it" section
+exists to prevent. Counting mentions finds drift; it cannot judge scope.
+
+**One real defect, in the section whose job is exactly this.** The "Audit
+growth" bullet under step 7 was written before 0.27.0 and said the log grows
+unless something trims it. Reading the trail now appends an event too, so the
+compliance screen a developer builds next is itself a growth source — about
+2 880 rows a day per viewer at a thirty-second poll. A warning about a cost that
+omits the fastest new source of that cost is incomplete in the way that matters,
+and an agent following the skill would have built the polling dashboard without
+knowing. Fixed, together with a pointer to `auditReader` as what a read-only
+screen should use.
+
+**Not changed:** the `@filelayer/core/mcp` paragraph. `filelayer-mcp` as a
+launchable binary and the MCP registry entry both arrived since it was written,
+but that paragraph instructs the agent to mention it once and move on, so adding
+detail would fight its own instruction.
+
+**Not measured here:** whether the skill's ADVICE is still the best advice, which
+needs the graded runs rather than a grep. The next quality run should include a
+scenario that ends in a compliance screen, because that is the path this check
+found unguarded.
+
 ## Corrections
 
 **2026-10-08.** The commit that added this skill

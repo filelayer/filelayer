@@ -274,11 +274,25 @@ is a cost that arrives later:
 - **Abandoned direct uploads.** If you set up direct-to-bucket upload,
   `collectUploadReservations()` is the job that cleans up reservations whose
   bytes never arrived.
-- **Audit growth.** The audit log grows without bound unless something calls
+- **Audit growth, and READING the trail is part of it.** The log grows without
+  bound unless something calls
   `trimAuditChain(orgId, { before | keepLast, note })`. Exactly one of `before`
   and `keepLast`, and `note` is required rather than optional: a trim leaves a
   checkpoint in the chain, and a checkpoint nobody can explain later is worse
   than the rows it removed.
+
+  **Since `0.27.0` a read of the trail appends an event too**, which changes the
+  arithmetic if you build the compliance screen they will eventually ask for. A
+  dashboard polling `orgs.audit()` every thirty seconds adds about 2 880 rows a
+  day per viewer. That is deliberate — the trail is the record an insider
+  consults first, so "who read the trail" belongs in it — and the answer is not
+  to poll. Load it when somebody opens the page.
+
+  If that screen is read-only, `auditReader(db)` since `0.30.0` is what it
+  wants: `log`, `verify` and `checkpoints` from a connection alone, with no
+  storage adapter, because none of the three touches storage. It still enforces
+  `read_audit` and still records the read, so it is narrower than a `Filelayer`
+  rather than a way around one.
 - **Rate limiting at ingest.** An unauthenticated caller can append denial
   events to an audit chain in a project they can reach. That is deliberate —
   denials are the events worth recording — and it is a reason to rate-limit.
