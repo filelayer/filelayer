@@ -286,7 +286,7 @@ Three assertions failed, and each named something real.
   `AuditFilter` had `decision`, `fileId`, `actorId`, `action` and `limit` and no
   time range at all -- while `trimAuditChain` has taken a `before` instant since
   0.16.0. The API could DELETE history by time and not READ it by time, and "the
-  last ninety days" had no expression. Added in 0.32.0 as `{ since, until }`,
+  last ninety days" had no expression. Added in 0.31.0 as `{ since, until }`,
   half-open. It was a good guess at an API that should have existed.
 
 That last one is the argument for scenarios over greps. A mechanical check

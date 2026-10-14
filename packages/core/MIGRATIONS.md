@@ -1111,6 +1111,42 @@ by re-running the read decision after the revoke. Ignoring the return value is
 safe; reading it is how you find out that revoking one grant did not remove
 somebody's access.
 
+### Entry 14 — `0.32.0` → `0.33.0`: the metering columns say what they hold
+
+`migrations/014-usage-columns.sql`. Transactional. Two changes to
+`usage_daily`, and **nothing to do in your application**: no API changed and
+nothing reads these columns yet.
+
+```sql
+ALTER TABLE usage_daily RENAME COLUMN bytes_stored TO bytes_written;
+ALTER TABLE usage_daily DROP COLUMN authz_checks;
+```
+
+**`bytes_stored` was a flow with the name of a stock.** It accumulates bytes
+WRITTEN on that day; it is not bytes held. Read as a level, which the name
+invites, it reports a rate as though it were a quantity. Bytes currently held is
+`SUM(size_bytes)` over live files, which is a query and not a row.
+
+**`authz_checks` was declared when the table was created and nothing ever
+incremented it**, so every row holds zero. It is dropped rather than wired up,
+and the migration **refuses to run if any row is non-zero** rather than trusting
+that claim about your database.
+
+Filling it honestly is not available: the tenant is not in hand at the moment
+of an authorization decision, so resolving one would add a query to the hot path
+of every authorized read, and metering only the ALLOWS gives a count that
+silently omits every denial. The question it was wanted for — decisions per
+delivered read — is a query across `audit_event` and `usage_daily.file_reads`
+over a window, which `{ since, until }` has made available since `0.31.0`.
+
+While we were here, the guarantees on that table got written down, because they
+differ between its columns and the comment claimed they did not. Writes are
+metered inside the upload transaction and are exact. Reads are metered outside
+it with the error swallowed, deliberately, so that a metering failure can never
+fail a delivery already authorized, charged against its cap and audited — so
+**reads undercount, always in the payer's favour.** Good enough to compute a
+ratio. Not an invoice.
+
 ---
 
 ## 4. What is not covered here

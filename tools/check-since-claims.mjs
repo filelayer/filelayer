@@ -43,24 +43,55 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PKG = '@filelayer/core';
 
 /** Surfaces a stranger or an agent reads. Discovery runs over exactly these. */
-const SURFACES = [
-  'README.md',
-  'llms.txt',
-  'packages/core/llms.txt',
-  'docs/QUICKSTART.md',
-  'docs/guides/deleting-files-and-orphaned-objects.md',
-  'docs/guides/expiring-and-revocable-file-links.md',
-  'docs/guides/multi-tenant-file-access.md',
-  'docs/guides/private-file-uploads.md',
-  'docs/guides/serving-private-files.md',
-  'skills/filelayer-integration/SKILL.md',
-  'skills/filelayer-integration/references/direct-upload.md',
-  'skills/filelayer-integration/references/errors.md',
-  'skills/filelayer-integration/references/node-http.md',
-  'skills/filelayer-integration/references/range-and-media.md',
-  'skills/filelayer-integration/references/sharing-and-links.md',
-  'skills/filelayer-integration/references/whatwg-runtimes.md',
-];
+/**
+ * DISCOVERED, not listed, and the list it replaces had a hole that shipped.
+ *
+ * Sixteen paths were enumerated here. `skills/filelayer-integration/evals/
+ * MEASUREMENT.md` was not among them, and on 14 October 2026 a bulk version
+ * replace turned its "Added in 0.31.0" into "Added in 0.32.0" -- a false
+ * statement about our own history, in a file that SHIPS IN THE TARBALL, and
+ * this gate could not see it because nothing had pointed it here. It was found
+ * the next day by `tools/bump-version.mjs`, which reports every dated line it
+ * declines to touch, on its first run.
+ *
+ * Registration is not coverage, for the fifth time in this repository's tooling
+ * and the second time this week. So the surfaces are every tracked `.md` and
+ * `.txt`, minus the ones declared below with a reason.
+ */
+const NOT_A_SURFACE = new Map([
+  // History by construction: every heading dates something on purpose.
+  ['packages/core/CHANGELOG.md', 'the changelog IS dated claims; checking them here would re-check every release'],
+  ['packages/core/MIGRATIONS.md', 'each entry names the versions it moves between, which is its whole job'],
+  // Written for us, not for an adopter, and not shipped.
+  ['AGENTS.md', 'instructions to whoever is working on this, not a claim to a reader'],
+  ['PUBLISH-RUNBOOK.md', 'an operator procedure; its version mentions are examples in commands'],
+  ['CONTRIBUTING.md', 'setup instructions'],
+  ['CODE_OF_CONDUCT.md', 'no version claims, and never will have'],
+]);
+
+const SURFACES = execFileSync('git', ['ls-files', '-z'], {
+  cwd: ROOT,
+  encoding: 'utf8',
+  maxBuffer: 64 * 1024 * 1024,
+})
+  .split('\0')
+  .filter(Boolean)
+  .filter((f) => /\.(md|txt)$/.test(f))
+  .filter((f) => !NOT_A_SURFACE.has(f))
+  .sort();
+
+// A declared exemption that no longer names a file is a stale exemption, and a
+// stale exemption is how a list quietly stops describing the tree.
+for (const [rel, why] of NOT_A_SURFACE) {
+  if (!existsSync(join(ROOT, rel))) {
+    console.error(
+      `check-since-claims: NOT_A_SURFACE names ${rel}, which does not exist.\n` +
+        `  Declared reason: ${why}\n` +
+        '  Remove the entry, or fix the path.',
+    );
+    process.exit(2);
+  }
+}
 
 const SINCE = /\b[Ss]ince\s+`?(\d+\.\d+\.\d+)`?/g;
 
@@ -75,6 +106,60 @@ const SINCE = /\b[Ss]ince\s+`?(\d+\.\d+\.\d+)`?/g;
  *   ships   -- the literal text appears in the named file inside the tarball
  */
 const CLAIMS = [
+  // -------------------------------------------------------------------------
+  // THE SIX THAT THE WIDENED SURFACE LIST FOUND, 15 October 2026.
+  //
+  // All six are dated claims on surfaces this gate was not pointed at, so none
+  // of them had ever been checked against a published tarball. They are
+  // declared here with the probe each one actually asserts, rather than being
+  // exempted -- an exemption would have been the cheap way to make the gate
+  // green and would have left six unverified sentences on shipped pages.
+  // -------------------------------------------------------------------------
+  {
+    match: 'Since `0.16.0`, `sealAuditChain()` writes a row recording',
+    // A METHOD, not a top-level export, and my first draft of this probe said
+    // export and failed -- correctly. The gate refusing a wrong probe is the
+    // same service as it refusing a wrong claim.
+    probe: { kind: 'method', name: 'sealAuditChain' },
+    note: 'Sealing, on LIMITATIONS entry 11.',
+  },
+  {
+    match: 'Since `0.16.0`, `trimAuditChain()` removes old',
+    probe: { kind: 'method', name: 'trimAuditChain' },
+    note: 'Trimming, on LIMITATIONS entry 12.',
+  },
+  {
+    // A BEHAVIOURAL claim, so the probe is the shipped code that makes it true
+    // rather than an export: `verifyAuditChain` existed before 0.14.0 and still
+    // does. What changed is that it stopped loading the whole chain -- "one
+    // query, no LIMIT, mapped into an array" -- and reads in pages instead.
+    //
+    // I guessed `DECLARE` first, on the assumption it used a cursor. It does
+    // not; it pages with a keyset. Read the changelog entry rather than guess
+    // what made a claim true, which is advice this file now embodies twice.
+    match: 'verification has been bounded in memory since `0.14.0`',
+    probe: { kind: 'ships', file: 'dist/store.js', text: 'PAGE = 2_000' },
+    note: 'Bounded-memory chain verification, on LIMITATIONS entry 12.',
+  },
+  {
+    match: 'Since `0.15.0` each of those has a runnable file under',
+    probe: { kind: 'ships', file: 'migrations/manifest.json', text: '"version"' },
+    note: 'One runnable migration file per schema change, on the trust page.',
+  },
+  {
+    match: 'Since 0.27.0 the read is itself',
+    probe: {
+      kind: 'ships',
+      file: 'test/audit-context.test.ts',
+      text: 'records the act of reading the trail, and attributes it',
+    },
+    note: 'Reading the trail is audited; on the MCP example README.',
+  },
+  {
+    match: 'which since `0.15.0` answers the same question properly',
+    probe: { kind: 'export', name: 'schemaStatus' },
+    note: 'schemaStatus(db); on the starter README.',
+  },
   {
     match: 'The audit read takes a TIME WINDOW',
     // `ships` on the compiled store rather than an export: nothing new is

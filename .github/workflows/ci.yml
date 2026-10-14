@@ -310,6 +310,16 @@ jobs:
       - name: The publish guards' own controls, run and counted
         run: npm run check:publish-guards
 
+      # CHEAP, AND IT CATCHES WHAT THE EXPENSIVE ONE CANNOT SEE.
+      # `check:migrations` executes every migration against the schema it
+      # upgrades, so a migration FILE is never in doubt. Nothing compared the
+      # files against MIGRATIONS.md, which is the document the README tells an
+      # adopter to budget an upgrade against -- and migration 012 was missing
+      # from it for fifteen releases. No database, no network, so it runs here
+      # rather than only in the job with a Postgres service.
+      - name: Every migration has an entry in MIGRATIONS.md, and the reverse
+        run: npm run check:migration-docs
+
       # Register density on the public prose. See tools/check-register.mjs for
       # what it measures and what a clean run does not mean.
       - name: Register density on the public surfaces

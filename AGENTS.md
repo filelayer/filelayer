@@ -59,6 +59,22 @@ has twice been the only unrun gate on a commit that CI then rejected — once fo
 a real defect. **A gate you could not run is not a gate that passed**, and
 saying which ones you could not run is part of saying you are done.
 
+## Check the credential FIRST, not last
+
+```
+npm whoami && npm run verify && git push
+```
+
+`npm whoami` costs a second. The npm session expired on two consecutive days in
+October 2026, and both times the only step in a release that fails on
+authentication is the IRREVERSIBLE one -- `npm publish` -- which arrives after
+six minutes of `verify` and two of `verify:release`. The second time it failed
+with `404 Not Found` on the PUT rather than a 401, because npm answers 404 to an
+unauthenticated publish so as not to reveal whether a package exists, which
+reads as "the package is gone" and is not.
+
+Put the cheap check that can fail in front of the expensive work, not behind it.
+
 ## And verify BEFORE you push
 
 ```
