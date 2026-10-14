@@ -316,7 +316,7 @@ is a cost that arrives later:
     an id that resolves to nothing keeps its uuid and says
     `resolution: 'unresolved'`. Resolution is project-scoped and costs no extra
     query.
-  - **The window is a filter argument**, since `0.32.0`: `{ since, until }` on
+  - **The window is a filter argument**, since `0.31.0`: `{ since, until }` on
     the same call, half-open so consecutive windows tile without
     double-counting a row on the boundary. Do not pull everything under a large
     `limit` and slice it in JavaScript.

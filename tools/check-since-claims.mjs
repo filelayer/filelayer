@@ -387,9 +387,45 @@ for (const w of work) {
     // Verifying against the registry is right; punishing unreleased work is
     // not, and the two are easy to conflate.
     if (w.version === localVersion) {
+      // UNVERIFIED IS NOT THE SAME AS UNCHECKABLE, and treating them as one
+      // let a corrupted date through on 14 October 2026. Preparing 0.32.0 I
+      // replaced `0.31.0` with `0.32.0` across every tracked document to move
+      // the version stamps -- and swept up two HISTORICAL "since 0.31.0"
+      // sentences with them. One was caught, by its declaration no longer
+      // matching the text. The other arrived here as a claim dated to the
+      // pending version and this branch printed UNVERIFIED and moved on. It had
+      // been VERIFIED the run before.
+      //
+      // The missing question costs one install: if what the claim asserts is
+      // ALREADY in the newest published tarball, then the feature did not
+      // arrive in the release being prepared, whatever the sentence says. That
+      // is decidable now, and it is exactly the shape of a date dragged forward
+      // by a bulk edit.
+      const newest = published[published.length - 1];
+      let already = false;
+      if (newest) {
+        try {
+          already = await holds(probe, install(newest));
+        } catch {
+          // An install that fails here is not evidence either way, and this
+          // check is an extra rather than the gate's purpose.
+          already = false;
+        }
+      }
+      if (already) {
+        fail(
+          `${w.file}:${w.line} dates ${label} to ${w.version}, the release being prepared, ` +
+            `but it is ALREADY in ${newest}`,
+          'So it did not arrive in this release. Either the date was dragged forward by a\n' +
+            '        bulk edit -- which is how this check came to exist -- or the sentence\n' +
+            `        describes something older. The honest date is ${newest} or earlier.`,
+        );
+        continue;
+      }
       console.log(
         `  ${label}: dated ${w.version}, which is this checkout's version and is not ` +
-          'published yet. UNVERIFIED until it is.',
+          `published yet. UNVERIFIED until it is -- and absent from ${newest ?? 'any release'}, ` +
+          'so the date is at least possible.',
       );
       continue;
     }
