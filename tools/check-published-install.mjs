@@ -33,10 +33,12 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { documentedClientConfig } from './documented-client-config.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PKG = '@filelayer/core';
@@ -325,53 +327,31 @@ if (thisCheckoutIsPublished) {
 // copy-paste configurations that disagree is a worse defect than either being
 // wrong, because a reader has no way to tell which they got.
 {
-  const CONFIG_SURFACES = [
-    'README.md',
-    'llms.txt',
-    ...readdirSync(join(ROOT, 'docs'))
-      .filter((f) => f.endsWith('.md'))
-      .map((f) => `docs/${f}`),
-  ];
+  const cfg = documentedClientConfig();
 
-  const seen = [];
-  for (const rel of CONFIG_SURFACES) {
-    const hit = /"args":\s*(\[[^\]]*\])/.exec(readFileSync(join(ROOT, rel), 'utf8'));
-    if (hit) seen.push({ rel, raw: hit[1] });
-  }
-
-  const distinct = new Set(seen.map((s) => s.raw.replace(/\s+/g, ' ')));
-  const block = seen.length > 0 ? [null, seen[0].raw] : null;
-
-  if (seen.length === 0) {
+  if (cfg.found.length === 0) {
     fail(
-      `no client \`args\` array found on any of ${CONFIG_SURFACES.length} surface(s)`,
-      'This check runs the configuration the documentation prints. If the block\n' +
-        '        moved somewhere new, add that surface here rather than leaving it\n' +
-        '        unchecked.',
+      `no client \`args\` array found on any of ${cfg.surfaces} surface(s)`,
+      'This check RUNS the configuration the documentation prints. If the block\n' +
+        '        moved somewhere new, add that surface to\n' +
+        '        tools/documented-client-config.mjs rather than leaving it unchecked.',
     );
-  } else if (distinct.size > 1) {
+  } else if (cfg.conflict) {
     fail(
-      `${distinct.size} DIFFERENT client \`args\` arrays across ` +
-        `${seen.map((s) => s.rel).join(', ')}`,
+      `${cfg.conflict.length} DIFFERENT client \`args\` arrays across ` +
+        `${cfg.found.map((f) => f.rel).join(', ')}`,
       'A reader copies one of them and cannot tell which. Make them the same, or\n' +
         '        keep the configuration on one surface and link to it from the others.',
     );
+  } else if (cfg.args === null) {
+    fail(`the client \`args\` array on ${cfg.where} is not valid JSON`, cfg.error);
   } else {
-    console.log(`  the client configuration is printed on ${seen[0].rel}.`);
+    console.log(`  the client configuration is printed on ${cfg.where}.`);
   }
 
-  if (block) {
-    let args;
-    try {
-      args = JSON.parse(block[1]);
-    } catch (e) {
-      fail(
-        `the client \`args\` array on ${seen[0].rel} is not valid JSON`,
-        String(e.message).slice(0, 120),
-      );
-      args = null;
-    }
-    if (args) {
+  if (cfg.args) {
+    {
+      const args = cfg.args;
       const r = spawnSync('npx', args, {
         cwd: work,
         encoding: 'utf8',
@@ -389,7 +369,7 @@ if (thisCheckoutIsPublished) {
       const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
       if (!/no storage is configured/.test(out)) {
         fail(
-          `the client configuration printed on ${seen[0].rel} does not start the server`,
+          `the client configuration printed on ${cfg.where} does not start the server`,
           `Ran: npx ${args.join(' ')}\n` +
             `        Exit ${r.status}. Expected the server's own refusal about storage, which\n` +
             `        is what proves the binary resolved. Got:\n` +

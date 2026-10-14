@@ -30,6 +30,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { documentedClientConfig } from './documented-client-config.mjs';
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 let failures = 0;
@@ -133,32 +135,46 @@ if (!npmPkg) {
     }
   }
 
-  // --- the argv, against the README -----------------------------------------
+  // --- the argv, against the documented configuration -----------------------
   //
-  // The README's client configuration is the one a reader pastes, and
-  // `check:published` proves THAT one starts the server. So the registry entry
-  // has to agree with it rather than being a second guess at the same command.
-  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
-  const m = /"args":\s*(\[[^\]]*\])/.exec(readme);
-  if (!m) {
+  // The client configuration a reader pastes is the one `check:published`
+  // proves starts the server. So the registry entry has to agree with it rather
+  // than being a second guess at the same command.
+  //
+  // FOUND BY SEARCH, NOT BY FILENAME. This read it out of `README.md`, as did
+  // `check-published-install.mjs`, and when the block moved to `docs/MCP.md` on
+  // 14 October 2026 both failed for the same wrong reason -- in two separate
+  // round trips, because fixing the first copy did not reveal the second. The
+  // shared helper is the fix; see its header.
+  const cfg = documentedClientConfig();
+  if (cfg.found.length === 0) {
     fail(
-      'no client `args` array found in README.md',
-      'This check compares the registry entry against it. If the block moved, teach\n' +
-        '        this file the new location rather than leaving the two unlinked.',
+      `no client \`args\` array found on any of ${cfg.surfaces} surface(s)`,
+      'This check compares the registry entry against it. If the block moved\n' +
+        '        somewhere new, add that surface to tools/documented-client-config.mjs\n' +
+        '        rather than leaving the two unlinked.',
     );
+  } else if (cfg.conflict) {
+    fail(
+      `${cfg.conflict.length} DIFFERENT client \`args\` arrays across ` +
+        `${cfg.found.map((f) => f.rel).join(', ')}`,
+      'There is no single documented command for the entry to agree with.',
+    );
+  } else if (cfg.args === null) {
+    fail(`the client \`args\` array on ${cfg.where} is not valid JSON`, cfg.error);
   } else {
-    // The README's array is what a client passes to `npx`, including the `-y`
+    // The documented array is what a client passes to `npx`, including the `-y`
     // that npx itself consumes. The registry expresses the rest as
     // packageArguments on top of its own `npx` runtime hint.
-    const readmeArgs = JSON.parse(m[1]).filter((a) => a !== '-y');
+    const docArgs = cfg.args.filter((a) => a !== '-y');
     const entryArgs = (npmPkg.packageArguments ?? []).map((a) => a.value);
-    if (readmeArgs.join(' ') !== entryArgs.join(' ')) {
+    if (docArgs.join(' ') !== entryArgs.join(' ')) {
       fail(
-        'the registry entry and the README would run different commands',
-        `README (without npx's own -y): ${readmeArgs.join(' ')}\n` +
+        `the registry entry and ${cfg.where} would run different commands`,
+        `${cfg.where} (without npx's own -y): ${docArgs.join(' ')}\n` +
           `        server.json packageArguments:  ${entryArgs.join(' ')}\n` +
-          '        Only the README one is executed by a gate, so a difference means the\n' +
-          '        registry entry is the unverified one.',
+          '        Only the documented one is executed by a gate, so a difference means\n' +
+          '        the registry entry is the unverified one.',
       );
     }
   }
@@ -166,7 +182,7 @@ if (!npmPkg) {
   if (npmPkg.runtimeHint !== 'npx') {
     fail(
       `runtimeHint is ${JSON.stringify(npmPkg.runtimeHint)}`,
-      'The README documents an `npx` invocation; the entry should say the same.',
+      'The documented configuration is an `npx` invocation; the entry should say the same.',
     );
   }
 }
@@ -218,6 +234,6 @@ if (failures > 0) {
 }
 console.log(
   `check-registry-entry: clean. server.json describes ${pkg.name}@${pkg.version} as ` +
-    `${server.name}, with ${env.size} documented variable(s) and the same argv the README ` +
-    'prints.',
+    `${server.name}, with ${env.size} documented variable(s) and the same argv ` +
+    `${documentedClientConfig().where ?? 'the documentation'} prints.`,
 );
