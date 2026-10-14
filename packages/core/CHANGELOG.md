@@ -23,6 +23,101 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.32.0] — 2026-10-14
+
+### A retried share is no longer a second share
+
+A reviewer's first criticism of this library was its read cost under many
+grants, quoting `5.9 s at 100 000` from our own README. That figure had been
+wrong since `0.17.0` and is corrected in the same release as this (see below).
+What his criticism got right, and what no number fixes, is the sentence
+underneath it: **`shares.create()` is not idempotent, so a grant id is not a
+person's access.**
+
+LIMITATIONS entry 2 has said exactly that since the beginning. Thirty releases
+of disclosure did not stop it being a trap:
+
+```
+const a = await fl.shares.create(id, { as: 'alice', withUser: 'bob' });
+const b = await fl.shares.create(id, { as: 'alice', withUser: 'bob' });  // double click
+await fl.shares.revoke(a.grantId, { as: 'alice' });                      // "removed"
+await fl.files.get(id, { as: 'bob' });                                   // still reads
+```
+
+`test/share-idempotency.test.ts` asserts that sequence directly, so the trap is
+on the record before anything claims to fix it.
+
+**`idempotencyKey`, on `share()` and `shares.create()`.** Your own name for one
+act of sharing. A repeat of the same key on the same file returns the grant that
+already exists, with its ORIGINAL expiry and cap, and `replayed: true`. Schema
+version 12 → 13: one nullable column and one unique partial index, additive,
+nothing to backfill. `migrations/013-share-idempotency.sql`, not transactional
+(`CONCURRENTLY`).
+
+The uniqueness is the mechanism, not a lookup in the engine: two concurrent
+retries race to insert, one wins, the loser catches the violation and reads the
+winner's row. A SELECT-then-INSERT has a window between the two statements and a
+double-clicked button is the traffic that finds it.
+
+**A key is scoped to the FILE, and a key reused for a different subject is
+refused** with the new `idempotency_key_reused` (409). Returning the stored
+grant because its key matched would tell the caller that this subject has access
+when the row belongs to another one — a confused deputy built out of a
+convenience feature. A key also keeps applying after its grant is revoked, so a
+retry arriving late returns the revoked grant rather than minting access that
+was already taken away.
+
+The engine never invents a key. Inventing one would mean choosing an expiry
+policy on the caller's behalf, which is the thing this library refuses to do
+everywhere else.
+
+### `revoke()` says whether that person can still read the file
+
+It returned `void`, which was the quiet half of the same trap: the call
+succeeded and said nothing about whether access had actually gone.
+
+It now returns `{ grantId, subjectType, subjectCanStillRead }`.
+`subjectCanStillRead` is computed by re-running the read decision for that actor
+after the revoke, inside the same transaction — not by counting remaining
+grants, which undercounts. A role grant with a `viewer` floor and one with an
+`editor` floor are different subjects that both authorize an editor, so "no
+grants left naming this person" can be true while the person still reads.
+`null` for a link, an anonymous, an org or a role grant: there is no single
+person to ask about, and `false` would read as "nobody can get in now".
+
+**The probe is handed the store with no chain to write to**, and that was a
+defect caught by its own test. `authorize()` is pure on an allow — the audit is
+always the caller's — but on a DENY it emits the event itself, and a revoked
+subject is precisely the deny case. The first version of this put a `file.read`
+DENY on the chain attributed to somebody who had asked for nothing: an invented
+security signal, which is worse than the convenience it bought. Diagnosed after
+reading `authorize()` and not `decideFile()` underneath it.
+
+### The grant-depth number in LIMITATIONS and the README was fourteen releases stale
+
+Both said the read cost is LINEAR in grants per subject and quoted `4.3 ms at
+five grants, 5 911 ms at a hundred thousand`. That stopped being true in
+`0.17.0`, when the short-circuit moved into SQL: `benchmark/load/RESULTS.md` H4b
+measures 30.4 ms at **two hundred** thousand concentrated grants, 1.13x the
+owner read. RESULTS.md carried both tables and said which was which; the two
+surfaces everybody reads carried only the old one.
+
+Every instance of this defect so far has been a published claim the artifact
+could not satisfy. This is one the artifact beats by a factor of 2 592, left
+standing for fourteen releases, and it cost us the first line of an outside
+assessment. A limitations list is not safe because its errors are in our
+disfavour: it is read as current either way.
+
+### `MIGRATIONS.md` was missing entry 12 entirely
+
+Migration `012` shipped with `0.17.0` and this file — the one the README tells
+an adopter to budget an upgrade against — did not mention it, in any form.
+Nothing checked that the manifest and `MIGRATIONS.md` agree, so a reader
+auditing the schema history from there would have concluded there was no change
+between `0.16.0` and `0.18.0`. Entry 12 is now written, with the measurements,
+and entry 13 describes this release. The README's "ten numbered entries" was
+also wrong; there were eleven.
+
 ## [0.31.0] — 2026-10-13
 
 ### The audit read takes a time window, and its absence was found by an eval

@@ -9,13 +9,13 @@
     "source": "github",
     "subfolder": "packages/core"
   },
-  "version": "0.31.0",
+  "version": "0.32.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@filelayer/core",
-      "version": "0.31.0",
+      "version": "0.32.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

@@ -92,6 +92,12 @@ The resource does not exist, or the caller may not know that it does. These are 
 
 **Fix.** Nothing, from the caller. Check `reason` in your own logs to tell the two apart.
 
+### `idempotency_key_reused` — 409
+
+A share supplied an `idempotencyKey` already recorded on this file for a different subject or different capabilities.
+
+**Fix.** Derive the key from the REQUEST, not from the file or the recipient. Returning the stored grant is not an option: it would report that this subject has access when the recorded grant belongs to another one.
+
 ### `org_exists` — 409
 
 An org with that external id already exists under a different owner.
@@ -200,4 +206,4 @@ The configured storage adapter cannot sign an upload.
 
 ---
 
-29 codes. Generated for `0.31.0`.
+30 codes. Generated for `0.32.0`.

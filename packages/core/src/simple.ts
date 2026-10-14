@@ -1001,6 +1001,21 @@ export interface ShareOptions extends AsOption {
   expiresIn?: number;
   maxDownloads?: number;
   password?: string;
+  /**
+   * YOUR OWN NAME FOR ONE ACT OF SHARING, so that retrying it is not a second
+   * share. Pass a request id, an outbox row id, or anything that identifies
+   * the ATTEMPT -- not the file and not the recipient.
+   *
+   * A repeat of the same key on the same file returns the grant that already
+   * exists, with its original expiry and cap, and `replayed: true`. The same
+   * key arriving for a different recipient is refused with
+   * `idempotency_key_reused` rather than resolved.
+   *
+   * Without it, a double-clicked share button gives one reader two grants, and
+   * revoking the id you are holding leaves the other live. That is the trap
+   * `unshare()` also exists to avoid; this is the other half of it.
+   */
+  idempotencyKey?: string;
   /** Share with a named user instead of minting a link. */
   withUser?: string;
   /**
@@ -1080,6 +1095,7 @@ export class SharesApi {
       ...(opts.expiresIn !== undefined ? { expiresIn: opts.expiresIn } : {}),
       ...(opts.maxDownloads !== undefined ? { maxDownloads: opts.maxDownloads } : {}),
       ...(opts.password !== undefined ? { password: opts.password } : {}),
+      ...(opts.idempotencyKey !== undefined ? { idempotencyKey: opts.idempotencyKey } : {}),
     });
   }
 

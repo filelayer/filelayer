@@ -5,7 +5,7 @@ description: Add user-file infrastructure to a SaaS application with @filelayer/
 
 # Adding user files to somebody else's SaaS
 
-> This copy describes `@filelayer/core` version 0.31.0. It ships inside the
+> This copy describes `@filelayer/core` version 0.32.0. It ships inside the
 > package, so the intended way to get it is to copy it out of your own
 > `node_modules` rather than from a repository: a skill taken from `main`
 > describes whatever is newest, which may be API your installed version does
@@ -191,12 +191,19 @@ await fl.orgs.setRole('acme', 'newcomer', 'member', { as: 'founder' });
 Wire that to the event that makes somebody a member in their system, not to
 the upload.
 
-### The share call is not idempotent
+### A grant id is not a person's access
 
-**`fl.shares.create()` is not idempotent.** Every call inserts a grant. To remove a person's access use
-`unshare(fileId, { as, user })`, which removes all of their live grants on that
-file. `revoke(grantId)` removes exactly one grant and is for a link whose
-secret you handed out.
+**`fl.shares.create()` inserts a grant on every call unless you name the call.**
+Pass `idempotencyKey` — derived from the REQUEST, not from the file or the
+recipient — and a retry returns the grant that already exists with
+`replayed: true`. Without it, a double-clicked share button gives one reader two
+grants. A key reused for a different recipient is refused with
+`idempotency_key_reused` (409), not resolved.
+
+To remove a person's access use `unshare(fileId, { as, user })`, which removes
+all of their live grants on that file. `revoke(grantId)` removes exactly one and
+is for a link whose secret you handed out; it returns `subjectCanStillRead`, so
+check it rather than assuming the revoke was enough.
 
 ## 5. Mount the byte routes — and mount the right ones
 
@@ -309,7 +316,7 @@ is a cost that arrives later:
     an id that resolves to nothing keeps its uuid and says
     `resolution: 'unresolved'`. Resolution is project-scoped and costs no extra
     query.
-  - **The window is a filter argument**, since `0.31.0`: `{ since, until }` on
+  - **The window is a filter argument**, since `0.32.0`: `{ since, until }` on
     the same call, half-open so consecutive windows tile without
     double-counting a row on the boundary. Do not pull everything under a large
     `limit` and slice it in JavaScript.

@@ -10,7 +10,7 @@
     "to and no way to verify them; they have no file. Entries 4, 7 and 9 changed",
     "no schema. The gaps are the entries that cost you nothing."
   ],
-  "expects": 12,
+  "expects": 13,
   "migrations": [
     {
       "version": 3,
@@ -103,6 +103,18 @@
       "requiresDecision": false,
       "verifiedAgainst": {
         "from": "v0.16.0",
+        "to": "v0.32.0"
+      }
+    },
+    {
+      "version": 13,
+      "file": "013-share-idempotency.sql",
+      "introducedIn": "0.32.0",
+      "title": "an idempotency key on a share, so a retry is not a second share",
+      "transactional": false,
+      "requiresDecision": false,
+      "verifiedAgainst": {
+        "from": "v0.32.0",
         "to": "HEAD"
       }
     }

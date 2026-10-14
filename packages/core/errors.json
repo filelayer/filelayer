@@ -1,6 +1,6 @@
 {
   "$comment": "Generated from packages/core/src/errors.ts by tools/build-errors.mjs. Do not edit. Every code this library can produce, with the HTTP status it always carries. The status is a function of the code: one code never means two statuses.",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "codes": {
     "ambiguous_subject": {
       "status": 400,
@@ -61,6 +61,11 @@
       "status": 404,
       "meaning": "The resource does not exist, or the caller may not know that it does. These are deliberately the same answer: a permissions system that distinguishes them is a membership oracle.",
       "fix": "Nothing, from the caller. Check `reason` in your own logs to tell the two apart."
+    },
+    "idempotency_key_reused": {
+      "status": 409,
+      "meaning": "A share supplied an `idempotencyKey` already recorded on this file for a different subject or different capabilities.",
+      "fix": "Derive the key from the REQUEST, not from the file or the recipient. Returning the stored grant is not an option: it would report that this subject has access when the recorded grant belongs to another one."
     },
     "org_exists": {
       "status": 409,

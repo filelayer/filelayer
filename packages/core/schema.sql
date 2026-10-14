@@ -544,6 +544,29 @@ CREATE TABLE file_grant (
     created_by      uuid,
     created_at      timestamptz NOT NULL DEFAULT now(),
 
+    -- THE CALLER'S OWN NAME FOR ONE ACT OF SHARING, so that retrying it is not
+    -- a second share. `share()` inserts a row every time it is called, by
+    -- design -- two calls with `expiresIn` are two legitimately different
+    -- windows and nothing here can tell those from a double-clicked button.
+    -- The consequence was a trap: one reader ends up holding two grants, and
+    -- revoking the id the caller happens to be holding leaves the other live.
+    --
+    -- A key is OPTIONAL and the engine never invents one, because inventing one
+    -- would mean choosing an expiry policy on the caller's behalf. When it is
+    -- supplied, the UNIQUE INDEX below -- not application code -- is what makes
+    -- the retry safe: two concurrent calls race to insert, one wins, the loser
+    -- reads the winner's row back. A check-then-insert in TypeScript would have
+    -- the window this does not.
+    --
+    -- Unique per FILE and for all time, revoked or not. A key that stopped
+    -- applying once its grant was revoked would mean a retry after a revoke
+    -- silently minting new access, which is the failure this exists to stop.
+    idempotency_key text CHECK (
+        idempotency_key IS NULL
+        OR (length(idempotency_key) BETWEEN 1 AND 200
+            AND idempotency_key = btrim(idempotency_key))
+    ),
+
     -- P3: cross-tenant grants are structurally unrepresentable.
     FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id) ON DELETE CASCADE,
 
@@ -670,6 +693,26 @@ CREATE INDEX grant_parent_idx  ON file_grant (parent_grant_id) WHERE parent_gran
 -- An index that excluded them would leave exactly the pre-authorization path --
 -- the one an unauthenticated caller reaches -- scanning the whole table.
 CREATE INDEX grant_secret_idx  ON file_grant (secret_hash) WHERE secret_hash IS NOT NULL;
+
+-- THE IDEMPOTENCY KEY, AND IT IS THE CONSTRAINT RATHER THAN A LOOKUP.
+--
+-- Also NOT partial on `revoked_at IS NULL`, for a different reason than the
+-- index above: a key must keep applying after its grant is revoked, or a retry
+-- that arrives late mints access the caller already took away.
+--
+-- The predicate is one the query states. `WHERE file_id = $1 AND
+-- idempotency_key = $2` implies `idempotency_key IS NOT NULL`, which the
+-- planner can prove, so this index is reachable -- which the long note above
+-- `grant_file_idx` exists to make somebody check before adding one.
+--
+-- Scoped to the FILE and not to (file, subject): the same key arriving with a
+-- DIFFERENT subject is a reused key, and the only safe answer is to refuse.
+-- Returning the stored grant because its key matched would tell a caller that
+-- Bob has access when the row says Alice does, which is a worse defect than
+-- the duplicate it was meant to prevent.
+CREATE UNIQUE INDEX grant_idempotency_idx
+    ON file_grant (file_id, idempotency_key)
+ WHERE idempotency_key IS NOT NULL;
 
 -- The group-grant path: (file, subject org) is what the membership join keys on,
 -- and it is what keeps a group grant one index probe rather than a scan.
@@ -1599,4 +1642,4 @@ CREATE TABLE file_owning_user_daily (
 -- be a fabricated history in a table whose whole purpose is to be believed. The
 -- note says which it is.
 INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
-    (12, '0.17.0', 'created whole from schema.sql at this version; migrations 1-11 were never run against this database because it never held an earlier schema');
+    (13, '0.32.0', 'created whole from schema.sql at this version; migrations 1-12 were never run against this database because it never held an earlier schema');

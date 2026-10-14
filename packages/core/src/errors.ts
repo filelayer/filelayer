@@ -70,6 +70,11 @@ export const ERROR_CODES = {
     meaning: 'An authorized-read request carried a credential in the query string.',
     fix: 'Same as `credential_in_query`, on the `/f` route. The two codes differ only by which route refused.',
   },
+  idempotency_key_reused: {
+    status: 409,
+    meaning: 'A share supplied an `idempotencyKey` already recorded on this file for a different subject or different capabilities.',
+    fix: 'Derive the key from the REQUEST, not from the file or the recipient. Returning the stored grant is not an option: it would report that this subject has access when the recorded grant belongs to another one.',
+  },
   invalid_argument: {
     status: 400,
     meaning: 'An argument was outside what the operation accepts.',

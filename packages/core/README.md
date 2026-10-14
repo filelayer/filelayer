@@ -166,7 +166,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **672 tests**, every commit, all of them against a real PostgreSQL |
+| The suite | **688 tests**, every commit, all of them against a real PostgreSQL |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends — races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **27 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -193,13 +193,16 @@ apply to you:
    window of up to 300 seconds for cacheability. **If your workload is public
    images at volume, use a bucket behind a CDN and come back when you need to
    take a URL back.**
-2. **`shares.create()` is not idempotent, so a grant id is not a person's
-   access.** Every call inserts a row: a double-clicked share button gives one
-   reader two grants, and revoking the id you happen to be holding leaves the
-   other live. Use `shares.unshare(fileId, { as, user })` to remove a named
-   person. The engine cannot dedupe for you — two calls with an `expiresIn`
-   are two legitimately different windows — and there is no bound on how many
-   live grants one subject may hold.
+2. **A grant id is not a person's access, and `shares.create()` still inserts
+   a row per call by default.** Two calls with an `expiresIn` are two
+   legitimately different windows, so the engine cannot dedupe on its own. Pass
+   an `idempotencyKey` and a retry returns the grant that already exists;
+   without one, a double-clicked share button gives one reader two grants.
+   `revoke()` now answers `subjectCanStillRead`, so revoking one grant and not
+   removing somebody's access is visible in the reply rather than in an audit
+   later. Use `shares.unshare(fileId, { as, user })` to remove a named person,
+   and note there is still no bound on how many live grants one subject may
+   hold.
 
    The *cost* of that is no longer the problem it was. Until `0.17.0` the read
    paid one recursive chain walk per grant held: 4.3 ms at five, 5 911 ms at a
@@ -217,7 +220,7 @@ apply to you:
    what they are holding. But it is a policy decision, and if you need to
    exclude the operator you need envelope encryption, which we do not have.
 5. **Alpha, nobody is running it in production including us, and the schema has
-   changed six times.** Any `0.x` → `0.(x+1)` may
+   changed seven times.** Any `0.x` → `0.(x+1)` may
    break the API, the schema or both. Every break has a numbered entry in
    [`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) and a runnable file
    under `migrations/` that CI applies to the previous release's schema and
@@ -347,9 +350,9 @@ Pre-1.0. The version is `0.MINOR.PATCH` and the promise is deliberately narrow:
   action, no signature change.
 - There is no long-term support branch and no backporting before 1.0.
 
-**The schema has changed six times.** `MIGRATIONS.md` has ten numbered entries,
-six of which carry forward SQL. Budget an upgrade against that file rather than
-against this paragraph.
+**The schema has changed seven times.** `MIGRATIONS.md` has thirteen numbered
+entries, eight of which carry forward SQL. Budget an upgrade against that file
+rather than against this paragraph.
 
 **Which version a database is at is readable off the database.**
 `schemaStatus(db)` reports where a database is, what this build expects, and

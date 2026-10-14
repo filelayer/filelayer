@@ -1035,6 +1035,82 @@ Schedule two jobs, and they are not the same job:
   trimmed unless you call it, so a deployment that never does still grows
   without bound.
 
+### Entry 12 — `0.16.0` → `0.17.0`: one index, and the cliff it removed
+
+**This entry was missing until `0.32.0`.** The migration shipped with `0.17.0`
+and `migrations/012-grant-lookup-order.sql` has been in the tarball since, with
+its own reasoning inside it — but this file, the one the README tells you to
+budget an upgrade against, did not mention it. Nothing checked that the manifest
+and this document agree. A reader auditing the schema history from here would
+have concluded there was no change between `0.16.0` and `0.18.0`.
+
+`migrations/012-grant-lookup-order.sql`. One index, built `CONCURRENTLY`, so
+the file is **not transactional**: if your runner wraps each migration in a
+transaction by default, this one has to be run outside it.
+
+```sql
+CREATE INDEX CONCURRENTLY grant_subject_order_idx
+    ON file_grant (file_id, subject_type, subject_id, created_at, id)
+    WHERE revoked_at IS NULL;
+```
+
+No column changed and no behaviour changed, so there is nothing to do in your
+application. What changed is cost. `resolveStanding` has always stopped at the
+first live grant that supplies the capability being asked for, and it stopped in
+application code — after the database had fetched every matching row and
+evaluated `grant_is_live(id)`, a recursive function declared `COST 100`, on each
+one. A subject holding *n* grants on a file paid *n* chain walks per read.
+
+Measured, delegated read: 55 ms at a thousand grants and 5 911 ms at a hundred
+thousand before; 30 ms at **two hundred** thousand after, which is 1.13x the
+owner read on the same file. Run `ANALYZE file_grant` after applying it — the
+file ends with that statement for a reason. Without statistics the planner
+estimates one row and never considers the index.
+
+### Entry 13 — `0.31.0` → `0.32.0`: an idempotency key on a share
+
+`migrations/013-share-idempotency.sql`. One nullable column and one unique
+index, built `CONCURRENTLY`, so this file is **not transactional** either.
+
+```sql
+ALTER TABLE file_grant ADD COLUMN idempotency_key text;
+
+CREATE UNIQUE INDEX CONCURRENTLY grant_idempotency_idx
+    ON file_grant (file_id, idempotency_key)
+ WHERE idempotency_key IS NOT NULL;
+```
+
+**Additive, and nothing needs backfilling.** The column is nullable with no
+default, so every existing grant reads as "no key" and every existing caller
+keeps the behaviour it had. The index covers only rows that carry a key, so it
+is empty the moment the migration finishes.
+
+What it buys you is in the API rather than the schema: `share()` and
+`shares.create()` now accept an `idempotencyKey`, and a repeat of the same key
+on the same file returns the grant that already exists instead of inserting a
+second one. Without it, a double-clicked share button gives one reader two
+grants and `revoke()` on the id you are holding leaves the other live. See
+limitation 2.
+
+The uniqueness is the mechanism, not a lookup in the engine: two concurrent
+retries race to insert, one wins, and the loser reads the winner's row back. A
+check-then-insert in application code has a window between the two statements,
+and a double-clicked button is the traffic that finds it.
+
+Two things worth knowing before you adopt the key. It is scoped to the FILE, so
+the same key arriving for a different recipient is refused with
+`idempotency_key_reused` rather than resolved — returning the stored grant would
+report that this subject has access when the row belongs to another one. And it
+keeps applying after its grant is revoked, so a retry that arrives late returns
+the revoked grant rather than minting access you have already taken away;
+re-sharing after a revoke is a new act and needs a new key.
+
+`revoke()` also stopped returning `void`. It now answers
+`subjectCanStillRead` — whether that person can still read that file — computed
+by re-running the read decision after the revoke. Ignoring the return value is
+safe; reading it is how you find out that revoking one grant did not remove
+somebody's access.
+
 ---
 
 ## 4. What is not covered here

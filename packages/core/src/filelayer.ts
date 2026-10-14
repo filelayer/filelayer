@@ -172,6 +172,32 @@ export interface ShareInput {
   expiresIn?: number;
   maxDownloads?: number;
   password?: string;
+  /**
+   * YOUR OWN NAME FOR ONE ACT OF SHARING, so that retrying it is not a second
+   * share.
+   *
+   * Without it, every call inserts a grant row -- correctly, because two calls
+   * carrying `expiresIn` are two legitimately different windows and nothing
+   * here can tell those from a double-clicked button. The cost is that one
+   * reader ends up holding several grants and `revoke()` on the id you happen
+   * to be holding leaves the others live.
+   *
+   * With it, a repeat of the same key on the same file returns the grant that
+   * already exists, including its original `expiresAt` and `maxDownloads` --
+   * so a retry does not quietly extend a window either. The uniqueness is
+   * enforced by an index, not by a lookup here, so two concurrent retries
+   * cannot both insert.
+   *
+   * Derive it from the REQUEST (a request id, an outbox row id), not from the
+   * file or the recipient: the same key arriving for a different subject is
+   * refused with `idempotency_key_reused` rather than resolved, because
+   * returning the stored grant would report that this subject has access when
+   * the row belongs to another one.
+   *
+   * A key keeps applying after its grant is revoked. Re-sharing after a revoke
+   * is a new act and needs a new key.
+   */
+  idempotencyKey?: string;
 }
 
 export interface ShareResult {
@@ -189,6 +215,53 @@ export interface ShareResult {
   maxDownloads: number | null;
   /** Non-null when this grant was delegated from another grant (P4). */
   parentGrantId: string | null;
+  /**
+   * True when an `idempotencyKey` matched a grant that already existed, so this
+   * call returned that grant and inserted nothing.
+   *
+   * Reported rather than hidden because the two outcomes are not equivalent to
+   * a caller: on a replay the `expiresAt` and `maxDownloads` are the ORIGINAL
+   * call's, the secret of a link grant is NOT returned again (only its hash was
+   * ever stored), and a notification you send on the strength of this result
+   * would be a second notification for one act of sharing.
+   */
+  replayed?: boolean;
+}
+
+/**
+ * What a revocation actually did, as opposed to what it looked like it did.
+ *
+ * `revoke()` used to return nothing, and that was the quiet half of the trap
+ * LIMITATIONS entry 2 describes. A grant id is not a person's access: the
+ * caller revokes the id they are holding, the call succeeds, and the recipient
+ * keeps reading through a second grant, an org grant, or their role. Nothing in
+ * the answer said so.
+ */
+export interface RevokeResult {
+  grantId: string;
+  /** The subject the revoked grant named. */
+  subjectType: GrantSubjectType;
+  /**
+   * CAN THAT PERSON STILL READ THIS FILE? The question a caller meant to ask.
+   *
+   * Computed by re-running the read decision for that actor on that file after
+   * the revoke, inside the same transaction, so it is the real answer and not
+   * a count of rows. A count would undercount: a role grant with a `viewer`
+   * floor and one with an `editor` floor are different subjects that both
+   * authorize an editor, so "no grants left with this subject" can be true
+   * while the person still has access.
+   *
+   * `true` here is not a defect -- owners, admins and org grants are supposed
+   * to survive revoking one share. It is information: if you meant to remove
+   * somebody, `shares.unshare(fileId, { as, user })` removes every grant naming
+   * them, and this field is how you find out that you needed it.
+   *
+   * `null` when the revoked grant named no single person -- a link, an
+   * anonymous grant, an org or a role. There is no "that person" to ask about,
+   * and answering `false` would read as "nobody can get in now", which is a
+   * different and probably false claim.
+   */
+  subjectCanStillRead: boolean | null;
 }
 
 export interface FileRecord extends FileRef {
@@ -2120,6 +2193,14 @@ export class Filelayer {
   async share(principal: Principal, fileId: string, input: ShareInput): Promise<ShareResult> {
     const capabilities = input.capabilities ?? (['read'] as Capability[]);
 
+    // TRIMMED HERE AND REFUSED IF EMPTY, rather than passed through for the
+    // schema CHECK to reject. Two reasons: the CHECK requires a trimmed value,
+    // so passing one through would turn a caller's stray space into a
+    // constraint violation whose message is about SQL; and trimming makes `" k"`
+    // and `"k"` ONE key, which is what a retry needs. The schema keeps the rule
+    // anyway, for writers that are not this engine.
+    const idempotencyKey = idempotencyKeyOrNull(input.idempotencyKey);
+
     // ONE TRANSACTION: the decision, the grant row, and the audit event that
     // records both. Previously these were three autocommit statements, so a
     // failure in the middle could leave a live grant that the audit log has no
@@ -2255,8 +2336,9 @@ export class Filelayer {
         `INSERT INTO file_grant
            (file_id, org_id, parent_grant_id, subject_type, subject_id, subject_org_id,
             subject_min_role, capabilities,
-            secret_hash, password_hash, expires_at, max_downloads, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::grant_capability[],$9,$10,$11,$12,$13)
+            secret_hash, password_hash, expires_at, max_downloads, created_by,
+            idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::grant_capability[],$9,$10,$11,$12,$13,$14)
          RETURNING id, expires_at, max_downloads`,
         [
           fileId,
@@ -2272,9 +2354,51 @@ export class Filelayer {
           expiresAt?.toISOString() ?? null,
           input.maxDownloads ?? null,
           principal.actorId,
+          idempotencyKey,
         ],
       )));
     } catch (err) {
+      // THE IDEMPOTENCY KEY IS ALREADY ON THIS FILE, and the unique index is
+      // what said so. Checked before `schemaRefusal` because this is not a
+      // refusal: it is the mechanism working.
+      //
+      // Resolved by RE-READING rather than by a SELECT before the insert. A
+      // check-then-insert has a window between the two statements, and a
+      // double-clicked button is precisely the traffic that finds it. Letting
+      // the index arbitrate means the loser of the race reads the winner's row,
+      // which is the answer either way.
+      if (idempotencyKey !== null && isIdempotencyConflict(err)) {
+        const replay = await this.#replayShare(
+          tx,
+          fileId,
+          idempotencyKey,
+          input,
+          subjectId,
+          subjectOrgId,
+          subjectMinRole,
+          capabilities,
+        );
+        await store.audit({
+          orgId: file.orgId,
+          action: 'grant.create',
+          decision: 'allow',
+          actorId: principal.actorId,
+          fileId,
+          grantId: replay.grantId,
+          // The event says a share was AUTHORIZED and no grant was created. P5
+          // wants every decision recorded, and "the same request arrived twice"
+          // is a decision; recording it as a second `grant.create` would make
+          // the trail claim a grant that does not exist.
+          context: {
+            subjectType: input.subject.type,
+            capabilities,
+            idempotencyKey,
+            replayed: true,
+          },
+        });
+        return replay;
+      }
+
       // The schema is the backstop for attenuation; if it fires, it has caught
       // something the engine let through.
       const refusal = schemaRefusal(err);
@@ -2342,6 +2466,87 @@ export class Filelayer {
    *  - it need NOT be the file's own org. Cross-ORG group grants inside one
    *    project are the whole point of the feature.
    */
+  /**
+   * The grant an `idempotencyKey` already names on this file.
+   *
+   * Reached only from the unique-violation path, so the row is known to exist.
+   * What is NOT known is that it is the same share: a key reused for a
+   * different recipient is the dangerous case, and the only safe answer to it
+   * is to refuse. Returning the stored grant because the key matched would tell
+   * the caller that this subject has access when the row belongs to another
+   * one -- a confused deputy built out of a convenience feature.
+   *
+   * Capabilities are compared as a SET, not as an array: `['read','share']` and
+   * `['share','read']` are the same authority, and a caller whose code builds
+   * the list in a different order on the retry has not asked for anything
+   * different.
+   *
+   * The secret of a link grant is deliberately NOT returned on a replay. Only
+   * its SHA-256 was ever stored, so there is nothing to return -- and that is
+   * the honest behaviour rather than a gap: a replay that handed back a working
+   * link would mean the secret existed somewhere twice.
+   */
+  async #replayShare(
+    tx: Tx,
+    fileId: string,
+    idempotencyKey: string,
+    input: ShareInput,
+    subjectId: string | null,
+    subjectOrgId: string | null,
+    subjectMinRole: string | null,
+    capabilities: Capability[],
+  ): Promise<ShareResult> {
+    const { rows } = await tx.query<{
+      id: string;
+      subject_type: string;
+      subject_id: string | null;
+      subject_org_id: string | null;
+      subject_min_role: string | null;
+      capabilities: string[] | string;
+      expires_at: string | null;
+      max_downloads: number | null;
+      parent_grant_id: string | null;
+    }>(
+      `SELECT id, subject_type, subject_id, subject_org_id, subject_min_role,
+              capabilities, expires_at, max_downloads, parent_grant_id
+         FROM file_grant
+        WHERE file_id = $1 AND idempotency_key = $2`,
+      [fileId, idempotencyKey],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      // The index said this key exists and the read says it does not. That is
+      // not a caller error and must not be reported as one.
+      throw new FilelayerError('internal', 'idempotency_row_vanished');
+    }
+
+    const storedCaps = Array.isArray(row.capabilities)
+      ? row.capabilities
+      : String(row.capabilities).replace(/^\{|\}$/g, '').split(',').filter(Boolean);
+    const sameCaps =
+      storedCaps.length === capabilities.length &&
+      [...storedCaps].sort().join(',') === [...capabilities].sort().join(',');
+
+    const sameSubject =
+      row.subject_type === input.subject.type &&
+      (row.subject_id ?? null) === subjectId &&
+      (row.subject_org_id ?? null) === subjectOrgId &&
+      (row.subject_min_role ?? null) === subjectMinRole;
+
+    if (!sameSubject || !sameCaps) {
+      throw new FilelayerError('idempotency_key_reused', 'idempotency_key_reused');
+    }
+
+    return {
+      grantId: row.id,
+      expiresAt: row.expires_at ? new Date(row.expires_at) : null,
+      maxDownloads: row.max_downloads ?? null,
+      parentGrantId: row.parent_grant_id ?? null,
+      replayed: true,
+    };
+  }
+
   async #resolveSubjectOrg(tx: Tx, orgId: string): Promise<string> {
     if (!isUuid(orgId)) throw new FilelayerError('not_found', 'unknown_subject_org');
     const { rows } = await tx.query<{ id: string }>(
@@ -2456,7 +2661,7 @@ export class Filelayer {
     return { revoked: ordered.map((g) => g.id) };
   }
 
-  async revoke(principal: Principal, grantId: string): Promise<void> {
+  async revoke(principal: Principal, grantId: string): Promise<RevokeResult> {
     if (!isUuid(grantId)) throw new FilelayerError('not_found');
     // Revocation is the operation the product is sold on, so the state change
     // and the event proving it happened must not be separable. Both are in this
@@ -2478,8 +2683,8 @@ export class Filelayer {
     // first and invert the order against every other path. Nothing is lost --
     // the UPDATE is `WHERE revoked_at IS NULL`, so a concurrent revoke is
     // idempotent rather than a lost update.
-    await this.#transaction(async (tx, store) => {
-      await this.#revokeOne(tx, store, principal, grantId);
+    return this.#transaction(async (tx, store) => {
+      return this.#revokeOne(tx, store, principal, grantId);
     });
   }
 
@@ -2497,9 +2702,14 @@ export class Filelayer {
     store: PostgresStore,
     principal: Principal,
     grantId: string,
-  ): Promise<void> {
-    const { rows } = await tx.query<{ file_id: string; org_id: string }>(
-      `SELECT file_id, org_id FROM file_grant WHERE id = $1`,
+  ): Promise<RevokeResult> {
+    const { rows } = await tx.query<{
+      file_id: string;
+      org_id: string;
+      subject_type: GrantSubjectType;
+      subject_id: string | null;
+    }>(
+      `SELECT file_id, org_id, subject_type, subject_id FROM file_grant WHERE id = $1`,
       [grantId],
     );
     const g = rows[0];
@@ -2526,6 +2736,39 @@ export class Filelayer {
       fileId: g.file_id,
       grantId,
     });
+
+    // DID THAT ACTUALLY REMOVE THEIR ACCESS? Asked after the UPDATE and inside
+    // the same transaction, so the answer accounts for the revoke that just
+    // happened and cannot be raced by a concurrent one.
+    //
+    // THE STORE IS HANDED TO IT WITH NO CHAIN TO WRITE TO, and that is not a
+    // detail. `authorize()` is pure on an ALLOW -- the audit is the caller's --
+    // but on a DENY it calls `deny()`, which emits the event itself. A revoked
+    // subject is precisely the deny case, so the obvious version of this probe
+    // put a `file.read` DENY on the chain attributed to a person who had asked
+    // for nothing: an invented security signal, which is worse than the
+    // missing convenience it was buying. The first draft of this did exactly
+    // that, on the strength of reading `authorize()` and not `decideFile`
+    // underneath it; the test below is what caught it.
+    //
+    // Fixed by withholding the capability rather than by adding a path that
+    // skips it. `Object.create` keeps the store's prototype methods, so this is
+    // the same store with `audit` overridden -- no second decision function to
+    // drift from the real one, and nothing here can be reused to serve bytes
+    // without a trail, because it returns a boolean and no grant.
+    let subjectCanStillRead: boolean | null = null;
+    if (g.subject_type === 'actor' && g.subject_id) {
+      const unlogged: PostgresStore = Object.create(store);
+      (unlogged as { audit: (e: unknown) => Promise<void> }).audit = async () => {};
+      const probe = await authorize(unlogged, { actorId: g.subject_id }, g.file_id, 'read');
+      subjectCanStillRead = probe.allow;
+    }
+
+    return {
+      grantId,
+      subjectType: g.subject_type,
+      subjectCanStillRead,
+    };
   }
 
   async listGrants(principal: Principal, fileId: string): Promise<GrantSummary[]> {
@@ -2922,6 +3165,52 @@ export interface FileListPage {
 async function lockOrgForMembershipChange(tx: Tx, orgId: string): Promise<void> {
   if (!isUuid(orgId)) return;
   await tx.query(`SELECT pg_advisory_xact_lock(audit_chain_lock_key($1::uuid))`, [orgId]);
+}
+
+/**
+ * The idempotency key as it will be stored, or null when none was supplied.
+ *
+ * The bounds match the schema CHECK rather than being decided here, so a key
+ * this accepts cannot be one the database rejects. 200 characters is room for a
+ * uuid, a prefixed outbox id, or a hash; it is not room for a payload, and a
+ * key long enough to be a payload is a sign the caller is using it as storage.
+ */
+function idempotencyKeyOrNull(raw: string | undefined): string | null {
+  if (raw === undefined) return null;
+  if (typeof raw !== 'string') {
+    throw new FilelayerError('invalid_argument', 'idempotency_key_not_a_string');
+  }
+  const key = raw.trim();
+  if (key.length === 0) {
+    // Not silently treated as "no key". A caller who computed a key and got an
+    // empty string has a bug, and answering as though they had passed nothing
+    // would hide it behind the duplicate grants this exists to prevent.
+    throw new FilelayerError('invalid_argument', 'idempotency_key_empty');
+  }
+  if (key.length > 200) {
+    throw new FilelayerError('invalid_argument', 'idempotency_key_too_long');
+  }
+  return key;
+}
+
+/**
+ * Is this error the unique index on `(file_id, idempotency_key)` firing?
+ *
+ * Narrow on purpose: the SQLSTATE for a unique violation is `23505` for every
+ * unique index on the table, and treating any of them as a replay would turn an
+ * unrelated collision into "here is your existing grant". The constraint name
+ * is what makes it specific. Postgres reports the INDEX name for a unique
+ * index, which is why this looks for `grant_idempotency_idx` and not for a
+ * constraint we never declared.
+ */
+function isIdempotencyConflict(err: unknown): boolean {
+  const e = err as { code?: unknown; constraint?: unknown; message?: unknown } | null;
+  if (!e || typeof e !== 'object') return false;
+  if (e.code !== '23505') return false;
+  if (e.constraint === 'grant_idempotency_idx') return true;
+  // PGlite surfaces the same violation with the constraint name only inside the
+  // message on some versions, so the message is a fallback rather than the test.
+  return typeof e.message === 'string' && e.message.includes('grant_idempotency_idx');
 }
 
 function secondsFromNow(seconds: number | undefined, now: number, field: string): Date | null {

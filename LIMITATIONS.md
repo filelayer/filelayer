@@ -6,7 +6,7 @@ because a limitations list that lives only in a README gets trimmed for length
 and the trimming is always in our favour.
 
 Each one is current as of
-`0.31.0`; where a limitation has been lifted since an earlier release, the
+`0.32.0`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **`Range` is answered, with three documented edges.** The shipped routes
@@ -22,13 +22,25 @@ Each one is current as of
    dropped when a download cap binds**, served whole under a `200` with
    `Accept-Ranges: none`, because charging a capped grant per seek would make
    `maxDownloads: 3` mean "three seeks".
-2. **`shares.create()` is not idempotent, so a grant id is not a person's
-   access.** Every call inserts a grant row. Use
-   `shares.unshare(fileId, { as, user })` to remove a named user's access and
-   `revoke(grantId)` only for a link whose secret you handed out. The engine
-   has no dedupe: two calls with an `expiresIn` are two legitimately different
-   windows, and it cannot tell those from a double-clicked button. There is
-   also no bound on how many live grants one subject may hold on one file.
+2. **A grant id is not a person's access.** `shares.create()` inserts a grant
+   row on every call unless you name the call: two calls with an `expiresIn` are
+   two legitimately different windows, and the engine cannot tell those from a
+   double-clicked button.
+
+   **Two things changed in `0.32.0` and neither closes it completely.** Pass an
+   `idempotencyKey` — your own name for one act of sharing, derived from the
+   request — and a repeat returns the grant that already exists, enforced by a
+   unique index rather than by a lookup, so two concurrent retries cannot both
+   insert. And `revoke()` now answers `subjectCanStillRead`, computed by
+   re-running the read decision after the revoke, so "I revoked it and they can
+   still read" is in the reply instead of in an audit a week later.
+
+   What is still on you: the key is OPTIONAL and the engine will not invent one,
+   because inventing one would mean choosing an expiry policy on your behalf.
+   `shares.unshare(fileId, { as, user })` remains the call that removes a named
+   person; `revoke(grantId)` is for a link whose secret you handed out. And
+   there is still no bound on how many live grants one subject may hold on one
+   file.
 
    **The read cost of holding many is no longer linear**, and this entry said
    it was until 14 October 2026 — fourteen releases after it stopped being
