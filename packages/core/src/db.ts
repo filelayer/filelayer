@@ -283,7 +283,7 @@ export const MIGRATIONS_PATH = join(HERE, '..', 'migrations');
  * them. `tools/check-migrations.mjs` fails the build if this disagrees with
  * `migrations/manifest.json`.
  */
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 export interface MigrationRef {
   /** The entry number in MIGRATIONS.md. */
@@ -442,6 +442,15 @@ export async function schemaStatus(db: Queryable): Promise<SchemaStatus> {
     // THE MARKERS, newest first. Each is the object that migration created, so
     // the highest one present is the newest migration this database has had.
     const markers: { version: number; because: string; sql: string }[] = [
+      // A PRESENCE, like every other marker here, and the first draft of this
+      // was not. Migration 014 renames a column and drops another, so the
+      // tempting marker was "`authz_checks` is GONE" -- which would have forced
+      // every fixture simulating an older database to recreate the column, and
+      // reported 14 for any database that merely never had it. The rename gives
+      // a positive marker instead: `bytes_written` exists only after 014.
+      { version: 14, because: `column usage_daily.bytes_written`,
+        sql: `SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'usage_daily' AND column_name = 'bytes_written'` },
       { version: 13, because: `index grant_idempotency_idx`,
         sql: `SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
                AND indexname = 'grant_idempotency_idx'` },

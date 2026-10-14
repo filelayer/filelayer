@@ -1487,7 +1487,7 @@ export class PostgresStore implements AuthzDeps {
    * THE DEFECT. Every caller's bytes went to `bytes_egressed`, including an
    * UPLOAD's. So the column whose name means "bytes we sent out, and paid a
    * per-gigabyte egress charge on" was incremented by bytes arriving, and
-   * `bytes_stored` -- declared in `schema.sql` since the beginning -- was
+   * `bytes_written` (then named `bytes_stored`) -- declared in `schema.sql` since the beginning -- was
    * written by nothing at all and was therefore zero for every org on every
    * day.
    *
@@ -1502,23 +1502,21 @@ export class PostgresStore implements AuthzDeps {
    * reads either column yet, which is why it survived: a number nobody has
    * looked at is indistinguishable from a right one.
    *
-   * `authz` carries no bytes and now says so by passing none, rather than
-   * adding a zero to a byte counter.
    */
-  async recordUsage(orgId: string, kind: 'authz' | 'read' | 'write', bytes = 0): Promise<void> {
-    const col = kind === 'authz' ? 'authz_checks' : kind === 'read' ? 'file_reads' : 'file_writes';
-    // A read sends bytes OUT. A write puts bytes IN. An authz check moves none.
-    const byteCol = kind === 'read' ? 'bytes_egressed' : kind === 'write' ? 'bytes_stored' : null;
-    if (byteCol === null) {
-      await this.db.query(
-        `INSERT INTO usage_daily (org_id, day, ${col})
-         VALUES ($1, current_date, 1)
-         ON CONFLICT (org_id, day) DO UPDATE
-           SET ${col} = usage_daily.${col} + 1`,
-        [orgId],
-      );
-      return;
-    }
+  /**
+   * `'authz'` IS GONE from this signature, with `usage_daily.authz_checks`.
+   * Nothing ever passed it, and the column it wrote to could not be filled
+   * honestly: the tenant is not in hand at the moment of the decision, and
+   * counting only the allows would omit every denial. The audit trail answers
+   * that question exactly, over a window. See the note in `schema.sql`.
+   *
+   * A parameter no caller can use correctly is worse than a missing one,
+   * because it reads as a capability.
+   */
+  async recordUsage(orgId: string, kind: 'read' | 'write', bytes = 0): Promise<void> {
+    const col = kind === 'read' ? 'file_reads' : 'file_writes';
+    // A read sends bytes OUT. A write puts bytes IN.
+    const byteCol = kind === 'read' ? 'bytes_egressed' : 'bytes_written';
     await this.db.query(
       `INSERT INTO usage_daily (org_id, day, ${col}, ${byteCol})
        VALUES ($1, current_date, 1, $2)

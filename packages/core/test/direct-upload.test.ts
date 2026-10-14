@@ -499,7 +499,7 @@ describe('direct upload', () => {
       // that predicate changes nothing about what the caller gets back, which
       // is exactly why it needs asserting here rather than there.
       const { rows: usage } = await w.db.query<{ s: string | null }>(
-        `SELECT sum(bytes_stored)::text s FROM usage_daily WHERE org_id = $1`,
+        `SELECT sum(bytes_written)::text s FROM usage_daily WHERE org_id = $1`,
         [w.org],
       );
       assert.equal(Number(usage[0]?.s ?? 0), body.byteLength, 'the upload was metered more than once');
@@ -522,7 +522,7 @@ describe('direct upload', () => {
       });
       const written = async () => {
         const { rows } = await w.db.query<{ s: string | null }>(
-          `SELECT sum(bytes_stored)::text s FROM usage_daily WHERE org_id = $1`,
+          `SELECT sum(bytes_written)::text s FROM usage_daily WHERE org_id = $1`,
           [w.org],
         );
         return Number(rows[0]?.s ?? 0);

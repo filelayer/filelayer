@@ -1600,18 +1600,61 @@ $$;
 -- watches stored bytes therefore has no signal for the load it is carrying and
 -- no way to answer "which tenant is driving this?" when latency moves.
 --
--- These counters are written best-effort and outside the delivery transaction:
--- a metering failure must never fail a request that was already authorized and
--- audited. Treat them as a capacity and attribution signal. The audit trail,
--- not this, is the record of what happened.
+-- WHAT EACH COUNTER IS WORTH, because the two halves of this table do not have
+-- the same guarantee and saying "best-effort" about all of it was wrong.
+--
+--   WRITES are exact. `recordUsage(org, 'write', bytes)` runs INSIDE the upload
+--   transaction, so an upload that rolls back does not meter and one that
+--   commits meters exactly once.
+--
+--   READS are best-effort and deliberately so. They are metered outside the
+--   transaction with the error swallowed, because a metering failure must never
+--   fail a delivery that was already authorized, charged against its download
+--   cap and audited. The consequence, stated rather than discovered: this
+--   UNDERCOUNTS, always in the payer's favour.
+--
+-- So: these are good enough to compute a RATIO -- reads per file, bytes per
+-- tenant, decisions per delivered read -- and that is what choosing a pricing
+-- unit needs. They are NOT an invoice, and an undercounting signal must not be
+-- turned into one by anybody reading this later. The audit trail is the record
+-- of what happened; this is the record of how much work it was.
+--
+-- `file_owning_user_daily` below is the exception on both counts: its primary
+-- key makes it idempotent, so it survives a retry, and nothing trims it.
 
 CREATE TABLE usage_daily (
     org_id          uuid NOT NULL REFERENCES org(id) ON DELETE CASCADE,
     day             date NOT NULL,
-    authz_checks    bigint NOT NULL DEFAULT 0,
+
+    -- THE DECISION COUNTER IS GONE, and its absence is deliberate. `authz_checks`
+    -- stood here from the beginning and nothing ever incremented it.
+    --
+    -- Wiring it needs the tenant at the moment of the decision, and that is
+    -- exactly where we do not have it: `authorize()` answers without resolving
+    -- an org, and fetching one would add a query to the hot path of every
+    -- authorized read in order to populate a counter. Metering only the ALLOWS,
+    -- where the org is already in hand, would give a numerator that silently
+    -- omits denials -- useless for the one ratio it was wanted for.
+    --
+    -- The audit trail already carries every decision WITH its tenant, and since
+    -- 0.31.0 it can be read over a half-open time window. So "decisions per
+    -- delivered read" is a query -- decisions from `audit_event`, deliveries
+    -- from `file_reads` below -- over a recent window, which is all an analysis
+    -- needs and does not care that retention trims older rows.
+    --
+    -- A weaker second measurement of something already measured exactly is not
+    -- coverage, it is a number that can disagree with the record.
+
     file_reads      bigint NOT NULL DEFAULT 0,
     file_writes     bigint NOT NULL DEFAULT 0,
-    bytes_stored    bigint NOT NULL DEFAULT 0,
+
+    -- A FLOW, NOT A STOCK, and it was called `bytes_stored` until 0.33.0. It
+    -- accumulates bytes WRITTEN that day; it is not bytes held. Read as a level
+    -- it would report a rate as though it were a quantity, and the one use this
+    -- table has is pricing arithmetic, where that error is a wrong invoice.
+    -- Bytes currently held is a SUM over `file.size_bytes`, not a row here.
+    bytes_written   bigint NOT NULL DEFAULT 0,
+
     bytes_egressed  bigint NOT NULL DEFAULT 0,
     PRIMARY KEY (org_id, day)
 );
@@ -1642,4 +1685,4 @@ CREATE TABLE file_owning_user_daily (
 -- be a fabricated history in a table whose whole purpose is to be believed. The
 -- note says which it is.
 INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
-    (13, '0.32.0', 'created whole from schema.sql at this version; migrations 1-12 were never run against this database because it never held an earlier schema');
+    (14, '0.33.0', 'created whole from schema.sql at this version; migrations 1-13 were never run against this database because it never held an earlier schema');
