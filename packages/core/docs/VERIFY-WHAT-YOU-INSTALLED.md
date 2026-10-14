@@ -69,10 +69,10 @@ Three details in there are load-bearing:
 | | |
 |---|---|
 | tests | 688 |
-| pass | 637 |
+| pass | 653 |
 | fail | **0** |
 | skipped | 35 |
-| suites | 155 |
+| suites | 157 |
 
 The lines will look different depending on your Node version and whether you are
 piping the output: Node 22 writes `# tests 688`, Node 24 writes `ℹ tests 688`,
