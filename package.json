@@ -73,6 +73,7 @@
     "stamp:verified": "node tools/stamp-verified.mjs verify",
     "stamp:release": "node tools/stamp-verified.mjs release",
     "is-published": "node tools/is-published.mjs",
-    "check:publish-guards": "node tools/check-publish-guards.mjs"
+    "check:publish-guards": "node tools/check-publish-guards.mjs",
+    "sync:copies": "node tools/sync-package-copies.mjs"
   }
 }

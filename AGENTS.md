@@ -59,6 +59,23 @@ has twice been the only unrun gate on a commit that CI then rejected — once fo
 a real defect. **A gate you could not run is not a gate that passed**, and
 saying which ones you could not run is part of saying you are done.
 
+## And verify BEFORE you push
+
+```
+npm run verify && git push
+```
+
+That order, not the other one. `git push && npm run verify` reads as a safe
+chain and is not one: it publishes first and objects afterwards, so a failing
+gate leaves a red commit on `main` that nothing can take back. It put one
+there for twenty-eight minutes on 14 October 2026, and the commands handed over
+that day were written the wrong way round three times in a row -- not copied
+from anywhere, just typed in the order the work happened in.
+
+The `&&` only protects the step that comes after it. Put the irreversible one
+last, always: this is the same shape as `npm run verify` ending in a stamp that
+`prepublishOnly` refuses to publish without.
+
 ---
 
 ## Five things that will fail the build if you do not know them
@@ -68,10 +85,20 @@ saying which ones you could not run is part of saying you are done.
    re-renders in memory and fails on a one-byte difference. Edit the markdown,
    then run `node tools/build-guides.mjs`.
 
-2. **Some files exist twice and must be byte-identical.** The npm package ships
-   its own copies of the README, the guides, `llms.txt` and others under
-   `packages/core/`. `npm run check:copies` compares them. Change one, copy it
-   to the other, in the same commit.
+2. **Some files exist twice. Run `npm run sync:copies` — never `cp`.** The npm
+   package ships its own copies of the README, the guides, `llms.txt` and 55
+   others under `packages/core/`, and `npm run check:copies` compares them.
+
+   **Most are byte-identical and a few must NOT be.** `docs/QUICKSTART.md`
+   links to `SEMANTICS.md`, which lives at `packages/core/SEMANTICS.md` here
+   and at the package root in the tarball, so the package copy carries a
+   declared rewrite. A `cp` destroys it, the two files then compare equal, and
+   the link is broken for a reader with an install and no browser.
+   `sync:copies` writes every copy from the same declarations in
+   `tools/package-copies.mjs` that the gate reads, so it cannot forget a
+   rewrite. This paragraph said "change one, copy it to the other" until
+   14 October 2026 and was broken four times in a quarter; prose lost to
+   muscle memory, so the rule is a command now.
 
 3. **Code blocks in the documentation are executed.** Every ` ```ts ` block in
    `README.md`, `docs/QUICKSTART.md` and `docs/guides/*.md` is run by
