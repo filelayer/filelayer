@@ -109,6 +109,49 @@ ALTER TABLE file_grant
             AND idempotency_key = btrim(idempotency_key))
     );
 
+-- THE VIEWS HAVE TO BE RECREATED, and this is the part that is easy to miss.
+--
+-- `live_grant` and `live_grant_recursive` are both `SELECT * FROM file_grant`,
+-- and a view FREEZES its column list at creation time. `ALTER TABLE ADD COLUMN`
+-- does not reach into them. So without these two statements an upgraded
+-- database ends up with `file_grant.idempotency_key` present and
+-- `live_grant.idempotency_key` absent, while a database created fresh from
+-- schema.sql has both -- two schemas that are supposed to be the same one.
+--
+-- Nothing today reads the column through a view, so this would have broken
+-- nothing on the day it shipped. It would have broken the next query that did,
+-- on upgraded databases only, which is the worst shape a schema defect can
+-- have. `check:migrations` is what caught it: it applies this file to the
+-- v0.31.0 schema and diffs the result against a fresh HEAD, and it reported
+-- exactly these two columns as `only in a FRESH HEAD`.
+--
+-- CREATE OR REPLACE rather than DROP and recreate: other objects depend on
+-- these views, so a DROP would need CASCADE and would take them with it.
+-- Replacing is allowed here because the change only APPENDS a column at the
+-- end, which is the one shape CREATE OR REPLACE VIEW accepts.
+CREATE OR REPLACE VIEW live_grant AS
+SELECT * FROM file_grant WHERE revoked_at IS NULL AND grant_is_live(id);
+
+CREATE OR REPLACE VIEW live_grant_recursive AS
+WITH RECURSIVE live AS (
+        SELECT g.*
+          FROM file_grant g
+         WHERE g.parent_grant_id IS NULL
+           AND g.revoked_at IS NULL
+           AND (g.expires_at IS NULL OR g.expires_at > now())
+           AND (g.max_downloads IS NULL OR g.download_count < g.max_downloads)
+           AND grant_scope_is_live(g.file_id, g.subject_id, g.created_by, g.subject_org_id)
+        UNION ALL
+        SELECT c.*
+          FROM live p
+          JOIN file_grant c ON c.parent_grant_id = p.id
+         WHERE c.revoked_at IS NULL
+           AND (c.expires_at IS NULL OR c.expires_at > now())
+           AND (c.max_downloads IS NULL OR c.download_count < c.max_downloads)
+           AND grant_scope_is_live(c.file_id, c.subject_id, c.created_by, c.subject_org_id)
+    )
+SELECT * FROM live;
+
 CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS grant_idempotency_idx
     ON file_grant (file_id, idempotency_key)
  WHERE idempotency_key IS NOT NULL;
