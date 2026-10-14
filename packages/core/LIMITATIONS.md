@@ -28,10 +28,21 @@ Each one is current as of
    `revoke(grantId)` only for a link whose secret you handed out. The engine
    has no dedupe: two calls with an `expiresIn` are two legitimately different
    windows, and it cannot tell those from a double-clicked button. There is
-   also no bound on how many live grants one subject may hold on one file, and
-   the cost of an authorized read is linear in that number --
+   also no bound on how many live grants one subject may hold on one file.
+
+   **The read cost of holding many is no longer linear**, and this entry said
+   it was until 14 October 2026 — fourteen releases after it stopped being
+   true, and a reviewer reasonably counted it against us in the meantime.
+   Until `0.17.0` the read evaluated `grant_is_live()`
+   — a recursive, `COST 100` function — once per grant held, so a subject with
+   *n* grants paid *n* chain walks for an answer the loop took from the first:
+   4.3 ms at five, 5 911 ms at a hundred thousand. Moving the short-circuit
+   into SQL removed the cliff rather than fencing it, and
    [`benchmark/load/RESULTS.md`](https://github.com/filelayer/filelayer/blob/main/benchmark/load/RESULTS.md)
-   H4b measures 4.3 ms at five grants and 5.9 s at a hundred thousand.
+   H4b now measures 30.4 ms at **two hundred** thousand concentrated grants,
+   1.13x the owner read on the same file and flat in the grant count. The
+   limitation that remains is about correctness: a grant id is not a person's
+   access.
 3. **The tiered facade `fl.files.put()` takes a `Uint8Array`**, so a file put
    through it is fully resident in memory. The core `fl.upload()` accepts a
    `ReadableStream`; use that above a few tens of megabytes.

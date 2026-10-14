@@ -193,11 +193,21 @@ apply to you:
    window of up to 300 seconds for cacheability. **If your workload is public
    images at volume, use a bucket behind a CDN and come back when you need to
    take a URL back.**
-2. **Read cost is linear in grants per subject, and nothing caps them.**
-   Measured: 4.3 ms at five grants on one file, 5.9 seconds at a hundred
-   thousand. `shares.create()` is not idempotent, so a share endpoint that
-   inserts on every click gets there. Use `shares.unshare()` and watch the
-   count.
+2. **`shares.create()` is not idempotent, so a grant id is not a person's
+   access.** Every call inserts a row: a double-clicked share button gives one
+   reader two grants, and revoking the id you happen to be holding leaves the
+   other live. Use `shares.unshare(fileId, { as, user })` to remove a named
+   person. The engine cannot dedupe for you — two calls with an `expiresIn`
+   are two legitimately different windows — and there is no bound on how many
+   live grants one subject may hold.
+
+   The *cost* of that is no longer the problem it was. Until `0.17.0` the read
+   paid one recursive chain walk per grant held: 4.3 ms at five, 5 911 ms at a
+   hundred thousand. The short-circuit moved into SQL and the cliff went with
+   it — 30.4 ms at **two hundred** thousand concentrated grants, 1.13x the
+   owner read on the same file, measured in
+   [`benchmark/load/RESULTS.md`](https://github.com/filelayer/filelayer/blob/main/benchmark/load/RESULTS.md)
+   H4b. What remains is a correctness trap, not a performance cliff.
 3. **No resumable or multipart upload.** One signed PUT, one object. A large
    upload that fails starts over, and `fl.files.put()` holds the whole body in
    memory -- only the core `fl.upload()` takes a stream, and neither imposes a
