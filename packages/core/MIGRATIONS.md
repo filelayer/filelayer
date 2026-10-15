@@ -1157,6 +1157,13 @@ ratio. Not an invoice.
 
 ### Entry 15 — `0.32.0` → `0.33.0`: `job_run`, so a job that did not run is visible
 
+**Entries 14 and 15 both ship in `0.33.0`, and 14 goes first.** This is the
+first release carrying two migrations, and the state between them has no tag
+because tags are cut per release. Apply `014-usage-columns.sql` and then
+`015-job-run.sql`; `schemaStatus(db)` lists them in that order, and each file
+refuses a database that is not in the state it expects, so running them the
+wrong way round fails loudly rather than half-applying.
+
 `migrations/015-job-run.sql`. Transactional. One table, its index, and the
 append-only guards. **Additive**: nothing reads or writes it before this
 migration, nothing needs backfilling, and a deployment that has never recorded

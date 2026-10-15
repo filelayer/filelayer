@@ -344,54 +344,111 @@ try {
   }
 
   // --- the hops -------------------------------------------------------------
+  //
+  // GROUPED BY (from, to), BECAUSE A RELEASE CAN CARRY MORE THAN ONE MIGRATION.
+  //
+  // Every release up to 0.32.0 shipped exactly one, so each file could be
+  // checked on its own: apply it to the `from` tag, compare against the `to`
+  // tag. 0.33.0 ships two -- 014 renames the metering columns, 015 adds
+  // `job_run` -- and the state BETWEEN them has no tag, because tags are cut
+  // per release and nobody tags a half-applied one.
+  //
+  // So the verifiable claim is not per file. It is per release:
+  //
+  //     v0.32.0 + 014 + 015 = HEAD
+  //
+  // Files sharing a `from`/`to` pair are therefore applied IN VERSION ORDER to
+  // one database and compared once. Each file still runs its own guard against
+  // the state it expects, which is what catches a migration written to be
+  // applied in the wrong order.
+  //
+  // The first attempt at this release set 014's `to` to its own `from` --
+  // `v0.32.0 -> v0.32.0` -- which is a claim no migration can satisfy, since
+  // none of them leaves the database where it started. The gate said FAILED
+  // (6 differences) twice and was right both times.
   const onDisk = new Set(readdirSync(MIG).filter((f) => f.endsWith('.sql')));
+  const groups = new Map();
   for (const m of manifest.migrations) {
-    if (!onDisk.has(m.file)) {
-      problems.push(`${m.file} is in manifest.json and not on disk.`);
-      continue;
+    const v = m.verifiedAgainst;
+    const key = v ? `${v.from}..${v.to}` : `__unverified__${m.file}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(m);
+  }
+  for (const [, group] of groups) {
+    group.sort((x, y) => x.version - y.version);
+  }
+
+  for (const [, group] of groups) {
+    for (const m of group) {
+      if (!onDisk.has(m.file)) {
+        problems.push(`${m.file} is in manifest.json and not on disk.`);
+        continue;
+      }
+      onDisk.delete(m.file);
     }
-    onDisk.delete(m.file);
+    await runGroup(group);
+  }
+
+  async function runGroup(group) {
+    const m = group[group.length - 1];
     const v = m.verifiedAgainst;
     if (!v) {
       problems.push(
         `${m.file} has no \`verifiedAgainst\` in manifest.json, so nothing executes it. ` +
           `A migration nobody has run is the defect this gate exists for.`,
       );
-      continue;
+      return;
     }
 
-    process.stdout.write(`  ${m.file}  ${v.from} -> ${v.to} ... `);
+    const label = group.map((g) => g.file).join(' + ');
+    process.stdout.write(`  ${label}  ${v.from} -> ${v.to} ... `);
     const before = await freshDb(schemaAt(v.from), `m${m.version}_before`);
     const after = await freshDb(schemaAt(v.to), `m${m.version}_after`);
-    const sql = readFileSync(join(MIG, m.file), 'utf8');
-    try {
-      await applyMigration(before, sql, m.transactional);
-    } catch (err) {
-      problems.push(`${m.file} failed to apply to the ${v.from} schema:\n    ${err.message}`);
-      console.log('FAILED to apply');
-      await before.end();
-      await after.end();
-      continue;
+
+    // IN VERSION ORDER, onto one database. Each file's own guard still runs
+    // against the state the files before it left, which is what catches a
+    // migration written assuming the wrong order.
+    for (const g of group) {
+      const gsql = readFileSync(join(MIG, g.file), 'utf8');
+      try {
+        await applyMigration(before, gsql, g.transactional);
+      } catch (err) {
+        problems.push(
+          `${g.file} failed to apply to the ${v.from} schema` +
+            (group.length > 1 ? ` with ${group.filter((x) => x.version < g.version).length} earlier ` +
+              `migration(s) from the same release already applied` : '') +
+            `:\n    ${err.message}`,
+        );
+        console.log('FAILED to apply');
+        await before.end();
+        await after.end();
+        return;
+      }
     }
 
     const d = differences(await fingerprint(before), await fingerprint(after), v.from, v.to);
 
-    // AND THE GUARD HAS TO FIRE on a second run. A migration that silently
+    // AND EVERY GUARD HAS TO FIRE on a second run. A migration that silently
     // re-applies is one an operator runs twice during an incident.
-    let guarded = false;
-    try {
-      await applyMigration(before, sql, m.transactional);
-    } catch (err) {
-      guarded = /already applied|duplicate/i.test(err.message);
+    for (const g of group) {
+      const gsql = readFileSync(join(MIG, g.file), 'utf8');
+      let guarded = false;
+      try {
+        await applyMigration(before, gsql, g.transactional);
+      } catch (err) {
+        guarded = /already applied|duplicate|Nothing to do/i.test(err.message);
+        if (!guarded) {
+          problems.push(
+            `${g.file} re-applied with an error that is not its own guard, so an operator who ` +
+              `runs it twice gets a confusing failure rather than "nothing to do":\n    ${err.message}`,
+          );
+        }
+      }
       if (!guarded) {
         problems.push(
-          `${m.file} re-applied with an error that is not its own guard, so an operator who ` +
-            `runs it twice gets a confusing failure rather than "nothing to do":\n    ${err.message}`,
+          `${g.file} applied a SECOND time without refusing. It needs a precondition guard.`,
         );
       }
-    }
-    if (!guarded && problems.length === 0) {
-      problems.push(`${m.file} applied a SECOND time without refusing. It needs a precondition guard.`);
     }
 
     await before.end();
@@ -399,11 +456,11 @@ try {
 
     if (d.length) {
       problems.push(
-        `${m.file} applied to ${v.from} does not produce the ${v.to} schema:\n${d.join('\n')}`,
+        `${label} applied to ${v.from} does not produce the ${v.to} schema:\n${d.join('\n')}`,
       );
       console.log(`FAILED (${d.length} difference(s))`);
     } else {
-      ran.push(`${m.file}  ${v.from} -> ${v.to}`);
+      for (const g of group) ran.push(`${g.file}  ${v.from} -> ${v.to}`);
       console.log('ok');
     }
   }

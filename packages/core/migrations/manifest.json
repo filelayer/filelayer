@@ -127,7 +127,7 @@
       "requiresDecision": false,
       "verifiedAgainst": {
         "from": "v0.32.0",
-        "to": "v0.32.0"
+        "to": "HEAD"
       }
     },
     {
