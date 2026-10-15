@@ -69,7 +69,7 @@ Three details in there are load-bearing:
 | | |
 |---|---|
 | tests | 696 |
-| pass | 653 |
+| pass | 661 |
 | fail | **0** |
 | skipped | 35 |
 | suites | 158 |
