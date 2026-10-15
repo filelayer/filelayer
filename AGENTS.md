@@ -59,11 +59,19 @@ has twice been the only unrun gate on a commit that CI then rejected — once fo
 a real defect. **A gate you could not run is not a gate that passed**, and
 saying which ones you could not run is part of saying you are done.
 
-## Check the credential FIRST, not last
+## Check the credential FIRST, not last -- but only when you are PUBLISHING
 
 ```
-npm whoami && npm run verify && git push
+npm whoami && npm run verify:release        # before a publish
+npm run verify && git push                  # everything else
 ```
+
+The first version of this section put `npm whoami` in front of every `verify`,
+and the first time that fired it blocked a `git push` -- which does not need an
+npm session at all. A guard that stops work it has no business stopping is a
+guard somebody deletes. The credential check belongs in front of the PUBLISH
+sequence and nowhere else; the read-only registry gates (`check:published`,
+`check:since`, `check:mcp-live`) need no session either.
 
 `npm whoami` costs a second. The npm session expired on two consecutive days in
 October 2026, and both times the only step in a release that fails on
