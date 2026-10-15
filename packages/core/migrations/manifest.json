@@ -10,7 +10,7 @@
     "to and no way to verify them; they have no file. Entries 4, 7 and 9 changed",
     "no schema. The gaps are the entries that cost you nothing."
   ],
-  "expects": 14,
+  "expects": 15,
   "migrations": [
     {
       "version": 3,
@@ -123,6 +123,18 @@
       "file": "014-usage-columns.sql",
       "introducedIn": "0.33.0",
       "title": "the metering columns say what they hold",
+      "transactional": true,
+      "requiresDecision": false,
+      "verifiedAgainst": {
+        "from": "v0.32.0",
+        "to": "v0.32.0"
+      }
+    },
+    {
+      "version": 15,
+      "file": "015-job-run.sql",
+      "introducedIn": "0.33.0",
+      "title": "job_run, so a job that did not run is an absence rather than silence",
       "transactional": true,
       "requiresDecision": false,
       "verifiedAgainst": {

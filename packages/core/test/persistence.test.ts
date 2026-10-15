@@ -1073,6 +1073,17 @@ describe('every public method that names a resource also names a principal', () 
       // authorize -- which is exactly why it must never be reachable from a
       // request handler.
       'collectUploadReservations',
+      // READING what those two jobs did, and classified by the same reasoning
+      // that puts them here: the reader is whoever runs the cron, and the
+      // question is whether the deployment's maintenance is happening at all.
+      //
+      // It took an `orgId` in its first draft and THIS TEST REFUSED IT, which
+      // was correct -- a tenant id with no principal is a cross-tenant read of
+      // that tenant's operational history. The parameter is gone rather than
+      // exempted, so what remains names no resource. A tenant-scoped version of
+      // the question goes through `auditReader().checkpoints()`, which enforces
+      // `read_audit`.
+      'jobStatus',
       // RETENTION, and the classification is not a formality. These two take an
       // ORG ID and no principal, so by this test's own definition they are
       // resource accessors, and the honest justification is the precedent two

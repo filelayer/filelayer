@@ -1155,6 +1155,59 @@ fail a delivery already authorized, charged against its cap and audited — so
 **reads undercount, always in the payer's favour.** Good enough to compute a
 ratio. Not an invoice.
 
+### Entry 15 — `0.32.0` → `0.33.0`: `job_run`, so a job that did not run is visible
+
+`migrations/015-job-run.sql`. Transactional. One table, its index, and the
+append-only guards. **Additive**: nothing reads or writes it before this
+migration, nothing needs backfilling, and a deployment that has never recorded
+a run reads as "never ran", which is the truth.
+
+Three of the four jobs this library asks you to schedule are limitations in
+their own right — entry 9 (`collectStorageOrphans()`), entry 4
+(`collectUploadReservations()`), entry 12 (`trimAuditChain()` and
+`sealAuditChain()`) — and each says nothing calls it for you.
+
+**The gap was the same shape as entry 11.** Truncation of recent audit events is
+undetectable because nothing records where the chain was supposed to end, so
+what remains verifies cleanly. A maintenance job has exactly that problem: a job
+that never reports is indistinguishable from one that ran and found nothing to
+do. Both are silence, and a cron that has been failing for six weeks produces
+the same silence as a clean sweep.
+
+Every run now leaves a row, **including one that failed**, and `fl.jobStatus()`
+enumerates the four jobs rather than summarising the rows — so "no rows" reads
+as "none of this has ever happened" rather than as "nothing to report".
+`lastRun: null` is the answer that was previously impossible to get.
+
+```ts
+const status = await fl.jobStatus({ staleAfter: { storage_orphans: 86_400 } });
+// [{ job: 'storage_orphans', lastRun: null, ageSeconds: null, stale: true }, ...]
+```
+
+**No cadence is assumed.** Pass `staleAfter` in seconds per job and each comes
+back `stale: true | false`; omit it and `stale` is `null`. Choosing how often
+your orphan sweep should run is a policy decision about your bucket and your
+bill, and a default here would be a number we invented turning up in your
+alerting.
+
+Three details that are decisions rather than accidents:
+
+- **No foreign key on `org_id`.** Migration 011 had to drop the one on
+  `audit_event.org_id`, because `ON DELETE CASCADE` plus the append-only rule
+  made every audited tenant undeletable. A record of work done must survive its
+  subject going away.
+- **Append-only, not hash-chained.** The same two rules and truncate guard as
+  `audit_checkpoint`, because a failed run that can be deleted is a failed run
+  that gets deleted. Not chained: this is an operational record and not
+  evidence, and chaining it would claim a property it does not have.
+- **`mode` is `'dry' | 'live'`, not a boolean.** This schema has no boolean
+  columns at all — that is how P1's "there is no `public` flag" is enforced
+  rather than stated — and both sweepers default to dry, so six weeks of
+  defaults must not read as six weeks of sweeping.
+
+No retention job of its own and it does not need one: one row per execution is
+on the order of four rows a day.
+
 ---
 
 ## 4. What is not covered here

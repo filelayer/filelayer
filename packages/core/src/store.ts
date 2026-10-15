@@ -89,6 +89,47 @@ interface DbGrant {
   matched_role?: OrgRole;
 }
 
+/**
+ * The four jobs this library asks an operator to schedule and does not run
+ * itself. A CLOSED set, and closed on purpose: `jobStatus()` has to be able to
+ * report a job that has NEVER run, which means enumerating what should have
+ * happened rather than summarising what did.
+ *
+ * Each one is a published limitation: storage orphans is entry 9, upload
+ * reservations is entry 4, and trim and seal are entry 12.
+ */
+export const JOB_NAMES = [
+  'storage_orphans',
+  'upload_reservations',
+  'audit_trim',
+  'audit_seal',
+] as const;
+
+export type JobName = (typeof JOB_NAMES)[number];
+
+export interface JobRunRecord {
+  job: JobName;
+  /** Null for the two jobs whose scope is the deployment rather than a tenant. */
+  orgId: string | null;
+  startedAt: Date;
+  finishedAt: Date;
+  outcome: 'ok' | 'failed';
+  /**
+   * `'dry'` is a real run that changed nothing. Reported separately because
+   * conflating it with a live one lets six weeks of dry runs read as six weeks
+   * of sweeping -- and both sweepers DEFAULT to dry.
+   *
+   * Text rather than a boolean because this schema has no boolean columns at
+   * all; see the note in `schema.sql`.
+   */
+  mode: 'dry' | 'live';
+  scanned: number | null;
+  acted: number | null;
+  detail: Record<string, unknown>;
+  /** Non-null exactly when `outcome` is `failed`; the schema pins that. */
+  error: string | null;
+}
+
 export interface FileRow extends FileRef {
   name: string;
   contentType: string;
@@ -1513,6 +1554,103 @@ export class PostgresStore implements AuthzDeps {
    * A parameter no caller can use correctly is worse than a missing one,
    * because it reads as a capability.
    */
+  // ---------------------------------------------------------------------------
+  // JOB RUNS
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Record that a maintenance job ran, including one that FAILED.
+   *
+   * NOT best-effort, unlike `recordUsage` below, and the difference is the
+   * point. Swallowing a metering error is right because the alternative is
+   * failing a delivery the engine already authorized. Swallowing THIS error
+   * would recreate the exact problem the table exists to solve: a job that did
+   * work and left no trace, which is indistinguishable from a job that never
+   * ran. The caller here is a scheduler, and an error is what a scheduler is
+   * for.
+   */
+  async recordJobRun(run: {
+    job: JobName;
+    orgId?: string | null;
+    startedAt: Date;
+    outcome: 'ok' | 'failed';
+    mode: 'dry' | 'live';
+    scanned?: number | null;
+    acted?: number | null;
+    detail?: Record<string, unknown>;
+    error?: string | null;
+  }): Promise<void> {
+    await this.db.query(
+      `INSERT INTO job_run
+         (job, org_id, started_at, outcome, mode, scanned, acted, detail, error)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
+      [
+        run.job,
+        run.orgId ?? null,
+        run.startedAt.toISOString(),
+        run.outcome,
+        run.mode,
+        run.scanned ?? null,
+        run.acted ?? null,
+        JSON.stringify(run.detail ?? {}),
+        // The CHECK pins error non-null exactly when the outcome is 'failed',
+        // so a caller that forgets the message gets a constraint violation
+        // rather than a row that says a job failed for no stated reason.
+        run.error ?? null,
+      ],
+    );
+  }
+
+  /**
+   * The most recent run of each job, with `null` for a job that has NEVER run.
+   *
+   * The never-ran case is the one this is for, so the enumeration comes from
+   * `JOB_NAMES` rather than from the rows: a `GROUP BY job` over an empty table
+   * returns nothing, and "no rows" would read as "nothing to report" when it
+   * means "none of this has ever happened".
+   */
+  async latestJobRuns(orgId?: string | null): Promise<Map<JobName, JobRunRecord | null>> {
+    const { rows } = await this.db.query<{
+      job: string;
+      org_id: string | null;
+      started_at: string;
+      finished_at: string;
+      outcome: string;
+      mode: string;
+      scanned: string | null;
+      acted: string | null;
+      detail: unknown;
+      error: string | null;
+    }>(
+      `SELECT DISTINCT ON (job)
+              job, org_id, started_at, finished_at, outcome, mode,
+              scanned, acted, detail, error
+         FROM job_run
+        WHERE ($1::uuid IS NULL OR org_id IS NOT DISTINCT FROM $1::uuid)
+        ORDER BY job, id DESC`,
+      [orgId ?? null],
+    );
+
+    const out = new Map<JobName, JobRunRecord | null>();
+    for (const name of JOB_NAMES) out.set(name, null);
+    for (const r of rows) {
+      if (!out.has(r.job as JobName)) continue;
+      out.set(r.job as JobName, {
+        job: r.job as JobName,
+        orgId: r.org_id,
+        startedAt: new Date(r.started_at),
+        finishedAt: new Date(r.finished_at),
+        outcome: r.outcome as 'ok' | 'failed',
+        mode: r.mode as 'dry' | 'live',
+        scanned: r.scanned === null ? null : Number(r.scanned),
+        acted: r.acted === null ? null : Number(r.acted),
+        detail: (r.detail ?? {}) as Record<string, unknown>,
+        error: r.error,
+      });
+    }
+    return out;
+  }
+
   async recordUsage(orgId: string, kind: 'read' | 'write', bytes = 0): Promise<void> {
     const col = kind === 'read' ? 'file_reads' : 'file_writes';
     // A read sends bytes OUT. A write puts bytes IN.

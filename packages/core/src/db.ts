@@ -283,7 +283,7 @@ export const MIGRATIONS_PATH = join(HERE, '..', 'migrations');
  * them. `tools/check-migrations.mjs` fails the build if this disagrees with
  * `migrations/manifest.json`.
  */
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export interface MigrationRef {
   /** The entry number in MIGRATIONS.md. */
@@ -448,6 +448,9 @@ export async function schemaStatus(db: Queryable): Promise<SchemaStatus> {
       // every fixture simulating an older database to recreate the column, and
       // reported 14 for any database that merely never had it. The rename gives
       // a positive marker instead: `bytes_written` exists only after 014.
+      { version: 15, because: `table job_run`,
+        sql: `SELECT 1 FROM pg_tables WHERE schemaname = 'public'
+               AND tablename = 'job_run'` },
       { version: 14, because: `column usage_daily.bytes_written`,
         sql: `SELECT 1 FROM information_schema.columns
                WHERE table_name = 'usage_daily' AND column_name = 'bytes_written'` },

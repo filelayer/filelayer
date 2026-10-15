@@ -122,7 +122,7 @@ command never runs.
 git status
 git branch --show-current          # -> main
 
-# The whole gate: typecheck, 688 tests, build, language, links, OpenAPI,
+# The whole gate: typecheck, 696 tests, build, language, links, OpenAPI,
 # doc samples, adversarial suite. Must exit 0.
 npm run verify
 echo "verify exit: $?"

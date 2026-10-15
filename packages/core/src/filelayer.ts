@@ -69,6 +69,8 @@ import {
   type AuditCheckpoint,
   type AuditTrimResult,
   type ResolvedAuditRow,
+  type JobName,
+  type JobRunRecord,
 } from './store.ts';
 import {
   canList,
@@ -1993,7 +1995,148 @@ export class Filelayer {
    * existed, and `audit_event.file_id` carries no foreign key precisely so
    * that the record of it survives the row.
    */
+  /**
+   * Run a maintenance job and leave a row saying it happened, either way.
+   *
+   * THE FAILURE PATH IS THE REASON THIS EXISTS. A job that threw and left no
+   * trace is indistinguishable from a job that never ran, and an operator
+   * whose cron has been failing for six weeks has no signal until the storage
+   * bill arrives. So the record is written and the original error is then
+   * rethrown, unwrapped -- the caller gets exactly the exception the job
+   * raised, and the row says `failed` with its message.
+   *
+   * If the RECORD write fails, that is also reported rather than swallowed, and
+   * it is the one case where this method throws something the job did not.
+   * `recordUsage()` swallows its errors because the alternative is failing a
+   * delivery the engine already authorized; here the caller is a scheduler and
+   * the whole product is that it finds out. A silent failure to record would
+   * put us back where we started.
+   */
+  async #recordedJob<T>(
+    job: JobName,
+    orgId: string | null,
+    run: () => Promise<T>,
+    describe: (result: T) => { mode?: 'dry' | 'live'; scanned?: number; acted?: number; detail?: Record<string, unknown> },
+  ): Promise<T> {
+    const startedAt = new Date();
+    let result: T;
+    try {
+      result = await run();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.store
+        .recordJobRun({
+          job,
+          orgId,
+          startedAt,
+          outcome: 'failed',
+          // A run that threw before deciding anything is recorded as `live`:
+          // claiming it changed nothing would be a guess, and the counts are
+          // null precisely because we do not know what it got through.
+          mode: 'live',
+          error: message.slice(0, 2000),
+        })
+        .catch((recordErr: unknown) => {
+          // BOTH failed, and both have to be said: "the job failed" and "we
+          // could not record that the job failed" are different problems for
+          // whoever is on call, and reporting one loses the other. The job's
+          // own message goes in the reason because an unrecorded failure is
+          // exactly the state this table exists to make impossible, so it must
+          // not arrive as a bare `internal`.
+          const r = recordErr instanceof Error ? recordErr.message : String(recordErr);
+          throw new FilelayerError(
+            'internal',
+            `job_failed_and_unrecorded:${job}:${message.slice(0, 200)}:${r.slice(0, 200)}`,
+          );
+        });
+      throw err;
+    }
+
+    const d = describe(result);
+    await this.store.recordJobRun({
+      job,
+      orgId,
+      startedAt,
+      outcome: 'ok',
+      mode: d.mode ?? 'live',
+      scanned: d.scanned ?? 0,
+      acted: d.acted ?? 0,
+      ...(d.detail ? { detail: d.detail } : {}),
+    });
+    return result;
+  }
+
+  /**
+   * WHAT RAN, WHAT IT FOUND, AND WHAT HAS NOT RUN AT ALL.
+   *
+   * The last entry is the one worth having. `lastRun: null` means the job has
+   * never executed against this database -- not "nothing to report", which is
+   * what silence looks like and what an operator has had to infer until now.
+   *
+   * **No cadence is assumed.** Pass `staleAfter` in seconds, per job, and each
+   * one comes back with `stale: true | false`; omit it and `stale` is `null`.
+   * The library will not invent a schedule for the same reason `share()` will
+   * not invent an idempotency key: choosing how often your orphan sweep should
+   * run is a policy decision about your bucket and your bill, and a default
+   * here would be a number we made up appearing in somebody's alerting.
+   *
+   * A FAILED run is still a run. `outcome: 'failed'` with an age of five
+   * minutes and `outcome: 'ok'` with an age of six weeks are different
+   * problems, and both are different from never.
+   *
+   * DEPLOYMENT-WIDE, AND IT TOOK AN `orgId` IN ITS FIRST DRAFT. The suite
+   * refused it: "every public method that names a resource also names a
+   * principal", and a method taking a tenant id with no principal is a
+   * cross-tenant read of that tenant's operational history. The guard was
+   * right and the parameter is gone rather than exempted.
+   *
+   * The reader here is whoever runs the cron, and their question is "is the
+   * sweep running at all" -- which is about the deployment. A tenant-scoped
+   * question ("when was MY chain sealed?") already has an authorized home in
+   * `auditReader(db).checkpoints()`, which enforces `read_audit`, and routing
+   * it through an unauthenticated accessor would have been a hole opened by a
+   * convenience.
+   */
+  async jobStatus(
+    opts: { staleAfter?: Partial<Record<JobName, number>> } = {},
+  ): Promise<
+    Array<{
+      job: JobName;
+      lastRun: JobRunRecord | null;
+      ageSeconds: number | null;
+      stale: boolean | null;
+    }>
+  > {
+    const latest = await this.store.latestJobRuns(null);
+    const now = Date.now();
+    return [...latest.entries()].map(([job, lastRun]) => {
+      const ageSeconds =
+        lastRun === null ? null : Math.max(0, Math.floor((now - lastRun.finishedAt.getTime()) / 1000));
+      const limit = opts.staleAfter?.[job];
+      return {
+        job,
+        lastRun,
+        ageSeconds,
+        // A job that has NEVER run is stale the moment you declare that it
+        // should have run by now. Reporting `null` there would hide the worst
+        // case behind the absence of data, which is the whole defect.
+        stale: limit === undefined ? null : ageSeconds === null || ageSeconds > limit,
+      };
+    });
+  }
+
   async collectUploadReservations(
+    opts: { graceSeconds?: number; limit?: number; dryRun?: boolean } = {},
+  ): Promise<{ scanned: number; collected: number; dryRun: boolean }> {
+    return this.#recordedJob(
+      'upload_reservations',
+      null,
+      () => this.#collectUploadReservationsInner(opts),
+      (r) => ({ mode: r.dryRun ? ('dry' as const) : ('live' as const), scanned: r.scanned, acted: r.collected }),
+    );
+  }
+
+  async #collectUploadReservationsInner(
     opts: { graceSeconds?: number; limit?: number; dryRun?: boolean } = {},
   ): Promise<{ scanned: number; collected: number; dryRun: boolean }> {
     const dryRun = opts.dryRun ?? true;
@@ -2058,6 +2201,34 @@ export class Filelayer {
   }
 
   async collectStorageOrphans(
+    opts: {
+      prefix?: string;
+      olderThanSeconds?: number;
+      limit?: number;
+      dryRun?: boolean;
+    } = {},
+  ): Promise<{ scanned: number; orphans: string[]; deleted: number; truncated: boolean }> {
+    return this.#recordedJob(
+      'storage_orphans',
+      null,
+      () => this.#collectStorageOrphansInner(opts),
+      (r) => ({
+        // `dryRun` DEFAULTS to TRUE on this job, so the record carries the
+        // effective value and not the argument -- a caller who passes nothing
+        // has done a dry run, and six weeks of those must not read as six
+        // weeks of sweeping.
+        mode: (opts.dryRun ?? true) ? ('dry' as const) : ('live' as const),
+        scanned: r.scanned,
+        acted: r.deleted,
+        // `truncated` means the sweep hit its limit and did NOT finish, which
+        // an operator reading "scanned 1000, deleted 3" would otherwise take
+        // for a complete pass.
+        detail: { orphansFound: r.orphans.length, truncated: r.truncated },
+      }),
+    );
+  }
+
+  async #collectStorageOrphansInner(
     opts: {
       prefix?: string;
       olderThanSeconds?: number;
@@ -2991,7 +3162,12 @@ export class Filelayer {
     orgId: string | null,
     opts: { before?: Date; keepLast?: number; note: string },
   ): Promise<AuditTrimResult> {
-    return this.store.trimAuditChain(orgId, opts);
+    return this.#recordedJob(
+      'audit_trim',
+      orgId,
+      () => this.store.trimAuditChain(orgId, opts),
+      (r) => ({ scanned: r.removed, acted: r.removed, detail: { note: opts.note } }),
+    );
   }
 
   /**
@@ -3007,7 +3183,20 @@ export class Filelayer {
    * somewhere outside this database is still the only thing that does.
    */
   async sealAuditChain(orgId: string | null, note: string): Promise<AuditCheckpoint | null> {
-    return this.store.sealAuditChain(orgId, note);
+    return this.#recordedJob(
+      'audit_seal',
+      orgId,
+      () => this.store.sealAuditChain(orgId, note),
+      (r) => ({
+        scanned: 0,
+        // A seal that returns null sealed NOTHING -- there was no chain to
+        // seal. Recorded as acted: 0 rather than as a failure, because an empty
+        // tenant is not an error, and an operator comparing runs needs to see
+        // which ones actually wrote a checkpoint.
+        acted: r ? 1 : 0,
+        detail: { sealed: r !== null, note },
+      }),
+    );
   }
 
   // ---------------------------------------------------------------------------

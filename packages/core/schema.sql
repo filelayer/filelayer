@@ -1477,6 +1477,105 @@ CREATE TRIGGER checkpoint_no_truncate
     FOR EACH STATEMENT EXECUTE FUNCTION audit_no_truncate();
 
 -- -----------------------------------------------------------------------------
+-- JOB RUNS -- so that "the sweeper did not run" is a row's ABSENCE and not
+-- silence
+-- -----------------------------------------------------------------------------
+--
+-- Three of the four things this library asks an operator to schedule are
+-- limitations in their own right: `collectStorageOrphans()` (entry 9),
+-- `collectUploadReservations()` (entry 4), and `trimAuditChain()` /
+-- `sealAuditChain()` (entry 12). Each one says, in the limitations list, that
+-- nothing calls it for you.
+--
+-- WHAT WAS MISSING IS THE SAME SHAPE AS LIMITATION 11. Truncation of the most
+-- recent audit events is undetectable because nothing records where the chain
+-- was supposed to end -- what remains verifies cleanly. A maintenance job has
+-- exactly that problem: **a job that never reports is indistinguishable from
+-- one that ran and found nothing to do.** Both are silence. An operator who
+-- believes their cron is sweeping orphans and whose cron has been failing for
+-- six weeks has no signal at all, and the first symptom is a storage bill or a
+-- table nobody can query.
+--
+-- So each run leaves a row, INCLUDING A RUN THAT FAILED. A row saying `failed`
+-- with the error is a different fact from no row at all, and collapsing the two
+-- is how "it is running" stays believed.
+--
+-- NO FOREIGN KEY ON `org_id`, deliberately, and this is a lesson rather than an
+-- oversight: migration 011 had to DROP the one on `audit_event.org_id` because
+-- `ON DELETE CASCADE` plus the append-only rule made every audited tenant
+-- undeletable. A record of work done must survive its subject going away, for
+-- the same reason an audit event must.
+--
+-- APPEND-ONLY, with the same two rules and truncate guard as
+-- `audit_checkpoint`: a failed run that can be deleted is a failed run that
+-- gets deleted. NOT hash-chained, and that is the honest line -- this is an
+-- operational record, not evidence, and chaining it would claim a property it
+-- does not have.
+--
+-- Growth is bounded in practice rather than by a policy: one row per job
+-- execution is on the order of four rows a day, so a year is under two
+-- thousand. No retention job of its own, and it does not need one.
+CREATE TABLE job_run (
+    id           bigserial PRIMARY KEY,
+
+    -- The closed set, because an open one makes `jobStatus()` unable to report
+    -- a job that has NEVER run -- it would have nothing to enumerate, and
+    -- "never ran" is the answer this table exists to give.
+    job          text NOT NULL CHECK (job IN (
+                     'storage_orphans', 'upload_reservations',
+                     'audit_trim', 'audit_seal'
+                 )),
+
+    -- NULL for the two jobs whose scope is the deployment rather than a tenant.
+    org_id       uuid,
+
+    started_at   timestamptz NOT NULL,
+    finished_at  timestamptz NOT NULL DEFAULT now(),
+
+    outcome      text NOT NULL CHECK (outcome IN ('ok', 'failed')),
+
+    -- A dry run is a real run that changed nothing, and conflating it with a
+    -- live one would let an operator believe six weeks of `dryRun: true` were
+    -- six weeks of sweeping. `collectStorageOrphans()` and
+    -- `collectUploadReservations()` both DEFAULT to dry.
+    --
+    -- TEXT AND NOT A BOOLEAN, and the suite is what insisted: `security.test.ts`
+    -- asserts that NO boolean column exists anywhere in this schema, which is
+    -- how P1's "there is no `public` flag" is enforced rather than merely
+    -- stated. The first draft of this column was `dry_run boolean` and the test
+    -- refused it.
+    --
+    -- The invariant turns out to be the better design here too. `'live'` reads
+    -- correctly in a query result; `dry_run = false` requires the reader to
+    -- remember which way round it is, and a flag whose polarity you have to
+    -- recall is the kind somebody leaves on by accident.
+    mode         text NOT NULL CHECK (mode IN ('dry', 'live')),
+
+    scanned      bigint,
+    acted        bigint,
+
+    detail       jsonb NOT NULL DEFAULT '{}'::jsonb,
+    error        text,
+
+    CONSTRAINT job_run_error_iff_failed CHECK ((outcome = 'failed') = (error IS NOT NULL)),
+    CONSTRAINT job_run_counts_iff_ok CHECK (
+        outcome <> 'ok' OR (scanned IS NOT NULL AND acted IS NOT NULL)
+    ),
+    CONSTRAINT job_run_finished_after_started CHECK (finished_at >= started_at)
+);
+
+-- "The last run of each job, per scope" is the only read this table has, and it
+-- is what `jobStatus()` asks. `id DESC` makes it an index-only walk.
+CREATE INDEX job_run_latest_idx ON job_run (job, org_id, id DESC);
+
+CREATE RULE job_run_no_update AS ON UPDATE TO job_run DO INSTEAD NOTHING;
+CREATE RULE job_run_no_delete AS ON DELETE TO job_run DO INSTEAD NOTHING;
+
+CREATE TRIGGER job_run_no_truncate
+    BEFORE TRUNCATE ON job_run
+    FOR EACH STATEMENT EXECUTE FUNCTION audit_no_truncate();
+
+-- -----------------------------------------------------------------------------
 -- THE CHAIN CANNOT FORK
 -- -----------------------------------------------------------------------------
 --
@@ -1685,4 +1784,4 @@ CREATE TABLE file_owning_user_daily (
 -- be a fabricated history in a table whose whole purpose is to be believed. The
 -- note says which it is.
 INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
-    (14, '0.33.0', 'created whole from schema.sql at this version; migrations 1-13 were never run against this database because it never held an earlier schema');
+    (15, '0.33.0', 'created whole from schema.sql at this version; migrations 1-14 were never run against this database because it never held an earlier schema');
