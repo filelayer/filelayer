@@ -88,6 +88,32 @@ $$;
 ALTER TABLE usage_daily RENAME COLUMN bytes_stored TO bytes_written;
 ALTER TABLE usage_daily DROP COLUMN authz_checks;
 
+-- AND THE NOT NULL CONSTRAINT'S NAME, which `RENAME COLUMN` does not carry.
+--
+-- PostgreSQL 17 and later catalogue NOT NULL constraints with a generated name,
+-- `<table>_<column>_not_null`. Renaming the column leaves that name pointing at
+-- a column that no longer exists by that name, so a migrated database ends up
+-- with `usage_daily_bytes_stored_not_null` where a database created fresh from
+-- schema.sql has `usage_daily_bytes_written_not_null`. Both enforce exactly the
+-- same rule on the same column; the two schemas are nonetheless not the same
+-- schema, and `check:migrations` compares catalogues rather than behaviour --
+-- correctly, because a cosmetic drift today is a confusing diff in somebody's
+-- incident tomorrow.
+--
+-- CONDITIONAL, because the constraint only has a name to rename on 17+. On an
+-- older server there is nothing catalogued, nothing to rename, and nothing that
+-- would have differed.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint
+                WHERE conname = 'usage_daily_bytes_stored_not_null') THEN
+        ALTER TABLE usage_daily
+            RENAME CONSTRAINT usage_daily_bytes_stored_not_null
+                           TO usage_daily_bytes_written_not_null;
+    END IF;
+END;
+$$;
+
 INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
     (14, '0.33.0', 'usage_daily: bytes_stored renamed to bytes_written (it is a flow), and the never-incremented authz_checks dropped')
 ON CONFLICT (version) DO NOTHING;

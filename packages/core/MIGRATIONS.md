@@ -1120,7 +1120,15 @@ nothing reads these columns yet.
 ```sql
 ALTER TABLE usage_daily RENAME COLUMN bytes_stored TO bytes_written;
 ALTER TABLE usage_daily DROP COLUMN authz_checks;
+-- and the NOT NULL constraint's generated name, which RENAME COLUMN leaves behind
 ```
+
+**`RENAME COLUMN` does not rename the `NOT NULL` constraint.** PostgreSQL 17
+and later catalogue it as `<table>_<column>_not_null`, so without the third
+statement a migrated database keeps `usage_daily_bytes_stored_not_null` while a
+fresh one has `usage_daily_bytes_written_not_null` — the same rule under two
+names, which is two schemas. The statement is conditional, because on an older
+server there is no catalogued name to rename and nothing would have differed.
 
 **`bytes_stored` was a flow with the name of a stock.** It accumulates bytes
 WRITTEN on that day; it is not bytes held. Read as a level, which the name
