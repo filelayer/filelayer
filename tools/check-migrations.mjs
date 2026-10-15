@@ -430,6 +430,17 @@ try {
 
     // AND EVERY GUARD HAS TO FIRE on a second run. A migration that silently
     // re-applies is one an operator runs twice during an incident.
+    //
+    // THE ROLLBACK IS NOT OPTIONAL, and leaving it out is how the first version
+    // of this loop reported a false failure. A transactional migration whose
+    // guard RAISES aborts its transaction, and every statement on that
+    // connection afterwards answers `current transaction is aborted` -- so
+    // re-applying 014 (guard fires, correctly) and then 015 on the same client
+    // made 015 look like it had no guard at all. The error the second file saw
+    // belonged to the first.
+    //
+    // One file per release never showed this, because there was no second file
+    // to poison.
     for (const g of group) {
       const gsql = readFileSync(join(MIG, g.file), 'utf8');
       let guarded = false;
@@ -443,6 +454,9 @@ try {
               `runs it twice gets a confusing failure rather than "nothing to do":\n    ${err.message}`,
           );
         }
+      } finally {
+        // Clears an aborted transaction; a no-op when there is none.
+        await before.query('ROLLBACK').catch(() => {});
       }
       if (!guarded) {
         problems.push(
