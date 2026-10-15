@@ -23,6 +23,158 @@ library is entitled to know what has already moved underneath it.
 
 Nothing yet.
 
+## [0.33.0] — 2026-10-15
+
+### A maintenance job that never ran is now an absence rather than silence
+
+Three of the four jobs this library asks an operator to schedule are published
+limitations in their own right: `collectStorageOrphans()` (entry 9),
+`collectUploadReservations()` (entry 4), and `trimAuditChain()` /
+`sealAuditChain()` (entry 12). Each one says, in those words, that nothing calls
+it for you.
+
+**The gap was the same shape as limitation 11.** Truncation of recent audit
+events is undetectable because nothing records where the chain was supposed to
+end, so what remains verifies cleanly. A maintenance job had exactly that
+problem: a job that never reports is indistinguishable from one that ran and
+found nothing to do. Both are silence, and a cron failing for six weeks produced
+the same silence as a clean sweep. The first symptom is a storage bill or a table
+nobody can query.
+
+Every run now leaves a row in `job_run`, **including one that failed**, and
+`fl.jobStatus()` enumerates the four jobs rather than summarising the rows:
+
+```ts
+const status = await fl.jobStatus({ staleAfter: { storage_orphans: 86_400 } });
+// [{ job: 'storage_orphans', lastRun: null, ageSeconds: null, stale: true }, ...]
+```
+
+`lastRun: null` is the answer that was previously impossible to get. "No rows"
+reads as "none of this has ever happened" rather than as "nothing to report",
+which is why the jobs are enumerated from a closed set instead of grouped out of
+the table.
+
+**No cadence is assumed.** `staleAfter` is per job, in seconds, supplied by the
+caller; omit it and `stale` is `null`. How often your orphan sweep should run is
+a decision about your bucket and your bill, and a default here would be a number
+we invented turning up in somebody's alerting — the same reason `share()` will
+not invent an idempotency key.
+
+Schema 14 → 15. `migrations/015-job-run.sql`, additive, nothing to backfill.
+
+Three decisions inside it. **No foreign key on `org_id`**, because migration 011
+had to drop the one on `audit_event.org_id`: `ON DELETE CASCADE` plus the
+append-only rule made every audited tenant undeletable, and a record of work done
+must survive its subject going away. **Append-only** with the same guards as
+`audit_checkpoint`, because a failed run that can be deleted is a failed run that
+gets deleted — and **not hash-chained**, which is the honest line: this is an
+operational record and not evidence. And **`mode` is `'dry' | 'live'`, not a
+boolean**, because both sweepers default to dry and six weeks of defaults must
+not read as six weeks of sweeping.
+
+### `usage_daily` columns say what they hold, and one of them is gone
+
+`bytes_stored` → **`bytes_written`**. It accumulates bytes written that day; it
+is not bytes held, and read as a level it reports a rate as though it were a
+quantity. Bytes held is `SUM(size_bytes)`, a query.
+
+**`authz_checks` is dropped.** It was declared when that table was created and
+nothing ever incremented it. Filling it honestly is not available: the tenant is
+not in hand at the moment of an authorization decision, so resolving one would
+add a query to the hot path of every authorized read, and metering only the
+ALLOWS gives a numerator that omits every denial. The question it was wanted for
+— decisions per delivered read — is a query across `audit_event` and
+`file_reads` over a window, which `{ since, until }` has made available since
+`0.31.0`. `migrations/014-usage-columns.sql` **refuses to run if any row ever
+counted something**, rather than trusting the claim that the column is all zeros.
+
+While we were there, the guarantees on that table got written into the schema,
+because they differ between its columns and the comment claimed they did not.
+Writes are metered inside the upload transaction and are exact. Reads are
+metered outside it with the error swallowed, so that a metering failure can
+never fail a delivery already authorized, charged against its cap and audited —
+**so reads undercount, always in the payer's favour.** Good enough to compute a
+ratio. Not an invoice.
+
+### Four things the suite and the schema refused, and all four were ours
+
+- **`jobStatus({ orgId })`.** "Every public method that names a resource also
+  names a principal" failed, correctly: a tenant id with no principal is a
+  cross-tenant read of that tenant's operational history. The parameter is gone
+  rather than exempted, and the tenant-scoped question keeps its authorized home
+  in `auditReader().checkpoints()`, which enforces `read_audit`. Same class as
+  the lookup widening that nearly shipped in `0.28.0`.
+- **A boolean column.** `security.test.ts` asserts that no boolean column exists
+  anywhere in this schema — that is how P1's "there is no `public` flag" is
+  enforced rather than merely stated.
+- **A test asserting `MemoryStorage` cannot list**, written to force a failure
+  path. It lists perfectly well; it is a Map. The failure path now uses the NaN
+  hazard the source documents, which is real.
+- **Two identical ternary branches**, written and then caught on re-reading.
+
+### `check:migrations` learned that a release can carry more than one migration
+
+`0.33.0` is the first release to ship two, and the state between them has no git
+tag — tags are cut per release and nobody tags a half-applied one. Files sharing
+a `from`/`to` pair are now applied in version order to one database and compared
+once, because the verifiable claim is `v0.32.0 + 014 + 015 = HEAD` rather than
+anything about either file alone.
+
+A second defect in the same gate, found immediately after: a transactional
+migration whose guard RAISES aborts its transaction, so re-applying 014 left the
+connection poisoned and 015's re-application reported an error that belonged to
+014. One file per release had never shown either problem, because there was never
+a second file to group or to poison.
+
+### `check:since` discovers its surfaces, and `bump:version` exists
+
+The surface list for dated claims was sixteen hand-written paths, and
+`skills/filelayer-integration/evals/MEASUREMENT.md` was not among them — which
+is why a bulk version replace turned its "Added in `0.31.0`" into `0.32.0`, a
+false statement about our own history, in a file that ships in the tarball.
+Corrected. The list is now every tracked `.md` and `.txt` minus six declared
+exemptions: 16 → 79 surfaces, 34 → 52 dated claims, 26 verified against
+published tarballs. The widening found six claims that had never been checked,
+on LIMITATIONS, TRUST and two example READMEs, and three of the six probes
+written for them were wrong and were refused.
+
+`npm run bump:version` replaces the hand-written find-and-replace that caused
+that corruption and two others. A release touches thirty files and three
+categories of string that look identical: a current-state claim (replace), a
+dated historical claim (never), and a git ref (never — and the discriminator is
+that a `v` prefix means a tag). It reports every line it declines to touch, and
+it does not touch the counts, which come from a measured run.
+
+Its own first use then over-replaced narrative history in three source comments,
+so it now leaves `.mjs` and `.ts` alone entirely. The reasoning is which
+direction of error is detectable: under-replacing is caught by
+`check:versions`, over-replacing is caught by nothing.
+
+### `check:migration-docs`: every migration has an entry, and the reverse
+
+Migration `012` shipped with `0.17.0` and `MIGRATIONS.md` — the file the README
+tells an adopter to budget an upgrade against — did not mention it in any form,
+for fifteen releases. `check:migrations` executes every migration against the
+schema it upgrades, so the file was never in doubt; nothing compared the files
+against their documentation. Both directions now, plus `manifest.expects`
+against the highest accounted version. It caught a missing entry on its first
+run, written twenty minutes earlier.
+
+### Fixed — the grant-depth figure was fourteen releases stale
+
+`LIMITATIONS.md` entry 2 and the README both said the read cost is **linear** in
+grants per subject, quoting 4.3 ms at five grants and 5 911 ms at a hundred
+thousand. That stopped being true in `0.17.0`:
+`benchmark/load/RESULTS.md` H4b measures 30.4 ms at **two hundred** thousand
+concentrated grants, 1.13x the owner read. RESULTS.md carried both tables and
+said which was which; the two surfaces everybody reads carried only the old one.
+
+Every instance of this defect so far has been a published claim the artifact
+could not satisfy. This is one the artifact beats by a factor of 2 592, left
+standing for fourteen releases, and it cost us the first line of an outside
+assessment. A limitations list is not safe because its errors are in our
+disfavour: it is read as current either way.
+
 ## [0.32.0] — 2026-10-14
 
 ### A retried share is no longer a second share

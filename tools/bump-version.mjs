@@ -118,6 +118,36 @@ const NEVER = [
 ];
 
 /**
+ * SOURCE AND TOOLING ARE NEVER BULK-EDITED, and this rule exists because the
+ * first real use of this tool broke three of its own comments.
+ *
+ * Bumping 0.32.0 -> 0.33.0 it rewrote, silently and in files it had no business
+ * touching:
+ *
+ *     "Releasing 0.32.0 took four attempts"      -> 0.33.0. False.
+ *     "Every release up to 0.32.0 shipped one"   -> a statement about history.
+ *     "Preparing 0.32.0 I replaced 0.31.0 with 0.32.0"  -> the account of a
+ *                                                   defect, and its example.
+ *
+ * The `DATED` patterns below are prose-shaped -- "since X", "present in X" --
+ * and narrative history does not use those words. Adding "Releasing X" and
+ * "up to X" would be whack-a-mole: the distinguishing feature is SEMANTIC and
+ * no pattern decides it.
+ *
+ * WHAT DECIDES IT IS WHICH DIRECTION OF ERROR IS DETECTABLE. Under-replacing is
+ * caught by `check:versions`, which sweeps every tracked document and fails on
+ * a stale current-state claim. Over-replacing is caught by nothing, unless the
+ * line happens to be a declared `since` claim -- which is exactly how the
+ * 0.32.0 corruption survived into a published tarball.
+ *
+ * So this tool under-replaces on purpose. A version string in `.mjs` or `.ts`
+ * is either code -- a claim's `match`, a probe, a constant -- or a comment
+ * narrating history, and neither should move because a release happened. They
+ * are reported instead, and `check:versions` names any it was wrong to skip.
+ */
+const NEVER_SOURCE = /\.(mjs|ts|cjs|mts)$/;
+
+/**
  * A line that dates something to a version is a statement about the past.
  *
  * Generous on purpose: a false negative here falsifies our own history on a
@@ -146,19 +176,46 @@ const tracked = execFileSync('git', ['ls-files', '-z'], {
   .filter((f) => /\.(md|txt|html|json|ts|mjs|sql|yml|yaml)$/.test(f))
   .filter((f) => existsSync(join(ROOT, f)));
 
-// A `v` prefix means a git tag. Matching the bare version inside one is the
-// whole of defect 3, so the lookbehind is the fix and it is the only clever
-// thing in this file.
-const BARE = new RegExp(`(?<![\\w.v])${from.replace(/\./g, '\\.')}(?![\\w.])`, 'g');
+// THREE SHAPES A VERSION TAKES IN THIS REPOSITORY, and the first attempt got
+// two of them wrong. All three errors were UNDER-replacements that
+// `check:versions` then named, which is the trade this tool is built around.
+//
+//   `0.32.0`     the bare claim.
+//   `v0.32.0`    a git tag in manifest.json -- and ALSO how the website prints
+//                a version ("v0.32.0. The schema can still change"). The `v` is
+//                not the discriminator; the FILE is. Refs live in
+//                manifest.json's `verifiedAgainst` and, verified by grep,
+//                nowhere else.
+//   `0.32.x`     the supported line in SECURITY.md, which has to move or the
+//                policy declares the current release unsupported.
+//
+// And the lookahead: `(?![\w.])` rejected a trailing period, so "version
+// 0.32.0." at the END OF A SENTENCE did not match -- which is where a version
+// in prose usually sits. A following `.` is only part of the number when a
+// digit follows it.
+const esc = from.replace(/\./g, '\\.');
+const line = from.replace(/\.\d+$/, '').replace(/\./g, '\\.');
+const BARE = new RegExp(`(?<![\\w.])v?${esc}(?!\\w)(?!\\.\\d)`, 'g');
+const BARE_LINE = new RegExp(`(?<![\\w.])${line}\\.x(?!\\w)`, 'g');
+
+/** `manifest.json` is the one file where `v<version>` is a ref, not a claim. */
+const REFS_LIVE_HERE = 'packages/core/migrations/manifest.json';
 
 const changed = [];
 const skipped = [];
 const skippedFiles = [];
+const skippedSource = [];
 
 for (const rel of tracked) {
+  if (NEVER_SOURCE.test(rel)) {
+    const text = readFileSync(join(ROOT, rel), 'utf8');
+    const hits = text.split('\n').filter((l) => BARE.test(l) || BARE_LINE.test(l)).length;
+    if (hits > 0) skippedSource.push({ rel, hits });
+    continue;
+  }
   if (NEVER.includes(rel)) {
     const text = readFileSync(join(ROOT, rel), 'utf8');
-    const hits = text.split('\n').filter((l) => BARE.test(l)).length;
+    const hits = text.split('\n').filter((l) => BARE.test(l) || BARE_LINE.test(l)).length;
     if (hits > 0) skippedFiles.push({ rel, hits });
     continue;
   }
@@ -168,13 +225,20 @@ for (const rel of tracked) {
   let touched = 0;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!BARE.test(line)) continue;
-    if (DATED.some((re) => re.test(line))) {
-      skipped.push({ rel, line: i + 1, text: line.trim().slice(0, 110) });
+    const text = lines[i];
+    if (!BARE.test(text) && !BARE_LINE.test(text)) continue;
+    if (DATED.some((re) => re.test(text))) {
+      skipped.push({ rel, line: i + 1, text: text.trim().slice(0, 110) });
       continue;
     }
-    lines[i] = line.replace(BARE, target);
+    // In the manifest a `v`-prefixed version is a git ref the migration gate
+    // checks out, so only the bare form moves there.
+    const pattern = rel === REFS_LIVE_HERE
+      ? new RegExp(`(?<![\\w.v])${esc}(?!\\w)(?!\\.\\d)`, 'g')
+      : BARE;
+    lines[i] = text
+      .replace(pattern, (m) => (m.startsWith('v') ? `v${target}` : target))
+      .replace(BARE_LINE, `${target.replace(/\.\d+$/, '')}.x`);
     touched++;
   }
 
@@ -209,6 +273,14 @@ for (const c of changed) console.log(`    ${c.rel}  (${c.touched} line(s))`);
 if (skippedFiles.length > 0) {
   console.log(`\n  left alone entirely, because they are history:`);
   for (const f of skippedFiles) console.log(`    ${f.rel}  (${f.hits} mention(s) of ${from})`);
+}
+
+if (skippedSource.length > 0) {
+  console.log(
+    '\n  left alone because they are SOURCE, not prose -- a version there is code or' +
+      '\n  narrative history, and over-replacing is the error nothing catches:',
+  );
+  for (const f of skippedSource) console.log(`    ${f.rel}  (${f.hits} mention(s) of ${from})`);
 }
 
 if (skipped.length > 0) {

@@ -173,5 +173,5 @@ END;
 $$;
 
 INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
-    (13, '0.32.0', 'an idempotency key on file_grant, so a retried share returns the same grant instead of minting a second one')
+    (13, '0.33.0', 'an idempotency key on file_grant, so a retried share returns the same grant instead of minting a second one')
 ON CONFLICT (version) DO NOTHING;

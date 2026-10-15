@@ -4,7 +4,7 @@ The exact commands to make this repository public and to publish
 `@filelayer/core` to npm.
 
 > **This runbook was written for the first public release, `0.3.0`.** The
-> repository is public and the version being published is **`0.32.0`**. Steps 0,
+> repository is public and the version being published is **`0.33.0`**. Steps 0,
 > 3, 4 and 6 have been updated to that version so the commands are
 > copy-pasteable; steps 1 and 2 are the one-time org and repository setup and
 > are kept as the record of what was done. Everything else — the gate, the
@@ -77,7 +77,7 @@ or that the fourth VALIDATES the second.
 >
 > **Exit 1 is the one to read carefully, and 3 exists because of it.** On
 > 13 October 2026, four minutes after `npm publish` printed
-> `+ @filelayer/core@0.32.0`, this tool said *"is NOT published. Both the
+> `+ @filelayer/core@0.33.0`, this tool said *"is NOT published. Both the
 > packument and the tarball agree."* Both replicas were equally behind. Two
 > reads of a system that propagates in order are not two witnesses while
 > neither has arrived — agreement that something is absent is evidence only
@@ -711,7 +711,7 @@ dig +short TXT filelayer.dev | grep MCPv1
 > The GitHub device flow grants the `io.github.<user>/*` namespace and nothing
 > else. `dev.filelayer/core` is a DNS-namespaced name, so it is authorized by
 > the TXT record above and only by it. This happened on 13 October 2026 while
-> publishing `0.32.0`, from this runbook, by someone who had read it — the DNS
+> publishing `0.33.0`, from this runbook, by someone who had read it — the DNS
 > command was three lines below and the GitHub one was in muscle memory. The
 > 403 is the registry working: it refused a name the credential did not cover.
 > Nothing was half-published, because the login and the publish are separate
