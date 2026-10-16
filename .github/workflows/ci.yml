@@ -320,6 +320,12 @@ jobs:
       - name: Every migration has an entry in MIGRATIONS.md, and the reverse
         run: npm run check:migration-docs
 
+      # A guide that nothing links is a guide nobody reads. Discovered from
+      # docs/guides/, not from a list -- the fifth guide was absent from
+      # llms.txt and from the index for several releases and nothing asked.
+      - name: Every guide is linked by llms.txt, the index and the tarball
+        run: npm run check:guide-register
+
       # Register density on the public prose. See tools/check-register.mjs for
       # what it measures and what a clean run does not mean.
       - name: Register density on the public surfaces

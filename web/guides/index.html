@@ -110,6 +110,14 @@
 <p>The usual answer is redirect to a presigned URL, and it is right about cost. What it leaves out is that <strong>a redirect's revocation window is the URL's remaining TTL</strong> — not a moment, not the next request, and no operation shortens it. Measured against proxying, where it is one request.</p>
 <p>And the bill that arrives with proxying: <code>Range</code> is now yours, and <strong>four of the five ranges that look like they deserve a <code>416</code> must be answered <code>200</code> instead.</strong> The whole table, measured, including the multi-range case whose natural implementation is a silent data-corruption bug.</p>
 <p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/serving-private-files.proof.mjs" rel="noopener"><code>serving-private-files.proof.mjs</code></a></p>
+<h3 id="how-do-i-revoke-a-share-after-the-recipient-has-shared-it-onwardsrevoking-delegated-accessmd"><a href="/guides/revoking-delegated-access">How do I revoke a share after the recipient has shared it onwards?</a></h3>
+<p>Most writing about sharing stops at the first hop. <strong>Whether you can revoke onward access is decided when you store the share, not when you revoke it</strong>: a re-share that writes an independent row cannot be undone later, however good your revoke endpoint is. One column and one predicate, and then the five ways that pairing is got wrong — including the one a capability check alone lets through, where a consultant's read access becomes a public link while attenuation is obeyed the whole way.</p>
+<p>Measured: a root capped at 5 delegating three children of 5, redeemed fifty times concurrently, serves exactly 5.</p>
+<p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/revoking-delegated-access.proof.mjs" rel="noopener"><code>revoking-delegated-access.proof.mjs</code></a></p>
+<h3 id="how-do-i-prove-who-accessed-a-filetamper-evident-file-auditmd"><a href="/guides/tamper-evident-file-audit">How do I prove who accessed a file?</a></h3>
+<p>An <code>access_log</code> answers <em>what did we record</em>. A compliance auditor asks <em>could that have been changed</em>. A hash chain closes most of the gap and <strong>detects three of the four things that can be done to a log</strong> — not truncation of the most recent events, which is structural and is why the head has to be pinned outside the database.</p>
+<p>Measured, including the defect almost every implementation ships: a SELECT-then-INSERT append forks under concurrent writers, so an honest log reads as tampered with — and a real tamper is then indistinguishable from routine concurrency.</p>
+<p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/tamper-evident-file-audit.proof.mjs" rel="noopener"><code>tamper-evident-file-audit.proof.mjs</code></a></p>
 <hr>
 <h2 id="running-the-proofs">Running the proofs</h2>
 <p>Nothing to install and no server to start: <code>embedded-postgres</code> runs a real PostgreSQL as an ordinary user process and cleans up after itself.</p>
@@ -117,7 +125,9 @@
 node docs/guides/expiring-and-revocable-file-links.proof.mjs
 node docs/guides/multi-tenant-file-access.proof.mjs
 node docs/guides/deleting-files-and-orphaned-objects.proof.mjs
-node docs/guides/serving-private-files.proof.mjs</code></pre>
+node docs/guides/serving-private-files.proof.mjs
+node docs/guides/revoking-delegated-access.proof.mjs
+node docs/guides/tamper-evident-file-audit.proof.mjs</code></pre>
 <p>The last one needs no PostgreSQL server at all: it runs the database in-process and takes about five seconds.</p>
 <p>Each prints what it measured and exits non-zero if any number fails to reproduce. Re-run them before believing any of this.</p>
 <hr>

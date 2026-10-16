@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/tamper-evident-file-audit.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>How do I prove who accessed a file? · Filelayer</title>
+<meta name="description" content="An access_log table answers a different question from the one you will be asked. It answers what did we record. A compliance auditor, a customer's security questionnaire, or a…">
+
+<link rel="canonical" href="https://filelayer.dev/guides/tamper-evident-file-audit">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/tamper-evident-file-audit">
+<meta property="og:title" content="How do I prove who accessed a file?">
+<meta property="og:description" content="An access_log table answers a different question from the one you will be asked. It answers what did we record. A compliance auditor, a customer's security questionnaire, or a…">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How do I prove who accessed a file?">
+<meta name="twitter:description" content="An access_log table answers a different question from the one you will be asked. It answers what did we record. A compliance auditor, a customer's security questionnaire, or a…">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How do I prove who accessed a file?",
+  "description": "An access_log table answers a different question from the one you will be asked. It answers what did we record. A compliance auditor, a customer's security questionnaire, or a…",
+  "url": "https://filelayer.dev/guides/tamper-evident-file-audit",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.33.0"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>How do I prove who accessed a file?</h1>
+<p>An <code>access_log</code> table answers a different question from the one you will be asked. It answers <em>what did we record</em>. A compliance auditor, a customer's security questionnaire, or a regulator asks <em>could that record have been changed</em> — and a table anybody with database access can <code>UPDATE</code> has no answer.</p>
+<p>This guide is about closing that gap, what closing it actually buys, and the three things it does not buy. It is written to be useful whether or not you use Filelayer: the schema, the function and the verification below are yours to copy, and the script beside this page reproduces every claim against a real PostgreSQL in about thirty seconds — including the one claim that is a limitation rather than a feature.</p>
+<hr>
+<h2 id="the-short-answer">The short answer</h2>
+<p>Give every event a hash over its own contents <strong>and the previous event's hash</strong>. Then the log is a linked list in which changing any one row invalidates every row after it, so an edit cannot be made quietly — only visibly.</p>
+<p>That gets you three of the four things that can be done to a log:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>What was done</th><th>Detected by replay</th><th>How</th></tr></thead>
+<tbody><tr><td>An event was edited</td><td><strong>yes</strong></td><td>its recomputed hash no longer matches</td></tr>
+<tr><td>An event was removed from the middle</td><td><strong>yes</strong></td><td>its successor's <code>prev_hash</code> points at nothing</td></tr>
+<tr><td>The first event was removed</td><td><strong>yes</strong></td><td>the new first row has a non-null <code>prev_hash</code></td></tr>
+<tr><td>The most recent n events were removed</td><td><strong>no</strong></td><td>what remains is a perfectly consistent chain</td></tr></tbody>
+</table></div>
+<p>That last row is the honest part of this guide, and most of the design work is about it. It is structural, not an oversight waiting to be fixed: replay walks forward, and nothing inside a table can record where that table was supposed to end. An anchor kept in the same database is editable by exactly the person you are defending against.</p>
+<hr>
+<h2 id="the-table">The table</h2>
+<pre><code class="lang-sql">CREATE TABLE audit_event (
+    id          bigserial PRIMARY KEY,
+    org_id      uuid,                  -- NULL = the system chain, see below
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    action      text NOT NULL,         -- file.read, grant.revoke, member.add, ...
+    decision    text NOT NULL CHECK (decision IN ('allow', 'deny')),
+    reason      text,                  -- why denied; null when allowed
+    actor_id    uuid,
+    file_id     uuid,
+    grant_id    uuid,
+    ip          inet,
+    user_agent  text,
+    context     jsonb NOT NULL DEFAULT '{}'::jsonb,
+
+    prev_hash   text,
+    hash        text NOT NULL
+);</code></pre>
+<p>Three decisions in there are worth defending, because each of them was a defect first.</p>
+<h3 id="record-denials-not-just-successes">Record denials, not just successes</h3>
+<p>A log of successful reads tells you what happened. A log that also records refusals tells you what somebody <em>tried</em>, which is the half an incident is actually about. <code>decision</code> and <code>reason</code> exist so that a sweep of file ids leaves three thousand rows rather than silence.</p>
+<h3 id="no-foreign-keys-on-actorid-fileid-orgid">No foreign keys on <code>actor_id</code>, <code>file_id</code>, <code>org_id</code></h3>
+<p>This looks like laxity and is the opposite. Two reasons, both learned the hard way.</p>
+<p><strong>The log must be able to record an identifier that does not exist</strong>, because recording probes at identifiers that do not exist is its job. With <code>actor_id REFERENCES actor(id)</code>, a caller presenting a well-formed but unregistered id could not be audited at all: the INSERT raised, the exception propagated out of the authorization call, the denial was never recorded, and the caller got a 500 where a registered-but-unauthorized caller got a 404. The error surface became an actor-existence oracle, and an id sweep left no trace — which is precisely the thing the table exists to catch.</p>
+<p><strong>And <code>ON DELETE SET NULL</code> erases attribution.</strong> An audit log that forgets who did something is not an audit log. Deleting a user must not rewrite what they did.</p>
+<p>There is a sharper version of this with <code>ON DELETE CASCADE</code> on <code>org_id</code>, and it is worth knowing before you meet it. Combine a cascade with the append-only rule below and the cascade is itself a DELETE, the rule rewrites it to nothing, and PostgreSQL finds that its own referential-integrity check returned something impossible:</p>
+<pre><code>referential integrity query on &quot;org&quot; from constraint
+&quot;audit_event_org_id_fkey&quot; on &quot;audit_event&quot; gave unexpected result</code></pre>
+<p>So a tenant that had ever been audited — which is every tenant, because creating one is an audited action — <strong>could not be deleted at all</strong>. Not soft-deleted and retained: the statement raised. Nobody hits that until the first erasure request, which is the worst possible moment to meet a database error.</p>
+<h3 id="a-nullable-orgid-which-is-a-security-feature">A nullable <code>org_id</code>, which is a security feature</h3>
+<p>A probe against a file id that does not exist has no tenant to charge it to. Guessing one leaks existence; dropping the event makes the single most characteristic reconnaissance pattern against an object store invisible. So such events go to a <strong>system chain</strong> (<code>org_id IS NULL</code>) that is chained and verifiable like any other and that no tenant-facing API can read.</p>
+<hr>
+<h2 id="appending-and-the-defect-almost-every-implementation-ships">Appending, and the defect almost every implementation ships</h2>
+<p>The obvious way to append is two statements: read the last hash, then insert.</p>
+<pre><code class="lang-sql">SELECT hash FROM audit_event WHERE org_id = $1 ORDER BY id DESC LIMIT 1;
+-- ... compute ...
+INSERT INTO audit_event (...) VALUES (...);</code></pre>
+<p>That is atomic if and only if there is exactly one writer. With two — one per API process, several per box — both read the same <code>prev_hash</code> and both insert. <strong>The chain forks.</strong> Verification then reports a <code>prev_hash</code> mismatch at the second of the two, so a perfectly honest log looks tampered with, and, worse, a genuinely tampered log is no longer distinguishable from routine concurrency.</p>
+<p>Tamper evidence that cries wolf is not tamper evidence.</p>
+<p>It is tempting to write this down as a single-writer limitation. Any deployment you would want will have concurrent writers, so the limitation is a defect.</p>
+<h3 id="the-fix-and-why-it-has-to-be-one-statement">The fix, and why it has to be one statement</h3>
+<p>Take an advisory lock on the chain, read the predecessor, hash, and insert — <strong>all inside one statement</strong>:</p>
+<pre><code class="lang-sql">CREATE FUNCTION audit_chain_lock_key(p_org_id uuid) RETURNS bigint
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT (hashtext('myapp.audit_chain')::bigint &lt;&lt; 32)
+         | (hashtext(coalesce(p_org_id::text, '__system__'))::bigint &amp; x'ffffffff'::bigint);
+$$;
+
+CREATE FUNCTION audit_append(
+    p_org_id uuid, p_action text, p_decision text, p_hash_tail text
+) RETURNS TABLE (id bigint, prev_hash text, hash text)
+LANGUAGE plpgsql AS $$
+DECLARE v_prev text; v_hash text;
+BEGIN
+    PERFORM pg_advisory_xact_lock(audit_chain_lock_key(p_org_id));
+
+    SELECT a.hash INTO v_prev
+      FROM audit_event a
+     WHERE a.org_id IS NOT DISTINCT FROM p_org_id
+     ORDER BY a.id DESC LIMIT 1;
+
+    v_hash := encode(digest(convert_to(
+        '[' || coalesce(to_json(v_prev)::text, 'null') || ',' || p_hash_tail, 'utf8'
+    ), 'sha256'), 'hex');
+
+    RETURN QUERY
+    INSERT INTO audit_event (org_id, action, decision, prev_hash, hash)
+         VALUES (p_org_id, p_action, p_decision, v_prev, v_hash)
+      RETURNING audit_event.id, audit_event.prev_hash, audit_event.hash;
+END;
+$$;</code></pre>
+<p><strong><code>pg_advisory_xact_lock</code> is held until the end of the transaction.</strong> In autocommit — which is how most connection pools issue queries, and what <code>pg.Pool.query</code> does — each statement <em>is</em> its own transaction. So taking the lock in one statement and inserting in the next releases it in between and buys nothing at all. <code>SELECT * FROM audit_append(...)</code> is one statement, so the lock is held from the moment it is taken until the row is committed, and a second writer on the same chain waits.</p>
+<p>A per-chain key, not a global one, or every tenant serialises behind every other tenant. And a namespace in the high bits so your lock cannot collide with an advisory lock taken by something else sharing the database.</p>
+<p>Step 4 of the script beside this page stages both: fifty concurrent writers through the two-statement version, and fifty through this function.</p>
+<h3 id="two-things-this-shape-also-buys">Two things this shape also buys</h3>
+<p><strong>There is no supported path that writes the table without constructing the chain.</strong> The ordering is not something a caller can get wrong or skip.</p>
+<p><strong>And the hash is still defined in one place.</strong> <code>prev_hash</code> is the first element of the digest input deliberately, so everything after it can be serialized by the caller and passed in as <code>p_hash_tail</code>. This function performs one string concatenation; it is not a second implementation of your canonical encoding. If your verifier recomputes the whole digest in application code, then every verification cross-checks the SQL side against an independent implementation.</p>
+<p>The seam is one byte wide, so be explicit about it: SQL supplies <code>[</code>, the predecessor and a comma; <code>p_hash_tail</code> supplies everything else <strong>including the closing bracket</strong>. Off by one there is a chain that never verifies and an afternoon spent looking for it in the wrong place.</p>
+<h3 id="one-ordering-rule-or-you-will-deadlock">One ordering rule, or you will deadlock</h3>
+<p>Taking a chain lock means a transaction now holds it from its first audit write until commit. Two transactions that take the chain lock and a row lock in opposite orders will deadlock. Pick one rule and apply it everywhere:</p>
+<blockquote><p><strong>The audit chain lock is always taken before any row lock.</strong></p></blockquote>
+<p>In practice that means auditing the decision <em>before</em> the UPDATE it authorizes, and not reaching for <code>SELECT ... FOR UPDATE</code> on the way in out of habit.</p>
+<hr>
+<h2 id="append-only-enforcement-and-exactly-how-far-it-goes">Append-only enforcement, and exactly how far it goes</h2>
+<pre><code class="lang-sql">CREATE RULE audit_no_update AS ON UPDATE TO audit_event DO INSTEAD NOTHING;
+CREATE RULE audit_no_delete AS ON DELETE TO audit_event DO INSTEAD NOTHING;</code></pre>
+<p>Three things to know, and all three matter.</p>
+<p><strong>It is silent.</strong> The statement succeeds and reports zero rows, so a caller who believes they trimmed the log is not told otherwise. That is a deliberate trade — failing loudly lets a prober distinguish this table from any other — and it is worth knowing before you build anything on top of it.</p>
+<p><strong>Rules do not cover <code>TRUNCATE</code>.</strong> Rewrite rules are per-DML-statement-type and <code>TRUNCATE</code> is not DML, so <code>TRUNCATE audit_event</code> empties the table with both rules fully in place. A statement-level trigger does fire, so that is what closes it:</p>
+<pre><code class="lang-sql">CREATE FUNCTION audit_no_truncate() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_event is append-only: TRUNCATE is refused';
+END;
+$$;
+
+CREATE TRIGGER audit_no_truncate
+    BEFORE TRUNCATE ON audit_event
+    FOR EACH STATEMENT EXECUTE FUNCTION audit_no_truncate();</code></pre>
+<p><strong>Neither mechanism is a privilege boundary.</strong> Both are owned by the table owner and can be dropped in one statement. They stop an accident and an ordinary application bug, which is most of what actually happens to a log. They do not stop a determined operator, and the chain is what remains when they are gone.</p>
+<hr>
+<h2 id="verifying">Verifying</h2>
+<p>Replay the chain forward, recomputing each hash in application code:</p>
+<ul><li>the first row must have <code>prev_hash IS NULL</code></li>
+<li>every other row's <code>prev_hash</code> must equal its predecessor's <code>hash</code></li>
+<li>every row's recomputed digest must equal its stored <code>hash</code></li></ul>
+<p>Return three things, not a boolean:</p>
+<ul><li><code>valid</code>, and <strong>where</strong> it broke — the id and which of the two checks failed</li>
+<li><code>checked</code>, how many rows were covered</li>
+<li>the <strong>head</strong>: the id and hash of the last event</li></ul>
+<p>The head is the half the database cannot provide itself. Pin it somewhere outside — a daily line in a different system, a customer-held receipt, a transparency log, a printout. The comparison only means anything in a place the person who can edit the rows cannot reach. Returning it is how you make that possible rather than merely advisable.</p>
+<hr>
+<h2 id="retention-which-is-where-most-chains-quietly-die">Retention, which is where most chains quietly die</h2>
+<p>Your log grows forever and something eventually has to delete the old end. But <strong>a hash chain cannot be trimmed from the front</strong>: delete the oldest events and the first survivor's <code>prev_hash</code> points at something that is gone, which is indistinguishable from the tampering the chain exists to detect. The usual outcome is that retention wins, the chain is left permanently &quot;broken&quot;, and everyone stops reading the verification output.</p>
+<p>The missing piece is a row that attests to the deletion:</p>
+<pre><code class="lang-sql">CREATE TABLE audit_checkpoint (
+    id            bigserial PRIMARY KEY,
+    org_id        uuid,
+    kind          text NOT NULL CHECK (kind IN ('trim', 'seal')),
+    created_at    timestamptz NOT NULL DEFAULT now(),
+
+    -- The chain state this attests to: the last event covered, and its hash.
+    -- For a trim, that event is gone and this hash is the only surviving
+    -- evidence of where the chain had reached.
+    through_id    bigint NOT NULL,
+    through_hash  text NOT NULL,
+
+    removed_count integer NOT NULL DEFAULT 0,
+    removed_from  bigint,
+    removed_to    bigint,
+    note          text,
+
+    CONSTRAINT checkpoint_seal_removes_nothing CHECK (
+        kind &lt;&gt; 'seal' OR (removed_count = 0 AND removed_from IS NULL AND removed_to IS NULL)
+    )
+);
+
+CREATE INDEX audit_checkpoint_hash_idx ON audit_checkpoint (through_hash);</code></pre>
+<p>Verification then has somewhere to look: when replay meets a first survivor whose <code>prev_hash</code> is not NULL, it searches for a checkpoint whose <code>through_hash</code> is that <code>prev_hash</code>. If it finds one, it reports an <strong>attested gap</strong> — &quot;n events were removed on purpose, on this date, and the remaining chain verifies perfectly&quot; — rather than tampering. If it does not, it is tampering.</p>
+<p>Two things this does not claim, and both are better said than discovered:</p>
+<ul><li><strong>A checkpoint cannot be forged by someone who did not already hold the hash.</strong> But whoever removes the events <em>does</em> hold it — they had the chain. This is bookkeeping, not a cryptographic defence against the operator.</li>
+<li><strong>It is deliberately not a summary of what was deleted.</strong> An attestation that recorded the contents would be a second copy of what it records.</li></ul>
+<h3 id="seals-which-partly-close-the-truncation-hole">Seals, which partly close the truncation hole</h3>
+<p>A <code>seal</code> is the same row with nothing removed: it pins where the chain had reached at a moment in time. That turns the undetectable case — removing the most recent events — into a <strong>detectable</strong> one: a chain whose head is now behind a seal it has on record is internally perfect and shorter than it was, and nothing honest produces that.</p>
+<p>Partly, and only partly. Seals live in the same database, so whoever removes the events can remove the seals in the same transaction. The seal is worth having because it closes the accident and the ordinary bad actor; the externally pinned head is what closes the operator. Say both.</p>
+<hr>
+<h2 id="what-this-does-not-give-you">What this does not give you</h2>
+<ul><li><strong>It is evidence, not prevention.</strong> A chain tells you the log was altered. It does not stop the alteration, and it does not recover what was there.</li>
+<li><strong>It says nothing about what was not recorded.</strong> If a code path reads a file without auditing it, the chain over the remaining events is perfect. Coverage is a separate problem with a separate answer: make the audit write unskippable by putting it in the same transaction as the decision.</li>
+<li><strong>Timestamps are your clock's word.</strong> <code>occurred_at</code> is committed to by the hash, so it cannot be edited afterwards — but nothing stops a wrong clock at write time. If the ordering must be provable against the outside world, you are asking for a timestamping authority.</li>
+<li><strong>The chain is not the retention policy.</strong> Legal hold, erasure requests and &quot;keep for seven years&quot; are decisions the chain has no opinion about. All it does is make the deletions you choose to make attestable.</li></ul>
+<hr>
+<h2 id="if-you-would-rather-not-build-it">If you would rather not build it</h2>
+<p><a href="https://filelayer.dev" rel="noopener">Filelayer</a> is this shape, packaged: every authorization decision is appended to a per-tenant hash chain in the same transaction as the decision itself, denials included, with the single-statement append, the TRUNCATE trigger, checkpoints and seals in the schema rather than in application code.</p>
+<pre><code class="lang-ts">await fl.orgs.create('acme', { owner: 'alice' });
+const { id } = await fl.files.put(new TextEncoder().encode('REPORT'), {
+  org: 'acme', owner: 'alice', name: 'report.pdf',
+});
+
+await fl.files.get(id, { as: 'alice' });
+
+// A refused read is recorded too, which is the half that matters in an
+// incident: this leaves a `deny` event, not silence.
+await assert.rejects(() =&gt; fl.files.get(id, { as: 'mallory' }));
+
+const chain = await fl.orgs.verifyAudit('acme', { as: 'alice' });
+assert.equal(chain.valid, true);
+assert.equal(chain.attestedGaps, 0);
+
+// The head is returned so you can pin it OUTSIDE this database, which is the
+// only place the comparison detects a truncation.
+assert.equal(typeof chain.lastHash, 'string');</code></pre>
+<p>That block is executed by <code>npm run check:docs</code> on every commit.</p>
+<p>It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is alpha — <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">the trust page</a> has the numbers, including the ones sitting at zero.</p>
+<hr>
+<h2 id="related">Related</h2>
+<ul><li><a href="/guides/revoking-delegated-access">How do I revoke a share after the recipient has shared it onwards?</a> — the other half of &quot;who can reach this file&quot;, and the lock-ordering rule above comes from it.</li>
+<li><a href="/guides/multi-tenant-file-access">Multi-tenant file access control</a> — why the tenant boundary belongs in constraints rather than in a <code>WHERE</code> clause.</li></ul>
+<hr>
+<h2 id="sources">Sources</h2>
+<ul><li><a href="https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS" rel="noopener">pg_advisory_xact_lock</a> — PostgreSQL, on transaction-scoped advisory locks</li>
+<li><a href="https://www.postgresql.org/docs/current/rules.html" rel="noopener">The Rule System</a> — PostgreSQL, on <code>DO INSTEAD NOTHING</code> and what rules apply to</li>
+<li><a href="https://www.postgresql.org/docs/current/sql-createtrigger.html" rel="noopener">Event Triggers and <code>TRUNCATE</code></a> — PostgreSQL, on statement-level <code>BEFORE TRUNCATE</code></li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc6962" rel="noopener">RFC 6962: Certificate Transparency</a> — on append-only logs, published heads, and why the anchor has to live elsewhere</li>
+<li><a href="https://link.springer.com/article/10.1007/BF00196791" rel="noopener">How to Time-Stamp a Digital Document</a> — Haber and Stornetta, the hash chain this is</li></ul>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/tamper-evident-file-audit.md" rel="noopener"><code>docs/guides/tamper-evident-file-audit.md</code></a>
+    in a public repository. The code samples in the guides are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.33.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

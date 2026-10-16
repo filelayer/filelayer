@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/revoking-delegated-access.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>How do I revoke a share after the recipient has shared it onwards?</title>
+<meta name="description" content="Most writing about file sharing stops at the first hop. You share a file with Bob, you revoke Bob, Bob is out. That design is correct and it answers a question almost nobody has,…">
+
+<link rel="canonical" href="https://filelayer.dev/guides/revoking-delegated-access">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/revoking-delegated-access">
+<meta property="og:title" content="How do I revoke a share after the recipient has shared it onwards?">
+<meta property="og:description" content="Most writing about file sharing stops at the first hop. You share a file with Bob, you revoke Bob, Bob is out. That design is correct and it answers a question almost nobody has,…">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How do I revoke a share after the recipient has shared it onwards?">
+<meta name="twitter:description" content="Most writing about file sharing stops at the first hop. You share a file with Bob, you revoke Bob, Bob is out. That design is correct and it answers a question almost nobody has,…">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How do I revoke a share after the recipient has shared it onwards?",
+  "description": "Most writing about file sharing stops at the first hop. You share a file with Bob, you revoke Bob, Bob is out. That design is correct and it answers a question almost nobody has,…",
+  "url": "https://filelayer.dev/guides/revoking-delegated-access",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.33.0"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>How do I revoke a share after the recipient has shared it onwards?</h1>
+<p>Most writing about file sharing stops at the first hop. You share a file with Bob, you revoke Bob, Bob is out. That design is correct and it answers a question almost nobody has, because the moment a share feature is useful people start forwarding access — to a colleague, to a contractor, to a tool.</p>
+<p>This guide is about the second hop and everything after it. It is written to be useful whether or not you use Filelayer: the schema, the function and the trigger below are yours to copy, and the script beside this page reproduces every number against a real PostgreSQL in about thirty seconds.</p>
+<hr>
+<h2 id="the-short-answer">The short answer</h2>
+<p><strong>Whether you can revoke onward access is decided when you store the share, not when you revoke it.</strong> If a re-share writes an independent row, no revoke endpoint you write later can undo it — the database has forgotten that the second grant ever depended on the first.</p>
+<p>So the whole feature is one column and one predicate:</p>
+<ul><li>a <code>parent_grant_id</code> on the grant row, pointing at the authority it came from</li>
+<li>liveness evaluated over the <strong>whole ancestor chain</strong>, not over the row</li></ul>
+<p>Everything else in this guide is the five ways that pairing is got wrong.</p>
+<hr>
+<h2 id="what-goes-wrong-without-it">What goes wrong without it</h2>
+<p>Take the ordinary design — a <code>share_link</code> table, each row standing on its own:</p>
+<pre><code class="lang-sql">SELECT * FROM share_link
+ WHERE secret_hash = $1
+   AND revoked_at IS NULL
+   AND (expires_at IS NULL OR expires_at &gt; now());</code></pre>
+<p>Alice shares with Bob. Bob shares with Carol, which inserts a second row. Alice revokes Bob's row. Carol's row has its own <code>revoked_at</code>, still NULL, so Carol keeps reading — and Alice's revoke returned success.</p>
+<p>This is not a bug in the query. The query is a faithful reading of a table in which the two rows are unrelated, which is exactly what the table says. Nothing recorded that Carol's access was derived from Bob's.</p>
+<p>The measurement is in the script beside this page, step 1: a three-deep chain, the root revoked, and the flat predicate reports two of three grants live.</p>
+<hr>
+<h2 id="the-column-and-what-it-has-to-mean">The column, and what it has to mean</h2>
+<pre><code class="lang-sql">CREATE TABLE file_grant (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id         uuid NOT NULL,
+
+    -- NULL: this authority came from a role or from ownership.
+    -- Non-NULL: it came from another grant, and can never be more than it was.
+    parent_grant_id uuid REFERENCES file_grant(id) ON DELETE CASCADE,
+
+    subject_type    text NOT NULL,
+    capabilities    text[] NOT NULL,
+    expires_at      timestamptz,
+    max_downloads   integer,
+    download_count  integer NOT NULL DEFAULT 0,
+    revoked_at      timestamptz,
+
+    -- A child must concern the SAME FILE as its parent. This is the
+    -- confused-deputy check for delegation, and it is a foreign key rather
+    -- than a rule someone has to remember.
+    UNIQUE (id, file_id),
+    FOREIGN KEY (parent_grant_id, file_id) REFERENCES file_grant (id, file_id),
+
+    CONSTRAINT grant_no_self_parent CHECK (parent_grant_id IS NULL OR parent_grant_id &lt;&gt; id)
+);</code></pre>
+<p>The composite foreign key is the part that gets left out. Without it, <code>parent_grant_id</code> says only &quot;derived from some grant&quot; — and a delegation whose parent concerns a different file is a grant that passes every capability check while pointing somewhere it was never authorized to point.</p>
+<hr>
+<h2 id="the-predicate">The predicate</h2>
+<p>Liveness is a property of the chain. A grant is live when it is live <strong>and every ancestor is live</strong>:</p>
+<pre><code class="lang-sql">CREATE FUNCTION grant_is_live(p_grant_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE COST 100 AS $$
+    WITH RECURSIVE chain AS (
+        SELECT g.id, g.parent_grant_id, 1 AS depth,
+               (    g.revoked_at IS NULL
+                AND (g.expires_at IS NULL OR g.expires_at &gt; now())
+                AND (g.max_downloads IS NULL OR g.download_count &lt; g.max_downloads)
+               ) AS self_live
+          FROM file_grant g
+         WHERE g.id = p_grant_id
+        UNION ALL
+        SELECT p.id, p.parent_grant_id, c.depth + 1,
+               (    p.revoked_at IS NULL
+                AND (p.expires_at IS NULL OR p.expires_at &gt; now())
+                AND (p.max_downloads IS NULL OR p.download_count &lt; p.max_downloads)
+               )
+          FROM chain c
+          JOIN file_grant p ON p.id = c.parent_grant_id
+         WHERE c.depth &lt; 64
+           AND c.self_live            -- stop at the first dead ancestor
+    )
+    SELECT coalesce(bool_and(chain.self_live), false)
+           -- If we stopped because of the depth bound rather than because we
+           -- ran out of ancestors, liveness is UNPROVEN. Deny.
+           AND NOT EXISTS (
+               SELECT 1 FROM chain d
+                WHERE d.depth &gt;= 64 AND d.parent_grant_id IS NOT NULL
+           )
+      FROM chain;
+$$;</code></pre>
+<p>Three details in there are load-bearing and none of them is obvious.</p>
+<p><strong><code>coalesce(..., false)</code>.</strong> An id that matches nothing produces an empty chain, <code>bool_and</code> over no rows is NULL, and <code>WHERE NULL</code> is not an error — it is a row that quietly fails to appear, or, in an <code>IF</code> in your application, a branch that takes the else. Fail closed explicitly.</p>
+<p><strong>The depth bound, and the <code>NOT EXISTS</code> beside it.</strong> The bound alone is not a safety property, it is a performance one: hitting it means the walk stopped early, so what you have is a partial answer. Returning <code>bool_and</code> of a partial walk returns <code>true</code> for a chain too long to verify. The <code>NOT EXISTS</code> turns &quot;I ran out of budget&quot; into a denial, which is the only honest reading.</p>
+<p><strong><code>AND c.self_live</code> in the recursive term.</strong> Without it the walk continues past a dead ancestor to the root. With it, the walk stops at the first corpse. Correctness is identical — <code>bool_and</code> would reach the same answer — and on a revoked chain it is the difference between reading one row and reading thirty-two.</p>
+<p>Then state it once, in a view, so no caller can get it subtly wrong:</p>
+<pre><code class="lang-sql">CREATE VIEW live_grant AS
+SELECT * FROM file_grant
+ WHERE revoked_at IS NULL AND grant_is_live(id);</code></pre>
+<p><code>revoked_at IS NULL</code> there is logically redundant — <code>grant_is_live</code> already requires it of the row itself. Keep it anyway. A function call is opaque to the planner, so with only <code>grant_is_live(id)</code> in the predicate no partial index on <code>file_grant</code> is usable from any query, and every revoked row pays for a recursive CTE before being discarded. Measured on 6,001 grants with a tenth revoked, the lookups went from a sequential scan filtering 6,001 rows to an index scan filtering none. That measurement is not in the script beside this page — it needs a populated table and an <code>EXPLAIN</code>, and it lives in <code>packages/core/test/performance.test.ts</code>, which asserts both halves: that the view still returns exactly the rows the one-conjunct version did, and that no grant lookup filters rows an index should have discarded.</p>
+<p>That is the shape of edit to be most careful about: removing it is a correctness no-op and a performance regression, so the tests stay green and every authorization decision gets slower.</p>
+<hr>
+<h2 id="attenuation-a-child-may-be-smaller-never-bigger">Attenuation: a child may be smaller, never bigger</h2>
+<p>Revocation is only half of it. The other half is that a delegated grant must not be able to exceed what it was delegated from — otherwise the chain is a formality and Bob mints himself something better than Bob had.</p>
+<p>There are four dimensions, and people usually implement one.</p>
+<h3 id="capability">Capability</h3>
+<p>The obvious one. The child's set must be a subset:</p>
+<pre><code class="lang-sql">IF NOT (NEW.capabilities &lt;@ p.capabilities) THEN
+    RAISE EXCEPTION 'grant_capability_amplification: % exceeds parent %',
+        NEW.capabilities, p.capabilities;
+END IF;</code></pre>
+<h3 id="subject-breadth-which-is-the-one-that-gets-missed">Subject breadth, which is the one that gets missed</h3>
+<p>Capability attenuation alone lets this through: Bob holds <code>{read}</code> on the file, for Bob. Bob delegates <code>{read}</code> — to <strong>everyone</strong>. A child whose subject is an organization, or an anonymous public link, satisfies <code>capabilities &lt;@ parent</code> perfectly. One consultant's read access becomes a public URL and attenuation was obeyed the whole way.</p>
+<p>So breadth is attenuated too, and it does not depend on the parent's contents: grant-derived authority may name a person or mint a bearer link, and nothing wider.</p>
+<pre><code class="lang-sql">IF NEW.subject_type NOT IN ('actor', 'link') THEN
+    RAISE EXCEPTION
+        'grant_subject_amplification: a delegated grant may only name an actor or a link, not %',
+        NEW.subject_type;
+END IF;</code></pre>
+<h3 id="lifetime">Lifetime</h3>
+<p>A child may be shorter-lived, never longer. Clamp rather than refuse — a caller asking for a week from an authority with a day left wants a day, not an error:</p>
+<pre><code class="lang-sql">IF p.expires_at IS NOT NULL
+   AND (NEW.expires_at IS NULL OR NEW.expires_at &gt; p.expires_at) THEN
+    NEW.expires_at := p.expires_at;
+END IF;</code></pre>
+<p>Clamping silently is a trap of its own, so return the effective value to the caller. A share endpoint that echoes back what was asked for rather than what was stored is lying about its own output.</p>
+<h3 id="budget-and-why-it-is-not-enough-to-check-it-once">Budget, and why it is not enough to check it once</h3>
+<p>Clamp the child against the parent's <strong>remaining</strong> budget:</p>
+<pre><code class="lang-sql">IF p.max_downloads IS NOT NULL THEN
+    v_remain := p.max_downloads - p.download_count;
+    IF v_remain &lt;= 0 THEN
+        RAISE EXCEPTION 'grant_parent_exhausted: parent has no downloads left to delegate';
+    END IF;
+    IF NEW.max_downloads IS NULL OR NEW.max_downloads &gt; v_remain THEN
+        NEW.max_downloads := v_remain;
+    END IF;
+END IF;</code></pre>
+<p>That is correct at the instant of creation and worthless a millisecond later. A parent with five downloads remaining can mint three children of five each — each one legal when written — and you have sold fifteen.</p>
+<p><strong>The fix is on the redemption side: a download consumes the budget of the entire ancestor chain.</strong> Then the parent's cap is a real budget over the whole delegation tree, and exhaustion propagates downward for free, because an exhausted ancestor is a dead ancestor and <code>grant_is_live</code> already says so.</p>
+<p>Step 5 of the script measures it: a root capped at 5, three children each created asking for 5, fifty concurrent redemptions spread across them — exactly 5 served.</p>
+<p>Lock the chain in a deterministic order when you do it. Every transaction touching a chain must take its row locks in the same order or two redemptions on sibling branches will deadlock on their shared ancestors.</p>
+<hr>
+<h2 id="the-second-statement-that-walks-around-all-of-it">The second statement that walks around all of it</h2>
+<p>Here is the failure that survives a careful trigger. Suppose attenuation is enforced <code>BEFORE INSERT</code>. Bob inserts a perfectly legal child — one actor, <code>{read}</code>. Then Bob runs:</p>
+<pre><code class="lang-sql">UPDATE file_grant
+   SET subject_type = 'org', subject_org_id = '...'
+ WHERE id = '&lt;the child&gt;';</code></pre>
+<p>The insert was legal, the update never fires the trigger, and the delegated grant now names an entire organization. Attenuation that binds only at INSERT is attenuation a second statement walks around.</p>
+<p>So the trigger covers updates, and the column list matters in both directions:</p>
+<pre><code class="lang-sql">CREATE TRIGGER file_grant_attenuation
+    BEFORE INSERT OR UPDATE OF parent_grant_id, capabilities, expires_at,
+                               max_downloads, subject_type, subject_id,
+                               subject_org_id, subject_min_role
+    ON file_grant
+    FOR EACH ROW EXECUTE FUNCTION file_grant_attenuate();</code></pre>
+<p><code>UPDATE OF</code> rather than bare <code>UPDATE</code>, because this must <strong>not</strong> fire when a redemption increments <code>download_count</code> or when a revoke sets <code>revoked_at</code> — both of which legitimately make a parent non-live while its children are being written. A trigger that re-validates attenuation on those statements refuses the revoke that is doing its job.</p>
+<p>Step 4 of the script measures both halves: with the subject columns in the <code>UPDATE OF</code> list the widening is refused, and with an INSERT-only trigger the identical statement succeeds.</p>
+<p>And one more, which is what makes a cycle impossible rather than merely unlikely:</p>
+<pre><code class="lang-sql">IF TG_OP = 'UPDATE' AND NEW.parent_grant_id IS DISTINCT FROM OLD.parent_grant_id THEN
+    RAISE EXCEPTION 'grant_lineage_immutable: parent_grant_id cannot be changed';
+END IF;</code></pre>
+<p>Re-parenting is how a cycle gets created, and a cycle in a liveness graph is a denial of service: every authorization check on any grant in the loop walks until it hits the depth bound. The bound means the damage is bounded. Immutable lineage means it never happens.</p>
+<hr>
+<h2 id="two-bounds-and-why-they-are-different-numbers">Two bounds, and why they are different numbers</h2>
+<p>The function above stops walking at 64. The trigger refuses to create a chain deeper than 32. Those are deliberately not the same number.</p>
+<p>The creation bound is the policy: 32 hops of delegation is already far past any real sharing pattern. The liveness bound is a <em>safety</em> bound on a recursive query, and it has to sit above the creation bound so that a legal chain is never the thing that trips it. If they were equal, a chain created at exactly the limit would be refused at read time — access granted by a rule the system immediately contradicts, which is the worst kind of bug to debug.</p>
+<hr>
+<h2 id="revocation-is-not-the-same-question-as-can-this-person-still-read-it">Revocation is not the same question as &quot;can this person still read it?&quot;</h2>
+<p>This is the quiet half, and it is worth building the answer in from the start.</p>
+<p>Your revoke endpoint takes a grant id. The caller's intent was almost always about a <em>person</em>. Those differ whenever the person has access by more than one route — a second share, an organization grant, their role, ownership. The call succeeds, the chain is honoured, every descendant is dead, and the recipient keeps reading through something else entirely.</p>
+<p>So answer the question the caller meant:</p>
+<ul><li>return, from the revoke, whether that subject can still read the file</li>
+<li>compute it by <strong>re-running the read decision</strong> inside the same transaction, not by counting surviving rows</li></ul>
+<p>Counting undercounts. A role grant with a <code>viewer</code> floor and one with an <code>editor</code> floor are different subjects that both authorize an editor, so &quot;no grants left naming this subject&quot; can be true while the person still has access.</p>
+<p>And offer the operation the caller actually wanted — remove every live grant naming this person, in one transaction. One transaction, not a loop over <code>revoke()</code>: a loop opens one transaction per grant, and a failure partway leaves some of a person's access removed and the rest live.</p>
+<hr>
+<h2 id="what-this-still-does-not-give-you">What this still does not give you</h2>
+<p>Worth being plain about, because a security feature that oversells itself is worse than one that does not exist.</p>
+<ul><li><strong>Bytes already delivered are gone.</strong> Revocation stops the next request. It does not reach a copy on somebody's laptop. If that is your threat model, you need DRM, and you should know that you are asking for something else.</li>
+<li><strong>A presigned redirect has a window.</strong> If your download path redirects to a presigned URL, a revoked chain still works for whoever holds an unexpired redirect. Clamp that expiry to seconds and know that the window exists. See <a href="/guides/serving-private-files">Should I redirect to a presigned URL or proxy private files myself?</a>.</li>
+<li><strong>In-flight requests finish.</strong> Revoking mid-stream does not kill a response already being written.</li>
+<li><strong>This binds writers, not readers of your database.</strong> Anyone with SQL access can update <code>revoked_at</code> or drop the trigger. Constraints stop accidents and application bugs, which is most of what happens; they are not a privilege boundary.</li></ul>
+<hr>
+<h2 id="when-you-do-not-need-any-of-this">When you do not need any of this</h2>
+<p>If re-sharing is not a feature — if the only way to get access is through your own share endpoint and the endpoint always issues from an org role — then every grant is a root, every chain is one deep, and <code>revoked_at IS NULL</code> is the whole predicate. Do that. A recursive CTE on the read path of every download is not free, and buying it for a feature you do not have is a poor trade.</p>
+<p>The question to ask is not &quot;might someone forward a link&quot; — they will, and a forwarded link is still one grant. It is &quot;<strong>can a recipient mint a new grant?</strong>&quot; If no, stop here.</p>
+<hr>
+<h2 id="if-you-would-rather-not-build-it">If you would rather not build it</h2>
+<p><a href="https://filelayer.dev" rel="noopener">Filelayer</a> is this shape, packaged. <code>parent_grant_id</code>, the recursive liveness function, the attenuation trigger with its <code>UPDATE OF</code> list, chain-wide budget consumption and the two bounds are in its schema rather than in application code — so they bind a migration and a psql session as well as the library.</p>
+<pre><code class="lang-ts">await fl.orgs.create('acme', { owner: 'alice' });
+const { id } = await fl.files.put(new TextEncoder().encode('REPORT'), {
+  org: 'acme', owner: 'alice', name: 'report.pdf',
+});
+
+// Alice shares with Bob, including the right to pass it on. Bob, holding
+// only that grant, shares onwards with Carol -- so Carol's grant is a
+// child of Bob's, and `read` is a subset of what Bob holds.
+const toBob = await fl.shares.create(id, {
+  as: 'alice', withUser: 'bob', capabilities: ['read', 'share'],
+});
+const toCarol = await fl.shares.create(id, { as: 'bob', withUser: 'carol' });
+assert.equal(toCarol.parentGrantId, toBob.grantId);
+
+assert.equal((await fl.files.get(id, { as: 'carol' })).body.length, 6);
+
+// Alice revokes BOB. Carol's grant was never touched.
+const result = await fl.shares.revoke(toBob.grantId, { as: 'alice' });
+assert.equal(result.subjectCanStillRead, false);
+
+// Carol is out too, because her authority was Bob's.
+await assert.rejects(
+  () =&gt; fl.files.get(id, { as: 'carol' }),
+  (e: { status?: number }) =&gt; e.status === 404,
+);</code></pre>
+<p>That block is executed by <code>npm run check:docs</code> on every commit.</p>
+<p>It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is alpha — <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">the trust page</a> has the numbers, including the ones sitting at zero.</p>
+<hr>
+<h2 id="related">Related</h2>
+<ul><li><a href="/guides/expiring-and-revocable-file-links">Expiring and revocable file links</a> — why a presigned URL cannot be taken back, and the one query that is hard.</li>
+<li><a href="/guides/multi-tenant-file-access">Multi-tenant file access control</a> — the composite foreign key, applied to tenants rather than to lineage.</li>
+<li><a href="/guides/serving-private-files">Should I redirect to a presigned URL or proxy private files myself?</a> — where the revocation window comes from.</li></ul>
+<hr>
+<h2 id="sources">Sources</h2>
+<ul><li><a href="https://www.postgresql.org/docs/current/queries-with.html" rel="noopener">WITH Queries (Common Table Expressions)</a> — PostgreSQL, on recursive query evaluation and termination</li>
+<li><a href="https://www.postgresql.org/docs/current/sql-createtrigger.html" rel="noopener">CREATE TRIGGER</a> — PostgreSQL, on <code>UPDATE OF column_name</code></li>
+<li><a href="https://homes.cs.washington.edu/~levy/capabook/" rel="noopener">Capability-Based Computer Systems</a> — Henry M. Levy, on attenuation and revocation in capability systems</li>
+<li><a href="https://www.hpl.hp.com/techreports/2009/HPL-2009-20.html" rel="noopener">ACLs don't</a> — Tyler Close, on why delegation is the normal case rather than the exception</li></ul>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/revoking-delegated-access.md" rel="noopener"><code>docs/guides/revoking-delegated-access.md</code></a>
+    in a public repository. The code samples in the guides are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.33.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

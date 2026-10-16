@@ -52,7 +52,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -68,10 +68,11 @@ const PKG = 'packages/core';
 const ANCHORS = [
   { path: 'README.md', min: 4000, why: 'the first thing a stranger reads' },
   { path: 'docs/QUICKSTART.md', min: 8000, why: 'install to first stored byte; the one that was missing' },
-  { path: 'docs/guides/expiring-and-revocable-file-links.md', min: 6000, why: 'the first guide, named by llms.txt' },
-  { path: 'docs/guides/private-file-uploads.md', min: 6000, why: 'the second guide, named by llms.txt' },
-  { path: 'docs/guides/multi-tenant-file-access.md', min: 6000, why: 'the third guide, named by llms.txt' },
-  { path: 'docs/guides/deleting-files-and-orphaned-objects.md', min: 6000, why: 'the fourth guide, named by llms.txt' },
+  // The guides are DISCOVERED below rather than listed here. They were listed
+  // here, as four entries each saying "named by llms.txt", and by the time a
+  // fifth guide existed that sentence was false for it and this gate had no
+  // way to notice: a hand-written list does not check the file somebody added
+  // yesterday, and it reports success while not checking it.
   { path: 'SEMANTICS.md', min: 8000, why: 'the reference for every edge case' },
   { path: 'MIGRATIONS.md', min: 2000, why: 'what a schema change costs, linked from QUICKSTART' },
   { path: 'CHANGELOG.md', min: 2000, why: 'what changed and which versions are unsafe' },
@@ -89,7 +90,27 @@ const ANCHORS = [
   { path: 'examples/vault/server.ts', min: 2000, why: 'the full HTTP example the docs cite' },
   { path: 'examples/starter/server.ts', min: 4000, why: 'the deployable example, the one a newcomer copies' },
   { path: 'examples/starter/README.md', min: 1000, why: 'how to run the deployable example' },
+  ...guideAnchors(),
 ];
+
+/**
+ * Every guide on disk, as an anchor. Discovery, not a register.
+ *
+ * `README.md` is the index and gets the same floor by a different route: it is
+ * short on purpose and a 6,000-byte floor on it would be a floor that fails on
+ * an honest file.
+ */
+function guideAnchors() {
+  const dir = join(ROOT, 'docs', 'guides');
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.md') && f !== 'README.md')
+    .sort()
+    .map((f) => ({
+      path: `docs/guides/${f}`,
+      min: 6000,
+      why: 'a guide, which llms.txt and the guides index must both name',
+    }));
+}
 
 /**
  * Names the on-disk sentence in llms.txt MUST still contain, in a code span.

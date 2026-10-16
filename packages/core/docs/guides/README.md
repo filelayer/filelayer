@@ -81,6 +81,36 @@ natural implementation is a silent data-corruption bug.
 
 → [`serving-private-files.proof.mjs`](serving-private-files.proof.mjs)
 
+### [How do I revoke a share after the recipient has shared it onwards?](revoking-delegated-access.md)
+
+Most writing about sharing stops at the first hop. **Whether you can revoke
+onward access is decided when you store the share, not when you revoke it**: a
+re-share that writes an independent row cannot be undone later, however good
+your revoke endpoint is. One column and one predicate, and then the five ways
+that pairing is got wrong — including the one a capability check alone lets
+through, where a consultant's read access becomes a public link while
+attenuation is obeyed the whole way.
+
+Measured: a root capped at 5 delegating three children of 5, redeemed fifty
+times concurrently, serves exactly 5.
+
+→ [`revoking-delegated-access.proof.mjs`](revoking-delegated-access.proof.mjs)
+
+### [How do I prove who accessed a file?](tamper-evident-file-audit.md)
+
+An `access_log` answers *what did we record*. A compliance auditor asks *could
+that have been changed*. A hash chain closes most of the gap and **detects three of the
+four things that can be done to a log** — not truncation of the most recent
+events, which is structural and is why the head has to be pinned outside the
+database.
+
+Measured, including the defect almost every implementation ships: a
+SELECT-then-INSERT append forks under concurrent writers, so an honest log reads
+as tampered with — and a real tamper is then indistinguishable from routine
+concurrency.
+
+→ [`tamper-evident-file-audit.proof.mjs`](tamper-evident-file-audit.proof.mjs)
+
 ---
 
 ## Running the proofs
@@ -94,6 +124,8 @@ node docs/guides/expiring-and-revocable-file-links.proof.mjs
 node docs/guides/multi-tenant-file-access.proof.mjs
 node docs/guides/deleting-files-and-orphaned-objects.proof.mjs
 node docs/guides/serving-private-files.proof.mjs
+node docs/guides/revoking-delegated-access.proof.mjs
+node docs/guides/tamper-evident-file-audit.proof.mjs
 ```
 
 The last one needs no PostgreSQL server at all: it runs the database in-process

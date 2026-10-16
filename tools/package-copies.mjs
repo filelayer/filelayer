@@ -195,6 +195,34 @@ export const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/guides/revoking-delegated-access.md',
+    why:
+      'the sixth guide: whether onward access CAN be revoked is decided by the ' +
+      'schema that stores the share, so a reader who meets this after shipping ' +
+      'has already lost. It ships for the agent with an install and no browser.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/revoking-delegated-access.proof.mjs',
+    why:
+      'the script that produced it, including the budget measurement that needs ' +
+      'fifty backends and therefore a real PostgreSQL.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/tamper-evident-file-audit.md',
+    why:
+      'the seventh guide, and the one whose headline claim is a LIMITATION -- ' +
+      'replay cannot detect truncation of the most recent events. That belongs ' +
+      'in the tarball for the same reason LIMITATIONS.md does.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/tamper-evident-file-audit.proof.mjs',
+    why: 'the script that demonstrates the fork, which one backend cannot stage.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/serving-private-files.md',
     why:
       'the fifth guide: a presigned redirect cannot be revoked before its TTL, ' +
