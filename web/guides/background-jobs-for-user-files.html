@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/background-jobs-for-user-files.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>What background jobs does a file feature need, and did they run?</title>
+<meta name="description" content="A file feature is not finished when upload, download, share and delete work. It is finished when the things those four leave behind are collected — and the cost of a file feature in…">
+
+<link rel="canonical" href="https://filelayer.dev/guides/background-jobs-for-user-files">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/background-jobs-for-user-files">
+<meta property="og:title" content="What background jobs does a file feature need, and did they run?">
+<meta property="og:description" content="A file feature is not finished when upload, download, share and delete work. It is finished when the things those four leave behind are collected — and the cost of a file feature in…">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="What background jobs does a file feature need, and did they run?">
+<meta name="twitter:description" content="A file feature is not finished when upload, download, share and delete work. It is finished when the things those four leave behind are collected — and the cost of a file feature in…">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "What background jobs does a file feature need, and did they run?",
+  "description": "A file feature is not finished when upload, download, share and delete work. It is finished when the things those four leave behind are collected — and the cost of a file feature in…",
+  "url": "https://filelayer.dev/guides/background-jobs-for-user-files",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.33.0"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>What background jobs does a file feature need, and did they run?</h1>
+<p>A file feature is not finished when upload, download, share and delete work. It is finished when the things those four leave behind are collected — and the cost of a file feature in production is almost entirely in that second half.</p>
+<p>There are four jobs. Writing them is a morning. The part that goes wrong is that <strong>every one of them produces an absence as its output</strong>, so a job that has silently stopped running looks exactly like a job with nothing to do.</p>
+<p>This guide is about both halves. It is written to be useful whether or not you use Filelayer: the schema and the SQL are yours to copy, and the script beside this page reproduces every claim against a real PostgreSQL in about thirty seconds — including a data-loss race that only exists with two backends.</p>
+<hr>
+<h2 id="the-four-jobs">The four jobs</h2>
+<div class="table-scroll"><table>
+<thead><tr><th>Job</th><th>Collects</th><th>What it costs you if it never runs</th></tr></thead>
+<tbody><tr><td>Abandoned upload reservations</td><td><code>pending</code> rows whose upload never completed</td><td>rows that are never readable and never collected, plus their bytes</td></tr>
+<tr><td>Orphaned storage objects</td><td>bytes with no row pointing at them</td><td>a bucket bill that only goes up</td></tr>
+<tr><td>Audit retention</td><td>an append-only log that grows forever</td><td>the table that eventually dominates your database</td></tr>
+<tr><td>Chain sealing</td><td>—</td><td>nothing, until you need to prove the log was not truncated</td></tr></tbody>
+</table></div>
+<p>The second one has its own guide — <a href="/guides/deleting-files-and-orphaned-objects">Deleting files and orphaned objects</a> — because the sweeper is the most dangerous job you will write and deserves the space. The third cannot be done naively on a hash-chained log, and <a href="/guides/tamper-evident-file-audit">How do I prove who accessed a file?</a> has the checkpoint that makes it attestable rather than indistinguishable from an attack.</p>
+<p>This guide takes the first one in full, because it is the one that is usually written as five lines and a <code>DELETE</code>, and then the fourth, and then the thing all four share.</p>
+<hr>
+<h2 id="abandoned-upload-reservations">Abandoned upload reservations</h2>
+<p>A direct upload is two steps with a gap: you reserve a row and hand out a presigned URL, the client PUTs the bytes, the client tells you it finished. The client is a browser on a train. It will not always tell you.</p>
+<p>So the reservation carries an expiry:</p>
+<pre><code class="lang-sql">CREATE TABLE file (
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    state             text NOT NULL CHECK (state IN ('pending', 'ready', 'deleted')),
+    storage_key       text NOT NULL,
+    upload_expires_at timestamptz
+);</code></pre>
+<p>And the collector looks for expired <code>pending</code> rows. Here is the version that loses data:</p>
+<pre><code class="lang-sql">-- Step 1, in the job
+SELECT id, storage_key FROM file
+ WHERE state = 'pending'
+   AND upload_expires_at IS NOT NULL
+   AND upload_expires_at &lt; $1
+ ORDER BY upload_expires_at ASC LIMIT $2;
+
+-- Step 2, per candidate
+DELETE FROM file WHERE id = $1;</code></pre>
+<p>Between the two statements the client's <code>completeUpload</code> lands. The row is now <code>ready</code>, the bytes are in the bucket, the user can see their file in the interface — and step 2 deletes it, because step 2 is working from what step 1 believed.</p>
+<p>This is not a rare window. The collector runs against rows that expired <em>just now</em>, which is exactly the traffic of a client that was slow rather than gone.</p>
+<p><strong>The fix is to repeat the predicates in the <code>DELETE</code> and let it tell you whether it won:</strong></p>
+<pre><code class="lang-sql">DELETE FROM file
+ WHERE id = $1
+   AND state = 'pending'
+   AND upload_expires_at IS NOT NULL
+   AND upload_expires_at &lt; $2
+RETURNING storage_key;</code></pre>
+<p>Zero rows means the client completed and you must not touch the bytes. One row means you claimed it and nothing else can. The claim is the write; there is no window, because there is no earlier read being trusted.</p>
+<p>Then, and only for a row you removed:</p>
+<pre><code>delete the row  -&gt;  commit  -&gt;  delete the bytes</code></pre>
+<p>That order, not the other one. A failure after the commit leaves an orphan, which the second job collects. A failure the other way round leaves a row pointing at bytes that are gone, which nothing collects and which a user meets as a broken download. <strong>An orphan is a recoverable failure and a dangling row is not.</strong></p>
+<p>One more thing, easy to leave out and worth the line: audit the collection. A file that disappeared is a question somebody will ask, and &quot;the collector took it, at this time, because the reservation expired at that time&quot; is a much better answer than silence.</p>
+<hr>
+<h2 id="sealing-which-is-the-job-you-only-want-after-you-needed-it">Sealing, which is the job you only want after you needed it</h2>
+<p>If your audit log is hash-chained, replay detects an edit, a deletion from the middle and a deletion of the first event — and <strong>not</strong> a deletion of the most recent ones, because what remains is a perfectly consistent chain.</p>
+<p>A seal is a row recording where the chain had reached at a moment in time. Schedule it, and removing recent events stops being invisible: a head that is behind a recorded seal is a chain that lost what came after it.</p>
+<p>It raises the cost of a silent truncation without making one impossible — the seals live in the same database as the events — so it is worth having and is not a substitute for pinning the head hash somewhere outside. Both, and say which one does what.</p>
+<hr>
+<h2 id="dry-run-is-the-default-and-the-record-must-say-which-one-happened">Dry run is the default, and the record must say which one happened</h2>
+<p>Every job here deletes things on the strength of an absence. So the first argument is <code>dryRun</code>, and it defaults to <strong>true</strong>: a caller who has not thought about it gets a report, not a sweep.</p>
+<p>That default has a consequence that bites months later. <strong>Record the effective mode, not the argument.</strong> A caller who passed nothing performed a dry run, and six weeks of those must not read as six weeks of sweeping:</p>
+<pre><code class="lang-sql">mode text NOT NULL CHECK (mode IN ('dry', 'live'))</code></pre>
+<p>Text with a check, not <code>dry_run boolean</code>. Two reasons: a boolean cannot grow a third value and this is exactly the kind of flag that eventually needs one; and <code>dry_run = false</code> at a call site reads as a double negative at the moment you least want to misread it.</p>
+<p>Step 3 of the script beside this page measures what the omission looks like: six recorded runs, a job that reports healthy by every naive query, and <strong>zero bytes ever actually swept</strong>.</p>
+<hr>
+<h2 id="the-part-nobody-writes-a-table-of-runs">The part nobody writes: a table of runs</h2>
+<p>Here is the whole problem in one sentence. <strong>The output of all four jobs is an absence</strong>, so the difference between &quot;ran, found nothing&quot; and &quot;has not run since March&quot; is not visible anywhere in your data. Logs scroll. Metrics have retention. Nobody notices a cron that stopped firing until the bucket bill does.</p>
+<p>So record the runs:</p>
+<pre><code class="lang-sql">CREATE TABLE job_run (
+    id          bigserial PRIMARY KEY,
+    job         text NOT NULL CHECK (job IN ('storage_orphans', 'upload_reservations',
+                                             'audit_trim', 'audit_seal')),
+    started_at  timestamptz NOT NULL,
+    finished_at timestamptz NOT NULL DEFAULT now(),
+    outcome     text NOT NULL CHECK (outcome IN ('ok', 'failed')),
+    mode        text NOT NULL CHECK (mode IN ('dry', 'live')),
+
+    -- NULL, not 0, when a run threw before deciding anything. Zero is a claim.
+    scanned     bigint,
+    acted       bigint,
+
+    detail      jsonb NOT NULL DEFAULT '{}'::jsonb,
+    error       text,
+
+    -- A failure with no error, or a success carrying one, are both states
+    -- somebody would have to interpret. Neither is representable.
+    CONSTRAINT job_run_error_iff_failed CHECK ((outcome = 'failed') = (error IS NOT NULL))
+);</code></pre>
+<p>Four decisions in there, each of which was an inference somebody had to make:</p>
+<p><strong><code>scanned</code> and <code>acted</code> are nullable.</strong> A run that threw before deciding anything did not scan zero things; it is not known what it got through. <code>0</code> would be a claim, and an operator comparing runs would read it as a clean pass.</p>
+<p><strong>The <code>=</code> between two boolean expressions</strong> is the whole invariant: a failed run must carry an error and a successful one must not. Written as an implication it would allow <code>outcome = 'ok', error = 'connection reset'</code>, which is a row nobody can act on.</p>
+<p><strong><code>detail</code> carries whether the sweep finished.</strong> A pass that hit its <code>LIMIT</code> did <strong>not</strong> complete, and an operator reading <code>scanned 1000, acted 3</code> will take it for a complete pass unless something says <code>truncated: true</code>.</p>
+<p><strong>It is not hash-chained, and that is the honest line.</strong> This is an operational record, not evidence. Chaining it would claim a property it does not have, and the audit chain is the thing that carries that claim. Make it append-only the same way — <code>DO INSTEAD NOTHING</code> on UPDATE and DELETE, plus a <code>BEFORE TRUNCATE</code> trigger, because rules do not cover TRUNCATE — but do not dress it up as proof.</p>
+<h3 id="both-failures-have-to-be-reported">Both failures have to be reported</h3>
+<p>When the job fails <em>and</em> recording the failure fails, say both. &quot;The job failed&quot; and &quot;we could not record that the job failed&quot; are different problems for whoever is on call, and reporting one of them loses the other. An unrecorded failure is precisely the state this table exists to make impossible, so it must not arrive as a bare <code>internal</code>.</p>
+<hr>
+<h2 id="asking-is-it-running-and-the-three-answers">Asking &quot;is it running&quot;, and the three answers</h2>
+<p>Now the question the table exists for. There are three states and most dashboards collapse two of them:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>State</th><th>What it means</th></tr></thead>
+<tbody><tr><td><code>ok</code>, 6 weeks old</td><td>it is running, late, and probably not scheduled as you think</td></tr>
+<tr><td><code>failed</code>, 5 minutes old</td><td>it is running and broken. A different problem, and a worse one</td></tr>
+<tr><td>never run</td><td>the cron does not exist, or has never fired, or the deploy dropped it</td></tr></tbody>
+</table></div>
+<p><strong>A job that has never run is the worst case and the easiest to hide</strong>, because the natural query hides it for free:</p>
+<pre><code class="lang-sql">SELECT j.job, now() - max(r.finished_at) AS age
+  FROM (VALUES ('storage_orphans'), ('upload_reservations')) AS j(job)
+  LEFT JOIN job_run r ON r.job = j.job
+ GROUP BY j.job
+HAVING now() - max(r.finished_at) &gt; interval '1 day';   -- the bug</code></pre>
+<p>A job with no runs has <code>max(finished_at) IS NULL</code>, <code>NULL &gt; interval</code> is NULL, <code>HAVING NULL</code> is not true, and the row that should have paged you is the one row that does not appear. Step 4 of the script measures it: the same query over the same three jobs returns the <em>stale</em> one and silently drops the one that has never run at all.</p>
+<p>Say it explicitly:</p>
+<pre><code class="lang-sql">HAVING max(r.finished_at) IS NULL
+    OR now() - max(r.finished_at) &gt; interval '1 day'</code></pre>
+<h3 id="do-not-invent-the-cadence">Do not invent the cadence</h3>
+<p>The interval is a policy decision about your bucket, your bill and your tolerance, and a default here is a number somebody made up appearing in somebody else's alerting. Take the threshold per job from the caller, and when no threshold was given, answer <code>null</code> for &quot;is it stale&quot; rather than guessing.</p>
+<p>But when a threshold <em>is</em> given, a job that has never run is stale — immediately. Returning <code>null</code> there would hide the worst case behind the absence of data, which is the defect this whole section is about.</p>
+<hr>
+<h2 id="what-this-does-not-give-you">What this does not give you</h2>
+<ul><li><strong>It does not make the jobs run.</strong> A table of runs tells you the cron stopped. Something still has to look at it, on a schedule, and tell a person.</li>
+<li><strong>It does not replace the sweeper's own guards.</strong> Recording that a sweep ran says nothing about whether it was right to delete what it deleted. See the <a href="/guides/deleting-files-and-orphaned-objects">orphaned objects guide</a> for the three guards that part needs.</li>
+<li><strong>A run record is not an audit event.</strong> It says a job executed; it is not evidence of what it did and it is not chained. If a deletion needs to be provable, the proof belongs in the audit log, written in the same transaction as the deletion.</li>
+<li><strong>Two schedulers will both run.</strong> Nothing here is a distributed lock. If you run the sweep from two boxes, add one — <code>pg_advisory_xact_lock</code> on a key derived from the job name is enough and costs one line.</li></ul>
+<hr>
+<h2 id="if-you-would-rather-not-build-it">If you would rather not build it</h2>
+<p><a href="https://filelayer.dev" rel="noopener">Filelayer</a> is this shape, packaged: the three collectors and the sealer each record a <code>job_run</code> row whether they succeed or fail, with the effective mode rather than the argument, and <code>jobStatus()</code> answers the three-way question above — taking the threshold from you and inventing no cadence.</p>
+<pre><code class="lang-ts">// Nothing has run yet. `lastRun: null` is NOT &quot;nothing to report&quot;.
+const fresh = await fl.jobStatus({ staleAfter: { upload_reservations: 3600 } });
+const before = fresh.find((j) =&gt; j.job === 'upload_reservations')!;
+assert.equal(before.lastRun, null);
+assert.equal(before.ageSeconds, null);
+assert.equal(before.stale, true);   // never run, and you said it should have
+
+await fl.collectUploadReservations({ dryRun: true });
+
+const after = (await fl.jobStatus({ staleAfter: { upload_reservations: 3600 } }))
+  .find((j) =&gt; j.job === 'upload_reservations')!;
+assert.equal(after.lastRun!.outcome, 'ok');
+// The EFFECTIVE mode, so six weeks of dry runs cannot read as six weeks
+// of sweeping.
+assert.equal(after.lastRun!.mode, 'dry');
+assert.equal(after.stale, false);</code></pre>
+<p>That block is executed by <code>npm run check:docs</code> on every commit.</p>
+<p>It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is alpha — <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">the trust page</a> has the numbers, including the ones sitting at zero.</p>
+<hr>
+<h2 id="related">Related</h2>
+<ul><li><a href="/guides/deleting-files-and-orphaned-objects">Deleting files and orphaned objects</a> — the second job, in full, including why it is the most dangerous one here.</li>
+<li><a href="/guides/tamper-evident-file-audit">How do I prove who accessed a file?</a> — why the retention job needs a checkpoint, and what sealing is for.</li>
+<li><a href="/guides/private-file-uploads">Private file uploads</a> — where the reservations this page collects come from.</li></ul>
+<hr>
+<h2 id="sources">Sources</h2>
+<ul><li><a href="https://www.postgresql.org/docs/current/sql-delete.html" rel="noopener"><code>DELETE ... RETURNING</code></a> — PostgreSQL, on claiming a row and learning whether you won</li>
+<li><a href="https://www.postgresql.org/docs/current/functions-comparison.html" rel="noopener">Comparison Functions and Operators</a> — PostgreSQL, on three-valued logic and why <code>NULL &gt; x</code> is not false</li>
+<li><a href="https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS" rel="noopener">Advisory Locks</a> — PostgreSQL, for the one-line scheduler lock</li>
+<li><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html" rel="noopener">Lifecycle configuration</a> — AWS, on what the bucket can expire for you and what it cannot</li></ul>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/background-jobs-for-user-files.md" rel="noopener"><code>docs/guides/background-jobs-for-user-files.md</code></a>
+    in a public repository. The code samples in the guides are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.33.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

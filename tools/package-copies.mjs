@@ -223,6 +223,19 @@ export const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/guides/background-jobs-for-user-files.md',
+    why:
+      'the eighth guide: the operational half of a file feature, where every ' +
+      'job reports its success as an absence. The reader who needs it is the ' +
+      'one with an install and a cron, which is exactly the offline reader.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/background-jobs-for-user-files.proof.mjs',
+    why: 'the script, including the data-loss race that needs two backends to stage.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/serving-private-files.md',
     why:
       'the fifth guide: a presigned redirect cannot be revoked before its TTL, ' +

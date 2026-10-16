@@ -111,6 +111,20 @@ concurrency.
 
 → [`tamper-evident-file-audit.proof.mjs`](tamper-evident-file-audit.proof.mjs)
 
+### [What background jobs does a file feature need, and did they run?](background-jobs-for-user-files.md)
+
+Four jobs. Writing them is a morning; the problem is that **every one of them
+produces an absence as its output**, so a job that silently stopped running
+looks exactly like a job with nothing to do.
+
+Measured: the collector that deletes a file the user *just finished uploading*,
+and the one-statement claim that closes it; six weeks of dry runs that look
+green on every dashboard while nothing is ever swept; and the alerting query
+that silently drops the worst case — the job that has never run at all, hidden
+for free by three-valued logic.
+
+→ [`background-jobs-for-user-files.proof.mjs`](background-jobs-for-user-files.proof.mjs)
+
 ---
 
 ## Running the proofs
@@ -126,6 +140,7 @@ node docs/guides/deleting-files-and-orphaned-objects.proof.mjs
 node docs/guides/serving-private-files.proof.mjs
 node docs/guides/revoking-delegated-access.proof.mjs
 node docs/guides/tamper-evident-file-audit.proof.mjs
+node docs/guides/background-jobs-for-user-files.proof.mjs
 ```
 
 The last one needs no PostgreSQL server at all: it runs the database in-process

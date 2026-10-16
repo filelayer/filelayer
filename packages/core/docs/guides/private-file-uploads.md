@@ -286,6 +286,9 @@ has the numbers, including the ones sitting at zero.
 - [Expiring and revocable file links](expiring-and-revocable-file-links.md) —
   the download half: why a presigned URL cannot be taken back, and the one query
   that is easy to write wrong.
+- [What background jobs does a file feature need, and did they run?](background-jobs-for-user-files.md) —
+  what collects the reservations this page creates, and the race in which the
+  collector deletes a file the user has just finished uploading.
 
 ---
 

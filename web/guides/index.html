@@ -118,6 +118,10 @@
 <p>An <code>access_log</code> answers <em>what did we record</em>. A compliance auditor asks <em>could that have been changed</em>. A hash chain closes most of the gap and <strong>detects three of the four things that can be done to a log</strong> — not truncation of the most recent events, which is structural and is why the head has to be pinned outside the database.</p>
 <p>Measured, including the defect almost every implementation ships: a SELECT-then-INSERT append forks under concurrent writers, so an honest log reads as tampered with — and a real tamper is then indistinguishable from routine concurrency.</p>
 <p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/tamper-evident-file-audit.proof.mjs" rel="noopener"><code>tamper-evident-file-audit.proof.mjs</code></a></p>
+<h3 id="what-background-jobs-does-a-file-feature-need-and-did-they-runbackground-jobs-for-user-filesmd"><a href="/guides/background-jobs-for-user-files">What background jobs does a file feature need, and did they run?</a></h3>
+<p>Four jobs. Writing them is a morning; the problem is that <strong>every one of them produces an absence as its output</strong>, so a job that silently stopped running looks exactly like a job with nothing to do.</p>
+<p>Measured: the collector that deletes a file the user <em>just finished uploading</em>, and the one-statement claim that closes it; six weeks of dry runs that look green on every dashboard while nothing is ever swept; and the alerting query that silently drops the worst case — the job that has never run at all, hidden for free by three-valued logic.</p>
+<p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/background-jobs-for-user-files.proof.mjs" rel="noopener"><code>background-jobs-for-user-files.proof.mjs</code></a></p>
 <hr>
 <h2 id="running-the-proofs">Running the proofs</h2>
 <p>Nothing to install and no server to start: <code>embedded-postgres</code> runs a real PostgreSQL as an ordinary user process and cleans up after itself.</p>
@@ -127,7 +131,8 @@ node docs/guides/multi-tenant-file-access.proof.mjs
 node docs/guides/deleting-files-and-orphaned-objects.proof.mjs
 node docs/guides/serving-private-files.proof.mjs
 node docs/guides/revoking-delegated-access.proof.mjs
-node docs/guides/tamper-evident-file-audit.proof.mjs</code></pre>
+node docs/guides/tamper-evident-file-audit.proof.mjs
+node docs/guides/background-jobs-for-user-files.proof.mjs</code></pre>
 <p>The last one needs no PostgreSQL server at all: it runs the database in-process and takes about five seconds.</p>
 <p>Each prints what it measured and exits non-zero if any number fails to reproduce. Re-run them before believing any of this.</p>
 <hr>

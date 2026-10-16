@@ -249,6 +249,9 @@ has the numbers, including the ones sitting at zero.
 - [Private file uploads](private-file-uploads.md) — the other end of the same
   gap: the upload that happens outside your transaction is what creates these
   orphans.
+- [What background jobs does a file feature need, and did they run?](background-jobs-for-user-files.md) —
+  the other three jobs, and the table that makes a cron which silently stopped
+  firing visible before the bucket bill does.
 - [Expiring and revocable file links](expiring-and-revocable-file-links.md)
 - [Multi-tenant file access control](multi-tenant-file-access.md)
 
