@@ -83,6 +83,26 @@ reads as "the package is gone" and is not.
 
 Put the cheap check that can fail in front of the expensive work, not behind it.
 
+## A release note is read by strangers, so write its first paragraph for one
+
+`benchmark/gate4/RESULTS.md` searched for this project on 16 October 2026 and got
+ten results: the repository, and **nine release pages**. Not the website, which
+has eight pages, six rendered guides, a sitemap and JSON-LD and did not appear
+at all.
+
+So the release notes are the most-read documents this project has, and they are
+written as a changelog — for somebody who already knows what Filelayer is and
+wants to know what changed. The people and crawlers reading them do not know.
+
+**The first paragraph of a release note has to make sense cold.** One sentence
+on what the thing is, before the first sentence about what moved in it. The rest
+can stay exactly as it is: the defect, the reasoning, the measurement. That part
+is why anybody trusts the changelog.
+
+This is not an instruction to market in a changelog. It is an instruction to
+stop assuming context the reader does not have, which is the same rule the rest
+of this file applies to everything else.
+
 ## And verify BEFORE you push
 
 ```
