@@ -10,7 +10,7 @@
      no edit here. -->
 
 **The file layer for SaaS applications.** Public files and private files, with
-one authorization model behind both.
+one authorization model behind both. → **[filelayer.dev](https://filelayer.dev)**
 
 You tell Filelayer who the caller is. Filelayer decides what they may do with a
 file, serves the bytes with the right headers, and writes the audit event. For
@@ -337,6 +337,9 @@ on disk.
 | Proving **your** routes hold, not ours (`auditIntegration()`) | [QUICKSTART §8](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) |
 | Reading the audit trail, with a time window and no storage adapter | [QUICKSTART §4](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) |
 | Running the suite yourself, from a clone | [CONTRIBUTING](https://github.com/filelayer/filelayer/blob/main/CONTRIBUTING.md) · [from an install](https://github.com/filelayer/filelayer/blob/main/docs/VERIFY-WHAT-YOU-INSTALLED.md) |
+
+The guides are also rendered at **[filelayer.dev/guides](https://filelayer.dev/guides/)**,
+which is the same markdown and is easier to read than a repository file.
 
 ## Versioning
 

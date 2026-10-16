@@ -57,7 +57,7 @@
     "url": "git+https://github.com/filelayer/filelayer.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/filelayer/filelayer/tree/main/packages/core#readme",
+  "homepage": "https://filelayer.dev",
   "bugs": {
     "url": "https://github.com/filelayer/filelayer/issues"
   },
