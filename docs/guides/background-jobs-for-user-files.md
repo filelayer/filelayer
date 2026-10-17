@@ -25,7 +25,7 @@ seconds — including a data-loss race that only exists with two backends.
 | Chain sealing | — | nothing, until you need to prove the log was not truncated |
 
 The second one has its own guide —
-[Deleting files and orphaned objects](deleting-files-and-orphaned-objects.md) —
+[How do I delete a file without leaving orphaned objects in S3?](deleting-files-and-orphaned-objects.md) —
 because the sweeper is the most dangerous job you will write and deserves the
 space. The third cannot be done naively on a hash-chained log, and
 [How do I prove who accessed a file?](tamper-evident-file-audit.md) has the
@@ -327,11 +327,11 @@ has the numbers, including the ones sitting at zero.
 
 ## Related
 
-- [Deleting files and orphaned objects](deleting-files-and-orphaned-objects.md) —
+- [How do I delete a file without leaving orphaned objects in S3?](deleting-files-and-orphaned-objects.md) —
   the second job, in full, including why it is the most dangerous one here.
 - [How do I prove who accessed a file?](tamper-evident-file-audit.md) — why the
   retention job needs a checkpoint, and what sealing is for.
-- [Private file uploads](private-file-uploads.md) — where the reservations this
+- [How do I let users upload files privately?](private-file-uploads.md) — where the reservations this
   page collects come from.
 
 ---

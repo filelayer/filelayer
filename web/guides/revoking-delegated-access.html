@@ -293,8 +293,8 @@ await assert.rejects(
 <p>It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is alpha — <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">the trust page</a> has the numbers, including the ones sitting at zero.</p>
 <hr>
 <h2 id="related">Related</h2>
-<ul><li><a href="/guides/expiring-and-revocable-file-links">Expiring and revocable file links</a> — why a presigned URL cannot be taken back, and the one query that is hard.</li>
-<li><a href="/guides/multi-tenant-file-access">Multi-tenant file access control</a> — the composite foreign key, applied to tenants rather than to lineage.</li>
+<ul><li><a href="/guides/expiring-and-revocable-file-links">How do I make a file link that expires — and that I can take back?</a> — why a presigned URL cannot be taken back, and the one query that is hard.</li>
+<li><a href="/guides/multi-tenant-file-access">How do I do multi-tenant file access control?</a> — the composite foreign key, applied to tenants rather than to lineage.</li>
 <li><a href="/guides/serving-private-files">Should I redirect to a presigned URL or proxy private files myself?</a> — where the revocation window comes from.</li></ul>
 <hr>
 <h2 id="sources">Sources</h2>
@@ -315,7 +315,7 @@ await assert.rejects(
     <a href="/quickstart">Quickstart</a> ·
     <a href="/guides/">All guides</a> ·
     <a href="/">Filelayer</a> ·
-    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+    <a href="/trust">Should you depend on this?</a>
   </p>
   <p class="fine">
     Filelayer 0.33.0, alpha. Apache-2.0, with a patent grant.

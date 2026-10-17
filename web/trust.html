@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: TRUST.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>Should you depend on this? · Filelayer</title>
+<meta name="description" content="Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.">
+
+<link rel="canonical" href="https://filelayer.dev/trust">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/trust">
+<meta property="og:title" content="Should you depend on this?">
+<meta property="og:description" content="Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Should you depend on this?">
+<meta name="twitter:description" content="Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Should you depend on this?",
+  "description": "Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.",
+  "url": "https://filelayer.dev/trust",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.33.0"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/quickstart">Quickstart</a>
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>Should you depend on this?</h1>
+<p>Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.</p>
+<p>Filelayer is a file layer for SaaS applications: files with owners, orgs and roles, share links that expire and can be revoked, lifecycle, and an audit trail that records denials. Its first release on npm was <code>0.3.0</code>, on <strong>6 September 2026</strong> — the registry's own timestamp, which is a day later than this page said until 4 October.</p>
+<hr>
+<h2 id="the-state-of-it-in-numbers">The state of it, in numbers</h2>
+<div class="table-scroll"><table>
+<thead><tr><th></th><th></th></tr></thead>
+<tbody><tr><td>Version</td><td>0.33.0 — alpha</td></tr>
+<tr><td>Known production deployments</td><td><strong>0</strong></td></tr>
+<tr><td>Maintainers with commit rights</td><td><strong>1</strong></td></tr>
+<tr><td>Independent security review</td><td><strong>none</strong></td></tr>
+<tr><td>Load measured</td><td>First run 4 October 2026, <code>benchmark/load/RESULTS.md</code>. One machine, no network, no object store, seconds per cell</td></tr>
+<tr><td>Tests</td><td>696, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves</td></tr>
+<tr><td>Concurrency, against a real PostgreSQL with two backends</td><td>8 tests, every commit</td></tr>
+<tr><td>Adversarial suite</td><td>27 attacks, 0 breaches</td></tr>
+<tr><td>Runtime dependencies</td><td><strong>0</strong></td></tr>
+<tr><td>Licence</td><td>Apache-2.0</td></tr>
+<tr><td>Storage adapter against live Cloudflare R2</td><td>12 tests every commit, 13 nightly</td></tr>
+<tr><td>Storage adapter against live AWS S3</td><td>12 tests every commit, 13 nightly, <code>eu-north-1</code> only</td></tr></tbody>
+</table></div>
+<p>If any row in that table is disqualifying for you, it should be, and you can stop reading. We would rather you decline today for accurate reasons than adopt on a misunderstanding and discover the gap during an incident.</p>
+<hr>
+<h2 id="what-is-actually-tested">What is actually tested</h2>
+<p>The authorization engine is the part we stand behind. There is one function that answers every access question, and a property suite that covers cross-tenant isolation, revocation that beats a live URL, delegation attenuation, download caps under concurrency, audit tamper-evidence (within the limit named below), and the full role matrix.</p>
+<p>Two of those tests are worth naming because they are the ones that catch the mistakes people actually make:</p>
+<ul><li><strong>A differential test</strong> asserts that the set query (<code>listFiles</code>) and the point check (<code>authorize</code>) agree exactly, over randomized corpora. If a listing ever returns a file the point check would deny, that is a leak, and the suite fails.</li>
+<li><strong>A calibration control.</strong> The adversarial suite is also run against an earlier revision of this library that is known to be vulnerable. It scores 3 breaches there and 0 here. A suite that only ever passes proves nothing about itself.</li></ul>
+<h2 id="what-runs-against-a-real-object-store-and-what-still-does-not">What runs against a real object store, and what still does not</h2>
+<p><strong>Since 30 September 2026 the storage adapter runs against live Cloudflare R2 on every commit.</strong> Twelve tests per commit and a thirteenth nightly, in CI, against a real bucket: put/get/head/ delete, ranged reads, prefix listing, keys containing characters that break naive URL construction, a presigned GET the store actually honours, a presigned URL expiring for real, a tampered one refused, and — on the nightly run and on manual dispatch — an 11 MB multipart upload reassembled byte-exactly. Plus the whole <code>Filelayer</code> lifecycle end to end on top of it.</p>
+<p>Before that it had never run against anything but a local harness, and this page said so for three weeks.</p>
+<p><strong>Since 3 October 2026 the same tests also run against AWS S3 itself</strong>, on every commit, against a bucket in <code>eu-north-1</code> reached through a least-privilege IAM user. R2 is S3-compatible, not S3, which is the whole reason for running both: AWS has its own checksum requirements, real IAM evaluation, virtual-hosted addressing and its own error codes. Until that day those were exercised only against the local harness that recomputes every SigV4 signature — a harness that found nine real bugs, including one where a key containing <code>#</code> silently collided with a different object and returned the wrong file's bytes, but which is not the counterparty.</p>
+<p>What that still does not say: one region, one bucket configuration, and no traffic. The tests write a handful of objects and an 11 MB multipart upload on the nightly run. Nobody has put load on this on either provider.</p>
+<p>The job fails, rather than passing quietly, if the credentials are present and the suite skips itself — the one failure mode that looks exactly like success. That check had itself never executed until the day the credentials arrived, and it was broken: it read the runner's tally in a format the runner had stopped emitting. Fixed the same day, and it now reads either format and also fails on a non-zero failure count, which the first version did not.</p>
+<h2 id="what-is-known-broken-or-unfinished">What is known broken or unfinished</h2>
+<p>Kept current, and complete, in <a href="https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md" rel="noopener"><code>LIMITATIONS.md</code></a> — fourteen entries, which ship in the npm tarball. The ones most likely to matter:</p>
+<ul><li>Byte delivery proxies through your application by default, so there is no CDN on that path. An opt-in redirect mode exists for anonymous grants and trades a bounded revocation window for cacheability.</li>
+<li><code>Range</code> is answered by the shipped route helpers, with three documented edges: multiple ranges in one request are ignored and the whole object is served, <code>If-Range</code> is not parsed, and a range is dropped when a download cap binds (with <code>Accept-Ranges: none</code> to say so). The README limitations list gives the reasoning for each.</li>
+<li>No thumbnails, transformations or format negotiation. Bytes go in and the same bytes come out.</li>
+<li>Direct browser-to-storage upload exists as of <code>0.10.0</code> but is opt-in, S3/R2 only, and single-PUT: no presigned POST (R2 does not implement it), nothing on <code>FsStorage</code>, and no resumable or multipart direct upload. Abandoned reservations are reclaimed by a job you schedule, not automatically. Plain <code>upload()</code>, where the bytes travel through your server, is still the default and is unchanged.</li>
+<li>Org admins and owners can read <code>private</code> files. Deliberate — retention and legal hold are useless if the people accountable for them cannot see what they are holding — but it is a policy decision, so it belongs on this page.</li>
+<li>The audit chain detects any edit to a recorded event, and the removal of one from the middle or the start. Truncation of the most recent events is the hard case: replay walks forward and nothing inside the chain records where it was supposed to end. Since 6 October 2026 <code>sealAuditChain()</code> records the head at a moment and verification reports a head that has fallen behind a seal, so routine truncation is no longer invisible. <strong>An anchor inside the same database still does not fix the adversarial case</strong> — whoever removes the events can remove the seals — so <code>verifyAuditChain()</code> hands you the head hash and pinning it somewhere else is still your job. Found by our own adversarial sweep, 2 October 2026, after three weeks of this page saying &quot;tamper-evidence&quot; without that sentence.</li>
+<li>The audit log can be trimmed, and nothing trims it for you. <code>trimAuditChain()</code> removes old events and leaves a checkpoint recording the hash the chain had reached, so a trimmed chain still verifies and the gap is reported as attested rather than as tampering. A deployment that never calls it still grows without bound. Until 6 October 2026 there was no trimming at all, and a tenant that had ever been audited — every tenant — <strong>could not be deleted</strong>: the cascade from <code>org</code> was a DELETE, the append-only rule rewrote it away, and Postgres raised on its own integrity check. Nobody had hit it because we expose no org deletion, so the trap was set for whoever first had to honour an erasure request.</li>
+<li>Concurrency is no longer argued. <strong>Since 3 October 2026 eight tests run on every commit against a real PostgreSQL with two connections</strong>, staging the races rather than reasoning about them: two backends demoting two owners, ten simultaneous redemptions against a cap of three, twenty concurrent writers on one audit chain, and cross-tenant traffic under load. Three of them carry a calibration control that drives the same interleaving with the protection removed and asserts the bad outcome does occur, because a concurrency test that has never been seen to fail is indistinguishable from one that cannot. What is still unproven is everything above those four properties: this is a floor, not a sweep.</li>
+<li>The schema may change before 1.0, and <strong>has changed six times</strong>, not once — this line said &quot;one breaking change&quot; until <code>0.15.0</code> and was understating what adopting us costs. <code>MIGRATIONS.md</code> has ten numbered entries, six of them with forward SQL. Since <code>0.15.0</code> each of those has a runnable file under <code>migrations/</code>, and CI applies it to the previous release's schema and fails the build unless the result matches the next release's, on real PostgreSQL. Two of the ten cannot be verified: they predate the oldest tag in the repository, so there is no earlier schema to apply them to.</li>
+<li>Until <code>0.15.0</code> there was no way to tell which schema version a database held. <code>filelayer_schema_version</code> and <code>schemaStatus(db)</code> close that. There is still <strong>no migration runner, and there will not be one</strong> — applying the files is your runner's job, which is a product position rather than a gap.</li></ul>
+<hr>
+<h2 id="what-would-make-this-trustworthy">What would make this trustworthy</h2>
+<p>Not a roadmap of features. These are the specific things that would let a sceptical engineer say yes, in the order they matter:</p>
+<ol><li><strong>Production deployments that are not ours.</strong> One, then three, then ten. This is the only item on the list we cannot manufacture, and it is the one that matters most. Everything else is work; this is evidence.</li>
+<li><strong>The storage adapter under real load, and in more than one region and bucket configuration.</strong> It runs against live R2 and live AWS S3 on every commit; what no test here has produced is traffic.</li>
+<li><strong>An independent security review</strong> of <code>schema.sql</code> and <code>authz.ts</code>, published in full including whatever it finds. The property suite is self-asserted, and cross-tenant isolation is exactly the claim that needs an adversary who is not the author.</li>
+<li><strong>1.0, with a frozen schema and a written compatibility promise.</strong></li>
+<li><strong>A second maintainer</strong>, and a demonstrated response time on a real report.</li></ol>
+<p>We will report against this list publicly, including when a number stays at zero.</p>
+<hr>
+<h2 id="using-it-anyway">Using it anyway</h2>
+<p>If you want to try it, the honest framing is: this is a good design that has not met production. Reasonable ways to engage, roughly in order of exposure:</p>
+<ul><li><strong>Read the schema.</strong> <code>schema.sql</code> states eight security properties. Some are write-side integrity constraints that bind every writer — take the composite foreign key that makes a cross-tenant grant row impossible to insert, even from <code>psql</code>. Others, including all read authorization, are enforced in <code>authz.ts</code> and therefore only for calls made through the library: there is no RLS policy in <code>schema.sql</code>, and a direct <code>SELECT</code> is not filtered. Take also the rule that a signed URL is re-validated on every request instead of being a bearer token you cannot recall. Apache-2.0 — copy it.</li>
+<li><strong>Run it against a non-critical workload</strong> and tell us what broke.</li>
+<li><strong>Depend on it in production</strong> only if you have read <code>authz.ts</code> yourself, or you are comfortable being the first.</li></ul>
+<p>If you do try it, <a href="https://github.com/filelayer/filelayer/issues" rel="noopener">open an issue</a> about anything that confused you. Confusion is a defect here; the whole claim is that this removes decisions you would otherwise get wrong quietly, and a confusing API does the opposite.</p>
+<p>Security reports: see <a href="https://github.com/filelayer/filelayer/blob/main/SECURITY.md" rel="noopener"><code>SECURITY.md</code></a>.</p>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener"><code>TRUST.md</code></a>
+    in a public repository. The code samples on this page are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/quickstart">Quickstart</a> ·
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="/trust">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.33.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

@@ -1,4 +1,9 @@
-# Filelayer Quickstart
+# Filelayer quickstart: add user files to a Node and Postgres app
+
+Install `@filelayer/core`, store a file, and give one user access to it — on
+your own PostgreSQL and your own bucket, with no service to sign up for. Then
+ownership, organizations and roles, share links that expire and can be revoked,
+and an audit trail that records denials.
 
 Simple first. Each section adds **one** concept. Stop reading at whichever
 section solves your problem — nothing later is required to make anything earlier

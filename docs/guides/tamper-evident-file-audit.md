@@ -409,7 +409,7 @@ has the numbers, including the ones sitting at zero.
 - [How do I revoke a share after the recipient has shared it onwards?](revoking-delegated-access.md) —
   the other half of "who can reach this file", and the lock-ordering rule above
   comes from it.
-- [Multi-tenant file access control](multi-tenant-file-access.md) — why the
+- [How do I do multi-tenant file access control?](multi-tenant-file-access.md) — why the
   tenant boundary belongs in constraints rather than in a `WHERE` clause.
 
 ---

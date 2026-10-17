@@ -342,7 +342,7 @@ including the control that shows the naive version overshooting.
 
 ## Related
 
-- [Private file uploads](private-file-uploads.md) — the other half: a presigned
+- [How do I let users upload files privately?](private-file-uploads.md) — the other half: a presigned
   PUT does not limit the size of what gets uploaded, and the policy that does.
 
 ---

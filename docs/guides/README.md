@@ -21,7 +21,7 @@ Two consequences of that rule, both deliberate:
 
 ## The guides
 
-### [Expiring and revocable file links](expiring-and-revocable-file-links.md)
+### [How do I make a file link that expires — and that I can take back?](expiring-and-revocable-file-links.md)
 
 The usual answer is a presigned URL with an expiry. It is right about expiry and
 wrong about taking it back: **a presigned URL cannot be revoked individually.**
@@ -31,7 +31,7 @@ when two people redeem the same link at the same moment.
 
 → [`expiring-and-revocable-file-links.proof.mjs`](expiring-and-revocable-file-links.proof.mjs)
 
-### [Private file uploads](private-file-uploads.md)
+### [How do I let users upload files privately?](private-file-uploads.md)
 
 The usual answer — private bucket, presigned URL — is correct as far as it goes.
 What it leaves out is that **a presigned PUT does not constrain the body**: a URL
@@ -44,7 +44,7 @@ It also documents the option we could not find written down anywhere and ended
 up needing: **sign `content-length` into the PUT**, which pins the body to an
 exact size and works on Cloudflare R2, where presigned POST does not exist.
 
-### [Multi-tenant file access control](multi-tenant-file-access.md)
+### [How do I do multi-tenant file access control?](multi-tenant-file-access.md)
 
 The usual answer — `tenant_id`, Row-Level Security, a session variable — is a
 good one, and this guide does not argue with it. It argues with the conclusion.
@@ -55,7 +55,7 @@ including from a role with `BYPASSRLS`.
 
 → [`multi-tenant-file-access.proof.mjs`](multi-tenant-file-access.proof.mjs)
 
-### [Deleting files and orphaned objects](deleting-files-and-orphaned-objects.md)
+### [How do I delete a file without leaving orphaned objects in S3?](deleting-files-and-orphaned-objects.md)
 
 Postgres and S3 do not share a transaction, so every delete is two deletes. The
 well-covered answer is a sweeper job. This is about what comes after: **which

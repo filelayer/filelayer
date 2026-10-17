@@ -12,8 +12,8 @@
   markdown.
 -->
 
-<title>Filelayer Quickstart · Filelayer</title>
-<meta name="description" content="Simple first. Each section adds one concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.">
+<title>Filelayer quickstart: add user files to a Node and Postgres app</title>
+<meta name="description" content="Install @filelayer/core, store a file, and give one user access to it — on your own PostgreSQL and your own bucket, with no service to sign up for. Then ownership, organizations and…">
 
 <link rel="canonical" href="https://filelayer.dev/quickstart">
 <link rel="stylesheet" href="/styles.css">
@@ -23,13 +23,13 @@
 
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://filelayer.dev/quickstart">
-<meta property="og:title" content="Filelayer Quickstart">
-<meta property="og:description" content="Simple first. Each section adds one concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.">
+<meta property="og:title" content="Filelayer quickstart: add user files to a Node and Postgres app">
+<meta property="og:description" content="Install @filelayer/core, store a file, and give one user access to it — on your own PostgreSQL and your own bucket, with no service to sign up for. Then ownership, organizations and…">
 <meta property="og:image" content="https://filelayer.dev/og.png">
 <meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Filelayer Quickstart">
-<meta name="twitter:description" content="Simple first. Each section adds one concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.">
+<meta name="twitter:title" content="Filelayer quickstart: add user files to a Node and Postgres app">
+<meta name="twitter:description" content="Install @filelayer/core, store a file, and give one user access to it — on your own PostgreSQL and your own bucket, with no service to sign up for. Then ownership, organizations and…">
 <meta name="twitter:image" content="https://filelayer.dev/og.png">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -38,8 +38,8 @@
 {
   "@context": "https://schema.org",
   "@type": "TechArticle",
-  "headline": "Filelayer Quickstart",
-  "description": "Simple first. Each section adds one concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.",
+  "headline": "Filelayer quickstart: add user files to a Node and Postgres app",
+  "description": "Install @filelayer/core, store a file, and give one user access to it — on your own PostgreSQL and your own bucket, with no service to sign up for. Then ownership, organizations and…",
   "url": "https://filelayer.dev/quickstart",
   "inLanguage": "en",
   "isPartOf": {
@@ -86,7 +86,8 @@
 
 <main id="main" class="wrap">
 <article class="guide">
-<h1>Filelayer Quickstart</h1>
+<h1>Filelayer quickstart: add user files to a Node and Postgres app</h1>
+<p>Install <code>@filelayer/core</code>, store a file, and give one user access to it — on your own PostgreSQL and your own bucket, with no service to sign up for. Then ownership, organizations and roles, share links that expire and can be revoked, and an audit trail that records denials.</p>
 <p>Simple first. Each section adds <strong>one</strong> concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.</p>
 <p>If you are an AI agent implementing an integration: every TypeScript block on this page is extracted and <strong>executed</strong> by <code>tools/check-doc-samples.mjs</code>, which runs in CI on every push. Two blocks are marked as skipped in the markdown source, each with a stated reason. Runnable examples of the same shapes live in <code>examples/tier1-avatar/</code>, <code>examples/tier2-user-files/</code>, <code>examples/tier3-org-roles/</code> and <code>examples/vault/</code>, and <code>examples/starter/</code> is a deployable server against your own Postgres. If a snippet here disagrees with the test suite, the test suite is right and this page is a bug.</p>
 <p><strong>Contents</strong></p>
@@ -533,7 +534,7 @@ catch (e) {
     <a href="/quickstart">Quickstart</a> ·
     <a href="/guides/">All guides</a> ·
     <a href="/">Filelayer</a> ·
-    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+    <a href="/trust">Should you depend on this?</a>
   </p>
   <p class="fine">
     Filelayer 0.33.0, alpha. Apache-2.0, with a patent grant.

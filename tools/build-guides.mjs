@@ -600,7 +600,7 @@ ${body}
     <a href="/quickstart">Quickstart</a> ·
     <a href="/guides/">All guides</a> ·
     <a href="/">Filelayer</a> ·
-    <a href="${GH_BLOB}TRUST.md" rel="noopener">Should you depend on this?</a>
+    <a href="/trust">Should you depend on this?</a>
   </p>
   <p class="fine">
     Filelayer ${VERSION}, alpha. Apache-2.0, with a patent grant.
@@ -653,6 +653,22 @@ const sources = [
     src: 'docs/QUICKSTART.md',
     out: 'quickstart.html',
     url: `${SITE}/quickstart`,
+    slug: null,
+    isGuide: false,
+    isIndex: false,
+  },
+  // AND THE PAGE THAT ARGUES AGAINST ADOPTING IT.
+  //
+  // `TRUST.md` is the honest answer to "should you depend on this?", zeros
+  // included, and until now it was only on GitHub -- so every page on this site
+  // linked to it and none of them could be read without leaving the site. A
+  // reader deciding whether to adopt is looking for exactly the disqualifying
+  // information, and a vendor that supplies it is more useful than one that
+  // makes them go and find it.
+  {
+    src: 'TRUST.md',
+    out: 'trust.html',
+    url: `${SITE}/trust`,
     slug: null,
     isGuide: false,
     isIndex: false,
@@ -754,7 +770,7 @@ for (const s of sources) {
         continue;
       }
       if (/^(https?:|mailto:)/.test(href)) continue;
-      if (href === '/' || href === '/styles.css' || href === '/quickstart') continue;
+      if (['/', '/styles.css', '/quickstart', '/trust'].includes(href)) continue;
       if (href.startsWith('/guides')) {
         const slug = href.replace(/^\/guides\/?/, '').split('#')[0];
         const ok = slug === '' ? built.some((b) => b.isIndex) : built.some((b) => b.slug === slug);

@@ -283,7 +283,7 @@ has the numbers, including the ones sitting at zero.
 
 ## Related
 
-- [Expiring and revocable file links](expiring-and-revocable-file-links.md) —
+- [How do I make a file link that expires — and that I can take back?](expiring-and-revocable-file-links.md) —
   the download half: why a presigned URL cannot be taken back, and the one query
   that is easy to write wrong.
 - [What background jobs does a file feature need, and did they run?](background-jobs-for-user-files.md) —
