@@ -104,6 +104,11 @@
 # whichever machine ran last, and committing it would make every re-run a diff.
 !/benchmark/load/
 /benchmark/load/results.json
+# Same reasoning as the load benchmark: TRUST.md cites the time-to-first-file
+# number, so the script that produced it and the run it produced have to be
+# openable. There is no raw artefact to exclude -- the script writes RESULTS.md
+# and deletes everything else it touched.
+!/benchmark/ttff/
 !/benchmark/decisions.json
 !/benchmark/loc.manifest.json
 

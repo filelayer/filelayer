@@ -98,6 +98,7 @@
 <tr><td>Maintainers with commit rights</td><td><strong>1</strong></td></tr>
 <tr><td>Independent security review</td><td><strong>none</strong></td></tr>
 <tr><td>Load measured</td><td>First run 4 October 2026, <code>benchmark/load/RESULTS.md</code>. One machine, no network, no object store, seconds per cell</td></tr>
+<tr><td>Time to first stored file</td><td>Measured 17 October 2026, <code>benchmark/ttff/RESULTS.md</code>. From <code>npm install</code> of the <strong>published</strong> package to a stored byte, with a cold npm cache: <strong>0 accounts, 0 credentials, 0 dashboards, 4 lines</strong>. The program is asserted to appear verbatim in the quickstart that shipped in the tarball</td></tr>
 <tr><td>Tests</td><td>696, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves</td></tr>
 <tr><td>Concurrency, against a real PostgreSQL with two backends</td><td>8 tests, every commit</td></tr>
 <tr><td>Adversarial suite</td><td>27 attacks, 0 breaches</td></tr>
