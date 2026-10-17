@@ -492,6 +492,22 @@ const clip = (s, n) => {
 function page({ url, source, title, lede, body }) {
   const desc = clip(lede ?? '', 185);
 
+  // THE FOOTER CLAIM IS DERIVED FROM THE PAGE, NOT ASSERTED ABOUT IT.
+  //
+  // It read "the code samples in the guides are executed by CI" while the only
+  // pages were guides. Generalising it to "on this page" made it more precise
+  // and, for the first page with no samples, false -- and that page was
+  // `/trust`, whose entire job is to be accurate about what is and is not
+  // verified. A false claim about verification, on the verification page, is
+  // the worst place this project could have put one.
+  //
+  // `lang-ts` is exactly what `check:docs` extracts and runs, so this is the
+  // same question the gate asks rather than a second opinion about it.
+  const samples = /<code class="lang-ts">/.test(body)
+    ? ' The TypeScript on this page is executed by CI on every commit; a sample that' +
+      ' stops working fails the build.'
+    : '';
+
   // THE BRAND SUFFIX IS THE PART THAT GIVES WAY. Search results truncate a
   // title around 70 characters, and these titles are questions: the question is
   // the whole value of the page and " · Filelayer" is a nicety. Two of the four
@@ -593,8 +609,7 @@ ${body}
   <p>
     This page is generated from
     <a href="${GH_BLOB}${source}" rel="noopener"><code>${source}</code></a>
-    in a public repository. The code samples on this page are executed by CI on
-    every commit; a sample that stops working fails the build.
+    in a public repository.${samples}
   </p>
   <p>
     <a href="/quickstart">Quickstart</a> ·
