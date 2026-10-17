@@ -196,11 +196,35 @@ function checkPage(page, html) {
     const candidates = rel.endsWith('/') || rel === ''
       ? [join(rel, 'index.html')]
       : [rel, `${rel}.html`, join(rel, 'index.html')];
-    if (!candidates.some((c) => existsSync(join(WEB, c))))
+    const hit = candidates.find((c) => existsSync(join(WEB, c)));
+    if (!hit) {
       fail(
         `${page}:${line}`,
         `relative link ${href} does not resolve in web/ (tried ${candidates.join(', ')})`,
       );
+      continue;
+    }
+
+    // AND THE FRAGMENT, ON THE PAGE IT LANDS ON.
+    //
+    // A same-page `#id` was checked from the first version of this gate. A
+    // CROSS-page one -- `/quickstart#0-install` -- had its fragment stripped
+    // before the lookup and was never examined, so the half of the link that
+    // decides where the reader ends up was the half nothing read. It cost
+    // nothing while every deep link pointed at GitHub; it started costing on
+    // 17 October 2026, when the landing page's two most prominent buttons
+    // became deep links into a page on this site.
+    //
+    // A wrong fragment does not 404. The browser serves the page and scrolls
+    // nowhere, which is the failure mode a reader reports as "the link is
+    // broken" and a maintainer cannot reproduce.
+    const frag = (href.split('#')[1] ?? '').split('?')[0];
+    if (frag) {
+      const target = readFileSync(join(WEB, hit), 'utf8');
+      const has = new Set([...target.matchAll(/\bid="([^"]+)"/g)].map((x) => x[1]));
+      if (!has.has(frag))
+        fail(`${page}:${line}`, `links to ${href}, and web/${hit} has no id="${frag}"`);
+    }
   }
   }
 

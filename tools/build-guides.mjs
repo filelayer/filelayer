@@ -104,7 +104,18 @@ const esc = (s) =>
 // does not host the repository.
 const GH_BLOB = 'https://github.com/filelayer/filelayer/blob/main/';
 
-function rewriteHref(href) {
+function rewriteHref(href, file = 'docs/guides/x.md') {
+  // WHICH SOURCE THIS LINK WAS WRITTEN IN decides what a relative path means.
+  //
+  // `docs/guides/*.md` link each other as bare siblings and those become site
+  // URLs. Every other page rendered here -- `docs/QUICKSTART.md` is the first
+  // -- is a document that lives in a repository and links to OTHER files in
+  // that repository, which the website does not serve. Resolving those against
+  // the source file's own directory and sending them to GitHub is the only
+  // answer that is not a 404; the alternative was rewriting the markdown so it
+  // reads worse in the repository, where most of its readers still are.
+  const guide = file.startsWith('docs/guides/');
+
   // Absolute, or a pure fragment: the author meant it, leave it.
   if (/^(https?:|mailto:|#)/.test(href)) {
     return href.startsWith(`${GH_BLOB}docs/guides/README.md`)
@@ -124,6 +135,24 @@ function rewriteHref(href) {
   // on the one page whose entire job is to send readers to the other four.
   const strip = href.replace(/^\.\//, '');
   const [path, frag = ''] = strip.split(/(?=#)/);
+
+  if (!guide) {
+    // Resolve against the source file's directory, inside the repository, and
+    // refuse anything that climbs out of it rather than emitting a GitHub URL
+    // for a path that is not in this repository at all.
+    const parts = file.split('/').slice(0, -1).concat(path.split('/'));
+    const resolved = [];
+    for (const seg of parts) {
+      if (seg === '.' || seg === '') continue;
+      if (seg === '..') {
+        if (resolved.length === 0) return `UNRESOLVED:${href}`;
+        resolved.pop();
+        continue;
+      }
+      resolved.push(seg);
+    }
+    return `${GH_BLOB}${resolved.join('/')}${frag}`;
+  }
 
   if (/^README\.md$/.test(path)) return `/guides/${frag}`;
   const md = path.match(/^([a-z0-9-]+)\.md$/);
@@ -182,12 +211,21 @@ function inline(text, file, line) {
 
   // Links before bold and emphasis, so a label may contain either.
   work = work.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
-    const h = rewriteHref(href);
+    const h = rewriteHref(href, file);
     const external = /^https?:/.test(h);
     return `<a href="${h}"${external ? ' rel="noopener"' : ''}>${label}</a>`;
   });
 
-  work = work.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // BOLD MAY CONTAIN EMPHASIS. `**Answer *multiple* ranges in one request**`
+  // is ordinary markdown and the first version of this pattern -- `[^*]+`
+  // between the fences -- could not match it at all, so the leftover check
+  // below reported "unbalanced bold" about a line that was perfectly balanced.
+  // A refusal that names the wrong defect costs more than no refusal.
+  //
+  // Lazy, and the inner class admits a single `*` but never a `**`, so the
+  // first closing pair still closes the span and two adjacent bold runs do not
+  // merge into one.
+  work = work.replace(/\*\*((?:[^*]|\*(?!\*))+?)\*\*/g, '<strong>$1</strong>');
   work = work.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
 
   // AND DENY WHAT IS LEFT. These are constructs the rewrites above could not
@@ -210,6 +248,7 @@ function inline(text, file, line) {
 function render(md, file) {
   const lines = md.split('\n');
   const out = [];
+  const ids = [];
   let i = 0;
   let title = null;
   let lede = null;
@@ -272,12 +311,22 @@ function render(md, file) {
         title = h[2].replace(/[*`]/g, '');
         out.push(`<h1>${text}</h1>`);
       } else {
+        // ONE SPACE BECOMES ONE DASH, and runs are NOT collapsed, because the
+        // tables of contents these pages carry were written against GitHub's
+        // slugger and are read on GitHub too. GitHub removes the punctuation
+        // first and replaces what is left space-for-space, so `Tier 1 — a
+        // public file` is `tier-1--a-public-file` there: two dashes where the
+        // em dash was. Collapsing produced `tier-1-a-public-file` here, and a
+        // contents list that worked in the repository and silently went
+        // nowhere on the website. Fragments are validated in the link audit
+        // below, so a future divergence fails the build rather than shipping.
         const id = h[2]
           .toLowerCase()
           .replace(/`[^`]*`/g, (s) => s.replace(/`/g, ''))
           .replace(/[^a-z0-9 -]/g, '')
           .trim()
-          .replace(/\s+/g, '-');
+          .replace(/ /g, '-');
+        ids.push(id);
         out.push(`<h${level} id="${id}">${text}</h${level}>`);
       }
       i++;
@@ -327,18 +376,70 @@ function render(md, file) {
       while (i < lines.length) {
         const m = lines[i].match(/^(\s*)([-*]|\d+\.)\s+(.*)$/);
         if (m && m[1].length === depth) {
-          const buf = [m[3]];
+          // AN ITEM IS PROSE, AND IT MAY ALSO CARRY AN INDENTED CODE BLOCK.
+          //
+          // `docs/QUICKSTART.md` does this twice: a numbered point whose whole
+          // value is the three lines of TypeScript underneath it. The fenced
+          // rule in the main loop only matches a fence in column zero, so an
+          // indented one used to fall through to the paragraph rule, where
+          // `inline()` met three backticks and refused -- correctly, and with
+          // a message about an unbalanced code span, which is not what was
+          // wrong. Supported here instead, which is what the header of this
+          // file says to do when the corpus needs a construct.
+          const parts = [];
+          let buf = [m[3]];
           i++;
-          // continuation lines of the same item: indented, and not a new bullet
-          while (
-            i < lines.length &&
-            /^\s+\S/.test(lines[i]) &&
-            !/^(\s*)([-*]|\d+\.)\s+/.test(lines[i]) &&
-            !/^```/.test(lines[i].trim())
-          ) {
-            buf.push(lines[i++].trim());
+          const flush = () => {
+            const text = buf.join(' ').trim();
+            if (text) parts.push(parts.length === 0 ? inline(text, file, no) : `<p>${inline(text, file, no)}</p>`);
+            buf = [];
+          };
+          for (;;) {
+            // continuation lines of the same item: indented, and not a new bullet
+            while (
+              i < lines.length &&
+              /^\s+\S/.test(lines[i]) &&
+              !/^(\s*)([-*]|\d+\.)\s+/.test(lines[i]) &&
+              !/^```/.test(lines[i].trim())
+            ) {
+              buf.push(lines[i++].trim());
+            }
+            // A BLANK LINE DOES NOT END THE ITEM, and this is where the
+            // content gets lost if you assume it does. Markdown lets an item
+            // carry several blocks separated by blank lines, as long as they
+            // stay indented; QUICKSTART's listing note is prose, a blank line,
+            // a code block, a blank line and more prose. Look PAST the blanks,
+            // and only consume them once something indented is actually there.
+            let k = i;
+            while (k < lines.length && /^\s*$/.test(lines[k])) k++;
+            const more =
+              k < lines.length &&
+              /^\s+\S/.test(lines[k]) &&
+              !/^(\s*)([-*]|\d+\.)\s+/.test(lines[k]);
+            if (!more) break;
+            if (!/^\s+```/.test(lines[k])) {
+              // Indented prose after a blank line: another paragraph of this
+              // same item.
+              i = k;
+              flush();
+              continue;
+            }
+            i = k;
+            flush();
+            const fence = lines[i];
+            const indent = fence.match(/^(\s*)/)[1].length;
+            const lang = fence.trim().slice(3).trim();
+            i++;
+            const code = [];
+            while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++].slice(indent));
+            if (i >= lines.length) {
+              throw new Unsupported(file, no, 'an unclosed code fence inside a list item', fence);
+            }
+            i++;
+            parts.push(`<pre><code${lang ? ` class="lang-${lang}"` : ''}>${esc(code.join('\n'))}</code></pre>`);
           }
-          items.push(`<li>${inline(buf.join(' ').trim(), file, no)}</li>`);
+          flush();
+          items.push(`<li>${parts.join('')}</li>`);
           continue;
         }
         if (m && m[1].length > depth) {
@@ -377,7 +478,7 @@ function render(md, file) {
   }
 
   if (title === null) throw new Unsupported(file, 1, 'no h1, so the page has no title', '');
-  return { html: out.join('\n'), title, lede };
+  return { html: out.join('\n'), title, lede, ids };
 }
 
 // --- the page ---------------------------------------------------------------
@@ -388,8 +489,7 @@ const clip = (s, n) => {
   return `${cut.slice(0, cut.lastIndexOf(' '))}…`;
 };
 
-function page({ slug, title, lede, body, isIndex }) {
-  const url = isIndex ? `${SITE}/guides/` : `${SITE}/guides/${slug}`;
+function page({ url, source, title, lede, body }) {
   const desc = clip(lede ?? '', 185);
 
   // THE BRAND SUFFIX IS THE PART THAT GIVES WAY. Search results truncate a
@@ -421,12 +521,6 @@ function page({ slug, title, lede, body, isIndex }) {
     author: { '@type': 'Organization', name: 'Technology Pro Bono S.L.' },
     license: 'https://www.apache.org/licenses/LICENSE-2.0',
   };
-
-  // THE SOURCE LINK IS NOT A COURTESY. Every one of these pages is derived from
-  // a file in a public repository, and the claim this project makes is that its
-  // documentation is checkable. A reader who wants to see the executable proof
-  // beside the prose needs the path to it, so each page carries it.
-  const source = isIndex ? 'docs/guides/README.md' : `docs/guides/${slug}.md`;
 
   return `<!doctype html>
 <html lang="en">
@@ -483,8 +577,8 @@ ${JSON.stringify(ld, null, 2)}
       Filelayer
     </a>
     <nav class="nav" aria-label="Primary">
+      <a href="/quickstart">Quickstart</a>
       <a href="/guides/">Guides</a>
-      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
       <a href="https://github.com/filelayer/filelayer">GitHub</a>
     </nav>
   </header>
@@ -499,10 +593,11 @@ ${body}
   <p>
     This page is generated from
     <a href="${GH_BLOB}${source}" rel="noopener"><code>${source}</code></a>
-    in a public repository. The code samples in the guides are executed by CI on
+    in a public repository. The code samples on this page are executed by CI on
     every commit; a sample that stops working fails the build.
   </p>
   <p>
+    <a href="/quickstart">Quickstart</a> ·
     <a href="/guides/">All guides</a> ·
     <a href="/">Filelayer</a> ·
     <a href="${GH_BLOB}TRUST.md" rel="noopener">Should you depend on this?</a>
@@ -521,23 +616,59 @@ ${body}
 
 // --- build ------------------------------------------------------------------
 
-const sources = readdirSync(SRC)
-  .filter((f) => f.endsWith('.md'))
-  .sort();
+// THE PAGES THIS GENERATOR SERVES, discovered where discovery is possible and
+// declared where it is not.
+//
+// The guides are a directory and are discovered from it. `docs/QUICKSTART.md`
+// is one named file in a directory of files that are NOT website pages, so it
+// is declared -- and it is declared here, once, rather than special-cased
+// downstream.
+//
+// WHY THE QUICKSTART IS ON THIS DOMAIN AT ALL. Until 17 October 2026 the site's
+// "Docs" link went to GitHub, so `filelayer.dev` had no install page. An agent
+// answering "how do I install and authenticate this?" -- the highest-intent
+// question in the whole funnel, and the one a coding agent asks with a `site:`
+// operator in nine searches out of ten -- found nothing on our own domain.
+//
+// The markdown stays the single source: this renders it, `npm run check:guides`
+// re-renders in memory and fails on a one-byte difference, and there is no
+// second copy to drift.
+const sources = [
+  ...readdirSync(SRC)
+    .filter((f) => f.endsWith('.md'))
+    .sort()
+    .map((f) => {
+      const slug = f.replace(/\.md$/, '');
+      const isIndex = slug === 'README';
+      return {
+        src: `docs/guides/${f}`,
+        out: isIndex ? 'guides/index.html' : `guides/${slug}.html`,
+        url: isIndex ? `${SITE}/guides/` : `${SITE}/guides/${slug}`,
+        slug: isIndex ? '' : slug,
+        isGuide: true,
+        isIndex,
+      };
+    }),
+  {
+    src: 'docs/QUICKSTART.md',
+    out: 'quickstart.html',
+    url: `${SITE}/quickstart`,
+    slug: null,
+    isGuide: false,
+    isIndex: false,
+  },
+];
 
 const built = [];
-for (const f of sources) {
-  const slug = f.replace(/\.md$/, '');
-  const isIndex = slug === 'README';
-  const md = readFileSync(join(SRC, f), 'utf8');
-  const { html, title, lede } = render(md, `docs/guides/${f}`);
+for (const s of sources) {
+  const md = readFileSync(join(ROOT, s.src), 'utf8');
+  const { html, title, lede, ids } = render(md, s.src);
   built.push({
-    out: isIndex ? 'index.html' : `${slug}.html`,
-    slug: isIndex ? '' : slug,
-    isIndex,
+    ...s,
     title,
     lede,
-    text: page({ slug, title, lede, body: html, isIndex }),
+    ids,
+    text: page({ url: s.url, source: s.src, title, lede, body: html }),
   });
 }
 
@@ -556,15 +687,15 @@ for (const f of sources) {
 // coarse and it catches the failure that matters: content that is simply gone.
 {
   const problems = [];
-  for (const f of sources) {
-    const md = readFileSync(join(SRC, f), 'utf8');
-    const html = built.find((b) => b.out === (f === 'README.md' ? 'index.html' : f.replace(/\.md$/, '.html'))).text;
-    const body = html.slice(html.indexOf('<article'), html.indexOf('</article>'));
+  for (const b of built) {
+    const f = b.src;
+    const md = readFileSync(join(ROOT, f), 'utf8');
+    const body = b.text.slice(b.text.indexOf('<article'), b.text.indexOf('</article>'));
 
     // Fenced blocks come in pairs, so the opening count is half the fences.
-    const fences = (md.match(/^```/gm) ?? []).length;
+    const fences = (md.match(/^\s*```/gm) ?? []).length;
     const lines = md.split('\n');
-    const inFence = lines.map(((open) => (l) => (/^```/.test(l) ? ((open = !open), true) : open))(false));
+    const inFence = lines.map(((open) => (l) => (/^\s*```/.test(l) ? ((open = !open), true) : open))(false));
     const outside = lines.filter((_, i) => !inFence[i]);
 
     const expect = {
@@ -586,7 +717,7 @@ for (const f of sources) {
       const got = (body.match(new RegExp(tag.replace(/[[\]().*+?^${}|\\]/g, '\\$&'), 'g')) ?? []).length;
       if (got !== want) {
         problems.push(
-          `docs/guides/${f}: the source has ${want} ${tag.trim()} block(s); the rendered page has ${got}. ` +
+          `${f}: the source has ${want} ${tag.trim()} block(s); the rendered page has ${got}. ` +
             'Content was dropped or duplicated by a block rule in this file.',
         );
       }
@@ -601,27 +732,42 @@ for (const f of sources) {
       const href = m[1];
       if (href.startsWith('UNRESOLVED:')) {
         problems.push(
-          `docs/guides/${f}: rewriteHref() does not know where to put ` +
+          `${f}: rewriteHref() does not know where to put ` +
             `\`${href.slice('UNRESOLVED:'.length)}\`. Teach it, or make the link absolute in ` +
             'the markdown so it points at the repository.',
         );
         continue;
       }
-      if (/^(https?:|mailto:|#)/.test(href)) continue;
-      if (href === '/' || href === '/styles.css') continue;
+      // A FRAGMENT IS A LINK LIKE ANY OTHER, and it is the one kind that fails
+      // silently: a browser handed an id that does not exist scrolls nowhere
+      // and reports nothing. `docs/QUICKSTART.md` opens with an eleven-item
+      // contents list, so an unvalidated slugger would have shipped eleven
+      // dead links on the page this site most needs to work.
+      if (href.startsWith('#')) {
+        if (!b.ids.includes(href.slice(1))) {
+          problems.push(
+            `${f}: links to \`${href}\`, and no heading on the rendered page has that id. ` +
+              'Either the heading was renamed or the slugger disagrees with the one the ' +
+              'contents list was written against.',
+          );
+        }
+        continue;
+      }
+      if (/^(https?:|mailto:)/.test(href)) continue;
+      if (href === '/' || href === '/styles.css' || href === '/quickstart') continue;
       if (href.startsWith('/guides')) {
         const slug = href.replace(/^\/guides\/?/, '').split('#')[0];
         const ok = slug === '' ? built.some((b) => b.isIndex) : built.some((b) => b.slug === slug);
         if (!ok) {
           problems.push(
-            `docs/guides/${f}: the link rewrite produced ${href}, which is not a page this ` +
+            `${f}: the link rewrite produced ${href}, which is not a page this ` +
               'generator builds. Fix rewriteHref() rather than the markdown.',
           );
         }
         continue;
       }
       problems.push(
-        `docs/guides/${f}: emitted the link \`${href}\`, which is neither absolute, nor a ` +
+        `${f}: emitted the link \`${href}\`, which is neither absolute, nor a ` +
           'fragment, nor a page or asset this site serves. The website is not the repository, ' +
           'so a relative path that works in a checkout 404s here.',
       );
@@ -697,7 +843,7 @@ ${sitemapEntries
 `;
 
 const artifacts = [
-  ...built.map((b) => ({ path: join('web', 'guides', b.out), text: b.text })),
+  ...built.map((b) => ({ path: join('web', b.out), text: b.text })),
   { path: join('web', 'sitemap.xml'), text: sitemap },
 ];
 
@@ -722,8 +868,8 @@ if (CHECK) {
     process.exit(1);
   }
   console.log(
-    `build-guides: clean. ${built.length} page(s) in web/guides/ are byte-identical to ` +
-      `what docs/guides/*.md renders to, and web/sitemap.xml lists the ` +
+    `build-guides: clean. ${built.length} page(s) under web/ are byte-identical to ` +
+      `what their markdown sources render to, and web/sitemap.xml lists the ` +
       `${sitemapEntries.length} tracked page(s) under web/.`,
   );
 } else {
@@ -733,8 +879,8 @@ if (CHECK) {
     // `built.length + 1` until the sitemap stopped being "the guides plus the
     // root". It now lists every tracked page under web/, so the only honest
     // source for this number is the thing that was written.
-    `build-guides: wrote ${built.length} page(s) to web/guides/ and ${sitemapEntries.length} ` +
+    `build-guides: wrote ${built.length} page(s) under web/ and ${sitemapEntries.length} ` +
       'URL(s) to web/sitemap.xml.',
   );
-  for (const b of built) console.log(`  /guides/${b.slug}  ${b.title}`);
+  for (const b of built) console.log(`  ${b.url.replace(SITE, '')}  ${b.title}`);
 }

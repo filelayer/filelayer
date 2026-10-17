@@ -77,8 +77,8 @@
       Filelayer
     </a>
     <nav class="nav" aria-label="Primary">
+      <a href="/quickstart">Quickstart</a>
       <a href="/guides/">Guides</a>
-      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
       <a href="https://github.com/filelayer/filelayer">GitHub</a>
     </nav>
   </header>
@@ -115,7 +115,7 @@
 <p><strong>Three live files erased from the database</strong>, their bytes now unreferenced, by a job that completed without error and reported success. Nothing was wrong with the rows. The listing was short, and the job read <em>short</em> as <em>absent</em>.</p>
 <p>That is the whole lesson, and it is worth stating plainly:</p>
 <blockquote><p>A sweeper turns &quot;I could not see it&quot; into &quot;it does not exist&quot;, and then deletes. The two inputs are indistinguishable from inside the job, and one of them is a catastrophe.</p></blockquote>
-<h3 id="catch-return-is-how-it-happens"><code>catch { return [] }</code> is how it happens</h3>
+<h3 id="catch--return---is-how-it-happens"><code>catch { return [] }</code> is how it happens</h3>
 <p>The listing does not usually lose a page. It usually throws — a permissions change, a credential rotation, a network blip, a directory that is not readable — and someone has wrapped it defensively:</p>
 <pre><code class="lang-js">async function listObjects() {
   try {
@@ -197,10 +197,11 @@ assert.equal(typeof planned.truncated, 'boolean');</code></pre>
   <p>
     This page is generated from
     <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/deleting-files-and-orphaned-objects.md" rel="noopener"><code>docs/guides/deleting-files-and-orphaned-objects.md</code></a>
-    in a public repository. The code samples in the guides are executed by CI on
+    in a public repository. The code samples on this page are executed by CI on
     every commit; a sample that stops working fails the build.
   </p>
   <p>
+    <a href="/quickstart">Quickstart</a> ·
     <a href="/guides/">All guides</a> ·
     <a href="/">Filelayer</a> ·
     <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>

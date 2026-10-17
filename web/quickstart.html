@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/QUICKSTART.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>Filelayer Quickstart · Filelayer</title>
+<meta name="description" content="Simple first. Each section adds one concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.">
+
+<link rel="canonical" href="https://filelayer.dev/quickstart">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/quickstart">
+<meta property="og:title" content="Filelayer Quickstart">
+<meta property="og:description" content="Simple first. Each section adds one concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Filelayer Quickstart">
+<meta name="twitter:description" content="Simple first. Each section adds one concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Filelayer Quickstart",
+  "description": "Simple first. Each section adds one concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.",
+  "url": "https://filelayer.dev/quickstart",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.33.0"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/quickstart">Quickstart</a>
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>Filelayer Quickstart</h1>
+<p>Simple first. Each section adds <strong>one</strong> concept. Stop reading at whichever section solves your problem — nothing later is required to make anything earlier work.</p>
+<p>If you are an AI agent implementing an integration: every TypeScript block on this page is extracted and <strong>executed</strong> by <code>tools/check-doc-samples.mjs</code>, which runs in CI on every push. Two blocks are marked as skipped in the markdown source, each with a stated reason. Runnable examples of the same shapes live in <code>examples/tier1-avatar/</code>, <code>examples/tier2-user-files/</code>, <code>examples/tier3-org-roles/</code> and <code>examples/vault/</code>, and <code>examples/starter/</code> is a deployable server against your own Postgres. If a snippet here disagrees with the test suite, the test suite is right and this page is a bug.</p>
+<p><strong>Contents</strong></p>
+<ol><li><a href="#0-install">Install</a></li>
+<li><a href="#1-tier-1--a-public-file">Tier 1 — a public file</a></li>
+<li><a href="#2-tier-2--a-private-user-owned-file">Tier 2 — a private, user-owned file</a></li>
+<li><a href="#3-tier-3--organizations-and-roles">Tier 3 — organizations and roles</a></li>
+<li><a href="#4-tier-4--sharing-expiry-caps-revocation-audit">Tier 4 — sharing, expiry, caps, revocation, audit</a></li>
+<li><a href="#5-listing-what-a-caller-may-see">Listing what a caller may see</a></li>
+<li><a href="#6-serving-bytes">Serving bytes</a></li>
+<li><a href="#7-going-to-production">Going to production</a></li>
+<li><a href="#8-does-your-route-hold">Does YOUR route hold?</a></li>
+<li><a href="#9-errors">Errors</a></li>
+<li><a href="#10-what-filelayer-does-not-do">What Filelayer does not do</a></li></ol>
+<hr>
+<h2 id="0-install">0. Install</h2>
+<p><strong>Requirements:</strong> Node ≥ 22.18. Nothing else — no Docker, no Postgres daemon for development.</p>
+<pre><code class="lang-bash">npm install @filelayer/core</code></pre>
+<p>That pulls in nothing else: the package has <strong>no runtime dependencies</strong>. It talks to your Postgres through whatever driver you already use (<code>pg.Pool</code> works directly) and to your bucket over HTTP.</p>
+<p>The throwaway instance in the next block is the exception. <code>quickstart()</code> runs on PGlite, an embedded WebAssembly Postgres, which is declared as an <strong>optional peer dependency</strong> — a library whose premise is &quot;point it at your own Postgres&quot; should not put a second Postgres into every production install. Install it too if you want <code>quickstart()</code> or <code>createTestDb()</code>:</p>
+<pre><code class="lang-bash">npm install --save-dev &quot;@electric-sql/pglite@^0.3.11&quot;</code></pre>
+<p>Keep the version constraint. Filelayer supports the <strong>0.3.x</strong> line of PGlite — that is what <code>peerDependencies</code> declares and what the suite runs against — and <strong>0.5.x is not supported</strong>: the suite was run against 0.5.8 and does not pass, so the range was left alone. PGlite's <code>latest</code> on npm is a 0.5.x release, so a bare <code>npm install</code> of it can pick a version outside the range and npm will then refuse the install with <code>ERESOLVE</code>. The quotes are for your shell: <code>^</code> is a glob operator under <code>zsh</code> with <code>extendedglob</code> and an escape character in <code>cmd.exe</code>.</p>
+<p>Forget it and nothing breaks silently: <code>createTestDb()</code> throws an error naming the package and that exact command. Production code never reaches it — see §7.</p>
+<p>The tests import the TypeScript source directly and Node will not strip types from files under <code>node_modules</code>, so <code>node --test node_modules/@filelayer/core/test/</code> does not work. <strong>That is not a reason to clone us.</strong> Copying the package directory out to a scratch directory runs the same suite against <em>the bytes you were sent</em>, which is the only thing worth verifying, and the exact procedure is in <a href="https://github.com/filelayer/filelayer/blob/main/docs/VERIFY-WHAT-YOU-INSTALLED.md" rel="noopener">docs/VERIFY-WHAT-YOU-INSTALLED.md</a> — two minutes, no account, no credentials, no database. CI runs that document's commands verbatim against a freshly packed tarball on every commit, so it cannot quietly stop working.</p>
+<p>Clone the repository if you want to <em>change</em> it, or to run the examples, which are driven by scripts in the repository root:</p>
+<pre><code class="lang-bash">git clone https://github.com/filelayer/filelayer &amp;&amp; cd filelayer
+npm run bootstrap
+npm run example:tier1</code></pre>
+<p>A throwaway instance, for a first run and for tests:</p>
+<pre><code class="lang-ts">const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });</code></pre>
+<p><code>quickstart()</code> uses PGlite (PostgreSQL compiled to WebAssembly, in-process) and in-memory bytes. <strong>Everything is lost when the process exits.</strong> For a real deployment see §7 — it is three steps and they are not hidden.</p>
+<hr>
+<h2 id="1-tier-1--a-public-file">1. Tier 1 — a public file</h2>
+<p><strong>New concepts: none.</strong></p>
+<pre><code class="lang-ts">const { id, url } = await fl.files.put(avatarBytes, { public: true });
+// url -&gt; http://localhost:3000/f/1f0b...c3
+
+await fl.files.unpublish(id);   // the URL stops working on the next request</code></pre>
+<p>That is the whole API for this tier. There is no org, no user, no role and no grant in your mental model.</p>
+<p><code>contentType</code> is sniffed from the file's magic bytes (PNG, JPEG, GIF, WebP, PDF). Anything unrecognised becomes <code>application/octet-stream</code> and is served as a download rather than rendered — deliberately, because an unrecognised upload could be HTML or SVG, and both execute. <strong>Pass <code>contentType</code> explicitly if you know it:</strong></p>
+<pre><code class="lang-ts">await fl.files.put(avatarBytes, { public: true, name: 'a.png', contentType: 'image/png' });</code></pre>
+<h3 id="taking-it-back">Taking it back</h3>
+<p><code>unpublish()</code> is the reason to use Filelayer for a public file, and the only reason. No deletion, no key rotation, no cache purge. The file is still there and is still readable by anyone who has authority. A public S3 bucket and Supabase's <code>getPublicUrl()</code> cannot do this: their URL is not a request to us, so there is no moment at which a decision can be re-made. Deleting the object is their only withdrawal mechanism.</p>
+<h3 id="what-is-actually-happening">What is actually happening</h3>
+<p><code>{ public: true }</code> is one line of sugar. It does <strong>not</strong> set a flag — there is no <code>public</code> column in the schema and there never will be. It creates one explicit grant row with <code>subject_type = 'anonymous'</code> and capability <code>read</code>. That row can be listed, audited and revoked, which is why <code>unpublish()</code> works.</p>
+<p>If you never mention an org, your files land in a <strong>default workspace</strong> — a real organization row with a reserved id, auto-created on first use. It is not a special case in the data model; it is an ordinary tenant you did not have to name. Adding <code>org:</code> later (§3) moves you to a named one.</p>
+<p>Runnable: <code>npm run example:tier1</code>.</p>
+<hr>
+<h2 id="2-tier-2--a-private-user-owned-file">2. Tier 2 — a private, user-owned file</h2>
+<p><strong>New concept: an owner.</strong></p>
+<pre><code class="lang-ts">const { id } = await fl.files.put(bytes, { owner: 'user_123', name: 'notes.txt' });
+
+const file = await fl.files.get(id, { as: 'user_123' });   // works
+await fl.files.get(id, { as: 'user_456' });                // throws 404
+await fl.files.get(id);                                    // throws 404</code></pre>
+<p><code>owner</code> and <code>as</code> are <strong>your own user ids</strong>. Filelayer does not have a user table you must sync into; the id is registered on first use.</p>
+<p>Files are <strong>private by default</strong>. Through Filelayer, <code>user_123</code> can read it and no other user can — not an anonymous caller holding the file id, and not someone who learns the storage key, because the key is not an input to the decision. You wrote no rule to make that true.</p>
+<p>Two caveats, stated here rather than in an appendix. <strong>Org admins and owners can read <code>private</code> files</strong> — deliberate, because retention and legal hold are their responsibility; see the Limitations list in the README. And this describes access <strong>through Filelayer</strong>: code that queries the <code>file</code> table directly is not filtered by anything, because there is no RLS policy in the schema.</p>
+<h3 id="four-things-to-know-before-you-build-on-this">Four things to know before you build on this</h3>
+<ol><li><strong>Filelayer does not authenticate.</strong> You tell it who the caller is. Establish that from your own session or JWT, exactly as you do today. <code>as:</code> is a claim you are vouching for.</li>
+<li><strong>An unknown <code>as:</code> is a 404, never an anonymous read.</strong> A typo in a user id fails; it does not silently downgrade.</li>
+<li><strong>Denials are 404, not 403</strong>, so an error message cannot be used to discover whether a file exists.</li>
+<li><strong><code>get()</code> returns <code>headers</code>.</strong> Use them:<pre><code class="lang-ts">const { id: fid } = await fl.files.put(bytes, { owner: 'user_123' });
+const f = await fl.files.get(fid, { as: 'user_123' });
+// res.writeHead(200, f.headers);   not { 'content-type': f.contentType }
+// res.end(f.body);</code></pre><p>Those headers are what stop a user-uploaded <code>.html</code> from executing in your origin. Writing the content type by hand re-opens stored XSS.</p></li></ol>
+<p>Runnable: <code>npm run example:tier2</code>.</p>
+<hr>
+<h2 id="3-tier-3--organizations-and-roles">3. Tier 3 — organizations and roles</h2>
+<p><strong>New concepts: an org, and a role.</strong></p>
+<pre><code class="lang-ts">await fl.orgs.create('acme', { name: 'Acme Inc', owner: 'ceo' });
+await fl.orgs.setRole('acme', 'analyst', 'member', { as: 'ceo' });
+await fl.orgs.setRole('acme', 'reviewer', 'viewer', { as: 'ceo' });
+
+await fl.files.put(deck,     { org: 'acme', owner: 'ceo' });                      // private
+await fl.files.put(handbook, { org: 'acme', owner: 'ceo', visibility: 'org' });   // whole org</code></pre>
+<p>Note what did <strong>not</strong> change: <code>put</code> and <code>get</code> have the same shape as tier 2. Promoting an app from &quot;user files&quot; to &quot;multi-tenant&quot; is adding <code>org:</code> to a call.</p>
+<h3 id="the-role-model-in-full">The role model, in full</h3>
+<p>Four roles, fixed, no custom roles. This is the entire table:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Role</th><th>Own files</th><th>Others' files, <code>visibility: 'private'</code></th><th>Others' files, <code>visibility: 'org'</code></th><th>Manage members</th><th>Read audit</th></tr></thead>
+<tbody><tr><td><code>viewer</code></td><td>read</td><td>—</td><td>read</td><td>—</td><td>—</td></tr>
+<tr><td><code>member</code></td><td>read, write, delete, share</td><td>—</td><td>read</td><td>—</td><td>—</td></tr>
+<tr><td><code>admin</code></td><td>full</td><td>full</td><td>full</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>owner</code></td><td>full</td><td>full</td><td>full</td><td>yes</td><td>yes</td></tr></tbody>
+</table></div>
+<p><code>visibility</code> defaults to <code>'private'</code>: owner and org admins only. The failure mode of that default is &quot;somebody has to ask for access&quot;. The failure mode of the other one is a disclosure.</p>
+<p>Org admins and owners retain access to <code>private</code> files. That is deliberate — retention, deletion and legal hold are their responsibility, and a control the accountable party cannot exercise is not a control. If you need to exclude the operator, you need envelope encryption, which Filelayer does not provide.</p>
+<h3 id="as-is-required-on-membership-changes"><code>as</code> is required on membership changes</h3>
+<pre><code class="lang-ts">await fl.orgs.setRole('acme', 'x', 'admin', { as: 'ceo' });   // authorized</code></pre>
+<p>There is no shortcut here and there will not be. Membership is the privilege that confers every other privilege. You may not grant a role above your own, may not modify anyone who outranks you, and may not remove the last owner. Every attempt — allowed or denied — is audited.</p>
+<p>Runnable: <code>npm run example:tier3</code>.</p>
+<hr>
+<h2 id="4-tier-4--sharing-expiry-caps-revocation-audit">4. Tier 4 — sharing, expiry, caps, revocation, audit</h2>
+<p><strong>New concept: a grant.</strong></p>
+<pre><code class="lang-ts">const share = await fl.shares.create(fileId, {
+  as: 'ceo',
+  expiresIn: 3600,      // seconds
+  maxDownloads: 3,
+  password: 'hunter2',  // optional, on top of the link secret
+});
+// share.secret is returned EXACTLY ONCE. Only its SHA-256 is stored.
+// share.url is the ready-made link, built from the baseUrl you constructed with.
+// share.grantId is what you pass to revoke().</code></pre>
+<p><strong><code>capabilities</code> is how you hand over more than reading</strong>, and it defaults to <code>['read']</code>. Until you find it, delegation reads as broken: the person you shared with tries to share onward and gets a <code>404</code>, because what they hold says <code>read</code> and nothing else.</p>
+<p><strong>A LINK can only ever carry <code>read</code>.</strong> <code>shares.create</code> refuses anything else with <code>400 link_is_read_only</code> before any query, and the <code>grant_link_read_only</code> constraint refuses the row even from a <code>psql</code> session. Not a policy you can argue with: a bearer secret that can mint further authority is a bearer secret that escapes. So delegation is granted to a NAMED user:</p>
+<pre><code class="lang-ts">const delegable = await fl.shares.create(fileId, {
+  as: 'ceo',
+  withUser: 'contractor',             // a named subject, not a link
+  capabilities: ['read', 'share'],    // now they may share it onward
+  expiresIn: 3600,
+});
+
+// And the contractor can now mint their own link, read-only and clamped.
+const onward = await fl.shares.create(fileId, { as: 'contractor', expiresIn: 600 });</code></pre>
+<p>Everything the second grant does is clamped to the first, which is §4's Delegation section: asking for a capability the parent does not hold is refused outright, while a longer expiry or a bigger download budget is narrowed to the parent's without complaint. Valid capabilities are <code>read</code>, <code>write</code>, <code>delete</code> and <code>share</code> -- the four in the <code>Capability</code> type. A share LINK is the exception and carries <code>read</code> only, which <code>shares.create</code> refuses to widen; §4 says why.</p>
+<p>Redeem it (the secret is the credential; no identity needed):</p>
+<pre><code class="lang-ts">const dl = await fl.shares.redeem(share.secret!, { password: 'hunter2' });</code></pre>
+<p>Share with a named user instead of minting a link:</p>
+<pre><code class="lang-ts">await fl.shares.create(fileId, { as: 'ceo', withUser: 'analyst' });</code></pre>
+<p>Share with a whole organization — including <strong>another</strong> organization, which is the &quot;the company that posted this job may read this CV&quot; case. The org must already exist; an unknown name is a <code>404</code>, never a silently created tenant:</p>
+<pre><code class="lang-ts">await fl.shares.create(fileId, { as: 'ceo', withOrg: 'partner-co' });</code></pre>
+<p>...or with just the senior people in it. <code>minRole</code> is a floor over the four existing roles (<code>viewer | member | admin | owner</code>); there are no custom roles:</p>
+<pre><code class="lang-ts">await fl.shares.create(fileId, { as: 'ceo', withOrg: 'partner-co', minRole: 'admin' });</code></pre>
+<p><strong>This is resolved by a join, not by a copy.</strong> Add or remove a member of <code>partner-co</code> and their access changes on the very next request — no recomputation, no background job, and not one grant row written. That is the same mechanism that makes revocation immediate, applied to membership.</p>
+<p>Revoke — and this takes effect immediately, for URLs already sent:</p>
+<pre><code class="lang-ts">await fl.shares.revoke(share.grantId, { as: 'ceo' });
+await fl.shares.list(fileId, { as: 'ceo' });   // what have we shared, with whom?</code></pre>
+<h3 id="delegation">Delegation</h3>
+<p>If you give someone <code>share</code>, what they hand on can never exceed what they hold — not in capability, not in lifetime, not in remaining download budget. That is enforced by the authorization engine <em>and</em> again by a database trigger, so it binds a migration or a psql session too. Revoking a grant kills everything ever delegated from it, at any depth, with <strong>no cascading write</strong> — liveness is evaluated over the ancestor chain.</p>
+<p>Nor can what they hand on reach <strong>more people</strong> than they can. Someone whose own authority came from a grant may pass it to a named user or as a share link, and nothing wider: never to an organization, never to a role, never anonymously. Only authority derived from an org role (admin, owner, or the file's owner) can open a file to a population. Enforced in the engine and again by the same trigger.</p>
+<p>Share links are read-only by database constraint, so a leaked link can never delete or re-share.</p>
+<h3 id="download-caps-count-every-delivery">Download caps count every delivery</h3>
+<p><code>maxDownloads</code> binds <strong>any</strong> delivery of bytes authorized by that grant: a share link redemption and a direct authenticated read alike. Authority that comes from an org role is not metered — a role is not a credential with a budget — and metadata reads (<code>stat()</code>) are not charged, because no bytes leave.</p>
+<h3 id="audit">Audit</h3>
+<pre><code class="lang-ts">const log     = await fl.orgs.audit('acme', { as: 'ceo' });
+const denials = await fl.orgs.audit('acme', { as: 'ceo', decision: 'deny' });
+const chain   = await fl.orgs.verifyAudit('acme', { as: 'ceo' });  // { valid, checked }</code></pre>
+<p>Every access decision is recorded, <strong>including denials</strong> — a trail that records only successes cannot evidence an attempted breach. Events are hash-chained per tenant, so deletion or alteration of history is detectable. Requires <code>read_audit</code> (admin or owner).</p>
+<p><strong>The answer comes back in your identifiers, not ours.</strong> Each row carries the internal uuids it always did <em>and</em> the ids you supplied, so &quot;who accessed this contract?&quot; is answerable without a join you write yourself:</p>
+<pre><code class="lang-ts">const row = (await fl.orgs.audit('acme', { as: 'ceo', decision: 'deny' }))[0];
+
+row?.summary;           // '2026-09-06T10:12:41.002Z marco file.read deny:grant_revoked contract.pdf @acme'
+row?.actor.label;       // 'marco'        — the `as:` you passed
+row?.file.label;        // 'contract.pdf'
+row?.org.label;         // 'acme'         — the `org:` you passed
+row?.actorId;           // the internal uuid, unchanged, still there</code></pre>
+<p><code>label</code> is never null, so a row always prints. An access with no principal — a share link, a public URL — reads as <code>anonymous</code> rather than as a null you have to interpret; an event with no tenant (a probe that could not be attributed to one) reads as <code>system</code>; and an id that resolves to nothing in your project keeps its uuid and says <code>resolution: 'unresolved'</code> instead of inventing a name. <code>.actor.externalId</code>, <code>.org.externalId</code> and <code>.file.name</code> are the same values with no fallback, for when you want the null.</p>
+<p><strong>Reading the trail needs a database and nothing else.</strong> Since <code>0.30.0</code>, <code>auditReader(db)</code> gives you <code>log</code>, <code>verify</code> and <code>checkpoints</code> without a storage adapter, because none of the three touches storage — and a compliance dashboard or a report job should not have to construct something that claims to hold bytes in order to read a table.</p>
+<pre><code class="lang-ts">import { auditReader } from '@filelayer/core';
+
+const audit = auditReader(pool);
+const rows  = await audit.log({ actorId: adminId }, orgId, { limit: 50 });</code></pre>
+<p>It is narrower than a <code>Filelayer</code>, not more trusting: <code>read_audit</code> is still enforced, a caller without it gets a <code>404</code>, a cross-tenant read is refused, and a successful read still appends its own <code>audit.read</code> event to the same chain.</p>
+<p><code>log</code> takes a window as well as the filters above — <code>{ since, until }</code>, with <code>since</code> inclusive and <code>until</code> exclusive, so two consecutive windows tile without counting the row on the boundary twice:</p>
+<pre><code class="lang-ts">const q1 = await audit.log({ since: jan, until: apr }, orgId);
+const q2 = await audit.log({ since: apr, until: jul }, orgId);</code></pre>
+<h3 id="lifecycle">Lifecycle</h3>
+<pre><code class="lang-ts">await fl.files.put(bytes, { org: 'acme', owner: 'ceo', expiresIn: 86400 });
+await fl.files.put(bytes, { org: 'acme', owner: 'ceo', retainFor: 7 * 365 * 86400 });</code></pre>
+<p><code>retainFor</code> blocks deletion until it passes, <strong>including by the org owner</strong>. That is the point of a retention hold.</p>
+<p>Runnable: <code>npm run example:vault</code> (the full Vault app over HTTP, on :8787).</p>
+<hr>
+<h2 id="5-listing-what-a-caller-may-see">5. Listing what a caller may see</h2>
+<p><strong>This is implemented.</strong> It is one call, it paginates, and there is no predicate for you to write:</p>
+<pre><code class="lang-ts">// `listFiles` is on the core API and takes RESOLVED internal ids, not the
+// external ids the `fl.files` facade takes. Every file record carries both, so
+// `stat()` is the supported way to get them.
+const rec = await fl.files.stat(fileId, { as: 'ceo' });
+
+const page = await fl.listFiles(
+  { actorId: rec.ownerId },    // the principal — a resolved actor id, or null
+  rec.orgId,                   // the org — a resolved org id
+  { capability: 'read', limit: 50, cursor: null },
+);
+
+page.files;        // FileRecord[] — exactly the files this caller may `read`
+page.nextCursor;   // opaque keyset cursor, or null on the last page</code></pre>
+<p>There is <strong>no filter parameter</strong>, and that is the design. A listing screen is the highest-frequency operation in a document product and historically the highest-yield source of cross-tenant disclosure, because building one by hand means writing the org filter, the visibility rule, the owner check, the role check and a union over the grant table — five predicates, in application SQL, that have to stay in step with the point check forever. Here the set of files a caller may see <em>is</em> the return value.</p>
+<p><code>listFiles</code> and <code>authorize()</code> are asserted equal — set equality, not containment — on every capability, over a randomized corpus, on every run, in <code>packages/core/test/listing.test.ts</code>. A widening drift in one of them fails the build.</p>
+<p>Notes on the signature:</p>
+<ul><li>It takes <strong>resolved internal ids</strong>. If you are holding your own user ids, use <strong><code>fl.files.list({ as, org })</code></strong> on the facade instead — same engine, same guarantees, your identifiers:<pre><code class="lang-ts">const page = await fl.files.list({ as: 'user_123', org: 'acme', limit: 50 });</code></pre><p>That method and <code>fl.ids</code> landed in <code>0.13.0</code>. Until then this core call was the only listing API and there was no public way to resolve an external id, so a listing screen was the one feature that forced you out of the facade -- and it was <strong>impossible</strong> for any identity the library auto-provisioned, because nothing returned its id. Three agents given an integration task hit that and each invented the same workaround. If you genuinely need the internal value, <code>fl.ids.actorId('user_123')</code> and <code>fl.ids.orgId('acme')</code> return it or <code>null</code>; <code>fl.ids.ensureActor()</code> creates the identity if it does not exist.</p></li>
+<li><code>limit</code> is clamped to <code>[1, 200]</code>. An out-of-range value is clamped, not rejected.</li>
+<li>An empty page is a valid answer. A caller with no standing sees nothing, and so does a caller naming an org that does not exist — distinguishing them would rebuild the existence oracle that 404-on-denial exists to close.</li>
+<li>A link-secret principal cannot list. A share link is a bearer credential for exactly one file; asking it to enumerate is refused with <code>400</code>, not silently narrowed.</li>
+<li>One SQL query and one audit event per page, independent of page size.</li></ul>
+<p><code>examples/vault/server.ts</code> uses it for <code>GET /orgs/:id/files</code>; that endpoint is the whole listing implementation in that application.</p>
+<hr>
+<h2 id="6-serving-bytes">6. Serving bytes</h2>
+<p>Filelayer owns your response headers. This is not a convenience — it is where three of the four remaining security-sensitive decisions used to live.</p>
+<pre><code class="lang-ts">import { fileDownloadRoute, shareDownloadRoute } from '@filelayer/core';
+
+// Public files: serve as an anonymous caller, so only files with a live
+// anonymous grant are reachable and everything else is 404.
+const publicRoute = fileDownloadRoute(fl, {
+  prefix: '/f',
+  disposition: 'inline',
+  principal: () =&gt; ({ actorId: null }),
+});
+
+// Authenticated reads: you supply identity, we supply everything else.
+// `{ as }` is YOUR user id -- the same string you pass to fl.files.get().
+const authedRoute = fileDownloadRoute(fl, {
+  prefix: '/files',
+  principal: (req) =&gt; ({ as: yourSession(req)?.userId ?? null }),
+});
+
+// Share links.
+const shareRoute = shareDownloadRoute(fl, { prefix: '/d' });</code></pre>
+<h3 id="mounting-them">Mounting them</h3>
+<p>Each of those is <code>(req, res) =&gt; Promise&lt;boolean&gt;</code>. It returns <code>true</code> when it handled the request and <code>false</code> when the path was not its own, so you try them in order and fall through to your own router:</p>
+<pre><code class="lang-ts">import { createServer } from 'node:http';
+
+createServer(async (req, res) =&gt; {
+  if (await publicRoute(req, res)) return;
+  if (await authedRoute(req, res)) return;
+  if (await shareRoute(req, res)) return;
+  // ...and fall through to your own router.
+  // yourRouter(req, res);
+}).listen(3000);</code></pre>
+<p><code>deliveryHandler(fl)</code> is the same three, pre-mounted, if you want one line.</p>
+<p><strong><code>principal</code> returns YOUR user id, as <code>{ as }</code>.</strong> The same string you pass everywhere else. An id this project has never seen is a <code>404</code> and the attempt is recorded -- never a silent downgrade to anonymous, which would turn a typo in a session lookup into a read of every published file.</p>
+<p>Until <code>0.13.0</code> the callback had to return Filelayer's <strong>internal</strong> actor uuid, and there was no public way to get one. That made the library's own route for authenticated reads unmountable by any application with its own user ids, and the snippet on this page passed <code>yourSession(req).userId</code> into <code>actorId</code>, which could not have worked. Of four integration tasks given to agents holding only the published tarball, three hit it and each invented the same workaround.</p>
+<p>If you already hold an internal id -- or you want to pass <code>ip</code> / <code>userAgent</code> through to the audit log -- the <code>Principal</code> form still works:</p>
+<pre><code class="lang-ts">const mappedRoute = fileDownloadRoute(fl, {
+  prefix: '/files',
+  principal: (req) =&gt; {
+    const s = sessionOf(req);
+    return s ? { actorId: s.filelayerActorId, ip: s.ip } : { actorId: null };
+  },
+});
+
+// And `fl.ids` is the bridge when you need the value itself:
+const actorId = await fl.ids.actorId('user_123');   // string | null, creates nothing
+const orgId = await fl.ids.orgId('acme');           // string | null
+await fl.ids.ensureActor('user_123');               // creates if absent; idempotent</code></pre>
+<p><code>fl.files.stat(fileId, { as })</code> is also still worth knowing: <code>rec.ownerId</code> on the returned <code>FileRecord</code> is the resolved actor id of that file's owner, which is how the listing example above gets one without a lookup.</p>
+<p>Every response carries <code>nosniff</code>, an explicit <code>Content-Disposition</code>, a sandbox CSP, <code>Referrer-Policy: no-referrer</code> and <code>Cache-Control: no-store</code>. None of these is optional, because a header you can forget is a header you will forget.</p>
+<p>Three consequences to design around:</p>
+<ul><li><strong>A password for a share link must be POSTed in the body.</strong> Putting a credential in the query string is refused with <code>400 credential_in_query</code> — loudly, before any work, without consuming a download. Query strings end up in access logs, proxy logs and browser history.</li>
+<li><strong><code>Cache-Control: no-store</code> means no CDN on the default path.</strong> That is what makes &quot;revocation is immediate&quot; true at every intermediary and not merely at our origin. It is also why public delivery costs us money. Redirect delivery is the opt-in escape hatch and it is deliberately awkward to turn on; see <a href="https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md" rel="noopener"><code>SEMANTICS.md</code></a> and <a href="https://github.com/filelayer/filelayer/blob/main/architecture/TIER5-DESIGN-NOTE.md" rel="noopener"><code>architecture/TIER5-DESIGN-NOTE.md</code></a> §4.</li>
+<li><strong>These routes answer <code>Range</code> requests, and you write none of it.</strong> <code>fileDownloadRoute()</code> and <code>shareDownloadRoute()</code> parse the header, so a browser can seek in a file served by them. <code>Accept-Ranges: bytes</code> goes on every proxied response — including the unranged <code>200</code>, which is the response a video player or PDF reader actually reads to decide whether seeking is possible — and a range past the end is a <code>416</code> carrying <code>Content-Range: bytes */&lt;size&gt;</code>, which is the only thing that tells a client the size it was guessing at.<p>If you are writing your own route, the same range goes straight into the delivery API. <code>parseRangeHeader()</code> is exported so you get the RFC 9110 behaviour rather than a regex:</p></li></ul>
+<pre><code class="lang-ts">import { parseRangeHeader, toStreamResponse } from '@filelayer/core';
+
+const { id: clipId } = await fl.files.put(bytes, { public: true, name: 'clip.bin' });
+
+// In a route this is `req.headers.range`. A header it cannot use returns null,
+// which means &quot;serve the whole object&quot; -- never an error. RFC 9110 requires a
+// malformed `Range` to be IGNORED, not rejected.
+const range = parseRangeHeader('bytes=0-3');
+
+const delivery = await fl.readStream({ actorId: null }, clipId, {
+  mode: 'proxy',
+  ...(range ? { range } : {}),
+});
+
+const response = toStreamResponse(delivery);
+console.log(response.status, response.headers.get('content-range')); // 206 bytes 0-3/5
+// On node:http it is the same one line: await sendNodeStream(res, delivery);</code></pre>
+<p><code>bytes=-N</code> (&quot;the last N bytes&quot;, which is what a PDF reader sends first to find   the cross-reference table) is also supported. It costs one extra <code>head()</code> on   the object, because the last N bytes of a file are not a byte range until   something authoritative says how long the file is — and that is the object   store, not the <code>size_bytes</code> column.</p>
+<p>You do <strong>not</strong> have to set the status yourself, and there is no parameter for   it. <code>sendNodeStream()</code> and <code>toStreamResponse()</code> derive it from the delivery: a   partial body always goes out as <code>206</code> with <code>Content-Range</code>, a whole object   always as <code>200</code>. That is deliberate — a truncated body under a <code>200</code> is   undetectable by every HTTP client, so it is not a mistake the API lets you   make.</p>
+<h3 id="nextjs-app-router-hono-workers-deno-bun">Next.js App Router, Hono, Workers, Deno, Bun</h3>
+<p><strong><code>deliveryHandler(fl)</code> cannot be mounted on any of those.</strong> It is a <code>node:http</code> handler: it takes <code>(req, res)</code> and writes to a <code>ServerResponse</code>. An App Router route handler is <code>(Request) =&gt; Response</code>, and the two are not the same shape. That sentence is here because its absence cost a reader a morning.</p>
+<p><code>deliveryFetch(fl, opts)</code> is the same two routes for a runtime that speaks <code>Request</code> and <code>Response</code>, with the same <code>Range</code> parsing, the same <code>416</code> carrying the object's size, the same refusal of a credential in the query string, and the same <code>401</code> that tells a client to retry a password link as a POST:</p>
+<pre><code class="lang-ts">// app/[...filelayer]/route.ts
+import { deliveryFetch } from '@filelayer/core';
+
+const serve = deliveryFetch(fl, {
+  principal: async (req) =&gt; ({ as: await currentUser(req) }),
+});
+
+async function handler(req: Request) {
+  // `null` means &quot;not one of mine&quot;, so your own routes still work.
+  return (await serve(req)) ?? new Response('Not found', { status: 404 });
+}
+
+export const GET = handler;
+export const POST = handler;
+export const HEAD = handler;
+export const dynamic = 'force-dynamic';   // authorization is per request</code></pre>
+<p>Two things it deliberately does not do for you. It will not read <code>X-Forwarded-For</code>: a <code>Request</code> has no socket, that header is written by whoever spoke last, and a library that guessed would let a client choose what its own audit log says about it — pass <code>clientIp</code> if you sit behind an edge you trust. And <code>dynamic = 'force-dynamic'</code> is yours to set; without it Next may serve a previously authorized response to a later caller.</p>
+<p><a href="https://github.com/filelayer/filelayer/blob/main/examples/nextjs/README.md" rel="noopener"><code>examples/nextjs</code></a> is the whole thing — upload, list, read, share, revoke — in four files, driven by CI on every commit against a freshly packed tarball.</p>
+<p>The lower-level pieces are still exported and still right when you want to build the response yourself: <code>toResponse(delivery)</code> returns a WHATWG <code>Response</code> and <code>toStreamResponse(delivery)</code> returns one that streams.</p>
+<hr>
+<h2 id="7-going-to-production">7. Going to production</h2>
+<p><code>quickstart()</code> is ephemeral. A real deployment is three steps, and the third one matters more than the other two.</p>
+<p><strong>1. Provision Postgres and apply the schema.</strong></p>
+<pre><code class="lang-bash"># from a clone
+psql &quot;$DATABASE_URL&quot; -f packages/core/schema.sql
+
+# from an install
+psql &quot;$DATABASE_URL&quot; -f node_modules/@filelayer/core/schema.sql</code></pre>
+<p>PostgreSQL 15 or later. Requires the <code>pgcrypto</code> extension (the schema creates it). The path is also exported programmatically as <code>SCHEMA_PATH</code>, and <code>loadSchemaSql()</code> returns its contents, so a migration runner does not have to hardcode a path.</p>
+<p><code>schema.sql</code> is <strong>not idempotent, and since <code>0.15.0</code> it refuses rather than half-applies.</strong> Run it against a database that already has the schema and its first statement raises, naming the version it found, instead of dying part-way through on <code>relation &quot;project&quot; already exists</code>.</p>
+<p>It creates <code>filelayer_schema_version</code> and stamps it as its last statement, so the database records what it has. <strong><code>schemaStatus(db)</code> reads that</strong> and returns <code>{ state, at, expects, outstanding, history }</code> — which is what a boot sequence should consult rather than counting tables by hand:</p>
+<pre><code class="lang-ts">import { schemaStatus } from '@filelayer/core';
+
+const status = await schemaStatus(pool);
+if (status.state === 'absent') {
+  // apply schema.sql, once, under an advisory lock if more than one node boots
+} else if (status.outstanding.length &gt; 0) {
+  throw new Error(`schema is at ${status.at}, expected ${status.expects}`);
+}</code></pre>
+<p><code>schemaStatus</code> is read-only by construction: it will not apply anything, which is deliberate — see MIGRATIONS.md. The migrations themselves are <code>.sql</code> files under <code>migrations/</code>, enumerated in <code>migrations/manifest.json</code> with whether each one is transactional and which schema version it upgrades from, so a runner can drive them without parsing prose. <a href="https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md" rel="noopener">MIGRATIONS.md</a> says how changes are delivered and what the pre-1.0 promise is.</p>
+<p><em>Until 7 October 2026 this paragraph said there was no <code>schema_version</code> table and no way to tell, which stopped being true in <code>0.15.0</code> and sent every reader of the canonical production path off to hand-roll something that already shipped. Recorded rather than quietly corrected, because the stale instruction is the kind of defect this project is supposed to find before its readers do.</em></p>
+<p><strong>2. Construct the client with a real pool and a real bucket.</strong></p>
+<h3 id="which-storage-adapter">Which storage adapter</h3>
+<p>Three ship, and the one you want is usually obvious once they are side by side.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>adapter</th><th>bytes live</th><th>survives a restart</th><th>redirect delivery</th><th>use it for</th></tr></thead>
+<tbody><tr><td><code>MemoryStorage</code></td><td>in the process</td><td>no</td><td>no</td><td>tests, and <code>quickstart()</code></td></tr>
+<tr><td><code>FsStorage</code></td><td>a directory you name</td><td>yes</td><td>no</td><td>local development, a single node, evaluation before you create a bucket</td></tr>
+<tr><td><code>S3Storage</code></td><td>S3, R2, or anything S3-compatible</td><td>yes</td><td>yes</td><td>production</td></tr></tbody>
+</table></div>
+<pre><code class="lang-ts">import { FsStorage } from '@filelayer/core';
+
+const storage = new FsStorage('./filelayer-data');</code></pre>
+<p><code>FsStorage</code> is one process on one disk. It does no locking across writers and has no replication, so two application servers cannot share it the way they share a bucket. It has no <code>presignGet</code>, which is the honest shape of the thing rather than a gap: a presigned URL promises that some other server will hand over the bytes without asking you, and a local directory has no other server. Redirect delivery is therefore unavailable, and <code>canPresign(storage)</code> reports that before a request rather than during one.</p>
+<p>Anything else is a <code>StorageAdapter</code>: five required methods (<code>put</code>, <code>get</code>, <code>stream</code>, <code>head</code>, <code>delete</code>) plus a <code>provider</code> string, and two optional methods (<code>presignGet</code> enables redirect delivery, <code>list</code> enables orphan collection). The interface is in <code>src/storage.ts</code>, which ships inside the package, and <code>FsStorage</code> in the same file is a worked implementation: 224 lines of code and 150 of comment, and the comments are the longer half because what is hard about writing one of these is the write ordering, the failure paths and how many times you open the file -- not the five signatures. It keeps one file per object, a JSON header line followed by the bytes, so replacing an object is a single <code>rename</code> and a reader cannot be served one version's etag over another version's bytes.</p>
+<pre><code class="lang-ts">import { Pool } from 'pg';
+import { Filelayer, S3Storage } from '@filelayer/core';
+
+const production = new Filelayer(
+  new Pool({ connectionString: process.env.DATABASE_URL }),
+  new S3Storage({
+    endpoint: process.env.R2_ENDPOINT!,   // https://&lt;account&gt;.r2.cloudflarestorage.com
+    bucket: 'filelayer-prod',
+    region: 'auto',
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  }),
+  { baseUrl: 'https://files.yourapp.com' },
+);</code></pre>
+<p><code>pg.Pool</code> satisfies the <code>Queryable</code> interface directly; no adapter needed. It is used through <code>connect()</code> so that a transaction stays on one connection.</p>
+<p>Nothing on this path touches PGlite, and the release gate proves it: it installs the packed tarball into an empty directory with no <code>@electric-sql/pglite</code> on disk and drives this entire page's lifecycle against a real PostgreSQL server over <code>pg</code>.</p>
+<p><strong>3. Confirm the bucket is PRIVATE.</strong></p>
+<p>This is the one security-sensitive decision Filelayer cannot make for you, and getting it wrong bypasses everything above. Object keys are <code>orgId/fileId</code> and P2 explicitly does not treat them as secrets. A public bucket makes every file readable to anyone who can guess or scrape a key, and no error will tell you.</p>
+<ul><li><strong>R2:</strong> do not attach a custom domain or enable the r2.dev public URL.</li>
+<li><strong>S3:</strong> leave all four Block Public Access settings ON, at the account and the bucket level. Grant <code>s3:GetObject</code>/<code>PutObject</code> only to your application's role.</li></ul>
+<p><strong>Running more than one process is supported.</strong> The audit hash chain is appended by <code>audit_append()</code>, a single SQL function that takes <code>pg_advisory_xact_lock</code> on the chain, reads the predecessor and inserts, and the library runs that inside the same transaction as the mutation it describes. Two API processes cannot fork the chain. One honest caveat: the test suite runs on PGlite, which has a single backend, so what the suite proves is that the lock is taken on the write path and that the encoding round-trips — the multi-process argument rests on Postgres advisory-lock semantics, not on an executed test. <code>packages/core/SEMANTICS.md</code> says the same thing at more length.</p>
+<h3 id="the-fsstorage-equivalent-of-make-the-bucket-private">The <code>FsStorage</code> equivalent of &quot;make the bucket private&quot;</h3>
+<p>The step above tells you to confirm your bucket is private, and calls it the one security-sensitive decision Filelayer cannot make for you. On <code>FsStorage</code> it <strong>can</strong>, so it does: the data directory and every level under it are kept owner-only (<code>0700</code>), and objects are written <code>0600</code>. It only ever removes group and other bits -- a directory you deliberately made read-only stays read-only.</p>
+<p>Until <code>0.12.0</code> they were <code>0755</code> and <code>0644</code>, which on a shared host is a public bucket on local disk: object keys are <code>orgId/fileId</code> and are explicitly not secrets, so any local user could read every tenant's files. If you deployed an earlier version, fix the existing tree once:</p>
+<pre><code class="lang-bash">chmod -R go-rwx /path/to/your/filelayer-data</code></pre>
+<p>What is still yours: the directory's <strong>owner</strong>. Run the application as a user nobody else can become, and do not put the data directory somewhere a backup agent or a log shipper reads as a different account.</p>
+<p><strong>Four operational jobs are yours to schedule.</strong> None of them runs on its own, and this list said &quot;two&quot; until <code>0.12.0</code> — an engineer deploying the published <code>0.11.0</code> had to grep the type declarations to find out it was wrong:</p>
+<ul><li><code>collectStorageOrphans()</code> — bytes are written before metadata commits, so a crash in between leaves an unreferenced object. Defaults to <code>dryRun: true</code>.</li>
+<li><code>collectUploadReservations()</code> — only if you enabled <code>directUpload</code>. A reservation nobody redeems is a <code>pending</code> row no read path can see, so nothing will draw your attention to it. Also <code>dryRun: true</code> by default.</li>
+<li><code>verifyAuditChain(principal, orgId)</code>, and <strong>pin the result somewhere outside this database.</strong> Replay detects edits and interior deletions, not truncation of the most recent events; comparing <code>lastId</code>/<code>lastHash</code> against a copy you keep elsewhere is what closes that. It is authorized per org and there is no &quot;verify every tenant&quot; call, so you need the list of orgs and an admin identity for each. A tenant you forget is silently unmonitored.</li>
+<li>Rate limiting at ingest, per project and per source address, before a request reaches the engine. Denials are audited by design (P5), so an unauthenticated caller who can reach your API can grow a tenant's chain.</li></ul>
+<p><strong>And one thing no job reclaims.</strong> <code>expiresIn</code> is a gate on use, not a deletion: an expired file keeps its row, the row keeps referencing its key, and <code>collectStorageOrphans()</code> skips any key a row still references. So expired bytes are paid for indefinitely. If you set <code>expiresIn</code>, you need your own sweep that calls <code>delete()</code> on files past their expiry.</p>
+<hr>
+<h2 id="8-does-your-route-hold">8. Does YOUR route hold?</h2>
+<p>Everything else in this project that you can run checks us: the suite checks the library, <code>examples/starter/verify.mjs</code> checks the starter and hard-codes the starter's routes, the guide proofs check the guides. None of them answer the question you are actually asking, which is whether YOUR application is correct.</p>
+<p>You can mount this library perfectly and still leak files, because the leak is usually in the code around it: a route that falls through to a 200, a failed session lookup treated as &quot;no user&quot;, a reverse proxy that strips a header or caches a response it should not.</p>
+<p><code>auditIntegration()</code> takes your application, through four callbacks you write, and checks the properties against it. It does not import your code and knows nothing about your framework. It makes requests and reads the answers.</p>
+<pre><code class="lang-ts">import { auditIntegration, formatAuditReport } from '@filelayer/core';
+
+const report = await auditIntegration({
+  owner: 'alice',
+  stranger: 'bob',
+  app: {
+    // However your upload endpoint works.
+    async upload({ owner, name, contentType, body }) {
+      const res = await fetch('http://localhost:3000/api/files', {
+        method: 'POST', headers: session(owner), body: form(name, contentType, body),
+      });
+      const { id, url } = await res.json();
+      return { id, url };
+    },
+    // MUST NOT throw on a 4xx: the refusals are what is being measured.
+    async get(url, who, extraHeaders) {
+      const res = await fetch(url, {
+        headers: { ...(who ? session(who) : {}), ...extraHeaders },
+        redirect: 'manual',
+      });
+      const headers: Record&lt;string, string&gt; = {};
+      res.headers.forEach((v, k) =&gt; { headers[k.toLowerCase()] = v; });
+      return { status: res.status, headers, body: new Uint8Array(await res.arrayBuffer()) };
+    },
+    // Optional. Without them the revocation check is skipped, not failed.
+    share: (id, user) =&gt; grant(id, user),
+    unshare: (id, user) =&gt; ungrant(id, user),
+  },
+});
+
+console.log(formatAuditReport(report));
+if (!report.ok) process.exit(1);</code></pre>
+<p>What it checks: the owner can read their own file; a stranger cannot, and is refused <strong>404 rather than 403</strong>, because a 403 tells them the file exists; an anonymous caller cannot; an id your application has never seen <strong>denies rather than degrading to anonymous</strong>; <code>nosniff</code> and <code>attachment</code> are on the bytes; the response is not publicly cacheable; byte ranges are answered correctly, including the invalid range that must be ignored and the unsatisfiable one that must carry the size; and revocation lands on the <strong>next request</strong>.</p>
+<p><strong>What a pass means.</strong> The properties held for the requests it made. It is not a security audit, it does not read your code, and it cannot find a hole in a path it was not told about. <strong>A failure is real</strong>: it is a request that got an answer it should not have, and every check prints what it did so you can argue with the verdict.</p>
+<p>The harness itself is checked the only way a harness can be: against a deliberately broken application. Eleven variants, each with exactly one property wrong, each of which the matching check must catch. See <code>test/audit-integration.test.ts</code> in the tarball.</p>
+<hr>
+<h2 id="9-errors">9. Errors</h2>
+<p>Everything throws <code>FilelayerError</code> with an HTTP-shaped <code>status</code> and a stable machine-readable <code>code</code>.</p>
+<pre><code class="lang-ts">import { FilelayerError } from '@filelayer/core';
+
+try { await fl.files.get(someFileId, { as: userId }); }
+catch (e) {
+  if (e instanceof FilelayerError) return res.writeHead(e.status).end(JSON.stringify({ error: e.code }));
+  throw e;
+}</code></pre>
+<p><code>code</code> is typed: it is a union of the 29 codes this library can produce, so a <code>switch</code> over it is exhaustive and <code>'not-found'</code> for <code>'not_found'</code> is a compile error rather than a branch that silently never runs.</p>
+<p><strong>The status is a function of the code.</strong> One code never means two statuses, so branching on <code>code</code> is enough. The constructor does not take a status at all; it reads it from the catalogue.</p>
+<p>The eight you will meet first:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>status</th><th>code</th><th>Meaning</th></tr></thead>
+<tbody><tr><td>404</td><td><code>not_found</code></td><td>Does not exist, <strong>or</strong> you may not have it, <strong>or</strong> the link is revoked/expired/used up. Deliberately indistinguishable.</td></tr>
+<tr><td>401</td><td><code>password_required</code></td><td>Share link needs a password. Re-issue as <code>POST</code> with <code>{&quot;password&quot;: &quot;...&quot;}</code>.</td></tr>
+<tr><td>403</td><td><code>forbidden</code></td><td>Attenuation or membership refusal. Only reachable by a caller who already has standing, so it leaks nothing.</td></tr>
+<tr><td>409</td><td><code>retention_hold</code></td><td>Deletion blocked by a retention floor.</td></tr>
+<tr><td>410</td><td><code>gone</code></td><td>The file itself has expired.</td></tr>
+<tr><td>400</td><td><code>credential_in_query</code></td><td>A credential appeared in the query string. Move it to the body.</td></tr>
+<tr><td>400</td><td><code>link_principal_cannot_list</code></td><td>A share-link credential was used to call <code>listFiles</code>.</td></tr>
+<tr><td>400</td><td><code>link_is_read_only</code></td><td>A share link was asked for a capability beyond <code>read</code>. Name an actor or an org as the subject instead.</td></tr></tbody>
+</table></div>
+<p><strong>All twenty-nine, with what to do about each, are in <a href="https://github.com/filelayer/filelayer/blob/main/packages/core/ERRORS.md" rel="noopener"><code>ERRORS.md</code></a>.</strong> It is generated from the code, so it cannot drift from it. If you are mapping these onto your own responses in a script, read <a href="https://github.com/filelayer/filelayer/blob/main/packages/core/errors.json" rel="noopener"><code>errors.json</code></a> instead; it ships in the tarball and resolves as <code>@filelayer/core/errors.json</code>.</p>
+<p><em>Until 7 October 2026 the table above was the whole published list, and the library threw twenty-nine codes. A caller who hit <code>upload_not_received</code> or <code>bad_cursor</code> had nothing to tell them whether those names were stable.</em></p>
+<p><strong>Never serialize <code>e.reason</code> to an untrusted caller.</strong> It carries the internal deny reason (<code>no_membership</code>, <code>grant_revoked</code>, <code>bad_link_secret</code>…), which is recorded in the audit log for your incident responder and would be an enumeration oracle in a response body. <code>e.code</code> is the safe field.</p>
+<hr>
+<h2 id="10-what-filelayer-does-not-do">10. What Filelayer does not do</h2>
+<ul><li><strong>Authenticate users.</strong> You supply identity.</li>
+<li><strong>Answer <em>multiple</em> ranges in one request, or honour <code>If-Range</code>.</strong> <code>bytes=0-9,20-29</code> is ignored and the whole object is served under a <code>200</code>; answering one of several ranges under a <code>206</code> is indistinguishable, from the client's side, from an answer to a different question. <code>If-Range</code> is not parsed, which is safe here only because an object key is a fresh UUID that is never rewritten, so the bytes cannot change under a resuming client. Single ranges, suffix ranges and <code>416</code> all work (§6).</li>
+<li><strong>Stream through the tiered facade.</strong> <code>fl.files.put()</code> takes a <code>Uint8Array</code>, so a file put through it is fully resident in memory. The core <code>fl.upload()</code> accepts a <code>ReadableStream</code> — use that for large files.</li>
+<li><strong>Resumable or multipart upload.</strong> A large upload that fails starts over.</li>
+<li><strong>Direct browser → storage upload <em>by default</em>.</strong> Upload bytes go through your server unless you turn this on. <code>createUpload()</code> / <code>completeUpload()</code> since <code>0.10.0</code> authorize first and then hand the browser a presigned <code>PUT</code> that pins length and content type, so the bytes never enter your process; it is opt-in behind an acknowledgement string and needs a <code>maxUploadBytes</code> you choose, and on <code>FsStorage</code> it reports <code>via: 'server'</code> because there is nothing to presign. This line said flatly that Filelayer did not do this at all, which stopped being true on 4 October 2026 and stayed on the page for the rest of that day.</li>
+<li><strong>A size ceiling on <code>fl.files.put()</code> or <code>fl.upload()</code>.</strong> <code>maxUploadBytes</code> belongs to the direct-upload config and nothing else. The plain upload paths accept whatever you hand them, so the limit is whatever your process can allocate: a 400 MB body took the starter from 85 MB resident to 1.3 GB. Counting bytes as the body arrives is your application's job and <code>examples/starter/server.ts</code> shows it.</li>
+<li><strong>CDN delivery by default.</strong> Deliberate; see §6. Redirect delivery is opt-in, restricted to anonymous grants unless you widen it, and carries a bounded revocation window that you have to acknowledge in the config by name.</li>
+<li><strong>Image transformation or thumbnails.</strong></li>
+<li><strong>Custom roles.</strong> Four fixed roles, on purpose: an unbounded role system is an authorization model nobody can audit.</li>
+<li><strong>Encryption at rest beyond what your bucket provides.</strong> Org admins can read <code>private</code> files.</li>
+<li><strong>Per-org identifier namespaces.</strong> <code>actor.external_id</code> and <code>org.external_id</code> are unique per <strong>project</strong> — one customer application — not per org. Two orgs inside one project share one id space for users.</li>
+<li><strong>Run its own maintenance.</strong> Orphan collection and ingest rate limiting are jobs you schedule; see §7.</li></ul>
+<p>If your problem is a public avatar and nothing more, <a href="https://github.com/filelayer/filelayer/blob/main/ARCHITECTURE-PROGRESSIVE.md#41-the-headline-a-public-avatar" rel="noopener">Supabase Storage does it in 10 lines to our 16</a> and gives you a CDN. Use it. Come back when you need to take a URL back.</p>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md" rel="noopener"><code>docs/QUICKSTART.md</code></a>
+    in a public repository. The code samples on this page are executed by CI on
+    every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/quickstart">Quickstart</a> ·
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.33.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>
