@@ -220,7 +220,7 @@ apply to you:
    what they are holding. But it is a policy decision, and if you need to
    exclude the operator you need envelope encryption, which we do not have.
 5. **Alpha, nobody is running it in production including us, and the schema has
-   changed seven times.** Any `0.x` → `0.(x+1)` may
+   changed twelve times.** Any `0.x` → `0.(x+1)` may
    break the API, the schema or both. Every break has a numbered entry in
    [`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) and a runnable file
    under `migrations/` that CI applies to the previous release's schema and
@@ -353,9 +353,14 @@ Pre-1.0. The version is `0.MINOR.PATCH` and the promise is deliberately narrow:
   action, no signature change.
 - There is no long-term support branch and no backporting before 1.0.
 
-**The schema has changed seven times.** `MIGRATIONS.md` has thirteen numbered
-entries, eight of which carry forward SQL. Budget an upgrade against that file
-rather than against this paragraph.
+**The schema has changed twelve times.** `MIGRATIONS.md` has fifteen numbered
+entries, ten of which carry forward SQL; the other two schema changes predate
+the oldest tag in the repository and cannot be verified against an earlier
+schema. Budget an upgrade against that file rather than against this paragraph.
+Every figure in this paragraph is derived from `migrations/manifest.json` by
+`check:versions`, which fails the build if any of them drifts — because these
+numbers were last corrected by hand at `0.15.0` and had drifted again by
+`0.33.0`.
 
 **Which version a database is at is readable off the database.**
 `schemaStatus(db)` reports where a database is, what this build expects, and

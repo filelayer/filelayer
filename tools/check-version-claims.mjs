@@ -715,6 +715,120 @@ if (recorded) {
   }
 }
 
+// --- the same inversion again, for HOW OFTEN THE SCHEMA HAS CHANGED ---------
+//
+// THE SIXTH INSTANCE, and the first REPEAT: this exact defect was found and
+// fixed by hand once already. The 0.15.0 changelog carries the entry
+// "two public surfaces understated how often the schema has changed", and the
+// fix was to write the right numbers into README.md and TRUST.md. Nothing was
+// built to keep them right, so they drifted again — and by 0.33.0 the two
+// pages carried SEVEN figures between them and every one was wrong:
+//
+//   README.md   "changed seven times", "thirteen numbered entries",
+//               "eight of which carry forward SQL"
+//   TRUST.md    "changed six times", "ten numbered entries",
+//               "six of them with forward SQL", "Two of the ten"
+//
+// Truth at that moment: fifteen entries, twelve schema changes, ten with
+// forward SQL, two unverifiable. Both pages understated the cost of adopting
+// us, which is the direction that flatters us, on the two pages whose whole
+// argument is that we do not do that. An outside reader quoted the README's
+// figure back at us before this was noticed.
+//
+// A HAND FIX IS NOT A FIX when the number has to move again at the next schema
+// change. This derives all four quantities from `migrations/manifest.json` —
+// which is already machine-readable because a reader's migration runner
+// enumerates it — and then reads every tracked document for sentences that
+// state any of them, by PHRASE rather than by address, for the reasons the
+// three sweeps above give at length.
+//
+// THE ARITHMETIC IS CHECKED TOO, and that is the half a count cannot do on its
+// own: a schema change either ships a runnable file or is one of the entries
+// that predate the oldest tag, so `schema changes = with SQL + unverifiable`
+// must hold. Add an entry and forget its file and this says so, instead of
+// waiting for the prose to disagree with itself.
+{
+  const manifest = JSON.parse(
+    readFileSync(join(ROOT, 'packages/core/migrations/manifest.json'), 'utf8'),
+  );
+  const entries = manifest.expects;
+  const withSql = manifest.migrations.length;
+  const unverifiable = manifest.unverifiable.length;
+  const schemaChanges = entries - manifest.noSchemaChange.length;
+
+  // The manifest and the prose have to be counting the same thing. If someone
+  // adds an Entry heading and not a manifest bump, every figure below is
+  // derived from a stale number and the sweep would enforce the wrong answer
+  // confidently — which is worse than not checking.
+  const migrationsMd = readFileSync(join(ROOT, 'packages/core/MIGRATIONS.md'), 'utf8');
+  const headings = (migrationsMd.match(/^### Entry \d+ —/gm) ?? []).length;
+  if (headings !== entries) {
+    violations.push(
+      `packages/core/MIGRATIONS.md has ${headings} "### Entry" heading(s) but ` +
+        `migrations/manifest.json says expects: ${entries}. One of them is stale, and ` +
+        'every published migration figure is derived from the manifest.',
+    );
+  }
+  if (schemaChanges !== withSql + unverifiable) {
+    violations.push(
+      `migrations/manifest.json does not add up: ${entries} entries minus ` +
+        `${manifest.noSchemaChange.length} that change no schema is ${schemaChanges} schema ` +
+        `changes, but ${withSql} have a file and ${unverifiable} are marked unverifiable ` +
+        `(${withSql + unverifiable}). A schema change either ships SQL or predates the ` +
+        'oldest tag; there is no third case.',
+    );
+  }
+
+  const NUM = {
+    one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
+    nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14,
+    fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+    twenty: 20,
+  };
+  const asNum = (t) => (/^\d+$/.test(t) ? Number(t) : NUM[String(t).toLowerCase()]);
+
+  // Each shape captures a quantity and names which derived figure it is
+  // asserting. Spelled-out numbers included, because both pages spell them:
+  // "thirteen numbered entries" is the form that drifted, and a gate that only
+  // read digits would have watched neither page.
+  const SHAPES = [
+    { what: 'numbered entries', expect: entries,
+      re: /\b(\w+) numbered entr(?:y|ies)/gi },
+    { what: 'schema changes', expect: schemaChanges,
+      re: /schema (?:has|may change before 1\.0, and \*{0,2}has)\s*\*{0,2}changed\*{0,2}\s+\*{0,2}(\w+)\*{0,2} times?/gi },
+    { what: 'entries carrying forward SQL', expect: withSql,
+      re: /\b(\w+) of (?:them|which|these) (?:with|carry|carries|have|has|ship|ships) forward SQL/gi },
+    { what: 'entries that cannot be verified', expect: unverifiable,
+      re: /\b(\w+) of the \w+ cannot be verified/gi },
+  ];
+
+  for (const file of SWEEP_SURFACES) {
+    let text;
+    try {
+      text = readFileSync(join(ROOT, file), 'utf8');
+    } catch {
+      continue; // the sweep above already reports a missing surface
+    }
+    for (const shape of SHAPES) {
+      const re = new RegExp(shape.re.source, shape.re.flags);
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const n = asNum(m[1]);
+        // Not a quantity at all -- "a numbered entry", "each of which carries
+        // forward SQL". Those are correct however the counts move.
+        if (n === undefined) continue;
+        if (n === shape.expect) continue;
+        const lineNo = text.slice(0, m.index).split('\n').length;
+        const line = text.split('\n')[lineNo - 1] ?? '';
+        violations.push(
+          `${file}:${lineNo} says ${m[1]} ${shape.what}; migrations/manifest.json ` +
+            `gives ${shape.expect}.\n      > ${line.trim().slice(0, 140)}`,
+        );
+      }
+    }
+  }
+}
+
 // --- the same inversion, for the VERSION claims -----------------------------
 //
 // THE FIFTH INSTANCE, and the first one a stranger could see. On 5 October 2026

@@ -145,14 +145,21 @@ matter:
   that has never been seen to fail is indistinguishable from one that cannot.
   What is still unproven is everything above those four properties: this is a
   floor, not a sweep.
-- The schema may change before 1.0, and **has changed six times**, not once —
-  this line said "one breaking change" until `0.15.0` and was understating what
-  adopting us costs. `MIGRATIONS.md` has ten numbered entries, six of them with
-  forward SQL. Since `0.15.0` each of those has a runnable file under
-  `migrations/`, and CI applies it to the previous release's schema and fails
-  the build unless the result matches the next release's, on real PostgreSQL.
-  Two of the ten cannot be verified: they predate the oldest tag in the
-  repository, so there is no earlier schema to apply them to.
+- The schema may change before 1.0, and **has changed twelve times**, not once.
+  `MIGRATIONS.md` has fifteen numbered entries, ten of which carry forward SQL.
+  Since `0.15.0` each of those has a runnable file under `migrations/`, and CI
+  applies it to the previous release's schema and fails the build unless the
+  result matches the next release's, on real PostgreSQL. Two of the twelve
+  cannot be verified: they predate the oldest tag in the repository, so there is
+  no earlier schema to apply them to.
+  **This line has been wrong twice.** It said "one breaking change" until
+  `0.15.0`, and from `0.15.0` to `0.33.0` it said six — while the README said
+  seven and the real figure was twelve. Three published numbers, none of them
+  right, all of them understating what adopting us costs, on the pages that
+  exist to not do that. Every figure in this bullet is now derived from
+  `migrations/manifest.json` by a check that reads **every** tracked document,
+  so the next drift fails the build instead of waiting for a reader to catch
+  it. This time, a reader did.
 - Until `0.15.0` there was no way to tell which schema version a database held.
   `filelayer_schema_version` and `schemaStatus(db)` close that. There is still
   **no migration runner, and there will not be one** — applying the files is
