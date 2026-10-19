@@ -76,6 +76,7 @@ import {
   canList,
   canPresign,
   canPresignPut,
+  cappedStream,
   collectStream,
   type ObjectStream,
   type PresignedUpload,
@@ -382,7 +383,44 @@ export interface FilelayerOptions {
    * `DIRECT_UPLOAD_ACKNOWLEDGEMENT`, which says that out loud.
    */
   directUpload?: DirectUploadConfig;
+
+  /**
+   * The largest object `upload()` will accept, in bytes. Defaults to
+   * `DEFAULT_MAX_UPLOAD_BYTES`. Pass `null` to accept any size, which is a
+   * decision rather than a default.
+   *
+   * WHY THIS EXISTS, AND WHY IT ARRIVED LATE. Until this option the proxied
+   * upload path -- the DEFAULT path, the one whose entire argument is that the
+   * bytes go through your process so that you keep control of them -- had no
+   * ceiling of any kind, while `createUpload()`, the opt-in path where the
+   * bytes bypass you entirely, required `maxUploadBytes` and refused to start
+   * without it. The asymmetry was exactly backwards: the route that spends
+   * your memory, your bandwidth and your storage bill was the unbounded one,
+   * and an authenticated member could hold it open for as long as they had
+   * bytes to send. An outside reviewer listed "no upload size limit" among our
+   * gaps; they were right, and they were describing the half of the product we
+   * tell people to use.
+   *
+   * WHY A DEFAULT HERE AND NONE THERE. `createUpload()` signs an exact size
+   * into a credential, so a bound is a statement about what your application
+   * intends and guessing one would be guessing at intent. This is the opposite
+   * situation: there is no number to sign, the status quo is infinity, and a
+   * finite default is strictly safer than what every existing deployment has
+   * today. 512 MiB is the same figure `collectStream` already uses as its
+   * buffered-read ceiling, so the two limits in this library agree.
+   *
+   * A deployment that really does accept larger objects raises it or disables
+   * it explicitly -- and on that path, `null` appears in their source, which is
+   * the point. The hole this closes is the one nobody chose.
+   */
+  maxUploadBytes?: number | null;
 }
+
+/**
+ * 512 MiB. Matches `collectStream`'s buffered-read ceiling so that the two
+ * bounds in this library are one number rather than two that drift.
+ */
+export const DEFAULT_MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
 
 /**
  * The string you have to type to turn direct upload on.
@@ -468,6 +506,9 @@ export class Filelayer {
   /** Null unless direct upload was configured AND acknowledged. */
   private readonly directUpload: ResolvedDirectUploadConfig | null;
 
+  /** The `upload()` ceiling. Null only when a caller explicitly disabled it. */
+  private readonly maxUploadBytes: number | null;
+
   constructor(db: Queryable, storage: StorageAdapter, opts: FilelayerOptions = {}) {
     this.db = db;
     this.storage = storage;
@@ -484,6 +525,21 @@ export class Filelayer {
     });
     this.redirect = opts.redirectDelivery ? resolveRedirectConfig(opts.redirectDelivery) : null;
     this.directUpload = opts.directUpload ? resolveDirectUploadConfig(opts.directUpload) : null;
+    // `undefined` means "not stated" and takes the default; `null` means the
+    // caller wrote down that they want no ceiling. Those are different answers
+    // and `??` would collapse them into one.
+    if (opts.maxUploadBytes === undefined) {
+      this.maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
+    } else if (opts.maxUploadBytes === null) {
+      this.maxUploadBytes = null;
+    } else {
+      if (!Number.isSafeInteger(opts.maxUploadBytes) || opts.maxUploadBytes < 1) {
+        throw new FilelayerError('invalid_argument',
+          'maxUploadBytes must be a positive integer, or null to disable the ceiling',
+        );
+      }
+      this.maxUploadBytes = opts.maxUploadBytes;
+    }
   }
 
   /**
@@ -956,6 +1012,33 @@ export class Filelayer {
     }
     const visibility: FileVisibility = input.visibility ?? 'private';
 
+    // THE UPLOAD CEILING, enforced at the only three points where it can be.
+    // See `FilelayerOptions.maxUploadBytes` for why this path had none while
+    // the opt-in direct path required one.
+    //
+    //   1. HERE, for free, when the size is already known: a `Uint8Array`
+    //      states its length, and a declared `size` states the caller's
+    //      intent. Refusing now costs nothing and writes nothing.
+    //   2. DURING the write, by counting bytes as they pass (`cappedStream`).
+    //      This is the one that actually binds, because the declared size is
+    //      advisory and a stream need not announce its length at all.
+    //   3. AFTER the write, against what the adapter says it stored. An
+    //      adapter that buffers internally, or any path the wrapper does not
+    //      cover, lands here. It cannot prevent the bytes -- only refuse the
+    //      row and delete the object -- but a backstop that catches what the
+    //      other two miss is the difference between a bounded bill and an
+    //      unbounded one.
+    const cap = this.maxUploadBytes;
+    if (cap !== null) {
+      const known =
+        input.body instanceof Uint8Array ? input.body.byteLength
+        : typeof input.size === 'number' ? input.size
+        : null;
+      if (known !== null && known > cap) {
+        throw new FilelayerError('payload_too_large', `size:${known}>max:${cap}`);
+      }
+    }
+
     // ORDERING: BYTES FIRST, METADATA SECOND. See the long note in db.ts.
     //
     // The storage write cannot join the transaction, so one of the two possible
@@ -969,9 +1052,33 @@ export class Filelayer {
     // required operational job, not an optional one.
     //
     // It also means the adapter, not the caller, reports how many bytes exist.
-    const put = await this.storage.put(storageKey, input.body, input.contentType, {
-      ...(input.size !== undefined ? { contentLength: input.size } : {}),
-    });
+    const body =
+      cap !== null && !(input.body instanceof Uint8Array)
+        ? cappedStream(input.body, cap, (seen) =>
+            new FilelayerError('payload_too_large', `streamed:>${seen}>max:${cap}`))
+        : input.body;
+
+    // A REFUSAL MID-STREAM STILL LEAVES BYTES BEHIND, because the adapter has
+    // already sent some of them. The delete is best-effort and deliberately
+    // does not mask the original error: if it fails too, the key is an orphan
+    // of exactly the kind `collectStorageOrphans()` exists to reclaim, and the
+    // caller still gets the reason they were refused rather than the reason
+    // the cleanup failed.
+    let put;
+    try {
+      put = await this.storage.put(storageKey, body, input.contentType, {
+        ...(input.size !== undefined ? { contentLength: input.size } : {}),
+      });
+    } catch (err) {
+      await this.storage.delete(storageKey).catch(() => {});
+      throw err;
+    }
+
+    // Point 3: what the adapter says it actually wrote.
+    if (cap !== null && put.bytes > cap) {
+      await this.storage.delete(storageKey).catch(() => {});
+      throw new FilelayerError('payload_too_large', `stored:${put.bytes}>max:${cap}`);
+    }
 
     return this.#transaction(async (tx, store) => {
       const { rows } = await tx.query<Record<string, unknown>>(

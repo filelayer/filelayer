@@ -58,6 +58,16 @@ Each one is current as of
 3. **The tiered facade `fl.files.put()` takes a `Uint8Array`**, so a file put
    through it is fully resident in memory. The core `fl.upload()` accepts a
    `ReadableStream`; use that above a few tens of megabytes.
+   **`upload()` is bounded by `maxUploadBytes`, which defaults to 512 MiB.**
+   Until this release it was bounded by nothing at all, while the opt-in direct
+   path (entry 4) required a ceiling and refused to start without one — so the
+   route that spends your memory and your bandwidth was the unbounded one and
+   the route that bypasses you was capped. An outside reviewer listed this as a
+   gap and was right. The ceiling is counted on the bytes actually read, not on
+   the caller's declared `size`, which is advisory; a stream that exceeds it is
+   cut off on the chunk that crosses it and the partial object is deleted. Set
+   `maxUploadBytes: null` to opt out, which puts the decision in your source
+   rather than in our defaults.
 4. **Direct browser → storage upload is opt-in, and only S3/R2 bypass your server.**
    `createUpload()` reserves a `pending` file row and returns a presigned PUT
    whose `content-length` and `content-type` are in the SIGNED HEADERS, so the

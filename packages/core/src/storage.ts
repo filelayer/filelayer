@@ -311,6 +311,56 @@ export function bytesToStream(body: Uint8Array): ReadableStream<Uint8Array> {
   });
 }
 
+/**
+ * The same stream, which fails once more than `limit` bytes have passed
+ * through it.
+ *
+ * WHY THIS AND NOT A CHECK ON THE DECLARED SIZE. `UploadInput.size` is
+ * documented as advisory, and it is: it comes from a `content-length` a client
+ * sent, or from nothing at all, and a stream does not have to say how long it
+ * is before it starts. A ceiling enforced on the declared number is a ceiling
+ * any caller clears by declaring a smaller one. The only quantity that cannot
+ * lie is the count of bytes actually read, so that is what this counts.
+ *
+ * IT FAILS AS EARLY AS THE LIMIT IS CROSSED -- on the chunk that crosses it,
+ * not at the end -- so a hostile or buggy caller cannot make the process hold
+ * an unbounded object before being refused. The source is cancelled on the way
+ * out so the producer stops rather than filling a queue nobody will drain.
+ *
+ * WHAT IT CANNOT DO is un-write bytes an adapter has already sent to a bucket.
+ * The partial object is the caller's problem to clean up, and `upload()` does:
+ * it deletes the key and leaves `collectStorageOrphans()` as the backstop if
+ * that delete also fails.
+ */
+export function cappedStream(
+  stream: ReadableStream<Uint8Array>,
+  limit: number,
+  onExceeded: (seen: number) => Error,
+): ReadableStream<Uint8Array> {
+  const reader = stream.getReader();
+  let total = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      if (!value) return;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel('upload exceeds maxUploadBytes').catch(() => {});
+        controller.error(onExceeded(total));
+        return;
+      }
+      controller.enqueue(value);
+    },
+    async cancel(reason) {
+      await reader.cancel(reason).catch(() => {});
+    },
+  });
+}
+
 // -----------------------------------------------------------------------------
 // Filesystem adapter (a real disk, no bucket)
 // -----------------------------------------------------------------------------

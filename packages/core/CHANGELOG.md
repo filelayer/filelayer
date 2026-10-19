@@ -21,7 +21,54 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed — the default upload path had no size ceiling and the opt-in one did
+
+`upload()` accepted an object of any size from any authenticated member. There
+was no bound in the library at all: not on a declared `size`, not on a
+`Uint8Array`, not on a stream. Whatever the HTTP layer in front happened to do
+was the only thing standing between a member and an unbounded amount of your
+memory, your bandwidth and your storage bill.
+
+`createUpload()` — opt-in, bytes bypass your process entirely — has required
+`maxUploadBytes` since it shipped and refuses to construct without it. **The
+asymmetry was exactly backwards.** The route whose whole argument is that the
+bytes go THROUGH your process, so that you keep control of them, was the one
+with no ceiling; the route that takes them out of your hands was capped.
+
+`FilelayerOptions.maxUploadBytes` now bounds `upload()`, defaulting to
+`DEFAULT_MAX_UPLOAD_BYTES` (512 MiB, the same figure `collectStream` already
+used as its buffered-read ceiling). `null` disables it, which puts that
+decision in the adopter's source rather than in our defaults.
+
+**Counted on bytes read, not on bytes declared.** `UploadInput.size` is
+documented as advisory and it is: it comes from a `content-length` a client
+sent, or from nothing. A ceiling checked against the declared number is a
+ceiling any caller clears by declaring a smaller one, so `cappedStream()`
+counts what actually passes and fails on the chunk that crosses the limit,
+cancelling the source so the producer stops. The declared size and a
+`Uint8Array`'s length are still checked first, because refusing before writing
+anything is free. What the adapter reports having stored is checked last, as a
+backstop for adapters that buffer internally.
+
+A refusal mid-write deletes the partial object. If that delete also fails the
+key is an orphan of exactly the kind `collectStorageOrphans()` reclaims, and
+the caller still gets the reason they were refused rather than the reason the
+cleanup failed.
+
+**On the test that did not test anything.** The first version of this suite
+asserted that oversized streams are refused and that no object is left behind.
+Every one of those assertions stayed green with the mid-stream counter
+disabled, because `MemoryStorage` buffers the body and the backstop then
+refuses on what it stored — a correct refusal after holding four times the
+ceiling on the heap, which is the precise failure a size limit exists to
+prevent. The refusal was never the property worth asserting. The suite now
+measures how much was READ, by offering 4x and 40x the ceiling and requiring
+the same amount to be consumed in both: a drained stream cannot fake that, and
+the mutation that passed before now fails.
+
+Found by an outside reviewer, who listed "no upload size limit" among this
+project's gaps. They were right, and they were describing the half of the
+product we tell people to use.
 
 ## [0.33.0] — 2026-10-15
 

@@ -21,7 +21,7 @@ this page said until 4 October.
 | Independent security review | **none** |
 | Load measured | First run 4 October 2026, `benchmark/load/RESULTS.md`. One machine, no network, no object store, seconds per cell |
 | Time to first stored file | Measured 17 October 2026, `benchmark/ttff/RESULTS.md`. From `npm install` of the **published** package to a stored byte, with a cold npm cache: **0 accounts, 0 credentials, 0 dashboards, 4 lines**. The program is asserted to appear verbatim in the quickstart that shipped in the tarball |
-| Tests | 696, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves |
+| Tests | 706, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
