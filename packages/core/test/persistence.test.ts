@@ -1104,6 +1104,21 @@ describe('every public method that names a resource also names a principal', () 
       // tenant to erase another's history.
       'trimAuditChain',
       'sealAuditChain',
+      // THE WRAPPER OVER THE FOUR ABOVE, and it inherits their classification
+      // rather than softening it. It takes an optional `orgId` and no
+      // principal, which is the same shape as `trimAuditChain` and carries the
+      // same cost in a louder form: a route that called `runMaintenance` with
+      // a tenant-supplied org id would hand one tenant a way to seal and trim
+      // another's history in a single call.
+      //
+      // It is listed here deliberately rather than given a principal. Adding
+      // one would imply the jobs authorize something, and they do not: there
+      // is nobody to authorize, which is exactly why this must never be
+      // reachable from a request handler. Collecting four operator-only
+      // methods behind one operator-only method does not change what any of
+      // them is, and this test fired the moment it was added, which is the
+      // guard doing its job.
+      'runMaintenance',
     ]);
     const PRINCIPAL_FIRST = new Set([
       'upload', 'read', 'readStream', 'stat', 'listFiles', 'delete',

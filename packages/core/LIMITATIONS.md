@@ -90,7 +90,8 @@ Each one is current as of
    is not available to us — the signed-header pin is stricter anyway), and
    **resumable or multipart direct upload**, so one PUT is one object.
    `collectUploadReservations()` is a job you must schedule, or abandoned
-   reservations accumulate as invisible `pending` rows. Plain `upload()` is
+   reservations accumulate as invisible `pending` rows. `runMaintenance()`
+   runs it alongside the other three if you would rather schedule one thing. Plain `upload()` is
    unchanged and still the default: bytes through your server, no
    acknowledgement, every adapter.
 5. **Org admins and owners can read `private` files.** Deliberate, since retention
@@ -115,6 +116,9 @@ Each one is current as of
 9. **Orphan collection is a job you have to run.** Bytes are written before the
    metadata commits, so a crash in between leaves an unreferenced object.
    `collectStorageOrphans()` cleans them up and nothing calls it for you.
+   It is the job most often left out of a crontab, because its absence is
+   invisible and bills monthly; `runMaintenance()` exists so that scheduling
+   one entry covers it.
 10. **Redirect delivery has a revocation window.** If you enable it, a presigned
    URL stays valid for up to its TTL after the grant is revoked. It is off by
    default, defaults to anonymous grants only, and requires passing a verbatim

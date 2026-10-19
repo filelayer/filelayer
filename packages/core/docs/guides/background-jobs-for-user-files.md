@@ -319,6 +319,42 @@ assert.equal(after.stale, false);
 
 That block is executed by `npm run check:docs` on every commit.
 
+### One schedule entry instead of four
+
+Four crontab lines is four chances to write three, and the one most likely to
+go missing is the orphan collector, whose absence is invisible and bills every
+month. `runMaintenance()` runs all four and reports on all four.
+
+What it deliberately does **not** do is flatten them into one safety profile:
+
+```ts
+const summary = await fl.runMaintenance();
+
+// Dry by default, exactly as the individual collectors are. A convenience
+// wrapper that turned four dry jobs live would be a footgun in a costume.
+assert.equal(summary.dryRun, true);
+
+// All four are named every time, including the one that did not run.
+assert.equal(summary.jobs.length, 4);
+
+// The audit trim is SKIPPED, with a reason, unless you supply a retention
+// policy. How long you keep an audit trail is your decision and frequently
+// your lawyer's; this library has no default it is entitled to pick.
+assert.deepEqual(summary.skipped, ['audit_trim']);
+
+// Pass one and it runs.
+const trimmed = await fl.runMaintenance({
+  auditTrim: { keepLast: 1000, note: 'nightly retention' },
+});
+assert.deepEqual(trimmed.skipped, []);
+```
+
+Each job still writes its own `job_run` row, so the staleness query above keeps
+working whichever way you invoke them. A failing job does not stop the others —
+otherwise one broken job masks three healthy ones — and the call then throws
+with the whole summary on the error, so a cron entry judged by its exit status
+reports the failure rather than swallowing it.
+
 It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is
 alpha — [the trust page](https://github.com/filelayer/filelayer/blob/main/TRUST.md)
 has the numbers, including the ones sitting at zero.

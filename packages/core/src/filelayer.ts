@@ -422,6 +422,44 @@ export interface FilelayerOptions {
  */
 export const DEFAULT_MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
 
+export interface MaintenanceOptions {
+  /**
+   * Which tenant the audit jobs act on. `null` (the default) is every tenant,
+   * matching `sealAuditChain` and `trimAuditChain` called directly.
+   */
+  orgId?: string | null;
+  /**
+   * Sticky, and `true` unless you say otherwise -- the same default the two
+   * collection jobs have on their own. A wrapper that flipped four dry jobs
+   * live would be the opposite of a convenience.
+   */
+  dryRun?: boolean;
+  /** Recorded on the checkpoint. Defaults to `'runMaintenance'`. */
+  sealNote?: string;
+  uploadReservations?: { graceSeconds?: number; limit?: number };
+  storageOrphans?: { prefix?: string; olderThanSeconds?: number; limit?: number };
+  /**
+   * REQUIRED for the audit log to be trimmed at all. Absent means the job is
+   * reported as skipped rather than silently omitted: retention is your policy
+   * and often your lawyer's, and there is no default this library is entitled
+   * to pick for you.
+   */
+  auditTrim?: { before?: Date; keepLast?: number; note: string };
+}
+
+export type MaintenanceJobOutcome =
+  | { job: JobName; status: 'ok'; ms: number; result: unknown }
+  | { job: JobName; status: 'failed'; ms: number; error: string }
+  | { job: JobName; status: 'skipped'; ms: number; reason: string };
+
+export interface MaintenanceSummary {
+  dryRun: boolean;
+  /** Every job, in the order it was attempted, including the skipped ones. */
+  jobs: MaintenanceJobOutcome[];
+  failed: JobName[];
+  skipped: JobName[];
+}
+
 /**
  * The string you have to type to turn direct upload on.
  *
@@ -3304,6 +3342,126 @@ export class Filelayer {
         detail: { sealed: r !== null, note },
       }),
     );
+  }
+
+  /**
+   * Run the maintenance jobs, in one call, so that an operator schedules ONE
+   * thing instead of four.
+   *
+   * -------------------------------------------------------------------------
+   * WHY THIS EXISTS
+   * -------------------------------------------------------------------------
+   *
+   * "Schedule four background jobs yourself" is a real cost and it is the
+   * first thing an outside reviewer listed under operational burden. Four
+   * entries in a crontab is four chances to add three; the job most likely to
+   * be the missing one is `storage_orphans`, whose absence is invisible and
+   * bills monthly.
+   *
+   * -------------------------------------------------------------------------
+   * WHAT THIS DOES NOT DO, AND WHY THAT IS THE DESIGN
+   * -------------------------------------------------------------------------
+   *
+   * It does not make the four jobs safe to run blindly, because they are not
+   * one kind of thing:
+   *
+   *   `audit_seal`          purely additive. Always runs.
+   *   `upload_reservations` destructive. DRY unless you say otherwise.
+   *   `storage_orphans`     destructive. DRY unless you say otherwise.
+   *   `audit_trim`          destructive AND has no defensible default: how
+   *                         long you keep an audit trail is a retention
+   *                         policy, frequently a legal one, and this library
+   *                         does not have an opinion it is entitled to hold on
+   *                         your behalf. It runs only if you pass `auditTrim`,
+   *                         and is reported as SKIPPED with a reason if you do
+   *                         not.
+   *
+   * So `dryRun` stays sticky and defaults to true, exactly as on the
+   * individual methods. A convenience wrapper that quietly turned four dry
+   * jobs into four live ones would be a footgun wearing the costume of
+   * ergonomics.
+   *
+   * SKIPPED IS REPORTED, NOT OMITTED. A job that did not run appears in the
+   * result with the reason it did not, for the same reason `job_run` exists:
+   * the dangerous state is not a job that failed, it is a job nobody noticed
+   * was absent.
+   *
+   * -------------------------------------------------------------------------
+   * FAILURE
+   * -------------------------------------------------------------------------
+   *
+   * Every job runs even if an earlier one failed -- stopping at the first
+   * would let one broken job mask three healthy ones, and each is independent.
+   * Each failure is recorded in `job_run` by the method itself, exactly as it
+   * would be called directly.
+   *
+   * Then, if anything failed, this THROWS, with the whole summary attached as
+   * `.summary`. A maintenance script invoked from cron is judged by its exit
+   * status, and a runner that returns quietly after three of four jobs failed
+   * is the silence this library spent a release removing.
+   */
+  async runMaintenance(opts: MaintenanceOptions = {}): Promise<MaintenanceSummary> {
+    const dryRun = opts.dryRun ?? true;
+    const jobs: MaintenanceJobOutcome[] = [];
+
+    const attempt = async (job: JobName, run: () => Promise<unknown>) => {
+      const startedAt = Date.now();
+      try {
+        const result = await run();
+        jobs.push({ job, status: 'ok', ms: Date.now() - startedAt, result });
+      } catch (err) {
+        jobs.push({
+          job,
+          status: 'failed',
+          ms: Date.now() - startedAt,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
+    // Additive first: if a later job throws, the chain has still been sealed,
+    // and a seal is the thing that makes a subsequent trim attestable.
+    await attempt('audit_seal', () =>
+      this.sealAuditChain(opts.orgId ?? null, opts.sealNote ?? 'runMaintenance'),
+    );
+    await attempt('upload_reservations', () =>
+      this.collectUploadReservations({ ...(opts.uploadReservations ?? {}), dryRun }),
+    );
+    await attempt('storage_orphans', () =>
+      this.collectStorageOrphans({ ...(opts.storageOrphans ?? {}), dryRun }),
+    );
+
+    if (opts.auditTrim) {
+      await attempt('audit_trim', () => this.trimAuditChain(opts.orgId ?? null, opts.auditTrim!));
+    } else {
+      jobs.push({
+        job: 'audit_trim',
+        status: 'skipped',
+        ms: 0,
+        reason:
+          'no `auditTrim` retention policy was given. How long an audit trail is kept is ' +
+          'your decision, not this library\'s, so it is never trimmed by default. Pass ' +
+          '`auditTrim: { before | keepLast, note }` to include it.',
+      });
+    }
+
+    const summary: MaintenanceSummary = {
+      dryRun,
+      jobs,
+      failed: jobs.filter((j) => j.status === 'failed').map((j) => j.job),
+      skipped: jobs.filter((j) => j.status === 'skipped').map((j) => j.job),
+    };
+
+    if (summary.failed.length > 0) {
+      const detail = jobs
+        .filter((j): j is MaintenanceJobOutcome & { error: string } => j.status === 'failed')
+        .map((j) => `${j.job}: ${j.error}`)
+        .join('; ');
+      const err = new FilelayerError('internal', `maintenance_failed:${detail}`.slice(0, 2000));
+      (err as FilelayerError & { summary?: MaintenanceSummary }).summary = summary;
+      throw err;
+    }
+    return summary;
   }
 
   // ---------------------------------------------------------------------------

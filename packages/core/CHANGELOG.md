@@ -21,6 +21,41 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### Added — `runMaintenance()`, so an operator schedules one thing instead of four
+
+"Schedule four background jobs yourself" is a real adoption cost and it was
+near the top of an outside reviewer's list. Four crontab lines is four chances
+to write three, and the line most often missing is `collectStorageOrphans()`,
+whose absence is invisible and bills every month.
+
+**What it refuses to do is the design.** The four jobs do not share a safety
+profile, and a wrapper that pretended they did would be worse than the four
+lines it replaces:
+
+- `audit_seal` is additive and always runs.
+- `upload_reservations` and `storage_orphans` are destructive, so `dryRun`
+  stays sticky and still defaults to `true`. A convenience method that quietly
+  turned four dry jobs live would delete objects for a reader who called it to
+  see what it would do.
+- `audit_trim` is destructive **and** has no default this library is entitled
+  to choose: how long an audit trail is kept is a retention policy, frequently
+  a legal one. It runs only when `auditTrim` is supplied, and is otherwise
+  reported as **skipped, with the reason**, rather than omitted. A job nobody
+  notices is absent is the precise failure `job_run` was added to remove, so a
+  summary that silently listed three jobs would reintroduce it.
+
+Every job still records its own `job_run` row, so existing "has this run
+lately?" alerting keeps working whichever way it is invoked. One failure does
+not stop the rest — otherwise a single broken job masks three healthy ones —
+and the call then throws with the full summary attached as `.summary`, because
+a cron entry is judged by its exit status and a runner that returns quietly
+after a failure is the silence this library spent a release removing.
+
+Nine tests, each of the four behaviours above checked against a mutation that
+removes it: defaulting to live instead of dry, dropping the skipped job from
+the summary, stopping at the first failure, and returning quietly instead of
+throwing. All four mutations are caught.
+
 ### Fixed — the default upload path had no size ceiling and the opt-in one did
 
 `upload()` accepted an object of any size from any authenticated member. There
