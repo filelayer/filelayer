@@ -1,13 +1,25 @@
 # Should you depend on this?
 
-Probably not yet. This page exists so you can decide that quickly, with the real
-numbers, instead of inferring it from what a README doesn't say.
+Here are the numbers to answer that in two minutes, including the ones that are
+zero. No page you can reach from here will tell you something this one leaves
+out.
 
 Filelayer is a file layer for SaaS applications: files with owners, orgs and
 roles, share links that expire and can be revoked, lifecycle, and an audit trail
-that records denials. Its first release on npm was `0.3.0`, on
-**6 September 2026** — the registry's own timestamp, which is a day later than
-this page said until 4 October.
+that records denials.
+
+**What is tested is the authorization engine, and it is tested hard.** One
+function answers every access question. 729 tests run against a real PostgreSQL
+on every commit; 27 adversarial attacks score zero breaches, and the same suite
+scores three against an earlier revision of this library, so the suite is
+calibrated rather than merely passing. The storage adapter runs against live
+Cloudflare R2 and live AWS S3 on every commit. There are no runtime
+dependencies. From `npm install` of the published package to a stored byte:
+no account, no credential, no dashboard, four lines.
+
+**What is not tested is us in production.** That is the table below, and it is
+the honest trade: a design that has been attacked on purpose and has not met
+real traffic.
 
 ---
 

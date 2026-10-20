@@ -13,7 +13,7 @@
 -->
 
 <title>Should you depend on this? · Filelayer</title>
-<meta name="description" content="Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.">
+<meta name="description" content="Here are the numbers to answer that in two minutes, including the ones that are zero. No page you can reach from here will tell you something this one leaves out.">
 
 <link rel="canonical" href="https://filelayer.dev/trust">
 <link rel="stylesheet" href="/styles.css">
@@ -24,12 +24,12 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://filelayer.dev/trust">
 <meta property="og:title" content="Should you depend on this?">
-<meta property="og:description" content="Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.">
+<meta property="og:description" content="Here are the numbers to answer that in two minutes, including the ones that are zero. No page you can reach from here will tell you something this one leaves out.">
 <meta property="og:image" content="https://filelayer.dev/og.png">
 <meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Should you depend on this?">
-<meta name="twitter:description" content="Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.">
+<meta name="twitter:description" content="Here are the numbers to answer that in two minutes, including the ones that are zero. No page you can reach from here will tell you something this one leaves out.">
 <meta name="twitter:image" content="https://filelayer.dev/og.png">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -39,7 +39,7 @@
   "@context": "https://schema.org",
   "@type": "TechArticle",
   "headline": "Should you depend on this?",
-  "description": "Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.",
+  "description": "Here are the numbers to answer that in two minutes, including the ones that are zero. No page you can reach from here will tell you something this one leaves out.",
   "url": "https://filelayer.dev/trust",
   "inLanguage": "en",
   "isPartOf": {
@@ -87,8 +87,10 @@
 <main id="main" class="wrap">
 <article class="guide">
 <h1>Should you depend on this?</h1>
-<p>Probably not yet. This page exists so you can decide that quickly, with the real numbers, instead of inferring it from what a README doesn't say.</p>
-<p>Filelayer is a file layer for SaaS applications: files with owners, orgs and roles, share links that expire and can be revoked, lifecycle, and an audit trail that records denials. Its first release on npm was <code>0.3.0</code>, on <strong>6 September 2026</strong> — the registry's own timestamp, which is a day later than this page said until 4 October.</p>
+<p>Here are the numbers to answer that in two minutes, including the ones that are zero. No page you can reach from here will tell you something this one leaves out.</p>
+<p>Filelayer is a file layer for SaaS applications: files with owners, orgs and roles, share links that expire and can be revoked, lifecycle, and an audit trail that records denials.</p>
+<p><strong>What is tested is the authorization engine, and it is tested hard.</strong> One function answers every access question. 729 tests run against a real PostgreSQL on every commit; 27 adversarial attacks score zero breaches, and the same suite scores three against an earlier revision of this library, so the suite is calibrated rather than merely passing. The storage adapter runs against live Cloudflare R2 and live AWS S3 on every commit. There are no runtime dependencies. From <code>npm install</code> of the published package to a stored byte: no account, no credential, no dashboard, four lines.</p>
+<p><strong>What is not tested is us in production.</strong> That is the table below, and it is the honest trade: a design that has been attacked on purpose and has not met real traffic.</p>
 <hr>
 <h2 id="the-state-of-it-in-numbers">The state of it, in numbers</h2>
 <div class="table-scroll"><table>

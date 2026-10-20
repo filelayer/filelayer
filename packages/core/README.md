@@ -19,9 +19,10 @@ file access that goes through Filelayer, that decision is made in one place,
 handlers, no presigned-URL expiry logic, and no per-route access rules of your
 own.
 
-> **Alpha, and looking for three to five design partners** — we will help you
-> integrate this and stay on hand while you do, in exchange for hearing where it
-> breaks. [Should you depend on this?](https://github.com/filelayer/filelayer/blob/main/TRUST.md) ·
+> **Looking for three to five design partners.** We will help you integrate
+> this and stay on hand while you do, in exchange for hearing where it breaks.
+> Alpha, and the numbers behind that word are all on one page:
+> [should you depend on this?](https://github.com/filelayer/filelayer/blob/main/TRUST.md) ·
 > [what it does not do](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) ·
 > [roadmap to 1.0](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md)
 
@@ -219,8 +220,7 @@ apply to you:
    and legal hold are useless if the people accountable for them cannot see
    what they are holding. But it is a policy decision, and if you need to
    exclude the operator you need envelope encryption, which we do not have.
-5. **Alpha, nobody is running it in production including us, and the schema has
-   changed twelve times.** Any `0.x` → `0.(x+1)` may
+5. **Alpha, and the schema has changed twelve times.** Any `0.x` → `0.(x+1)` may
    break the API, the schema or both. Every break has a numbered entry in
    [`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) and a runnable file
    under `migrations/` that CI applies to the previous release's schema and
