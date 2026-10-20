@@ -218,17 +218,25 @@ describe('the decision, and the reason, are unchanged', () => {
   });
 
   it('duplicates do not change the decision, only what it costs', async () => {
-    // The pathological shape, small enough to run on PGlite: many identical
-    // live grants. The answer must be identical to one grant.
+    // The pathological shape, small enough to run on PGlite: many live grants
+    // for one person on one file. The answer must be identical to one grant.
+    //
+    // EACH ASKS FOR A DIFFERENT WINDOW, because double-submit protection
+    // collapses an identical repeat and these would otherwise be one row. The
+    // shape being tested is unchanged -- a pile of live grants arrives from
+    // different windows, delegation and shares made on different days, not
+    // from a button pressed forty times.
     const w = await world();
     const first = await w.fl.share({ actorId: w.owner }, w.fileId, {
       subject: { type: 'actor', actorId: w.reader },
       capabilities: ['read'],
+      expiresIn: 86400,
     });
     for (let i = 0; i < 40; i++) {
       await w.fl.share({ actorId: w.owner }, w.fileId, {
         subject: { type: 'actor', actorId: w.reader },
         capabilities: ['read'],
+        expiresIn: 86400 + i + 1,
       });
     }
     assert.equal((await w.store.getActorGrants(w.fileId, w.reader)).length, 41);

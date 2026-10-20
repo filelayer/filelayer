@@ -35,12 +35,27 @@ Each one is current as of
    re-running the read decision after the revoke, so "I revoked it and they can
    still read" is in the reply instead of in an audit a week later.
 
-   What is still on you: the key is OPTIONAL and the engine will not invent one,
-   because inventing one would mean choosing an expiry policy on your behalf.
-   `shares.unshare(fileId, { as, user })` remains the call that removes a named
-   person; `revoke(grantId)` is for a link whose secret you handed out. And
-   there is still no bound on how many live grants one subject may hold on one
-   file.
+   **The engine now does invent a key, narrowly, and this entry said it never
+   would.** An identical `share()` repeated within
+   `DOUBLE_SUBMIT_WINDOW_SECONDS` (60) collapses to the grant already there, so
+   the double-clicked button — the thing that actually produces this defect —
+   no longer produces it. Call it double-submit protection rather than
+   idempotency: it is bounded in time, it never resurrects a revoked or expired
+   grant, and two shares that differ in window or capabilities stay two grants,
+   because two windows are two intents.
+
+   **It never applies to a `link`, and that boundary is the point.** A link
+   grant carries a secret, so the grant *is* a URL; two link shares are two
+   URLs, very likely for two different people. Collapsing them would hand the
+   second recipient the first one's link and make one revoke cut off both — a
+   worse defect than this one, and silent. `idempotencyKey` remains the only
+   way to make a link share idempotent.
+
+   What is still on you: `shares.unshare(fileId, { as, user })` remains the
+   call that removes a named person, because several live grants are still
+   ordinary — different windows, delegation, a share made last week — and
+   `revoke(grantId)` is for a link whose secret you handed out. There is still
+   no bound on how many live grants one subject may hold on one file.
 
    **The read cost of holding many is no longer linear**, and this entry said
    it was until 14 October 2026 — fourteen releases after it stopped being

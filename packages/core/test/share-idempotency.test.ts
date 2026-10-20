@@ -42,19 +42,53 @@ async function scenario() {
 }
 
 describe('a retried share', () => {
-  it('WITHOUT a key, inserts twice -- and revoking one leaves access live', async () => {
+  it('WITHOUT a key, a double-clicked NAMED share is now one grant', async () => {
+    // The trap this file was written for. Disclosing it for thirty releases
+    // did not stop anyone walking into it, because the thing that needs the
+    // fix is a button and whoever wires a button up is not reading limitation
+    // entry 2. So the common case got a default.
     const { fl, fileId } = await scenario();
 
-    // The double-clicked button, exactly.
     const first = await fl.shares.create(fileId, { as: 'alice', withUser: 'bob' });
     const second = await fl.shares.create(fileId, { as: 'alice', withUser: 'bob' });
-    assert.notEqual(first.grantId, second.grantId, 'two calls, two grants');
+    assert.equal(second.grantId, first.grantId, 'two identical calls made two grants');
+    assert.equal(second.replayed, true);
 
-    // And here is the trap: the caller revokes the id they are holding and
-    // believes Bob is out.
+    // And the trap is closed: the id the caller holds IS the access.
     await fl.shares.revoke(first.grantId, { as: 'alice' });
-    const still = await fl.files.get(fileId, { as: 'bob' });
-    assert.ok(still, 'bob can still read -- this is the defect, asserted');
+    await assert.rejects(
+      () => fl.files.get(fileId, { as: 'bob' }),
+      'bob still reads after the only grant was revoked',
+    );
+  });
+
+  it('BUT a double-clicked LINK share is still two grants, and must be', async () => {
+    // THE BOUNDARY, asserted rather than described. A link grant carries a
+    // `secret_hash`: the grant IS a URL. Two link shares are two secrets, very
+    // likely headed for two different people. Collapsing them would hand the
+    // second recipient the first one's URL and make one revoke cut off both --
+    // a worse defect than the one above, and a silent one.
+    //
+    // So links keep inserting every time, and `idempotencyKey` remains the
+    // only way to make a link share idempotent. If this test ever starts
+    // failing, double-submit protection has leaked into the one subject type
+    // it was built to avoid.
+    const { fl, fileId } = await scenario();
+
+    const a = await fl.shares.create(fileId, { as: 'alice' });
+    const b = await fl.shares.create(fileId, { as: 'alice' });
+    assert.notEqual(a.grantId, b.grantId, 'two link shares collapsed into one secret');
+    assert.ok(a.secret && b.secret, 'both calls must return a usable link');
+    assert.notEqual(a.secret, b.secret, 'two link shares returned the SAME secret');
+  });
+
+  it('and two shares with DIFFERENT windows stay two grants', async () => {
+    // Two windows are two intents, whatever the subject. The protection is
+    // for a repeated identical act, not for a second deliberate one.
+    const { fl, fileId } = await scenario();
+    const a = await fl.shares.create(fileId, { as: 'alice', withUser: 'bob', expiresIn: 3600 });
+    const b = await fl.shares.create(fileId, { as: 'alice', withUser: 'bob', expiresIn: 7200 });
+    assert.notEqual(a.grantId, b.grantId);
   });
 
   it('WITH a key, returns the same grant and inserts nothing', async () => {
@@ -276,8 +310,13 @@ describe('revoke() reports what access remains', () => {
   it('says the person can still read when a second grant survives', async () => {
     const { fl, fileId } = await scenario();
 
-    const first = await fl.shares.create(fileId, { as: 'alice', withUser: 'bob' });
-    await fl.shares.create(fileId, { as: 'alice', withUser: 'bob' });
+    // TWO DELIBERATE SHARES, not a double click: different windows, so
+    // double-submit protection correctly leaves both. This property is about
+    // what `revoke()` reports when a person's access outlives one grant id,
+    // and that state is still ordinary -- two windows, a delegated grant, a
+    // share made last week.
+    const first = await fl.shares.create(fileId, { as: 'alice', withUser: 'bob', expiresIn: 3600 });
+    await fl.shares.create(fileId, { as: 'alice', withUser: 'bob', expiresIn: 7200 });
 
     const result = await fl.shares.revoke(first.grantId, { as: 'alice' });
     assert.equal(result.subjectType, 'actor');

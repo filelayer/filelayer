@@ -53,13 +53,57 @@ const canRead = async (fl: Filelayer, id: string, as: string): Promise<boolean> 
   }
 };
 
+
+/**
+ * `n` genuinely distinct live grants for bob on one file.
+ *
+ * SINCE DOUBLE-SUBMIT PROTECTION LANDED, two IDENTICAL `share()` calls inside
+ * a short window collapse into one grant -- which is the fix for the defect
+ * this file opens with, and it does not make the defect go away. Plurality is
+ * still ordinary: a different expiry, a different capability set, a share made
+ * next week, a delegated grant. Each call below asks for a different window,
+ * so these are several grants for the same reason a real application ends up
+ * with several, rather than because the library failed to notice a repeat.
+ *
+ * The tests then assert what they always asserted: a grant id is not a
+ * person's access, and `unshare()` is the operation that removes all of it.
+ */
+const distinctShares = async (
+  fl: Awaited<ReturnType<typeof world>>['fl'],
+  id: string,
+  n: number,
+  extra: { maxDownloads?: number } = {},
+) => {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push(await fl.shares.create(id, {
+      as: 'alice', withUser: 'bob', expiresIn: 3600 + i, ...extra,
+    }));
+  }
+  return out;
+};
+
 describe('two shares, one revoke: the defect', () => {
-  it('share() twice leaves TWO live grants for the same recipient', async () => {
+  it('two IDENTICAL shares in a row are now ONE grant', async () => {
+    // The double-click. This is the case that used to produce the defect and
+    // is the one an application hits by accident.
     const { fl } = await world();
     const { id } = await fl.files.put(bytes('secret'), { owner: 'alice' });
     const a = await fl.shares.create(id, { as: 'alice', withUser: 'bob' });
     const b = await fl.shares.create(id, { as: 'alice', withUser: 'bob' });
-    assert.notEqual(a.grantId, b.grantId, 'share() deduplicated; this test is stale');
+    assert.equal(b.grantId, a.grantId, 'a repeated identical share inserted a second grant');
+    assert.equal(b.replayed, true, 'the caller must be told this was not a second act');
+    const live = (await fl.shares.list(id, { as: 'alice' })).filter((g) => g.live);
+    assert.equal(live.length, 1);
+  });
+
+  it('but two DIFFERENT shares are two grants, and that is not a bug', async () => {
+    // Two windows are two intents. The library cannot and must not merge
+    // these, so everything below this point is still reachable.
+    const { fl } = await world();
+    const { id } = await fl.files.put(bytes('secret'), { owner: 'alice' });
+    const [a, b] = await distinctShares(fl, id, 2);
+    assert.notEqual(a!.grantId, b!.grantId);
     const live = (await fl.shares.list(id, { as: 'alice' })).filter((g) => g.live);
     assert.equal(live.length, 2);
   });
@@ -69,10 +113,9 @@ describe('two shares, one revoke: the defect', () => {
     // doing exactly what it says. What was missing is the operation below it.
     const { fl } = await world();
     const { id } = await fl.files.put(bytes('secret'), { owner: 'alice' });
-    await fl.shares.create(id, { as: 'alice', withUser: 'bob' });
-    const second = await fl.shares.create(id, { as: 'alice', withUser: 'bob' });
+    const [, second] = await distinctShares(fl, id, 2);
 
-    await fl.shares.revoke(second.grantId, { as: 'alice' });
+    await fl.shares.revoke(second!.grantId, { as: 'alice' });
     assert.equal(
       await canRead(fl, id, 'bob'),
       true,
@@ -83,8 +126,7 @@ describe('two shares, one revoke: the defect', () => {
   it('two grants double an effective download cap', async () => {
     const { fl } = await world();
     const { id } = await fl.files.put(bytes('secret'), { owner: 'alice' });
-    await fl.shares.create(id, { as: 'alice', withUser: 'bob', maxDownloads: 3 });
-    await fl.shares.create(id, { as: 'alice', withUser: 'bob', maxDownloads: 3 });
+    await distinctShares(fl, id, 2, { maxDownloads: 3 });
 
     let served = 0;
     for (let i = 0; i < 10; i++) {
@@ -99,9 +141,7 @@ describe('unshare(): the operation that was missing', () => {
   it('removes access however many share() calls created it', async () => {
     const { fl } = await world();
     const { id } = await fl.files.put(bytes('secret'), { owner: 'alice' });
-    for (let i = 0; i < 5; i++) {
-      await fl.shares.create(id, { as: 'alice', withUser: 'bob', maxDownloads: 3 });
-    }
+    await distinctShares(fl, id, 5, { maxDownloads: 3 });
     assert.equal(await canRead(fl, id, 'bob'), true);
 
     const { revoked } = await fl.shares.unshare(id, { as: 'alice', user: 'bob' });
@@ -181,7 +221,9 @@ describe('unshare(): the operation that was missing', () => {
     };
     const fl = new Filelayer(hooked, new MemoryStorage(), { baseUrl: 'http://localhost' });
     const { id } = await fl.files.put(bytes('secret'), { owner: 'alice' });
-    for (let i = 0; i < 3; i++) await fl.shares.create(id, { as: 'alice', withUser: 'bob' });
+    for (let i = 0; i < 3; i++) {
+      await fl.shares.create(id, { as: 'alice', withUser: 'bob', expiresIn: 3600 + i });
+    }
 
     await assert.rejects(() => fl.shares.unshare(id, { as: 'alice', user: 'bob' }));
 
@@ -198,11 +240,29 @@ describe('unshare(): the operation that was missing', () => {
 });
 
 describe('unpublish() delegates, and still behaves', () => {
-  it('revokes every anonymous grant, as it always did', async () => {
+  it('publishing twice is ONE grant', async () => {
+    // `publish()` takes no expiry, so two calls are the same act by
+    // construction and double-submit protection collapses them. This is the
+    // behaviour changing, recorded rather than smoothed over: before, a
+    // double-clicked publish button left two anonymous grants.
     const { fl } = await world();
     const { id } = await fl.files.put(bytes('public'), { owner: 'alice' });
-    await fl.files.publish(id, { as: 'alice' });
-    await fl.files.publish(id, { as: 'alice' });
+    const a = await fl.files.publish(id, { as: 'alice' });
+    const b = await fl.files.publish(id, { as: 'alice' });
+    assert.equal(b.grantId, a.grantId);
+  });
+
+  it('revokes every anonymous grant, as it always did', async () => {
+    // Several anonymous grants are still reachable -- different windows, a
+    // publish made last week, a delegated one -- so the plural property this
+    // test exists for is unchanged. It is built through the core API because
+    // the facade's `publish()` deliberately exposes no way to vary the share.
+    const { fl } = await world();
+    const { id } = await fl.files.put(bytes('public'), { owner: 'alice' });
+    const alice = await fl.ids.ensureActor('alice');
+    for (const expiresIn of [3600, 7200]) {
+      await fl.share({ actorId: alice }, id, { subject: { type: 'anonymous' }, expiresIn });
+    }
 
     const r = await fl.files.unpublish(id, { as: 'alice' });
     assert.ok(r.revoked >= 2, `expected both anonymous grants revoked, got ${r.revoked}`);

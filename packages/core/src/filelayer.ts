@@ -26,7 +26,7 @@
  * we make once, here, instead of asking the developer to make it per-route.
  */
 
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import {
   readAuditCheckpoints,
@@ -421,6 +421,26 @@ export interface FilelayerOptions {
  * bounds in this library are one number rather than two that drift.
  */
 export const DEFAULT_MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
+
+/**
+ * How close together two identical shares have to be to count as one click.
+ *
+ * Short on purpose. This is double-submit protection, not idempotency: the
+ * question it answers is "did the button fire twice", and a window measured in
+ * minutes would start answering "did you mean to share this with them again",
+ * which is not ours to answer.
+ */
+export const DOUBLE_SUBMIT_WINDOW_SECONDS = 60;
+
+/**
+ * The namespace derived keys live in, kept apart from the caller's own.
+ *
+ * A caller's key and a derived one share a column and a unique index, so they
+ * must not be able to collide. A key the caller supplies with this prefix is
+ * refused rather than accepted-and-namespaced: silently rewriting somebody's
+ * identifier would make a retry under the same key stop matching.
+ */
+export const AUTO_KEY_PREFIX = 'fl:auto:';
 
 export interface MaintenanceOptions {
   /**
@@ -2516,6 +2536,11 @@ export class Filelayer {
     // and `"k"` ONE key, which is what a retry needs. The schema keeps the rule
     // anyway, for writers that are not this engine.
     const idempotencyKey = idempotencyKeyOrNull(input.idempotencyKey);
+    if (idempotencyKey !== null && idempotencyKey.startsWith(AUTO_KEY_PREFIX)) {
+      throw new FilelayerError('invalid_argument',
+        `idempotency_key_reserved_prefix:${AUTO_KEY_PREFIX}`,
+      );
+    }
 
     // ONE TRANSACTION: the decision, the grant row, and the audit event that
     // records both. Previously these were three autocommit statements, so a
@@ -2627,6 +2652,95 @@ export class Filelayer {
 
     const passwordHash = input.password ? await this.store.hashPassword(input.password) : null;
 
+    // DOUBLE-SUBMIT PROTECTION, and it is deliberately not called idempotency.
+    //
+    // `idempotencyKey` is idempotency: you name one act of sharing and a retry
+    // of it is the same act, for as long as you keep using the name. It was
+    // disclosed as the fix for a double-clicked share button for thirty
+    // releases and people kept walking into the trap anyway, because the thing
+    // that needs the fix is a button, and whoever wires a button up is not
+    // reading limitation entry 2.
+    //
+    // So the common case gets a default. It is a narrower promise than
+    // idempotency and the boundaries are the design:
+    //
+    // 1. NEVER FOR `link`. A link grant carries a `secret_hash` -- the grant
+    //    IS a URL. Two "identical" link shares are two secrets, very likely
+    //    headed for two different people. Collapsing them would hand the
+    //    second recipient the first one's URL and make one revoke silently cut
+    //    off both. That is a worse defect than the one this fixes, so links
+    //    keep inserting every time and `idempotencyKey` remains the only way
+    //    to make a link share idempotent.
+    // 2. BOUNDED IN TIME. The key carries a bucket, so "the same share again"
+    //    means within seconds, not forever. Sharing with the same person again
+    //    next week is a new act and must not resolve to a grant that has since
+    //    expired or been revoked.
+    // 3. THE INDEX ARBITRATES, as it does for an explicit key. A SELECT before
+    //    the INSERT has a window between the two statements and a
+    //    double-clicked button is exactly the traffic that finds it.
+    //
+    // THE BOUNDARY, named rather than left for someone to discover: two clicks
+    // either side of a bucket edge hash differently and would both insert. So
+    // the PREVIOUS bucket is looked up first, and only that lookup is a
+    // check-then-insert. Its race is harmless -- two simultaneous clicks land
+    // in one bucket and meet at the index, which is case 3 -- so the
+    // approximate check covers only the straddle, which the exact one cannot.
+    let autoKey: string | null = null;
+    if (idempotencyKey === null && input.subject.type !== 'link') {
+      const shape = JSON.stringify([
+        input.subject,
+        capabilities,
+        input.expiresIn ?? null,
+        input.maxDownloads ?? null,
+      ]);
+      const digest = createHash('sha256').update(shape).digest('base64url').slice(0, 32);
+      const bucket = Math.floor(Date.now() / (DOUBLE_SUBMIT_WINDOW_SECONDS * 1000));
+      autoKey = `${AUTO_KEY_PREFIX}${digest}:${bucket}`;
+
+      // THE KEY MUST STEP AROUND A DEAD GRANT.
+      //
+      // A revoked row keeps its key -- the unique index is "for all time,
+      // revoked or not", deliberately, so that an explicit key cannot be
+      // reused after a revoke. For a DERIVED key that rule is wrong: share,
+      // revoke, share again inside one window would hit the index, replay, and
+      // hand back the revoked grant. The caller would be told the share
+      // succeeded and nobody would have been given anything. The first version
+      // of this did exactly that and the test for it is the one that caught
+      // it.
+      //
+      // So a dead row at a key moves the next share to a key derived from that
+      // row's id: deterministic, so a double click after the revoke still
+      // collapses with its own twin, and bounded, because each level costs a
+      // revoke inside the same window. The loop stops rather than recursing;
+      // past the bound the share simply inserts, which is the old behaviour
+      // and is safe.
+      for (let level = 0; level < 4; level++) {
+        const existing = await this.#grantStateForKey(tx, fileId, autoKey);
+        if (existing === null || existing.live) break;
+        autoKey = `${autoKey}:${existing.id.slice(0, 8)}`;
+      }
+
+      const previous = await this.#liveGrantForKey(tx, fileId, `${AUTO_KEY_PREFIX}${digest}:${bucket - 1}`);
+      if (previous !== null) {
+        await store.audit({
+          orgId: file.orgId,
+          action: 'grant.create',
+          decision: 'allow',
+          actorId: principal.actorId,
+          fileId,
+          grantId: previous.grantId,
+          context: {
+            subjectType: input.subject.type,
+            capabilities,
+            replayed: true,
+            doubleSubmit: true,
+          },
+        });
+        return previous;
+      }
+    }
+    const storedKey = idempotencyKey ?? autoKey;
+
     // org_id is taken from the FILE, never from the caller. The composite FK
     // (file_id, org_id) -> file(id, org_id) makes a mismatch unrepresentable,
     // but taking it from the caller at all would be an invitation.
@@ -2670,7 +2784,7 @@ export class Filelayer {
           expiresAt?.toISOString() ?? null,
           input.maxDownloads ?? null,
           principal.actorId,
-          idempotencyKey,
+          storedKey,
         ],
       )));
     } catch (err) {
@@ -2683,11 +2797,11 @@ export class Filelayer {
       // double-clicked button is precisely the traffic that finds it. Letting
       // the index arbitrate means the loser of the race reads the winner's row,
       // which is the answer either way.
-      if (idempotencyKey !== null && isIdempotencyConflict(err)) {
+      if (storedKey !== null && isIdempotencyConflict(err)) {
         const replay = await this.#replayShare(
           tx,
           fileId,
-          idempotencyKey,
+          storedKey,
           input,
           subjectId,
           subjectOrgId,
@@ -2708,7 +2822,10 @@ export class Filelayer {
           context: {
             subjectType: input.subject.type,
             capabilities,
-            idempotencyKey,
+            // The caller's own key, or nothing. A derived key is an internal
+            // mechanism and putting it in the trail would read as something
+            // the caller chose.
+            ...(idempotencyKey !== null ? { idempotencyKey } : { doubleSubmit: true }),
             replayed: true,
           },
         });
@@ -2802,6 +2919,63 @@ export class Filelayer {
    * the honest behaviour rather than a gap: a replay that handed back a working
    * link would mean the secret existed somewhere twice.
    */
+  /**
+   * A grant under `key` on this file that is STILL LIVE, or null.
+   *
+   * Only the derived-key path uses this, and liveness is the whole reason it
+   * exists separately from `#replayShare`. An explicit `idempotencyKey` keeps
+   * applying after its grant is revoked, deliberately: the caller named an act
+   * and a retry of that act is the same act, so resolving it to the revoked
+   * grant is the honest answer and re-sharing is a new key.
+   *
+   * A derived key cannot work that way. The caller named nothing, so resolving
+   * a second click to a grant that has since been revoked or expired would
+   * report access that does not exist -- the share would look like it worked
+   * and nobody would have been given anything. Revoked or expired here means
+   * there is nothing to return, and the INSERT proceeds.
+   */
+  /** Whether a grant sits at `key` on this file, and whether it is still live. */
+  async #grantStateForKey(
+    tx: Tx,
+    fileId: string,
+    key: string,
+  ): Promise<{ id: string; live: boolean } | null> {
+    const { rows } = await tx.query<{ id: string; live: boolean }>(
+      `SELECT id,
+              (revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())) AS live
+         FROM file_grant
+        WHERE file_id = $1 AND idempotency_key = $2`,
+      [fileId, key],
+    );
+    return rows[0] ?? null;
+  }
+
+  async #liveGrantForKey(tx: Tx, fileId: string, key: string): Promise<ShareResult | null> {
+    const { rows } = await tx.query<{
+      id: string;
+      expires_at: string | null;
+      max_downloads: number | null;
+      parent_grant_id: string | null;
+    }>(
+      `SELECT id, expires_at, max_downloads, parent_grant_id
+         FROM file_grant
+        WHERE file_id = $1
+          AND idempotency_key = $2
+          AND revoked_at IS NULL
+          AND (expires_at IS NULL OR expires_at > now())`,
+      [fileId, key],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      grantId: row.id,
+      expiresAt: row.expires_at === null ? null : new Date(row.expires_at),
+      maxDownloads: row.max_downloads,
+      parentGrantId: row.parent_grant_id,
+      replayed: true,
+    };
+  }
+
   async #replayShare(
     tx: Tx,
     fileId: string,

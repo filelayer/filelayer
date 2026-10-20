@@ -7,7 +7,7 @@ code in this repository, from the repository root. Reproduce with:
 
 ```bash
 npm run bootstrap                  # npm ci in packages/core
-npm test                     # 715 tests, 0 failures
+npm test                     # 729 tests, 0 failures
 npm run dev:fracture               # the four §2 experiments
 npm run loc:tiers                  # LOC per tier (§4.2)
 node benchmark/count-loc.mjs       # LOC for the full-vault implementations
@@ -15,7 +15,7 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **715 / 715 passing** across 160 suites:
+**Test status.** `npm test` is **729 / 729 passing** across 161 suites:
 
 | Suite | Tests |
 |---|---|
@@ -33,9 +33,9 @@ npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 | `test/mcp-server.test.ts` — the launchable MCP server, started by a client | 6 |
 | `test/audit-context.test.ts` — an agent's reads are distinguishable from a person's | 5 |
 | everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 318 |
-| **total** | **715** |
+| **total** | **729** |
 
-Eight of the 715 are the contention tests, which need a real PostgreSQL with
+Eight of the 729 are the contention tests, which need a real PostgreSQL with
 two backends. CI provides one, so all 526 run there; on a machine without one
 they skip and you will see **397 passing, 8 skipped**. Two further suites — the
 live S3 ones — skip unless the five `FILELAYER_TEST_S3_*` variables are set.

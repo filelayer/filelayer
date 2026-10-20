@@ -21,6 +21,59 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### Fixed — a double-clicked share no longer creates two grants
+
+`share()` inserted a grant on every call. One recipient would end up holding
+several, `revoke()` on the id the caller happened to be holding left the others
+live, and the owner was told the revocation succeeded. `idempotencyKey` has
+been the answer since `0.32.0` and it only helps a caller who already knows —
+which, for thirty releases, was not the person wiring up a button.
+
+So the common case has a default. It is deliberately a **narrower** promise
+than idempotency, and the narrowness is the design:
+
+- **It never applies to a `link`.** A link grant carries a `secret_hash`: the
+  grant *is* a URL, and two link shares are two URLs very likely headed for two
+  different people. Collapsing them would hand the second recipient the first
+  one's link and make one revoke silently cut off both — a worse defect than
+  the one being fixed. `idempotencyKey` remains the only way to make a link
+  share idempotent, and there is a test whose whole job is to fail if this
+  leaks into links.
+- **It is bounded in time** (`DOUBLE_SUBMIT_WINDOW_SECONDS`, 60). The question
+  it answers is "did the button fire twice", not "did you mean to share this
+  again next month".
+- **It never resurrects a dead grant.** An explicit key keeps applying after a
+  revoke, deliberately — the caller named an act. A derived key names nothing,
+  so resolving a repeat to a revoked grant would report access that does not
+  exist. **The first implementation did exactly that**: a revoked row keeps its
+  key, the retry hit the unique index, and the replay path had no liveness
+  check, so share → revoke → share returned the dead grant and claimed success.
+  Caught by the test written for it. A dead row now moves the next share to a
+  key derived from that row's id: deterministic, so a double click after the
+  revoke still collapses with its own twin, and bounded, because each level
+  costs a revoke inside the same window.
+- **Two shares that differ in window or capabilities stay two grants.** Two
+  windows are two intents and merging them is not ours to do.
+
+The index still arbitrates, as it does for an explicit key: a check before the
+insert has a gap between the two statements and a double-clicked button is
+precisely the traffic that finds it. The one check-then-insert is the lookup of
+the *previous* window, which exists only so two clicks either side of a bucket
+edge do not both insert; its race is harmless, because simultaneous clicks land
+in one bucket and meet at the index.
+
+Three existing suites changed, and the diff is worth reading rather than
+trusting: they built their fixtures out of repeated identical `share()` calls,
+which now collapse. Each was rewritten to create plurality the way an
+application actually gets it — different windows — because several live grants
+for one person remain ordinary and `unshare()` is still the operation that
+removes all of them. `publish()` twice is now one grant, recorded here because
+it is a behaviour change and not only an improvement.
+
+Four mutations, each caught: applying the protection to links, dropping the
+time bucket, skipping the dead-grant step-around, and accepting a caller key in
+the reserved namespace.
+
 ### Added — `runMaintenance()`, so an operator schedules one thing instead of four
 
 "Schedule four background jobs yourself" is a real adoption cost and it was
