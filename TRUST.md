@@ -147,6 +147,16 @@ matter:
   Postgres raised on its own integrity check. Nobody had hit it because we
   expose no org deletion, so the trap was set for whoever first had to honour an
   erasure request.
+  **Trimming is retention, not erasure of a person, and the difference matters
+  if you operate in the EU.** The digest covers `actorId`, `ip` and the event
+  context — that is what makes an edit to them detectable, and it is the same
+  property that rules out the usual remedy of blanking the personal columns and
+  keeping the hash. So you can remove a range that contains one person's
+  events, taking everyone else's in that range with it, and you cannot remove
+  exactly theirs. A gap rather than a position: nothing in the design prevents
+  attesting several gaps instead of one, and it is on the roadmap. Found on
+  21 October 2026 while writing a guide that would have claimed otherwise, by
+  a review that read the draft without the author's reasoning.
 - Concurrency is no longer argued. **Since 3 October 2026 eight tests run on
   every commit against a real PostgreSQL with two connections**, staging the
   races rather than reasoning about them: two backends demoting two owners, ten

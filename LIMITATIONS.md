@@ -138,7 +138,24 @@ Each one is current as of
    URL stays valid for up to its TTL after the grant is revoked. It is off by
    default, defaults to anonymous grants only, and requires passing a verbatim
    acknowledgement string. That string is the point.
-11. **Truncation of the most recent audit events is detectable only if you
+11. **You cannot erase one person from the audit trail.** The digest covers
+   `actorId`, `ip`, `fileId` and the event context, which is the property that
+   makes an edit to any of them detectable — and it is the same property that
+   rules out the remedy every write-up on this subject recommends. Blanking the
+   personal columns and keeping the stored hash does not work here, because the
+   hash covered those columns: every link after the redacted row breaks, and
+   replay reports tampering. **A log you can redact per subject is a log whose
+   identity fields were never protected.** What exists instead is retention:
+   `trimAuditChain()` removes events by date or by count and writes an
+   `audit_checkpoint` in the same transaction, so a trimmed chain still
+   verifies and the gap is reported as attested with your stated reason. For a
+   subject erasure request that means you can remove a range that *contains*
+   that person's events — taking everyone else's in the range with it — and you
+   cannot remove exactly theirs. If subject-scoped erasure is a requirement
+   where you operate, decide it before adopting rather than during the request.
+   This is a gap and not a position: it is on the roadmap, and nothing about
+   the chain's design prevents attesting several gaps instead of one.
+12. **Truncation of the most recent audit events is detectable only if you
    seal, and only against someone who does not also remove the seals.** Replay
    catches any edit to a recorded event, the removal of one from the middle, and
    the removal of the first. It cannot catch the removal of the last *n*:
@@ -155,7 +172,7 @@ Each one is current as of
    database; `DELETE` is refused unless a transaction declares
    `filelayer.audit_trim`; all of it is a rule and a trigger the table's owner
    can drop.
-12. **The audit log is trimmable but has no retention policy of its own, and
+13. **The audit log is trimmable but has no retention policy of its own, and
    nothing schedules one.** Since `0.16.0`, `trimAuditChain()` removes old
    events and leaves an `audit_checkpoint` row recording the hash the chain had
    reached, so a trimmed chain still verifies and `verifyAuditChain()` reports
@@ -167,7 +184,7 @@ Each one is current as of
    is a different property. A trim is attested, not prevented: the same
    privileged path that removes events can remove them without writing a
    checkpoint, and that is reported as tampering, which is the point.
-13. **`fl.store` and `fl.store.db` are public, and nothing on them authorizes
+14. **`fl.store` and `fl.store.db` are public, and nothing on them authorizes
    anything.** `PostgresStore` is the engine's dependency surface: every method
    on it reads and writes rows directly, with no capability check and no audit
    event. It is exported, and `fl.store.db` reaches the raw query interface, so
@@ -179,13 +196,13 @@ Each one is current as of
    your process, and `authorize()` protects it from the outside, not from the
    inside. Treat `fl.store` the way you treat your database credentials.
    `@filelayer/sdk`, when it exists, must not re-export it.
-14. **A proxied delivery is audited at the decision, not at the last byte.** The
+15. **A proxied delivery is audited at the decision, not at the last byte.** The
    allow event and the download-cap charge happen before any bytes move, so a
    transfer that dies mid-stream is recorded as an allowed read and still spends
    the cap. "Every access on the record" means every authorization decision. On
    the redirect path a `file.deliver` event does record the handoff; on the proxy
    path there is no event that says the bytes arrived.
-15. **There is no way to adopt an object that is already in your bucket.** The
+16. **There is no way to adopt an object that is already in your bucket.** The
    storage key is chosen by the library, `<orgId>/<fileId>`, and every write
    path goes through a call that mints a new file row. There is no
    `importExisting()`, no "register this key", and no way to point a file row

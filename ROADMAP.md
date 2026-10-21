@@ -86,6 +86,16 @@ person running this in production.
   `trimAuditChain()` removes old events and leaves a checkpoint recording where
   the chain had reached, so a trimmed chain still verifies. Nothing trims unless
   you ask: a deployment that never calls it still grows without bound.
+- **Subject-scoped erasure from the audit trail.** `trimAuditChain()` is
+  retention: it removes by date or by count and attests the one gap it made.
+  Removing one person's events means removing a scattered subset, which makes
+  several gaps, and the checkpoint model attests one. The usual remedy —
+  blanking the personal columns and keeping the hash — is unavailable here
+  because the digest covers `actorId` and `ip`, which is the same property that
+  makes an edit to them detectable. Nothing in the design prevents attesting
+  several gaps; it has simply not been built. Found on 21 October 2026 while
+  drafting a guide that would have claimed we already did this, caught by a
+  review that was handed the draft without the author's reasoning.
 - **Resumable or multipart direct upload — parked, deliberately.** Two to three
   days of work, and it fixes nothing that is broken: it adds capability. The
   storage adapter already speaks multipart and `createUpload()` already
