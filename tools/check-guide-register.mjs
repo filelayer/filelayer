@@ -129,6 +129,31 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log(`check-guide-register: ${label}, each one linked by llms.txt and the index,`);
-console.log('  shipped in the tarball, and with its proof named where a reader will run it.');
-for (const f of guides) console.log(`  ok  docs/guides/${f}`);
+// THE SUMMARY SAYS WHAT WAS CHECKED, NOT WHAT WOULD SOUND GOOD.
+//
+// This line used to read "each one ... with its proof named where a reader
+// will run it" for every guide, including the ones with no proof at all: the
+// proof checks above are conditional on `hasProof`, so a guide without one
+// passed them by not reaching them and was then counted as having satisfied
+// them. One guide has shipped in exactly that state.
+//
+// It is a small overclaim printed on every `verify` run, by the gate whose own
+// job is to stop us overclaiming, which is why it is worth the eight lines.
+// Whether a guide NEEDS a proof is a judgement this check does not make; what
+// it must not do is imply it made it.
+const withProof = guides.filter((f) => existsSync(join(GUIDE_DIR, `${f.replace(/\.md$/, '')}.proof.mjs`)));
+const without = guides.filter((f) => !withProof.includes(f));
+
+console.log(`check-guide-register: ${label}, each one linked by llms.txt and the index`);
+console.log(`  and shipped in the tarball. ${withProof.length} carry a proof, and every one of those`);
+console.log('  is shipped too and named in the index where a reader will run it.');
+for (const f of guides) {
+  console.log(`  ok  docs/guides/${f}${withProof.includes(f) ? '' : '   (no proof)'}`);
+}
+if (without.length > 0) {
+  console.log(
+    `\n  ${without.length} guide(s) carry no proof. That is not failed here -- not every\n` +
+      '  page has a claim worth executing -- but it is said rather than counted as\n' +
+      '  compliance with a check that never ran.',
+  );
+}
