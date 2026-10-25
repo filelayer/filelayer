@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/erasing-a-user-with-an-append-only-audit-log.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>How do I erase a user when my audit log is append-only? · Filelayer</title>
+<meta name="description" content="A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and…">
+
+<link rel="canonical" href="https://filelayer.dev/guides/erasing-a-user-with-an-append-only-audit-log">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/erasing-a-user-with-an-append-only-audit-log">
+<meta property="og:title" content="How do I erase a user when my audit log is append-only?">
+<meta property="og:description" content="A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and…">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How do I erase a user when my audit log is append-only?">
+<meta name="twitter:description" content="A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and…">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How do I erase a user when my audit log is append-only?",
+  "description": "A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and…",
+  "url": "https://filelayer.dev/guides/erasing-a-user-with-an-append-only-audit-log",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.33.0"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/quickstart">Quickstart</a>
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>How do I erase a user when my audit log is append-only?</h1>
+<p>A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and which you built to be impossible to change.</p>
+<p>The advice you will find is about rows: encrypt each subject's fields under a per-subject key and destroy the key, or blank the personal columns and leave the hashes alone. Both are reasonable and neither is about <strong>files</strong>, which is the harder case, because the bytes live outside the database and the thing you have to reconcile is a log of access to them.</p>
+<p>Everything below is reproduced by <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/erasing-a-user-with-an-append-only-audit-log.proof.mjs" rel="noopener"><code>erasing-a-user-with-an-append-only-audit-log.proof.mjs</code></a>, which starts a real PostgreSQL. Every output block below is copied from a run of it, and every claim with a number attached is asserted there. Three claims are NOT: that a rule does not stop <code>TRUNCATE</code>, what sealing costs, and the concurrent-append defect, which belongs to <a href="/guides/tamper-evident-file-audit">another page</a> and is proved there.</p>
+<h2 id="the-short-answer">The short answer</h2>
+<ol><li>Delete the rows. Ordinary.</li>
+<li>Delete the objects, and reconcile what the database thinks exists with what the bucket holds — that is <a href="/guides/deleting-files-and-orphaned-objects">a different page</a>, and it is where most erasure scripts actually fail.</li>
+<li><strong>Remove their audit events and attest every hole, in one transaction.</strong> One person's events are scattered, so removing them makes several holes, and a checkpoint attesting one says nothing about the others. The unit is a contiguous run.</li></ol>
+<hr>
+<h2 id="the-trap-and-the-mechanism-is-not-the-one-you-would-guess">The trap, and the mechanism is not the one you would guess</h2>
+<p>Append-only is usually written as a rule, because a rule is two lines:</p>
+<pre><code class="lang-sql">CREATE RULE audit_no_delete AS ON DELETE TO audit_event DO INSTEAD NOTHING;
+CREATE RULE audit_no_update AS ON UPDATE TO audit_event DO INSTEAD NOTHING;</code></pre>
+<p>The audit table references the tenant with <code>ON DELETE CASCADE</code>, which is the ordinary choice and is what makes this happen — with the default <code>NO ACTION</code> you get a plain foreign-key violation and the rule never enters the story. Then the tenant has to go, and the tenant has an audit history:</p>
+<pre><code>DELETE FROM org WHERE id = $1;
+
+ERROR: referential integrity query on &quot;org&quot; from constraint
+       &quot;audit_event_org_id_fkey&quot; on &quot;audit_event&quot; gave unexpected result
+HINT:  This is most likely due to a rule having rewritten the query.</code></pre>
+<p><strong>Read the HINT.</strong> Most quotes of this error stop at the ERROR line and then make something mysterious out of it. PostgreSQL tells you the cause in the next line, in English.</p>
+<p>And the cause is <strong>not</strong> &quot;the rows survived, so the foreign key is still violated&quot;. That explanation is wrong, and one word falsifies it. Add a condition to the same rule — one that is always true, so a direct <code>DELETE</code> on <code>audit_event</code> behaves identically:</p>
+<pre><code class="lang-sql">CREATE RULE audit_no_delete AS ON DELETE TO audit_event WHERE true DO INSTEAD NOTHING;</code></pre>
+<pre><code>DELETE FROM org                        SUCCEEDED
+the org row is gone                    true
+audit rows left pointing at it         7</code></pre>
+<p>Same rule, rows still survive, foreign key still violated — and no error at all. The parent is gone and the audit trail dangles.</p>
+<p>What the referential integrity trigger checks is the <strong>result code</strong> of the statement it ran internally — <code>ri_PerformCheck</code> in <code>ri_triggers.c</code> compares the SPI result against the one it expected, and raises this error with this HINT when they differ. An unconditional <code>DO INSTEAD NOTHING</code> leaves no statement to run, so the code comes back wrong and the trigger raises. A conditional one leaves a statement that runs and affects no rows, which looks fine. The guard is detecting <strong>the rewrite</strong>, not the violation.</p>
+<h3 id="a-trigger-is-not-the-same-and-is-worse">A trigger is not the same, and is worse</h3>
+<p>PostgreSQL's own manual steers you towards triggers for per-row work. A <code>BEFORE DELETE ... RETURN NULL</code> trigger produces:</p>
+<pre><code>DELETE FROM org                        SUCCEEDED
+audit rows left pointing at it         7</code></pre>
+<p>No error, no refusal, and a dangling trail. If you take one design decision from this page: <strong>whatever you use to make the log append-only, test deleting a parent row before you need to.</strong> The loud failure is the lucky one.</p>
+<h3 id="the-rule-is-also-silent-about-what-it-suppressed">The rule is also silent about what it suppressed</h3>
+<pre><code>DELETE ... WHERE actor_id = 'erika'    reported 0 row(s)
+rows actually removed                  0</code></pre>
+<p>No exception. An erasure script written the obvious way — run the statements, catch exceptions, report success — <strong>reports success and erases nothing.</strong> Of the outcomes on this page that is the worst: you have told a person and a regulator that their data is gone, and it is not.</p>
+<p>An erasure job must verify by counting, not by the absence of an exception.</p>
+<hr>
+<h2 id="why-deleting-anyway-does-not-work">Why deleting anyway does not work</h2>
+<p>Drop the rule and delete her events. Every row carries the hash of the one before it, so a removal from the middle leaves a successor whose <code>prev_hash</code> points at something no longer there.</p>
+<pre><code>replay after an unattested removal     valid=false brokenAt=2</code></pre>
+<p>The verifier working exactly as designed, and useless to you: the log now says somebody tampered with it, and the somebody was your lawful erasure job. There is nothing in the data that distinguishes the two, which is the whole point of building it this way and is now your problem.</p>
+<h2 id="the-fix-one-checkpoint-per-contiguous-run">The fix: one checkpoint per contiguous run</h2>
+<p>Her events are interleaved with other people's — <code>e, o, e, e, o, e, o</code> — so removing them makes <strong>three</strong> holes, not four, because two of hers were adjacent. Find the runs with gaps and islands over the chain's own ordering, and anchor a checkpoint on the <strong>last</strong> event of each:</p>
+<pre><code class="lang-sql">WITH chain AS (
+  SELECT id, hash, actor_id, row_number() OVER (ORDER BY id) AS chain_rn
+    FROM audit_event WHERE org_id = $1
+), doomed AS (
+  SELECT id, hash, chain_rn - row_number() OVER (ORDER BY id) AS run
+    FROM chain WHERE actor_id = $2
+)
+SELECT (array_agg(id   ORDER BY id DESC))[1] AS last_id,
+       (array_agg(hash ORDER BY id DESC))[1] AS last_hash,
+       count(*)                              AS n
+  FROM doomed GROUP BY run ORDER BY min(id);</code></pre>
+<p><strong>This query has a precondition, and it is the one thing on this page you must check against your own schema: <code>prev_hash</code> must link each event to the previous event OF THE SAME TENANT.</strong> The <code>chain</code> CTE filters by <code>org_id</code>, so if your chain is table-wide instead, these runs are computed over the wrong sequence and you will write too few checkpoints — leaving unattested holes, during an erasure, which is the exact failure this page is about.</p>
+<p>Given that, contiguity is over the <strong>chain</strong>, not over <code>id</code>: ids come from one sequence shared by every tenant, so one tenant's events are non-contiguous in id terms even where they are adjacent in its chain. Measured, with two tenants interleaved:</p>
+<pre><code>runs found by chain position           3
+runs found by raw id adjacency         4</code></pre>
+<p>One extra checkpoint here, and every extra one is a row nothing will ever consume. The gap grows with how much of your traffic belongs to other tenants. <strong>With a single tenant the two numbers are equal</strong>, which is why a one-tenant fixture cannot test this at all.</p>
+<p>The checkpoint goes on the last event of a run because that is the hash the first surviving event after the hole still carries in its <code>prev_hash</code>.</p>
+<pre><code>events removed                         4
+contiguous runs, so checkpoints        3
+replay                                 valid=true checked=3
+holes, and whether they are accounted  attestedGaps=3
+everyone else's events                 3, untouched</code></pre>
+<p><strong><code>attestedGaps</code> is not zero here, and must not be.</strong> A trimmed chain is not a clean chain: it is a chain whose history is shorter than what happened, by a known amount, for a recorded reason. Anything that reports it as simply valid has discarded the one fact a reader of that log needs.</p>
+<h3 id="a-run-at-the-end-of-the-chain-is-the-exception">A run at the end of the chain is the exception</h3>
+<p>A hole needs a surviving event after it. If the person's most recent events are also the chain's most recent events, removing them leaves no successor, so no <code>prev_hash</code> points at the missing hash and <strong>that run's checkpoint is never consumed</strong>: <code>attestedGaps</code> comes back lower than the number of checkpoints you wrote.</p>
+<p>Nothing is wrong, and nothing is detected either. That is the truncation hole in its honest form — replay walks forward and nothing inside the chain records where it was supposed to end. The checkpoint is still worth writing, because it is the only record that the removal happened, but it is a record for a human rather than evidence the verifier can use. Seal the head if you want that case covered, and read the last bullet of the previous section for what sealing then costs you.</p>
+<p>Write the request into the <code>note</code>. Six months later the question will not be &quot;was this tampered with&quot; but &quot;why is there a hole here&quot;, and the answer should be in the row rather than in somebody's memory.</p>
+<hr>
+<h2 id="why-you-cannot-just-redact-the-columns-instead">Why you cannot just redact the columns instead</h2>
+<p>The standard advice is to blank the personal fields and keep the stored hash. Whether that works depends entirely on what your digest covers. Ours covers the identity:</p>
+<pre><code>[prevHash, orgId, occurredAt, action, decision, reason,
+ actorId, fileId, grantId, ip, userAgent, context]</code></pre>
+<p>So:</p>
+<pre><code>blank the personal column, keep hashes  valid=false problem=edited</code></pre>
+<p>That is not a defect. It is the property you asked for, seen from the other side: <strong>a log you can redact per subject is a log whose identity fields were never protected.</strong> If <code>actor_id</code> is outside your digest, then an attacker can reassign an event to somebody else and replay will not notice — which is a worse problem than the one redaction solves.</p>
+<p>Pick deliberately. Identity inside the digest means detection and removal. Identity outside means redaction and a weaker guarantee. There is no arrangement that gives both.</p>
+<hr>
+<h2 id="what-a-checkpoint-does-not-prove">What a checkpoint does not prove</h2>
+<p>Three things, because a page that stops at the happy path is an advert.</p>
+<p><strong>It is forgeable.</strong> The value a checkpoint must carry is sitting in plaintext in the <code>prev_hash</code> of the first surviving row after the hole:</p>
+<pre><code>a checkpoint forged from the next row  valid=true
+it claims removed_count                1, and 2 were removed</code></pre>
+<p>Anyone who can INSERT into <code>audit_checkpoint</code> can excuse a hole they just made. So that table needs the same append-only protection as <code>audit_event</code>, and the schema that protects only one of them is the common mistake.</p>
+<p><strong><code>removed_count</code> is not verified.</strong> Replay never reads it. A checkpoint claiming one removal forgives a hole of a hundred thousand. It records <strong>intent</strong>, which is worth having, and says nothing about scale.</p>
+<p><strong>And the removed events are not unrecoverable.</strong> Their hashes survive in the next event's <code>prev_hash</code> and in the checkpoint. With a small guess space, a motivated party can confirm what an event was. If that matters to you, the answer is an HMAC under a key you can destroy, not a bare SHA-256 — and that is crypto-shredding, with its own unsettled legal status.</p>
+<h3 id="three-more-things-an-implementer-hits">Three more things an implementer hits</h3>
+<ul><li><strong>Serialize the append.</strong> Read-the-last-hash-then-insert forks under concurrent writers: two rows share a <code>prev_hash</code> and replay reports tampering. <a href="/guides/tamper-evident-file-audit">That page</a> covers the single statement that fixes it.</li>
+<li><strong>A rule does not stop <code>TRUNCATE</code>.</strong> Rules fire on SELECT, INSERT, UPDATE and DELETE. Nothing in that list is <code>TRUNCATE</code>, and the table owner can drop the rule anyway.</li>
+<li><strong>Truncation of the most recent events is still invisible to replay</strong>, and an honest erasure of the latest events looks exactly like it. If you seal the head, a seal that a trim checkpoint reaches past has to be forgiven, which weakens the seal by precisely the amount an attacker who can also write checkpoints can exploit.</li></ul>
+<hr>
+<h2 id="does-this-count-as-erasure">Does this count as erasure?</h2>
+<p>We do not know, and neither does anyone who tells you confidently that it does. Whether removing events and keeping a hash of what they were satisfies a request is a question for a data protection lawyer in your jurisdiction. Note also Article 17(3), which is the clause most people facing this end up relying on, and which is about grounds for <em>not</em> erasing.</p>
+<p>What this page gives you is the engineering property: the removal is scoped to one person, every hole it makes is recorded, and the log does not read as compromised afterwards. Whether that is the right amount of removal is not a decision a library makes for you.</p>
+<hr>
+<h2 id="if-you-would-rather-not-build-it">If you would rather not build it</h2>
+<p><a href="https://filelayer.dev" rel="noopener">Filelayer</a> ships this shape.</p>
+<pre><code class="lang-ts">const org = (await fl.ids.orgId('acme'))!;
+const erika = await fl.ids.ensureActor('erika');
+
+const { removed, checkpoints } = await fl.eraseActorFromAuditChain(org, erika, {
+  note: 'erasure request, ticket 4471',
+});
+
+// One checkpoint per contiguous run. STRICTLY fewer than events removed,
+// because two of hers were adjacent -- `&lt;=` would also pass for one per event.
+assert.ok(removed &gt; 0);
+assert.ok(checkpoints.length &lt; removed);
+assert.ok(checkpoints.every((c) =&gt; c.note === 'erasure request, ticket 4471'));
+
+// The chain still verifies, and still says its history is shorter.
+const v = await fl.verifyAuditChain({ actorId: await fl.ids.ensureActor('alice') }, org);
+assert.equal(v.valid, true);
+
+// Every INTERIOR hole is attested. This fixture has no run at the end of the
+// chain; if yours does, that run's checkpoint is written and never consumed,
+// so `attestedGaps` comes back lower. See &quot;a run at the end of the chain&quot;.
+assert.ok(v.attestedGaps &gt; 0 &amp;&amp; v.attestedGaps &lt;= checkpoints.length);</code></pre>
+<p>That block is executed by <code>npm run check:docs</code> on every commit.</p>
+<p>It erases nothing else: files, grants, memberships and your own tables are yours. And it is not itself audited, deliberately — the event recording it would name the person you were asked to remove, which is why the <code>note</code> is required and a blank one is refused.</p>
+<p>It is Apache-2.0, it runs on your own Postgres and your own bucket, and it is alpha — <a href="https://github.com/filelayer/filelayer/blob/main/TRUST.md" rel="noopener">the trust page</a> has the numbers, including the ones sitting at zero.</p>
+<hr>
+<h2 id="related">Related</h2>
+<ul><li><a href="/guides/tamper-evident-file-audit">How do I prove who accessed a file?</a> — the chain itself, the concurrent-append defect, and the truncation hole in full.</li>
+<li><a href="/guides/deleting-files-and-orphaned-objects">How do I delete a file without leaving orphaned objects in S3?</a> — step 2 above, which is where most erasure scripts fail.</li>
+<li><a href="/guides/background-jobs-for-user-files">What background jobs does a file feature need, and did they run?</a> — retention is one of them, and nothing schedules it for you.</li></ul>
+<h2 id="sources">Sources</h2>
+<ul><li><a href="https://github.com/ApexChainx/ApexChainx-Backend/issues/512" rel="noopener">GDPR erase is inconsistent with the immutable audit log</a> — the tension, stated as an open issue.</li>
+<li><a href="https://github.com/Ledger-Lenz/Ledgerlens-core/issues/349" rel="noopener">Implement a GDPR-style data-subject erasure workflow</a> — the same question in another project, answered with crypto-shredding.</li>
+<li><a href="https://www.postgresql.org/message-id/592647410710250955k98ebf33u23d90dc24d0f2ad1%40mail.gmail.com" rel="noopener">pgsql-bugs, October 2007: rules and referential integrity</a> — the report that documents the <code>WHERE true</code> difference above.</li>
+<li><a href="https://www.postgresql.org/docs/current/rules-update.html" rel="noopener">PostgreSQL: Rules on INSERT, UPDATE, and DELETE</a> — including the recommendation to prefer a trigger for per-row work.</li></ul>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/erasing-a-user-with-an-append-only-audit-log.md" rel="noopener"><code>docs/guides/erasing-a-user-with-an-append-only-audit-log.md</code></a>
+    in a public repository. The TypeScript on this page is executed by CI on every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/quickstart">Quickstart</a> ·
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="/trust">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.33.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

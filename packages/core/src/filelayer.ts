@@ -3490,6 +3490,43 @@ export class Filelayer {
   }
 
   /**
+   * Erase one actor's events from a chain, attesting every hole it makes.
+   *
+   * This is the audit half of an erasure request, and until it existed there
+   * was no honest answer to one: `trimAuditChain()` removes a prefix, so
+   * "erase this person" meant removing a date range that contained their
+   * events and everyone else's in it. `LIMITATIONS.md` said so, and this
+   * replaces that entry rather than softening it.
+   *
+   * Their events are scattered, so this makes SEVERAL holes and writes one
+   * checkpoint per contiguous run. `verifyAuditChain()` then returns
+   * `valid: true` with `attestedGaps` equal to the number of holes -- which
+   * must not be zero, because the chain's history really is shorter than what
+   * happened, by a recorded amount, for a recorded reason.
+   *
+   * IT ERASES NOTHING ELSE. Files, grants, memberships and your own tables are
+   * yours, and the bytes in your bucket are a separate job. What this removes
+   * is the record of the access.
+   *
+   * NO PRINCIPAL, for the same reason `trimAuditChain` takes none: an erasure
+   * is performed by whoever runs the deployment, on a request that arrives
+   * outside the application. **Which means it must never be reachable from a
+   * request handler** -- a route that passes a tenant-supplied actor id here
+   * is a way for one tenant to erase another's history.
+   *
+   * AND IT IS NOT AUDITED, which is not an oversight: the event recording it
+   * would name the person we were asked to remove. The `note` is the record,
+   * and it is required for that reason.
+   */
+  async eraseActorFromAuditChain(
+    orgId: string | null,
+    actorId: string,
+    opts: { note: string },
+  ): Promise<{ removed: number; checkpoints: AuditCheckpoint[] }> {
+    return this.store.eraseActorFromAuditChain(orgId, actorId, opts);
+  }
+
+  /**
    * Record where a chain has reached, without removing anything.
    *
    * Schedule it, and the removal of recent events stops being invisible: a head

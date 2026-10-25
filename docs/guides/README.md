@@ -111,6 +111,21 @@ concurrency.
 
 → [`tamper-evident-file-audit.proof.mjs`](tamper-evident-file-audit.proof.mjs)
 
+### [How do I erase a user when my audit log is append-only?](erasing-a-user-with-an-append-only-audit-log.md)
+
+Every published answer is about rows — encrypt per subject and destroy the key,
+blank the personal columns. **None is about files**, where the bytes live
+outside the database and what you reconcile is a log of access to them.
+
+Measured: an append-only rule makes a tenant with any audit history
+**undeletable**, and the same rule with `WHERE true` deletes fine and leaves
+orphans — which is what identifies the real mechanism. Removing one person's
+scattered events takes one checkpoint per contiguous run, and blanking the
+personal columns is detected as tampering, which is the property working rather
+than failing.
+
+→ [`erasing-a-user-with-an-append-only-audit-log.proof.mjs`](erasing-a-user-with-an-append-only-audit-log.proof.mjs)
+
 ### [What background jobs does a file feature need, and did they run?](background-jobs-for-user-files.md)
 
 Four jobs. Writing them is a morning; the problem is that **every one of them
@@ -141,6 +156,7 @@ node docs/guides/serving-private-files.proof.mjs
 node docs/guides/revoking-delegated-access.proof.mjs
 node docs/guides/tamper-evident-file-audit.proof.mjs
 node docs/guides/background-jobs-for-user-files.proof.mjs
+node docs/guides/erasing-a-user-with-an-append-only-audit-log.proof.mjs
 ```
 
 The last one needs no PostgreSQL server at all: it runs the database in-process

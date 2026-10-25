@@ -9,7 +9,7 @@ roles, share links that expire and can be revoked, lifecycle, and an audit trail
 that records denials.
 
 **What is tested is the authorization engine, and it is tested hard.** One
-function answers every access question. 729 tests run against a real PostgreSQL
+function answers every access question. 736 tests run against a real PostgreSQL
 on every commit; 27 adversarial attacks score zero breaches, and the same suite
 scores three against an earlier revision of this library, so the suite is
 calibrated rather than merely passing. The storage adapter runs against live
@@ -33,7 +33,7 @@ real traffic.
 | Independent security review | **none** |
 | Load measured | First run 4 October 2026, `benchmark/load/RESULTS.md`. One machine, no network, no object store, seconds per cell |
 | Time to first stored file | Measured 17 October 2026, `benchmark/ttff/RESULTS.md`. From `npm install` of the **published** package to a stored byte, with a cold npm cache: **0 accounts, 0 credentials, 0 dashboards, 4 lines**. The program is asserted to appear verbatim in the quickstart that shipped in the tarball |
-| Tests | 729, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves |
+| Tests | 736, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 27 attacks, 0 breaches |
 | Runtime dependencies | **0** |
@@ -147,16 +147,15 @@ matter:
   Postgres raised on its own integrity check. Nobody had hit it because we
   expose no org deletion, so the trap was set for whoever first had to honour an
   erasure request.
-  **Trimming is retention, not erasure of a person, and the difference matters
-  if you operate in the EU.** The digest covers `actorId`, `ip` and the event
-  context — that is what makes an edit to them detectable, and it is the same
-  property that rules out the usual remedy of blanking the personal columns and
-  keeping the hash. So you can remove a range that contains one person's
-  events, taking everyone else's in that range with it, and you cannot remove
-  exactly theirs. A gap rather than a position: nothing in the design prevents
-  attesting several gaps instead of one, and it is on the roadmap. Found on
-  21 October 2026 while writing a guide that would have claimed otherwise, by
-  a review that read the draft without the author's reasoning.
+  **Erasing one person is a different operation and it now exists.**
+  `eraseActorFromAuditChain()` removes that actor's events and attests every
+  hole, one checkpoint per contiguous run, leaving everyone else's intact. For
+  four days this page said you could not do that, which was true: the gap was
+  found on 21 October 2026 while drafting a guide that would have claimed
+  otherwise, by a review handed the draft without the author's reasoning, and
+  it was closed on the 25th. What it does not do is claim to be erasure in a
+  legal sense, or in an information-theoretic one — the removed events' hashes
+  survive in their successors, and `LIMITATIONS.md` entry 11 says so.
 - Concurrency is no longer argued. **Since 3 October 2026 eight tests run on
   every commit against a real PostgreSQL with two connections**, staging the
   races rather than reasoning about them: two backends demoting two owners, ten

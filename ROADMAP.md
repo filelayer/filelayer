@@ -14,7 +14,7 @@ Eight of the nine are now done. The ninth is the one we cannot build.
 |---|---|---|
 | 1 | A real open-source licence | **Done.** Apache-2.0. `LICENSE` and `NOTICE` ship in the tarball, and CI fails if either is missing from it |
 | 2 | Published to npm | **Done.** `@filelayer/core`, twenty-one releases |
-| 3 | The test suite in the published tree, with public CI | **Done.** 729 tests ship in the tarball and run from an install; twelve public CI jobs |
+| 3 | The test suite in the published tree, with public CI | **Done.** 736 tests ship in the tarball and run from an install; twelve public CI jobs |
 | 4 | The storage adapter proven against live R2 and S3 | **Done.** Both, on every commit. Twelve tests each, a thirteenth nightly |
 | 5 | A transaction-aware `Queryable`, with the audit write in the same transaction as the mutation | **Done.** The log cannot disagree with the decision it records |
 | 6 | Streaming delivery, or a documented short-TTL redirect mode | **Done.** Both, plus `Range`, `HEAD` and `416` |
@@ -86,16 +86,16 @@ person running this in production.
   `trimAuditChain()` removes old events and leaves a checkpoint recording where
   the chain had reached, so a trimmed chain still verifies. Nothing trims unless
   you ask: a deployment that never calls it still grows without bound.
-- **Subject-scoped erasure from the audit trail.** `trimAuditChain()` is
-  retention: it removes by date or by count and attests the one gap it made.
-  Removing one person's events means removing a scattered subset, which makes
-  several gaps, and the checkpoint model attests one. The usual remedy —
-  blanking the personal columns and keeping the hash — is unavailable here
-  because the digest covers `actorId` and `ip`, which is the same property that
-  makes an edit to them detectable. Nothing in the design prevents attesting
-  several gaps; it has simply not been built. Found on 21 October 2026 while
-  drafting a guide that would have claimed we already did this, caught by a
-  review that was handed the draft without the author's reasoning.
+- ~~Subject-scoped erasure from the audit trail~~ — **done.**
+  `eraseActorFromAuditChain()` removes one actor's events and writes a
+  checkpoint per contiguous run, so every hole is attested and nobody else's
+  history is touched. The verifier needed no change: it already matched gaps
+  against checkpoints by hash, so N holes with N checkpoints verified exactly
+  as one did, and nobody had noticed. What did change is the seal guard — an
+  honest erasure of the most recent events moves the head backwards, which
+  used to report `truncated_past_seal`. Found on 21 October while drafting a
+  guide that would have claimed we already did this, caught by a review handed
+  the draft without the author's reasoning.
 - **Resumable or multipart direct upload — parked, deliberately.** Two to three
   days of work, and it fixes nothing that is broken: it adds capability. The
   storage adapter already speaks multipart and `createUpload()` already

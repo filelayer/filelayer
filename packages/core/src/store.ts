@@ -1222,7 +1222,29 @@ export class PostgresStore implements AuthzDeps {
       (max, s) => (max === null || s.throughEventId > max.throughEventId ? s : max),
       null,
     );
-    if (highestSeal !== null && (head.lastId === null || head.lastId < highestSeal.throughEventId)) {
+    // UNLESS A RECORDED REMOVAL REACHED THAT FAR, which is the case an
+    // erasure request produces and which this check used to call tampering.
+    //
+    // Erasing one person's events can take the chain's most recent ones with
+    // them, so the head moves backwards -- the exact shape of the truncation
+    // this guard exists to catch, arrived at honestly. A trim checkpoint whose
+    // `through_event_id` reaches the seal says that drop was recorded when it
+    // happened, by whoever performed it, with a reason attached.
+    //
+    // IT IS A REAL WEAKENING AND WE WILL NOT DESCRIBE IT AS FREE. Whoever can
+    // delete events past a seal can also insert a checkpoint that excuses it,
+    // which is the same limitation this page has always had: the anchor lives
+    // in the database it is protecting. An UNattested drop is still reported,
+    // and the only fix that leaves the blast radius is still to pin `lastHash`
+    // somewhere else and compare it.
+    const sealDropAttested =
+      highestSeal !== null &&
+      trims.some((t) => t.throughEventId >= highestSeal.throughEventId);
+    if (
+      highestSeal !== null &&
+      !sealDropAttested &&
+      (head.lastId === null || head.lastId < highestSeal.throughEventId)
+    ) {
       return {
         valid: false,
         checked: 0,
@@ -1491,6 +1513,150 @@ export class PostgresStore implements AuthzDeps {
         ],
       );
       return { removed: count, checkpoint: mapCheckpointRow(rows[0]!) };
+    });
+  }
+
+  /**
+   * Remove ONE ACTOR'S events from a chain, attesting every hole it makes.
+   *
+   * ---------------------------------------------------------------------------
+   * WHY THIS IS NOT `trimAuditChain` WITH A PREDICATE
+   * ---------------------------------------------------------------------------
+   *
+   * Retention removes a PREFIX: everything older than a date, or everything
+   * but the last n. One contiguous block, one hole, one checkpoint. That is
+   * the whole reason the checkpoint table has a single `through_hash`.
+   *
+   * An erasure request is not shaped like that. One person's events are
+   * scattered through the chain, so removing them makes SEVERAL holes, and a
+   * checkpoint that attests one of them says nothing about the rest. Until
+   * this existed, the only honest answer to "erase this person" was to remove
+   * a date range that CONTAINED their events, which also removed everyone
+   * else's in that range. `LIMITATIONS.md` said so.
+   *
+   * The verifier already handled this and nobody had noticed: it matches each
+   * gap against a Map of checkpoints keyed by hash, so N holes with N
+   * checkpoints verify exactly as one hole with one does. Nothing in the
+   * verifier changed for this.
+   *
+   * ---------------------------------------------------------------------------
+   * FINDING THE RUNS
+   * ---------------------------------------------------------------------------
+   *
+   * A hole needs one checkpoint, and two removed events that were ADJACENT IN
+   * THE CHAIN make one hole, not two. So the unit is a contiguous run, and
+   * contiguity is over the chain's own ordering rather than over `id`: ids
+   * come from one sequence shared by every org, so this org's events are
+   * already non-contiguous in id terms.
+   *
+   * `row_number() OVER (ORDER BY id)` within the chain, minus
+   * `row_number() OVER (ORDER BY id)` within the doomed subset, is constant
+   * across a run and changes at every break. The checkpoint goes on the LAST
+   * event of each run, because that is the hash the first surviving event
+   * after the hole still carries in its `prev_hash`.
+   *
+   * ---------------------------------------------------------------------------
+   * WHAT THIS DOES NOT DO
+   * ---------------------------------------------------------------------------
+   *
+   * It does not erase the person from anywhere else: files, grants, memberships
+   * and your own tables are yours. It is the audit half, which is the half
+   * that was impossible.
+   *
+   * And it cannot be audited, which is not an oversight: an erasure's own
+   * record would be an event naming the person we were asked to remove. The
+   * `note` on each checkpoint is the record, which is why it is required.
+   */
+  async eraseActorFromAuditChain(
+    orgId: string | null,
+    actorId: string,
+    opts: { note: string },
+  ): Promise<{ removed: number; checkpoints: AuditCheckpoint[] }> {
+    if (!opts.note.trim()) {
+      throw new Error(
+        'eraseActorFromAuditChain: `note` is required. It is the only surviving record of ' +
+          'the removal, because the removal cannot be audited without naming the person.',
+      );
+    }
+
+    return withTransaction(this.db, async (tx) => {
+      await tx.query(`SET LOCAL filelayer.audit_trim = 'on'`);
+      // The same chain lock retention takes, for the same reason: two runs
+      // reading the same boundary would both delete and both record it.
+      await tx.query(`SELECT pg_advisory_xact_lock(1, hashtext(coalesce($1::text, 'system')))`, [
+        orgId,
+      ]);
+
+      const runs = await tx.query<{
+        last_id: string;
+        last_hash: string;
+        n: string;
+        lo: string | null;
+        hi: string | null;
+      }>(
+        `WITH chain AS (
+           SELECT id, hash, actor_id, occurred_at,
+                  row_number() OVER (ORDER BY id) AS chain_rn
+             FROM audit_event
+            WHERE org_id IS NOT DISTINCT FROM $1
+         ), doomed AS (
+           SELECT id, hash, occurred_at,
+                  chain_rn - row_number() OVER (ORDER BY id) AS run
+             FROM chain
+            WHERE actor_id = $2
+         )
+         SELECT (array_agg(id   ORDER BY id DESC))[1]::text AS last_id,
+                (array_agg(hash ORDER BY id DESC))[1]       AS last_hash,
+                count(*)::text                              AS n,
+                min(occurred_at)::text                      AS lo,
+                max(occurred_at)::text                      AS hi
+           FROM doomed
+          GROUP BY run
+          ORDER BY min(id)`,
+        [orgId, actorId],
+      );
+
+      if (runs.rows.length === 0) return { removed: 0, checkpoints: [] };
+
+      const removed = runs.rows.reduce((t, r) => t + Number(r.n), 0);
+
+      await tx.query(
+        `DELETE FROM audit_event WHERE org_id IS NOT DISTINCT FROM $1 AND actor_id = $2`,
+        [orgId, actorId],
+      );
+
+      // READ IT BACK. A suppressed DELETE reports success and removes nothing,
+      // and a checkpoint describing a removal that did not happen is worse
+      // than no checkpoint. Same guard, same reason, as retention.
+      const left = await tx.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM audit_event
+          WHERE org_id IS NOT DISTINCT FROM $1 AND actor_id = $2`,
+        [orgId, actorId],
+      );
+      if (Number(left.rows[0]?.n ?? -1) !== 0) {
+        throw new Error(
+          'eraseActorFromAuditChain: the DELETE was suppressed and the events are still ' +
+            'present. No checkpoint was written. This means the `filelayer.audit_trim` ' +
+            'declaration did not reach the server, which happens when the connection is not ' +
+            'the one running the transaction.',
+        );
+      }
+
+      const checkpoints: AuditCheckpoint[] = [];
+      for (const r of runs.rows) {
+        const { rows } = await tx.query<Record<string, never>>(
+          `INSERT INTO audit_checkpoint
+                  (org_id, kind, through_event_id, through_hash,
+                   removed_count, removed_from, removed_to, note)
+            VALUES ($1, 'trim', $2, $3, $4, $5, $6, $7)
+         RETURNING id, org_id, kind, created_at, through_event_id, through_hash,
+                   removed_count, removed_from, removed_to, note`,
+          [orgId, Number(r.last_id), r.last_hash, Number(r.n), r.lo, r.hi, opts.note],
+        );
+        checkpoints.push(mapCheckpointRow(rows[0]!));
+      }
+
+      return { removed, checkpoints };
     });
   }
 

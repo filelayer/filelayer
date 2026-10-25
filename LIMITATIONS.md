@@ -138,23 +138,33 @@ Each one is current as of
    URL stays valid for up to its TTL after the grant is revoked. It is off by
    default, defaults to anonymous grants only, and requires passing a verbatim
    acknowledgement string. That string is the point.
-11. **You cannot erase one person from the audit trail.** The digest covers
-   `actorId`, `ip`, `fileId` and the event context, which is the property that
-   makes an edit to any of them detectable — and it is the same property that
-   rules out the remedy every write-up on this subject recommends. Blanking the
-   personal columns and keeping the stored hash does not work here, because the
-   hash covered those columns: every link after the redacted row breaks, and
-   replay reports tampering. **A log you can redact per subject is a log whose
-   identity fields were never protected.** What exists instead is retention:
-   `trimAuditChain()` removes events by date or by count and writes an
-   `audit_checkpoint` in the same transaction, so a trimmed chain still
-   verifies and the gap is reported as attested with your stated reason. For a
-   subject erasure request that means you can remove a range that *contains*
-   that person's events — taking everyone else's in the range with it — and you
-   cannot remove exactly theirs. If subject-scoped erasure is a requirement
-   where you operate, decide it before adopting rather than during the request.
-   This is a gap and not a position: it is on the roadmap, and nothing about
-   the chain's design prevents attesting several gaps instead of one.
+11. **Erasing one person from the audit trail is possible, and it is not free.**
+   `eraseActorFromAuditChain(orgId, actorId, { note })` removes that actor's
+   events and writes one checkpoint per contiguous run, so every hole it makes
+   is attested: `verifyAuditChain()` returns `valid: true` with `attestedGaps`
+   equal to the number of holes. Nobody else's events are touched, which was
+   impossible until this release — the only answer then was to trim a date
+   range that *contained* their events and everyone else's in it, and this
+   entry said so four days ago.
+   What it costs: the chain's history is now shorter than what happened, which
+   is why `attestedGaps` is non-zero and must stay reported rather than
+   smoothed away. **The removed events are not unrecoverable in the
+   information-theoretic sense** — their hashes survive in the `prev_hash` of
+   the next event and in the checkpoint, so a sufficiently motivated party with
+   a small guess space can confirm what an event was. We do not offer
+   crypto-shredding and do not claim this is erasure in a legal sense; whether
+   it satisfies a request where you operate is a question for your counsel.
+   And the audit half is the only half: files, grants, memberships and your own
+   tables are yours to remove, and the bytes in your bucket are a separate job.
+   **The erasure itself is not audited.** The event that recorded it would name
+   the person we were asked to remove. The `note` on each checkpoint is the
+   record, which is why it is required and why a blank one is refused.
+   One interaction, stated because it weakens something: a head that drops
+   below a seal is forgiven when a trim checkpoint reaches that far, so an
+   honest erasure of the most recent events no longer reports
+   `truncated_past_seal`. Whoever can delete past a seal can also insert a
+   checkpoint excusing it — the same limitation entry 12 describes, and the
+   same answer: pin `lastHash` outside this database.
 12. **Truncation of the most recent audit events is detectable only if you
    seal, and only against someone who does not also remove the seals.** Replay
    catches any edit to a recorded event, the removal of one from the middle, and

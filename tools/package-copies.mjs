@@ -223,6 +223,22 @@ export const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/guides/erasing-a-user-with-an-append-only-audit-log.md',
+    why:
+      'the ninth guide, and the one a reader reaches under time pressure: a ' +
+      'regulator has asked and the log will not let the tenant go. That is the ' +
+      'worst moment to need a network connection in order to read it.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/erasing-a-user-with-an-append-only-audit-log.proof.mjs',
+    why:
+      'the script that reproduces the undeletable tenant, the HINT Postgres ' +
+      'prints, and the one-word change that turns the refusal into silent ' +
+      'orphans.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/background-jobs-for-user-files.md',
     why:
       'the eighth guide: the operational half of a file feature, where every ' +

@@ -21,6 +21,56 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### Added — `eraseActorFromAuditChain()`, so an erasure request has an honest answer
+
+`trimAuditChain()` is retention: it removes a prefix, makes one hole, writes
+one checkpoint. An erasure request is not shaped like that. One person's events
+are scattered, so removing them makes several holes, and until now the only
+answer to "erase this person" was to trim a date range that CONTAINED their
+events — taking everyone else's in that range with it. `LIMITATIONS.md` entry
+11 said so for four days, between finding the gap and closing it.
+
+`eraseActorFromAuditChain(orgId, actorId, { note })` removes that actor's
+events and writes **one checkpoint per contiguous run**, so every hole is
+attested and `verifyAuditChain()` returns `valid: true` with `attestedGaps`
+equal to the number of holes. Nobody else's events are touched.
+
+**The verifier needed no change, and that is the interesting part.** It already
+matched each gap against a Map of checkpoints keyed by hash, so N holes with N
+checkpoints verified exactly as one hole with one did. The capability was
+latent in code written for a different purpose, and nobody had noticed — the
+limitation was in the writer, not the reader.
+
+Runs are found with gaps-and-islands over the chain's own ordering rather than
+over `id`: ids come from one sequence shared by every org, so this org's events
+are already non-contiguous in id terms, and grouping on id would write a
+checkpoint per event. Half of those would be rows nothing ever consumes.
+
+**One guard did change, and it is a real weakening.** Erasing a person whose
+events include the most recent ones moves the chain head backwards — the exact
+shape of the truncation `truncated_past_seal` exists to catch, arrived at
+honestly. A head below a seal is now forgiven when a trim checkpoint reaches
+that far. Whoever can delete past a seal can also insert a checkpoint excusing
+it, which is the limitation this project has always had about anchors living
+in the database they protect. An unattested drop is still reported, and the
+only fix that leaves the blast radius is still to pin `lastHash` elsewhere.
+
+**What it is not.** Not legal erasure — that is your counsel's question, not a
+library's. Not information-theoretic erasure either: the removed events' hashes
+survive in their successors' `prev_hash`, which `LIMITATIONS.md` now states
+rather than leaving for a reader to work out. Not the whole job: files, grants,
+memberships and your own tables are yours. And **not audited**, because the
+event recording it would name the person we were asked to remove — the required
+`note` on each checkpoint is the record, and a blank one is refused.
+
+Seven tests, four mutations, each caught: grouping per event instead of per
+run, anchoring the checkpoint on the first event of a run instead of the last,
+removing the seal forgiveness, and skipping the checkpoint write entirely. The
+control asserts that the same removal performed WITHOUT attestation is still
+reported as broken; its first version did the DELETE outside a transaction,
+where `SET LOCAL` does nothing and the append-only rule suppressed it, and it
+reported that rather than passing on a removal that never happened.
+
 ### Fixed — a double-clicked share no longer creates two grants
 
 `share()` inserted a grant on every call. One recipient would end up holding

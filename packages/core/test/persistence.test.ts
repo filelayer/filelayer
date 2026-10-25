@@ -1104,6 +1104,20 @@ describe('every public method that names a resource also names a principal', () 
       // tenant to erase another's history.
       'trimAuditChain',
       'sealAuditChain',
+      // ERASURE, and it belongs here for the same reason `trimAuditChain` does
+      // rather than because it is convenient. It takes an org id AND an actor
+      // id with no principal, so by this test's definition it is a resource
+      // accessor twice over, and the justification is the precedent above: an
+      // erasure request arrives at the operator, from outside the
+      // application, and is not an operation a tenant performs on itself.
+      //
+      // THE COST IS LARGER THAN ITS NEIGHBOURS' AND BELONGS IN THIS LIST. A
+      // route that reached this with a tenant-supplied org id and actor id
+      // would let one tenant erase a named person's history from another
+      // tenant's audit trail, attested, with a note of the caller's choosing.
+      // It is the most destructive method in the library and the one with the
+      // least to say afterwards, because the thing it removes is the record.
+      'eraseActorFromAuditChain',
       // THE WRAPPER OVER THE FOUR ABOVE, and it inherits their classification
       // rather than softening it. It takes an optional `orgId` and no
       // principal, which is the same shape as `trimAuditChain` and carries the
