@@ -34,6 +34,13 @@ grant. No schema change (still version 15); the two behaviour changes are in
 `package.json`'s `homepage` is now https://filelayer.dev. It pointed at the
 repository, so the one link npm gives a package's website led back to GitHub.
 
+The npm description now reads: "File authorization middleware for multi-tenant
+files on Postgres: file sharing permissions per user, org and role, revocable
+links that expire, delegated share links and a hash-chained audit trail." Six
+keywords are added: `file-sharing`, `file-permissions`, `revocable-links`,
+`expiring-links`, `private-files`, `saas`. Each names a capability the suite
+tests.
+
 ### Fixed — migration 013 recorded the wrong release
 
 `migrations/013-share-idempotency.sql` shipped in `0.33.0` writing
