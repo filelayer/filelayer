@@ -63,7 +63,7 @@ saying which ones you could not run is part of saying you are done.
 
 ```
 npm whoami && npm run verify:release        # before a publish
-npm run verify && git push                  # everything else
+npm run verify                              # before a push, see below
 ```
 
 The first version of this section put `npm whoami` in front of every `verify`,
@@ -103,11 +103,44 @@ This is not an instruction to market in a changelog. It is an instruction to
 stop assuming context the reader does not have, which is the same rule the rest
 of this file applies to everything else.
 
-## And verify BEFORE you push
+## How a push happens
 
-```
-npm run verify && git push
-```
+A push is what makes a commit public, so it is the step a human approves. An
+agent working in this repository may push its own commits to `main`, and only
+this way:
+
+1. `npm run verify` is green on the tree being pushed.
+2. Refresh what the remote has, and show exactly what would go out, one line
+   per commit saying what it changes publicly:
+
+   ```
+   git fetch https://github.com/filelayer/filelayer.git main:refs/remotes/origin/main
+   git log --oneline origin/main..HEAD
+   ```
+
+   If any of those commits touches `.github/workflows/`, say so on its own
+   line: `this push changes CI: <what>`. CI holds the live-storage secrets,
+   and a workflow change is the one way a push could expose them. Without
+   that line, no push.
+3. Wait for the maintainer to write **ok push** for that list. No "ok push",
+   no push. A new commit after the approval needs a new approval.
+4. Push over HTTPS with the token in `.env.github-push` at the repository root
+   (the token alone, ignored by git). It goes to git through a credential
+   helper that reads the file, so it never appears in a URL, a command line,
+   an environment listing or any output:
+
+   ```
+   git -c credential.helper= -c credential.helper='!f() { echo username=x-access-token; printf "password=%s\n" "$(tr -d "\r\n" < .env.github-push)"; }; f' push https://github.com/filelayer/filelayer.git HEAD:main
+   ```
+
+   Never print, copy, log, commit or move that file or any part of it. Not
+   its first characters either: a prefix is part of the secret.
+
+Never force-push and never push another branch or repository. A rejected push
+stops the work and is reported, not retried another way. `npm publish` and
+dist-tags are not part of this; they stay with the maintainer.
+
+### And verify BEFORE you push
 
 That order, not the other one. `git push && npm run verify` reads as a safe
 chain and is not one: it publishes first and objects afterwards, so a failing
@@ -116,9 +149,9 @@ there for twenty-eight minutes on 14 October 2026, and the commands handed over
 that day were written the wrong way round three times in a row -- not copied
 from anywhere, just typed in the order the work happened in.
 
-The `&&` only protects the step that comes after it. Put the irreversible one
-last, always: this is the same shape as `npm run verify` ending in a stamp that
-`prepublishOnly` refuses to publish without.
+Put the irreversible step last, always: this is the same shape as
+`npm run verify` ending in a stamp that `prepublishOnly` refuses to publish
+without.
 
 ---
 
@@ -263,6 +296,8 @@ Do not do these on your own initiative: ask.
 - `npm publish`, `npm deprecate`, or moving a dist-tag
 - anything that changes the published version number
 - rewriting git history, or force-pushing
+- pushing without an "ok push" for exactly the commits being pushed
+- a push touching `.github/workflows/` without a `this push changes CI:` line
 - creating or rotating a credential of any kind
 - posting anywhere public under the project's name
 
