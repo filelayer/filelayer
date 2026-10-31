@@ -41,6 +41,20 @@
  *
  * Cheap on purpose: no database, no network. `check:migrations` is the slow one
  * and it has twice been the gate nobody could run.
+ *
+ * ---------------------------------------------------------------------------
+ * AND A THIRD COPY OF THE SAME FACT: the file's own `introduced_in`
+ * ---------------------------------------------------------------------------
+ *
+ * Every migration from 010 on writes a `filelayer_schema_version` row naming
+ * the release that introduced it, and `schemaStatus()` shows that row to an
+ * operator. The manifest says the same thing in `introducedIn`. Nothing
+ * compared them, and the 0.33.0 release shipped `013-share-idempotency.sql`
+ * recording '0.33.0' for a migration introduced in 0.32.0: `bump:version`
+ * rewrote it, because the value sits on the line below the word
+ * `introduced_in` that its history guard looks for. Any database migrated with
+ * the 0.33.0 tarball carries that wrong row. This compares the version number
+ * and the release in each file's INSERT with the manifest entry.
  */
 
 import { readFileSync } from 'node:fs';
@@ -66,6 +80,42 @@ const noSchema = manifest.noSchemaChange ?? [];
 const unverifiable = (manifest.unverifiable ?? []).map((u) => u.version);
 const accounted = new Set([...withSql, ...noSchema, ...unverifiable]);
 
+/**
+ * The `filelayer_schema_version` row a migration file writes, if it writes one:
+ * `(13, '0.32.0', '...')` after `INSERT INTO filelayer_schema_version`.
+ */
+export function recordedRow(sql) {
+  const m = sql.match(
+    /INSERT\s+INTO\s+filelayer_schema_version\s*\([^)]*\)\s*VALUES\s*\(\s*(\d+)\s*,\s*'([^']*)'/i,
+  );
+  return m ? { version: Number(m[1]), introducedIn: m[2] } : null;
+}
+
+/** Problems for one manifest entry against the text of its file. */
+function rowProblems(m, sql) {
+  const row = recordedRow(sql);
+  // The version table arrived with migration 010; earlier files cannot write to it.
+  if (row === null) {
+    return m.version >= 10
+      ? [`${m.file} writes no filelayer_schema_version row, and every migration from 010 on must.`]
+      : [];
+  }
+  const out = [];
+  // Entries before 011 name the release as `to`; later ones as `introducedIn`.
+  const expected = m.introducedIn ?? m.to;
+  if (row.version !== m.version) {
+    out.push(`${m.file} records schema version ${row.version}; the manifest says ${m.version}.`);
+  }
+  if (row.introducedIn !== expected) {
+    out.push(
+      `${m.file} records introduced_in '${row.introducedIn}'; the manifest says ` +
+        `'${expected}'.\n    The file is what a database stores, so the operator reading ` +
+        '`schemaStatus()` sees the wrong release.',
+    );
+  }
+  return out;
+}
+
 if (process.argv.includes('--self-test')) {
   // The control: a manifest version absent from the document must be caught.
   // That is the defect this file exists for, and a gate that cannot see its own
@@ -73,12 +123,22 @@ if (process.argv.includes('--self-test')) {
   const pretend = new Set(entries);
   pretend.delete(12);
   const caught = withSql.some((v) => !pretend.has(v));
+  // And the row check, on the shape that shipped in 0.33.0.
+  const m13 = { version: 13, file: '013.sql', introducedIn: '0.32.0' };
+  const planted = "INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES\n    (13, '0.33.0', 'x')";
+  const honest = planted.replace("'0.33.0'", "'0.32.0'");
+  const rowCaught = rowProblems(m13, planted).length === 1 && rowProblems(m13, honest).length === 0;
   console.log(
     caught
       ? 'check-migration-docs: control passed (a migration with no entry is caught).'
       : 'check-migration-docs: control DID NOT FAIL: a missing entry went unnoticed.',
   );
-  process.exit(caught ? 0 : 1);
+  console.log(
+    rowCaught
+      ? 'check-migration-docs: control passed (a file recording the wrong release is caught, the right one is not).'
+      : 'check-migration-docs: control DID NOT FAIL: a wrong introduced_in went unnoticed, or a right one was refused.',
+  );
+  process.exit(caught && rowCaught ? 0 : 1);
 }
 
 const problems = [];
@@ -92,6 +152,11 @@ for (const m of manifest.migrations) {
         '    they cannot find.',
     );
   }
+}
+
+for (const m of manifest.migrations) {
+  const sql = readFileSync(join(ROOT, 'packages/core/migrations', m.file), 'utf8');
+  problems.push(...rowProblems(m, sql));
 }
 
 for (const v of noSchema) {

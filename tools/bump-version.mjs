@@ -118,6 +118,33 @@ const NEVER = [
 ];
 
 /**
+ * WHOLE CLASSES OF FILE THAT ARE HISTORY, by path, because the line-based
+ * DATED patterns below cannot see them.
+ *
+ * A shipped migration file records the release that introduced it, in the
+ * `filelayer_schema_version` row it writes:
+ *
+ *     INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
+ *         (13, '0.32.0', '...')
+ *
+ * `introduced_in` is on the line ABOVE the version, so the DATED pattern for it
+ * never matched the line that was rewritten. The 0.33.0 bump moved 013's value
+ * from '0.32.0' to '0.33.0' and it shipped that way; preparing 0.34.0 the same
+ * tool moved 013, 014 and 015 again. `check:migration-docs` now compares each
+ * file's value with the manifest, and this keeps the tool from writing them at
+ * all. `schema.sql` is NOT in this class: its row says which release created
+ * the database, which is current state and must move.
+ *
+ * `benchmark/` is a record of measurements, each against the version it ran
+ * on. "Measured 2026-10-17 against `@filelayer/core@0.33.0`" moved to 0.34.0
+ * would claim a measurement that never happened.
+ */
+const NEVER_PATHS = [
+  /^packages\/core\/migrations\/[^/]+\.sql$/,
+  /^benchmark\//,
+];
+
+/**
  * SOURCE AND TOOLING ARE NEVER BULK-EDITED, and this rule exists because the
  * first real use of this tool broke three of its own comments.
  *
@@ -213,7 +240,7 @@ for (const rel of tracked) {
     if (hits > 0) skippedSource.push({ rel, hits });
     continue;
   }
-  if (NEVER.includes(rel)) {
+  if (NEVER.includes(rel) || NEVER_PATHS.some((re) => re.test(rel))) {
     const text = readFileSync(join(ROOT, rel), 'utf8');
     const hits = text.split('\n').filter((l) => BARE.test(l) || BARE_LINE.test(l)).length;
     if (hits > 0) skippedFiles.push({ rel, hits });
