@@ -78,7 +78,13 @@
     "model-context-protocol",
     "mcp-server",
     "agent-skills",
-    "cli"
+    "cli",
+    "file-sharing",
+    "file-permissions",
+    "revocable-links",
+    "expiring-links",
+    "private-files",
+    "saas"
   ],
   "publishConfig": {
     "access": "public"
