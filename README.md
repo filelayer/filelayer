@@ -19,8 +19,9 @@ file access that goes through Filelayer, that decision is made in one place,
 handlers, no presigned-URL expiry logic, and no per-route access rules of your
 own.
 
-> **Looking for three to five design partners.** We will help you integrate
-> this and stay on hand while you do, in exchange for hearing where it breaks.
+> **Built to be adopted without us.** The quickstart, the guides, the examples
+> and `llms.txt` are written so that you, or your coding agent, can integrate it
+> alone. Where it breaks, [open an issue](https://github.com/filelayer/filelayer/issues).
 > Alpha, and the numbers behind that word are all on one page:
 > [should you depend on this?](https://github.com/filelayer/filelayer/blob/main/TRUST.md) ·
 > [what it does not do](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) ·
@@ -392,7 +393,7 @@ application owns the migration runner, which is the position
 - [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) — install → first file → the advanced capabilities
 - [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) — the complete list of what this does not do, fourteen entries with their reasoning
 - [`ROADMAP.md`](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md) — the nine things an outside evaluator said would change its answer, eight of them done, and what is deliberately not coming
-- [`docs/guides/`](https://github.com/filelayer/filelayer/tree/main/docs/guides) — four answers to questions people actually ask, useful whether or not you use this library; the code in them is executed in CI
+- [`docs/guides/`](https://github.com/filelayer/filelayer/blob/main/docs/guides/README.md) — nine answers to questions people actually ask, useful whether or not you use this library; the code in them is executed in CI
 - [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md) — the exact behaviour of every edge: liveness, delegation, deletion, the audit chain
 - [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) — how schema changes are delivered and what the pre-1.0 compatibility promise is
 - [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) — the real history, including the security defects we found in ourselves

@@ -210,6 +210,17 @@ We will report against this list publicly, including when a number stays at zero
 
 ---
 
+## How this is built
+
+Filelayer is built with the assistance of AI agents. All externally published
+claims, product documentation and technical specifications are subject to
+defined validation gates and tests, and routine changes are verified by those
+gates. A human remains accountable for public-facing information: material
+public claims, product documentation, technical specifications and every
+release are reviewed and approved by a human before they are published.
+
+---
+
 ## Using it anyway
 
 If you want to try it, the honest framing is: this is a good design that has not

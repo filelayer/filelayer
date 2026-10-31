@@ -87,7 +87,7 @@ start rather than falling back to memory, which would work in a demo and lose
 the first real file. The three tools above stay off unless the matching
 `FILELAYER_MCP_*` variable is exactly `true`.
 
-[`examples/mcp/`](https://github.com/filelayer/filelayer/tree/main/examples/mcp)
+[`examples/mcp/`](https://github.com/filelayer/filelayer/blob/main/examples/mcp/README.md)
 is a server you can launch and a script that drives it the way a client does:
 it spawns the server as a subprocess and exchanges protocol frames over its
 real stdin and stdout, in 27 checks that CI runs against a freshly packed

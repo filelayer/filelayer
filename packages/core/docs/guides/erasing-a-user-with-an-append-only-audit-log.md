@@ -363,8 +363,6 @@ has the numbers, including the ones sitting at zero.
 
 - [GDPR erase is inconsistent with the immutable audit log](https://github.com/ApexChainx/ApexChainx-Backend/issues/512) —
   the tension, stated as an open issue.
-- [Implement a GDPR-style data-subject erasure workflow](https://github.com/Ledger-Lenz/Ledgerlens-core/issues/349) —
-  the same question in another project, answered with crypto-shredding.
 - [pgsql-bugs, October 2007: rules and referential integrity](https://www.postgresql.org/message-id/592647410710250955k98ebf33u23d90dc24d0f2ad1%40mail.gmail.com) —
   the report that documents the `WHERE true` difference above.
 - [PostgreSQL: Rules on INSERT, UPDATE, and DELETE](https://www.postgresql.org/docs/current/rules-update.html) —

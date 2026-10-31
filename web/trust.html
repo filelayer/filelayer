@@ -144,6 +144,9 @@
 <li><strong>A second maintainer</strong>, and a demonstrated response time on a real report.</li></ol>
 <p>We will report against this list publicly, including when a number stays at zero.</p>
 <hr>
+<h2 id="how-this-is-built">How this is built</h2>
+<p>Filelayer is built with the assistance of AI agents. All externally published claims, product documentation and technical specifications are subject to defined validation gates and tests, and routine changes are verified by those gates. A human remains accountable for public-facing information: material public claims, product documentation, technical specifications and every release are reviewed and approved by a human before they are published.</p>
+<hr>
 <h2 id="using-it-anyway">Using it anyway</h2>
 <p>If you want to try it, the honest framing is: this is a good design that has not met production. Reasonable ways to engage, roughly in order of exposure:</p>
 <ul><li><strong>Read the schema.</strong> <code>schema.sql</code> states eight security properties. Some are write-side integrity constraints that bind every writer — take the composite foreign key that makes a cross-tenant grant row impossible to insert, even from <code>psql</code>. Others, including all read authorization, are enforced in <code>authz.ts</code> and therefore only for calls made through the library: there is no RLS policy in <code>schema.sql</code>, and a direct <code>SELECT</code> is not filtered. Take also the rule that a signed URL is re-validated on every request instead of being a bearer token you cannot recall. Apache-2.0 — copy it.</li>

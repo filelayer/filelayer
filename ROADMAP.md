@@ -26,26 +26,28 @@ Eight of the nine are now done. The ninth is the one we cannot build.
 
 ## Which is why we are asking
 
-**Three to five design partners.** If you are building something with private
-user files — documents, contracts, attachments, anything with a share link you
-might later want back — we will help you integrate Filelayer and stay on hand
-while you do, in exchange for telling us where it breaks.
+**If it runs for you, tell us.** Filelayer is built to be adopted without
+talking to anybody. The [quickstart](docs/QUICKSTART.md), the
+[guides](docs/guides/), the runnable [examples](examples/) and
+[`llms.txt`](llms.txt) are meant to take you, or your coding agent, from install
+to a working integration alone, and `auditIntegration()` checks the result
+against your own routes.
 
-What that means concretely:
+What would help, in order:
 
-- We read your requirements and tell you honestly whether this is the wrong
-  tool. The table in the [README](README.md#against-the-two-things-you-would-otherwise-do)
-  has two rows we lose outright; if you are in one of them we will say so.
-- We help with the integration, and we fix what you hit. Every defect an outside
+- **Where it breaks.** [Open an issue](https://github.com/filelayer/filelayer/issues)
+  with what you were building and what went wrong. Every defect an outside
   reader has reported so far was fixed the same day and written up in the
   [changelog](packages/core/CHANGELOG.md) with what it cost.
-- You are not committing to ship it. "We evaluated it and here is why we said
-  no" is a useful outcome for us and costs you an afternoon.
-- No cost, no contract, no exclusivity. There is no hosted service to sell you
-  and no pricing page.
+- **Whether it is the wrong tool for you.** The table in the
+  [README](README.md#against-the-two-things-you-would-otherwise-do) has two rows
+  we lose outright. "We evaluated it and here is why we said no" is a useful
+  issue.
+- **Whether it is running in production.** That is item 9, and the only one we
+  cannot find out on our own.
 
-[Open an issue](https://github.com/filelayer/filelayer/issues) and say what you
-are building.
+No cost, no contract, no exclusivity. There is no hosted service to sell you
+and no pricing page.
 
 ---
 
