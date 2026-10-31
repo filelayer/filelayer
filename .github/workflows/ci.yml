@@ -217,6 +217,13 @@ jobs:
       - name: Everything the documentation points at is reachable offline
         run: npm run check:offline
 
+      # And the other direction: what must NOT be in the tarball. The skill's
+      # evals/ is grading material written to read like instructions to an
+      # agent, and an automated scanner rated the tarball for it. Read from
+      # `npm pack --dry-run`, and the skill itself is required to still ship.
+      - name: The tarball carries no skill grading material
+        run: npm run check:tarball-excludes
+
       # THE SAME QUESTION, ASKED FROM INSIDE THE TARBALL. The step above reads a
       # list of anchors and checks they ship, which is a question about the
       # list. This one packs, extracts, and resolves every relative import and

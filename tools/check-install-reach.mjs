@@ -115,6 +115,21 @@ const DOC_EXCEPTIONS = [
       'changelog, and a gate that forbids it teaches people to stop recording ' +
       'defects.',
   },
+  // `skills/*/evals/` is excluded from the tarball (it is grading material,
+  // not something an installed skill reads), and these two documents name its
+  // write-up. The changelog entries are history; AGENT-SKILL.md links the same
+  // path as an absolute GitHub URL right beside the name, so a reader with an
+  // install is sent somewhere that exists.
+  {
+    file: 'CHANGELOG.md',
+    target: 'skills/filelayer-integration/evals/MEASUREMENT.md',
+    why: 'history: two entries name the measurement file that was later excluded from the tarball.',
+  },
+  {
+    file: 'docs/AGENT-SKILL.md',
+    target: 'skills/filelayer-integration/evals/MEASUREMENT.md',
+    why: 'named as link text; the link itself is an absolute https:// URL on GitHub.',
+  },
 ];
 
 /**

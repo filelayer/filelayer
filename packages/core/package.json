@@ -49,7 +49,8 @@
     "LIMITATIONS.md",
     "errors.json",
     "ERRORS.md",
-    "skills"
+    "skills",
+    "!skills/*/evals"
   ],
   "sideEffects": false,
   "repository": {

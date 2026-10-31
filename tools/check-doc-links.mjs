@@ -438,7 +438,33 @@ const prepackScript = corePkg.scripts?.prepack ?? '';
 const prepackList = prepackScript.match(/\[([^\]]*)\]/)?.[1] ?? '';
 const PREPACK_COPIES = [...prepackList.matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
 const PREPACK_GENERATED = new Set(['dist', ...PREPACK_COPIES]);
+// A "!" entry is an exclusion, not a path. It is held to the same standard the
+// other way round: an exclusion that matches nothing is dead, and would let the
+// thing it was written to keep out arrive unnoticed under another name. Only
+// `*` as a whole path segment is expanded, which is the only glob `files` uses.
+function globExists(base, pattern) {
+  let dirs = [base];
+  for (const seg of pattern.split('/').filter(Boolean)) {
+    const next = [];
+    for (const d of dirs) {
+      if (seg === '*') {
+        if (!existsSync(d)) continue;
+        for (const e of readdirSync(d, { withFileTypes: true })) next.push(join(d, e.name));
+      } else if (existsSync(join(d, seg))) {
+        next.push(join(d, seg));
+      }
+    }
+    dirs = next;
+  }
+  return dirs.length > 0;
+}
 for (const entry of corePkg.files ?? []) {
+  if (entry.startsWith('!')) {
+    if (!globExists(join(ROOT, 'packages/core'), entry.slice(1))) {
+      fail('packages/core/package.json', 0, `"files" excludes ${entry.slice(1)}, which matches nothing`);
+    }
+    continue;
+  }
   const abs = join(ROOT, 'packages/core', entry);
   if (PREPACK_GENERATED.has(entry)) continue;
   if (!existsSync(abs)) {

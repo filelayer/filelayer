@@ -41,6 +41,16 @@ keywords are added: `file-sharing`, `file-permissions`, `revocable-links`,
 `expiring-links`, `private-files`, `saas`. Each names a capability the suite
 tests.
 
+### Changed — the tarball no longer carries the skill's grading material
+
+`skills/filelayer-integration/evals/` (the scenarios the skill was measured on
+and the write-up of that measurement) is excluded from the package. An
+installed skill never reads it, and its scenario text is written to look like
+instructions to an agent, which is what an automated scanner rated the tarball
+for. It stays in the repository, where `llms.txt` and `docs/AGENT-SKILL.md`
+already link it. A gate fails if `evals/` appears in `npm pack --dry-run`, or
+if the skill itself stops shipping. 196 files instead of 198.
+
 ### Fixed — migration 013 recorded the wrong release
 
 `migrations/013-share-idempotency.sql` shipped in `0.33.0` writing
