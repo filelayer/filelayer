@@ -298,6 +298,17 @@ jobs:
       - name: The published guide pages match their markdown
         run: npm run check:guides
 
+      # A page stamped softwareVersion X may only call API that X's PUBLISHED
+      # dist declares. check:docs runs the samples against this checkout, so on
+      # 31 October 2026 two live guides stamped 0.33.0 called runMaintenance()
+      # and eraseActorFromAuditChain(), which 0.33.0 does not have, and every
+      # gate was green. Reads X from the registry; an unpublished X equal to the
+      # version being prepared is checked against the build and said so.
+      - name: Every page calls only API its stamped version publishes
+        run: |
+          npm run build
+          npm run check:guide-api
+
       # AND THE QUESTION ABOUT THIS FILE ITSELF. Every gate above was written,
       # wired into `npm run verify`, and then had to be remembered here. On
       # 5 October 2026 two of them were not: check:guides shipped in a commit
