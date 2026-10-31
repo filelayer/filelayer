@@ -490,6 +490,12 @@ const NOT_SWEPT = [
     why: 'A measurement of a specific past build. The version stamp IS the result.',
   },
   {
+    path: 'benchmark/ttff/RESULTS.md',
+    why:
+      'Time to first file, measured on 2026-10-17 against the package then on npm. ' +
+      'The version stamp IS the result; moving it would claim a run that never happened.',
+  },
+  {
     path: 'benchmark/baseline-vercel-blob/REPORT.md',
     why:
       "Quantifies the BASELINES' test suites, not ours (\"Baseline 1's 312\"). Checked " +

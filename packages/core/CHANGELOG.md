@@ -19,7 +19,31 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
-## [Unreleased]
+## [0.34.0] — 2026-10-31
+
+`@filelayer/core` is a TypeScript library for the files your SaaS users upload:
+you tell it who the caller is, and it decides what they may do with a file,
+serves the bytes and writes the audit event, on your own Postgres and your own
+bucket. This release adds `eraseActorFromAuditChain()` and `runMaintenance()`,
+puts a default size ceiling on `upload()`, and makes a double-clicked share one
+grant. No schema change (still version 15); the two behaviour changes are in
+[`MIGRATIONS.md`](MIGRATIONS.md) under `0.33.0` → `0.34.0`.
+
+### Changed — the npm page links to the website
+
+`package.json`'s `homepage` is now https://filelayer.dev. It pointed at the
+repository, so the one link npm gives a package's website led back to GitHub.
+
+### Fixed — migration 013 recorded the wrong release
+
+`migrations/013-share-idempotency.sql` shipped in `0.33.0` writing
+`introduced_in = '0.33.0'` into `filelayer_schema_version`. Migration 13 was
+introduced in `0.32.0`. The release tooling rewrote the value along with the
+version stamps, and nothing compared a migration file with the manifest. The
+file says `0.32.0` again, a gate now compares every migration's recorded row
+with the manifest, and the tooling no longer touches shipped migrations.
+`MIGRATIONS.md` has the one-line `UPDATE` for a database migrated with the
+`0.33.0` file. The schema itself was never affected.
 
 ### Added — `eraseActorFromAuditChain()`, so an erasure request has an honest answer
 

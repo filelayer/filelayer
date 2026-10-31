@@ -361,7 +361,7 @@ schema. Budget an upgrade against that file rather than against this paragraph.
 Every figure in this paragraph is derived from `migrations/manifest.json` by
 `check:versions`, which fails the build if any of them drifts — because these
 numbers were last corrected by hand at `0.15.0` and had drifted again by
-`0.33.0`.
+`0.34.0`.
 
 **Which version a database is at is readable off the database.**
 `schemaStatus(db)` reports where a database is, what this build expects, and

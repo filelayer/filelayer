@@ -1217,6 +1217,74 @@ on the order of four rows a day.
 
 ---
 
+### `0.33.0` → `0.34.0`: no schema change, and two behaviours you may notice
+
+#### What changed in the schema
+
+Nothing. The schema is still version 15, and a database running the `0.33.0`
+schema runs `0.34.0` unaltered: there is no SQL to apply. The one line of
+`schema.sql` that moved is the `introduced_in` value it writes into
+`filelayer_schema_version` on a fresh install, which records the release that
+created the database rather than describing the schema.
+
+This section has no entry number on purpose. Entry numbers are schema
+versions, and `schemaStatus()` compares a database against the highest one, so
+a number spent on a release with no SQL would report every current database as
+behind. The next schema change is version 16.
+
+#### One row to correct, if you migrated with the `0.33.0` package
+
+`migrations/013-share-idempotency.sql` as shipped in `0.33.0` recorded
+`introduced_in = '0.33.0'` for schema version 13. Migration 13 was introduced
+in `0.32.0`; the schema it applies is unaffected, only the label that
+`schemaStatus()` shows. The file is corrected in `0.34.0`. To correct a
+database migrated with the `0.33.0` file:
+
+```sql
+UPDATE filelayer_schema_version SET introduced_in = '0.32.0'
+ WHERE version = 13 AND introduced_in = '0.33.0';
+```
+
+#### What you may have to change, if you upload large objects
+
+`upload()` now refuses an object larger than `maxUploadBytes` with
+`payload_too_large` (413). The default is `DEFAULT_MAX_UPLOAD_BYTES`, 512 MiB.
+Before `0.34.0` there was no ceiling on this path at all.
+
+The bound is counted on the bytes actually read, not on a declared `size`, so
+a client cannot clear it by declaring less. A refusal mid-stream deletes the
+partial object.
+
+If you upload objects larger than 512 MiB through `upload()`, set
+`maxUploadBytes` in the options you pass to `Filelayer` to the size you accept,
+or to `null` to restore the previous behaviour of no ceiling. `createUpload()`
+is unaffected; it has required its own `maxUploadBytes` since it shipped.
+
+#### What you may have to change, if you call `share()` twice on purpose
+
+Two `share()` calls with the same file, subject, capabilities, `expiresIn` and
+`maxDownloads`, made within about `DOUBLE_SUBMIT_WINDOW_SECONDS` (60 seconds)
+of each other, now return one grant instead of creating two. `publish()` twice is likewise one grant.
+This never applies to `link` grants, never resolves to a revoked grant, and an
+explicit `idempotencyKey` still takes precedence.
+
+Code that relied on repeated identical calls to create several live grants for
+one subject (most often a test fixture) now gets one. Give the grants different
+expiries or download limits, which is how an application ends up with several. `unshare()` still
+removes every grant a subject holds.
+
+#### One verification result that changes
+
+`verifyAuditChain()` used to report `truncated_past_seal` whenever the chain
+head fell below a seal. It now accepts that when a trim checkpoint reaches past
+the seal, because `eraseActorFromAuditChain()` can legitimately move the head
+backwards. An unattested drop below a seal is still reported. The limit this
+moves is in `LIMITATIONS.md`: whoever can delete past a seal can also write a
+checkpoint excusing it, and pinning `lastHash` outside the database remains the
+only defence that does not share that blast radius.
+
+---
+
 ## 4. What is not covered here
 
 - **Data migration between storage adapters.** Moving objects from one bucket to
