@@ -170,6 +170,12 @@ jobs:
       - name: Every link and script reference resolves
         run: npm run check:links
 
+      # GitHub's robots.txt refuses tree/ pages to crawlers and agents, so a
+      # tree/ link on a public surface is a reference nobody automated can open
+      # (distribution/FETCHABILITY.md). Every tracked text file is scanned.
+      - name: No public surface links a GitHub tree/ page
+        run: npm run check:tree-links
+
       # A documented command that does not run is a defect the rest of this
       # workflow cannot see, because everything else here reads the software
       # rather than the sentences that tell a stranger how to start it. 0.4.0
