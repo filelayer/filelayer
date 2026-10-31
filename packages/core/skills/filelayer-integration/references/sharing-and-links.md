@@ -27,8 +27,11 @@ posted this job may read this CV" — as long as both are in the same project.
 
 ## The mistake worth preventing
 
-**`shares.create()` is not idempotent.** Every call inserts a grant row. A
-double-clicked button makes two grants; a nightly re-sync makes one a night.
+**`shares.create()` is not idempotent.** An identical repeat within about
+60 seconds (`DOUBLE_SUBMIT_WINDOW_SECONDS`) returns the same
+grant, so a double-clicked button makes one. Anything else inserts a new row:
+a nightly re-sync makes one a night, and two `link` shares are always two
+grants, because they are two URLs.
 
 So a grant id is not a person's access:
 

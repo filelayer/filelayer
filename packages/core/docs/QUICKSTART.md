@@ -1087,12 +1087,12 @@ enumeration oracle in a response body. `e.code` is the safe field.
   nothing to presign. This line said flatly that Filelayer did not do this at
   all, which stopped being true on 4 October 2026 and stayed on the page for
   the rest of that day.
-- **A size ceiling on `fl.files.put()` or `fl.upload()`.** `maxUploadBytes`
-  belongs to the direct-upload config and nothing else. The plain upload paths
-  accept whatever you hand them, so the limit is whatever your process can
-  allocate: a 400 MB body took the starter from 85 MB resident to 1.3 GB.
-  Counting bytes as the body arrives is your application's job and
-  `examples/starter/server.ts` shows it.
+- **A size ceiling per route or per customer.** `fl.files.put()` and
+  `fl.upload()` refuse an object over `maxUploadBytes`
+  with `payload_too_large`: one number for the instance, 512 MiB by default,
+  set in the `Filelayer` options (`null` for none). A smaller limit for one
+  route or one customer is your application's job, and
+  `examples/starter/server.ts` shows it, counting bytes as the body arrives.
 - **CDN delivery by default.** Deliberate; see §6. Redirect delivery is opt-in,
   restricted to anonymous grants unless you widen it, and carries a bounded
   revocation window that you have to acknowledge in the config by name.
