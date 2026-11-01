@@ -3,7 +3,7 @@
 The exact commands to make this repository public and to publish
 `@filelayer/core` to npm.
 
-> **From `0.34.1` on, nobody runs `npm publish` by hand.** A release is the
+> **From `0.34.2` on, nobody runs `npm publish` by hand.** A release is the
 > tag `vX.Y.Z`, pushed after the maintainer approves that exact version, and
 > `.github/workflows/publish.yml` publishes it: it checks that the tag names the
 > version in `packages/core/package.json` and points at a commit on `main`,
@@ -15,7 +15,7 @@ The exact commands to make this repository public and to publish
 > and stays a manual `npm dist-tag add`.
 
 > **This runbook was written for the first public release, `0.3.0`.** The
-> repository is public and the version being published is **`0.34.1`**. Steps 0,
+> repository is public and the version being published is **`0.34.2`**. Steps 0,
 > 3, 4 and 6 have been updated to that version so the commands are
 > copy-pasteable; steps 1 and 2 are the one-time org and repository setup and
 > are kept as the record of what was done. Everything else — the gate, the

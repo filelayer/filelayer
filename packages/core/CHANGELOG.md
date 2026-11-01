@@ -19,15 +19,36 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
-## [0.34.1] — 2026-11-01
+## [0.34.2] — 2026-11-01
 
 `@filelayer/core` is a TypeScript library for the files your SaaS users upload:
 you tell it who the caller is, and it decides what they may do with a file,
 serves the bytes and writes the audit event, on your own Postgres and your own
 bucket. This patch changes no API and no schema. It is the first version
-published from CI with npm provenance, the shipped test suite no longer fails
-when run as root, and two dated sentences that 0.34.0 shipped with the wrong
-version say the right one again.
+published from CI with npm provenance, and it carries everything listed under
+0.34.1 below.
+
+`v0.34.1` was tagged and never published: the publish workflow's first run
+failed `check:links` in a clean checkout, on a reference to a file that exists
+only on our own machines, so it stopped before `npm publish`.
+
+### Fixed — `check:links` passed locally on a file git does not track
+
+The gate accepted a path that existed on disk even when `.gitignore` keeps it
+out of the repository, so it passed on our machines and failed in CI's clean
+checkout. A path inside the repository now counts only if git tracks it.
+
+## [0.34.1] — 2026-11-01
+
+Tagged, never published to npm; its changes ship in 0.34.2.
+
+`@filelayer/core` is a TypeScript library for the files your SaaS users upload:
+you tell it who the caller is, and it decides what they may do with a file,
+serves the bytes and writes the audit event, on your own Postgres and your own
+bucket. This patch changes no API and no schema. It moves publishing to CI
+with npm provenance, the shipped test suite no longer fails when run as root,
+and two dated sentences that 0.34.0 shipped with the wrong version say the
+right one again.
 
 ### Fixed — two sentences of history said 0.34.0
 
