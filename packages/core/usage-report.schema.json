@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://filelayer.dev/usage-report.schema.json",
+  "title": "Filelayer local usage report",
+  "$comment": "The whole of what `filelayer usage-report` can write. Closed at every level: an unknown field is a validation failure, every string is an enum, a const or a fixed pattern, and every number is bounded. A field that cannot be measured is null and says why in `notes`; it is never 0. Nothing in this report is sent anywhere by Filelayer: it is a file the adopter reads and may choose to share.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "install_id",
+    "week",
+    "lib_version",
+    "node_major",
+    "storage_kind",
+    "schema_version",
+    "days_active",
+    "ops",
+    "errors",
+    "first_success_day",
+    "scale_bucket",
+    "notes"
+  ],
+  "properties": {
+    "format": {
+      "$comment": "Version of this schema. A reader that does not know the number should not guess.",
+      "const": 1
+    },
+    "install_id": {
+      "$comment": "Random, generated on the first report and stored in filelayer_install. Linked to nothing else.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "week": {
+      "$comment": "ISO week, UTC.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-W(0[1-9]|[1-4][0-9]|5[0-3])$"
+    },
+    "lib_version": {
+      "type": "string",
+      "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}(-[0-9A-Za-z.]{1,32})?$"
+    },
+    "node_major": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 999
+    },
+    "storage_kind": {
+      "$comment": "Every kind of storage the file table records, mapped onto the fixed list. null when no file exists.",
+      "type": ["array", "null"],
+      "uniqueItems": true,
+      "maxItems": 5,
+      "items": {
+        "enum": ["memory", "fs", "s3", "r2", "other"]
+      }
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 999
+    },
+    "days_active": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 7
+    },
+    "ops": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upload",
+        "read_allowed",
+        "read_denied",
+        "share_create",
+        "share_revoke",
+        "unshare",
+        "direct_upload",
+        "job_run"
+      ],
+      "properties": {
+        "upload": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
+        "read_allowed": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
+        "read_denied": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
+        "share_create": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
+        "share_revoke": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
+        "unshare": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
+        "direct_upload": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
+        "job_run": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 }
+      }
+    },
+    "errors": {
+      "$comment": "Not measured in format 1: no error is recorded anywhere a report could read it. Always null.",
+      "type": "null"
+    },
+    "first_success_day": {
+      "$comment": "Days from the schema being created to the first allowed file read. null when there is none, or when it is no longer in the audit log.",
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 36500
+    },
+    "scale_bucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "orgs"],
+      "properties": {
+        "files": { "enum": ["0", "1-10", "11-1k", "1k-100k", ">100k"] },
+        "orgs": { "enum": ["0", "1-10", "11-1k", "1k-100k", ">100k"] }
+      }
+    },
+    "notes": {
+      "$comment": "Why a field is null. Fixed codes only.",
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 5,
+      "items": {
+        "enum": [
+          "errors_not_measured",
+          "unshare_not_recorded",
+          "audit_trimmed",
+          "no_files",
+          "no_successful_read"
+        ]
+      }
+    }
+  }
+}

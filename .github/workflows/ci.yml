@@ -316,6 +316,13 @@ jobs:
           npm run build
           npm run check:guide-api
 
+      # The local usage report is the one output meant to leave an adopter's
+      # machine, by their hand. Its schema must stay closed, its import graph
+      # must contain no socket library, and it must build and validate with
+      # every network entry point trapped. Uses the build from the step above.
+      - name: The usage report is closed and cannot reach the network
+        run: npm run check:usage-report
+
       # AND THE QUESTION ABOUT THIS FILE ITSELF. Every gate above was written,
       # wired into `npm run verify`, and then had to be remembered here. On
       # 5 October 2026 two of them were not: check:guides shipped in a commit

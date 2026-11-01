@@ -50,6 +50,7 @@
     "errors.json",
     "ERRORS.md",
     "skills",
+    "usage-report.schema.json",
     "!skills/*/evals"
   ],
   "sideEffects": false,

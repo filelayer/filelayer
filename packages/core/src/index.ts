@@ -21,3 +21,4 @@ export * from './store.ts';
 export * from './filelayer.ts';
 export * from './simple.ts';
 export * from './delivery.ts';
+export * from './usage-report.ts';
