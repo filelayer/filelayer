@@ -873,9 +873,20 @@ ${sitemapEntries
 </urlset>
 `;
 
+// FILES THE SITE SERVES BYTE FOR BYTE, NOT RENDERED. The usage report's schema
+// names itself `https://filelayer.dev/usage-report.schema.json` in its `$id`,
+// so the site has to answer that URL with the same bytes the package ships. It
+// is copied here, from the one source in packages/core, and --check fails on a
+// one-byte difference like every page above. check:usage-report separately
+// fails if the `$id` names a path that is not in web/.
+const verbatim = [
+  { from: join('packages', 'core', 'usage-report.schema.json'), path: join('web', 'usage-report.schema.json') },
+];
+
 const artifacts = [
   ...built.map((b) => ({ path: join('web', b.out), text: b.text })),
   { path: join('web', 'sitemap.xml'), text: sitemap },
+  ...verbatim.map((v) => ({ path: v.path, text: readFileSync(join(ROOT, v.from), 'utf8') })),
 ];
 
 if (CHECK) {

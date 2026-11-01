@@ -44,6 +44,9 @@
  *      one. A page that documents a field the report does not have is the
  *      published claim the artifact does not satisfy (D020). The package copy
  *      is held to this page by check:copies.
+ *   6. THE SCHEMA'S `$id` RESOLVES. It names https://filelayer.dev/<path>, so
+ *      web/<path> must exist and hold the same bytes the package ships
+ *      (build:guides writes it; check:guides holds it there).
  *
  * --self-test plants `import 'node:https'` and a `fetch(` into a copy of the
  * module and requires check 2 to name both, plants an open object into a copy
@@ -204,6 +207,19 @@ export function llmsProblems(text, schema) {
   return dottedProblems(lines.join('\n'), schema, 'llms.txt');
 }
 
+// --- 6. the schema's $id is served by the site ---------------------------------
+// The schema names itself by URL. A reader, or a validator, that follows the
+// $id must find the same file, or the name is a claim nothing backs.
+export function idProblems(schemaObj, schemaText, webRoot = join(ROOT, 'web')) {
+  const id = schemaObj.$id;
+  const m = /^https:\/\/filelayer\.dev\/(.+)$/.exec(id ?? '');
+  if (!m) return [`$id: ${JSON.stringify(id)} is not a URL on filelayer.dev`];
+  const served = join(webRoot, m[1]);
+  if (!existsSync(served)) return [`$id: ${id} has no file at web/${m[1]}; run \`npm run build:guides\``];
+  if (readFileSync(served, 'utf8') !== schemaText) return [`$id: web/${m[1]} differs from the schema the package ships; run \`npm run build:guides\``];
+  return [];
+}
+
 if (process.argv.includes('--self-test')) {
   let bad = 0;
   const dir = mkdtempSync(join(tmpdir(), 'usage-report-selftest-'));
@@ -242,7 +258,13 @@ if (process.argv.includes('--self-test')) {
     pageProblems(page, schema).length === 0;
   if (!pageOk) bad++;
   console.log(`  ${pageOk ? 'ok  ' : 'FAIL'} planted page field, ops row, dotted field and note code are refused; the real page passes`);
-  console.log(`check-usage-report --self-test: ${4 - bad}/4 controls behaved`);
+  const emptyWeb = mkdtempSync(join(tmpdir(), 'usage-report-web-'));
+  const text = readFileSync(SCHEMA_PATH, 'utf8');
+  const idOk = idProblems(schema, text, emptyWeb).some((p) => /has no file at web\//.test(p)) &&
+    idProblems({ ...schema, $id: 'https://example.com/x.json' }, text).length === 1;
+  if (!idOk) bad++;
+  console.log(`  ${idOk ? 'ok  ' : 'FAIL'} an $id with no file under web/, and an $id off the domain, are refused`);
+  console.log(`check-usage-report --self-test: ${5 - bad}/5 controls behaved`);
   process.exit(bad === 0 ? 0 : 1);
 }
 
@@ -250,6 +272,7 @@ const problems = [];
 
 const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'));
 problems.push(...schemaProblems(schema).map((p) => `schema ${p}`));
+problems.push(...idProblems(schema, readFileSync(SCHEMA_PATH, 'utf8')));
 
 const net = networkProblems(ENTRY);
 problems.push(...net.problems.map((p) => `network ${p}`));
