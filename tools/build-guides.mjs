@@ -680,6 +680,16 @@ const sources = [
   // reader deciding whether to adopt is looking for exactly the disqualifying
   // information, and a vendor that supplies it is more useful than one that
   // makes them go and find it.
+  // THE USAGE REPORT, because an adopter deciding whether to share one reads
+  // what it contains first, and that page should not need GitHub.
+  {
+    src: 'docs/USAGE-REPORT.md',
+    out: 'usage-report.html',
+    url: `${SITE}/usage-report`,
+    slug: null,
+    isGuide: false,
+    isIndex: false,
+  },
   {
     src: 'TRUST.md',
     out: 'trust.html',

@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/USAGE-REPORT.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>The usage report: what your deployment did, in a file you control</title>
+<meta name="description" content="Filelayer sends nothing, ever. There is no telemetry and no background request, and this command does not add one.">
+
+<link rel="canonical" href="https://filelayer.dev/usage-report">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/usage-report">
+<meta property="og:title" content="The usage report: what your deployment did, in a file you control">
+<meta property="og:description" content="Filelayer sends nothing, ever. There is no telemetry and no background request, and this command does not add one.">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The usage report: what your deployment did, in a file you control">
+<meta name="twitter:description" content="Filelayer sends nothing, ever. There is no telemetry and no background request, and this command does not add one.">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "The usage report: what your deployment did, in a file you control",
+  "description": "Filelayer sends nothing, ever. There is no telemetry and no background request, and this command does not add one.",
+  "url": "https://filelayer.dev/usage-report",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.35.0"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/quickstart">Quickstart</a>
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>The usage report: what your deployment did, in a file you control</h1>
+<p>Filelayer sends nothing, ever. There is no telemetry and no background request, and this command does not add one.</p>
+<p><code>filelayer usage-report</code> reads your own database and writes one week of your deployment's usage, as aggregate counts, to a JSON file on your disk. You read the file. You decide whether to share it, and if you do, the place to share it is an <a href="https://github.com/filelayer/filelayer/issues" rel="noopener">issue on the repository</a>. A report you share is what lets us count your deployment as a verified adopter: Filelayer runs inside your application, so without one we cannot tell that your deployment exists at all.</p>
+<p>The file contains no file names, no user, org, file or grant identifiers, no IP addresses and no event contents. It contains the fields listed on this page and nothing else: its shape is <code>usage-report.schema.json</code>, which ships in the package, and the report is checked against it before it is written.</p>
+<h2 id="run-it">Run it</h2>
+<pre><code class="lang-bash">npx filelayer usage-report</code></pre>
+<p>It reads <code>DATABASE_URL</code> from the environment, as the rest of the CLI does, and writes <code>./filelayer-usage-report-&lt;first 8 characters of install_id&gt;-&lt;week&gt;.json</code> for the last complete ISO week (UTC). Then it prints the same JSON, so what you see is what the file holds.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Option</th><th>What it does</th></tr></thead>
+<tbody><tr><td><code>--week YYYY-Www</code></td><td>Report that ISO week instead, for example <code>--week 2026-W44</code>.</td></tr>
+<tr><td><code>--out &lt;path&gt;</code></td><td>Write the file there instead.</td></tr>
+<tr><td><code>--print</code></td><td>Print the report and write no file.</td></tr></tbody>
+</table></div>
+<ul><li><strong>It never overwrites a file.</strong> If the file exists, it says so and exits 1.</li>
+<li><strong>A bad week, or <code>--week</code> or <code>--out</code> with no value,</strong> exits 2 before it connects to anything.</li>
+<li><strong>The first report writes one row to your database:</strong> a random <code>install_id</code> in the table <code>filelayer_install</code> (schema version 16). That happens on the first run with or without <code>--print</code>. Every other part of the command only reads.</li></ul>
+<p>From code, the same report is <code>buildUsageReport(db, { week })</code>, where <code>db</code> is your <code>pg.Pool</code> or anything with the same <code>query()</code>, and <code>validateUsageReport(report)</code> returns the list of ways a value differs from the schema (empty when it matches). Here on a throwaway instance:</p>
+<pre><code class="lang-ts">import { buildUsageReport, validateUsageReport, isoWeekOf } from '@filelayer/core';
+
+await fl.files.put(new TextEncoder().encode('hello'), { org: 'acme', owner: 'ana' });
+
+const report = await buildUsageReport(fl.store.db, { week: isoWeekOf(new Date()) });
+assert.deepEqual(validateUsageReport(report), []);
+assert.equal(report.ops.upload, 1);
+assert.equal(report.errors, null);</code></pre>
+<h2 id="what-a-report-looks-like">What a report looks like</h2>
+<p>One week of a deployment that stored one file and read it once:</p>
+<pre><code class="lang-json">{
+  &quot;format&quot;: 1,
+  &quot;install_id&quot;: &quot;f6528ef5-5808-45f8-b186-42687ff837cb&quot;,
+  &quot;week&quot;: &quot;2026-W44&quot;,
+  &quot;lib_version&quot;: &quot;&lt;the version you installed&gt;&quot;,
+  &quot;node_major&quot;: 22,
+  &quot;storage_kind&quot;: [&quot;memory&quot;],
+  &quot;schema_version&quot;: 16,
+  &quot;days_active&quot;: 1,
+  &quot;ops&quot;: {
+    &quot;upload&quot;: 1,
+    &quot;read_allowed&quot;: 1,
+    &quot;read_denied&quot;: 0,
+    &quot;share_create&quot;: 0,
+    &quot;share_revoke&quot;: 0,
+    &quot;unshare&quot;: null,
+    &quot;direct_upload&quot;: 0,
+    &quot;job_run&quot;: 0
+  },
+  &quot;errors&quot;: null,
+  &quot;first_success_day&quot;: 0,
+  &quot;scale_bucket&quot;: { &quot;files&quot;: &quot;1-10&quot;, &quot;orgs&quot;: &quot;1-10&quot; },
+  &quot;notes&quot;: [&quot;errors_not_measured&quot;, &quot;unshare_not_recorded&quot;]
+}</code></pre>
+<h2 id="null-means-not-measured-never-zero"><code>null</code> means &quot;not measured&quot;, never zero</h2>
+<p>A field the report cannot measure honestly is <code>null</code>, and <code>notes</code> says why with one of six fixed codes. A <code>0</code> is a measured zero: the thing was looked for and did not happen. Reading a <code>null</code> as <code>0</code> is the one mistake this format is built to prevent.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Note</th><th>When it appears</th><th>Fields that are <code>null</code> because of it</th></tr></thead>
+<tbody><tr><td><code>errors_not_measured</code></td><td>always, in format 1</td><td><code>errors</code></td></tr>
+<tr><td><code>unshare_not_recorded</code></td><td>always, in format 1</td><td><code>ops.unshare</code></td></tr>
+<tr><td><code>audit_trimmed</code></td><td>a trim (<code>trimAuditChain()</code>) or an erasure (<code>eraseActorFromAuditChain()</code>) removed audit events from that week, so any count read from the audit log would be an undercount</td><td>every <code>ops</code> count except <code>job_run</code>, and <code>days_active</code>; also <code>first_success_day</code> when the first allowed read is no longer in the log</td></tr>
+<tr><td><code>no_files</code></td><td>the database has no file rows</td><td><code>storage_kind</code></td></tr>
+<tr><td><code>no_successful_read</code></td><td>no file has ever been read successfully</td><td><code>first_success_day</code></td></tr>
+<tr><td><code>lib_version_unknown</code></td><td>the installed package's <code>package.json</code> has no readable version</td><td><code>lib_version</code></td></tr></tbody>
+</table></div>
+<h2 id="what-each-field-means">What each field means</h2>
+<div class="table-scroll"><table>
+<thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+<tbody><tr><td><code>format</code></td><td>The version of this schema, <code>1</code>. A reader that does not know the number should not guess.</td></tr>
+<tr><td><code>install_id</code></td><td>A random UUID (version 4), generated on the first report and stored in <code>filelayer_install</code>. It is linked to nothing else in your database. It stays the same from week to week, which is what lets two reports be read as the same deployment.</td></tr>
+<tr><td><code>week</code></td><td>The ISO week reported, in UTC, as <code>YYYY-Www</code>.</td></tr>
+<tr><td><code>lib_version</code></td><td>The installed version of <code>@filelayer/core</code>.</td></tr>
+<tr><td><code>node_major</code></td><td>The major version of Node.js that ran the report.</td></tr>
+<tr><td><code>storage_kind</code></td><td>Every kind of storage your file rows record, as a list drawn from <code>memory</code>, <code>fs</code>, <code>s3</code>, <code>r2</code> and <code>other</code>.</td></tr>
+<tr><td><code>schema_version</code></td><td>The highest schema version applied to the database.</td></tr>
+<tr><td><code>days_active</code></td><td>How many days of that week, 0 to 7, have at least one audit event or one <code>usage_daily</code> row.</td></tr>
+<tr><td><code>ops</code></td><td>Counts for that week, below.</td></tr>
+<tr><td><code>errors</code></td><td>Not measured in format 1, so always <code>null</code>.</td></tr>
+<tr><td><code>first_success_day</code></td><td>Days from the schema being created to the first file read that was allowed, ever (not only in that week). <code>0</code> means the same day.</td></tr>
+<tr><td><code>scale_bucket.files</code>, <code>scale_bucket.orgs</code></td><td>How many file rows and orgs the database holds when the report runs, as one of <code>0</code>, <code>1-10</code>, <code>11-1k</code>, <code>1k-100k</code>, <code>&gt;100k</code>. A range, not the number.</td></tr>
+<tr><td><code>notes</code></td><td>The reasons for every <code>null</code>, from the table above.</td></tr></tbody>
+</table></div>
+<p>The <code>ops</code> counts come from rows the library already writes. Each is one audit action and decision, counted over the week:</p>
+<div class="table-scroll"><table>
+<thead><tr><th><code>ops</code> field</th><th>Counted from</th></tr></thead>
+<tbody><tr><td><code>upload</code></td><td><code>file.create</code>, allowed. Every file created, direct uploads included.</td></tr>
+<tr><td><code>read_allowed</code></td><td><code>file.read</code>, allowed. A redirect delivery is counted once, on its <code>file.read</code>.</td></tr>
+<tr><td><code>read_denied</code></td><td><code>file.read</code>, denied, and <code>file.access</code>, denied. A file operation by an identity your deployment has never seen is refused before any file is looked up and recorded as <code>file.access</code>; most of those are reads, and the audit row cannot say which ones are not, so all of them are counted here.</td></tr>
+<tr><td><code>share_create</code></td><td><code>grant.create</code>, allowed.</td></tr>
+<tr><td><code>share_revoke</code></td><td><code>grant.revoke</code>, allowed.</td></tr>
+<tr><td><code>unshare</code></td><td>Always <code>null</code> (<code>unshare_not_recorded</code>): <code>unshare()</code> writes one <code>grant.revoke</code> per grant it removes and nothing of its own, so its revocations are inside <code>share_revoke</code> and cannot be counted apart.</td></tr>
+<tr><td><code>direct_upload</code></td><td><code>file.upload_complete</code>, allowed: direct uploads that finished.</td></tr>
+<tr><td><code>job_run</code></td><td>Rows in <code>job_run</code> that finished during the week: background jobs, run directly or through <code>runMaintenance()</code>. This one is read from <code>job_run</code>, not from the audit log, so a trim never makes it <code>null</code>.</td></tr></tbody>
+</table></div>
+<h2 id="what-it-does-not-measure">What it does not measure</h2>
+<ul><li><strong>Errors.</strong> Nothing records an error anywhere a report could read it, so <code>errors</code> is always <code>null</code> in format 1. A deployment that is failing and a deployment that is not look the same in this report.</li>
+<li><strong><code>unshare()</code> apart from other revocations.</strong> See <code>ops.unshare</code> above.</li></ul>
+<p>Both are in <a href="https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md" rel="noopener">LIMITATIONS.md</a>.</p>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/USAGE-REPORT.md" rel="noopener"><code>docs/USAGE-REPORT.md</code></a>
+    in a public repository. The TypeScript on this page is executed by CI on every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/quickstart">Quickstart</a> ·
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="/trust">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.35.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>
