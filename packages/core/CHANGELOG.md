@@ -19,7 +19,23 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
-## [Unreleased]
+## [0.34.1] — 2026-11-01
+
+`@filelayer/core` is a TypeScript library for the files your SaaS users upload:
+you tell it who the caller is, and it decides what they may do with a file,
+serves the bytes and writes the audit event, on your own Postgres and your own
+bucket. This patch changes no API and no schema. It is the first version
+published from CI with npm provenance, the shipped test suite no longer fails
+when run as root, and two dated sentences that 0.34.0 shipped with the wrong
+version say the right one again.
+
+### Fixed — two sentences of history said 0.34.0
+
+`README.md` and `TRUST.md` each carry a sentence about when a published figure
+was wrong ("had drifted again by `0.33.0`", "from `0.15.0` to `0.33.0` it said
+six"). The 0.34.0 release tooling rewrote both to 0.34.0. They say 0.33.0
+again, and the tooling now reads each line together with the one before it, so
+a version on a wrapped line is recognised as history.
 
 ### Changed — published from CI, with provenance, and no npm token anywhere
 
