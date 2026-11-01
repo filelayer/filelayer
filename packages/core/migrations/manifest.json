@@ -10,7 +10,7 @@
     "to and no way to verify them; they have no file. Entries 4, 7 and 9 changed",
     "no schema. The gaps are the entries that cost you nothing."
   ],
-  "expects": 15,
+  "expects": 16,
   "migrations": [
     {
       "version": 3,
@@ -139,6 +139,18 @@
       "requiresDecision": false,
       "verifiedAgainst": {
         "from": "v0.32.0",
+        "to": "HEAD"
+      }
+    },
+    {
+      "version": 16,
+      "file": "016-install-id.sql",
+      "introducedIn": "0.35.0",
+      "title": "filelayer_install, one random id for the local usage report",
+      "transactional": true,
+      "requiresDecision": false,
+      "verifiedAgainst": {
+        "from": "v0.34.2",
         "to": "HEAD"
       }
     }

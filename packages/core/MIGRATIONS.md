@@ -1285,6 +1285,28 @@ only defence that does not share that blast radius.
 
 ---
 
+### Entry 16 — `0.34.x` → `0.35.0`: `filelayer_install`, one random id for the usage report
+
+`migrations/016-install-id.sql`. Transactional. One table and one index.
+**Additive**: nothing reads or writes it before this migration, and it starts
+empty.
+
+`0.35.0` adds a local usage report (`buildUsageReport()` and
+`filelayer usage-report`): one week of a deployment's activity as aggregate
+counts, written to a file the operator reads and may choose to share. Nothing
+is sent anywhere. Two reports from the same deployment weeks apart have to be
+recognisable as one deployment, so the first report writes a random id into
+`filelayer_install` and every later report repeats it.
+
+The id is linked to nothing: no org, no actor, no host. One row at most,
+enforced by a unique index on a constant. Deleting the row is allowed, and the
+next report then writes a new id, which is how an operator gives the
+deployment a new identity.
+
+If you never run a usage report, the table stays empty and costs nothing.
+
+---
+
 ## 4. What is not covered here
 
 - **Data migration between storage adapters.** Moving objects from one bucket to

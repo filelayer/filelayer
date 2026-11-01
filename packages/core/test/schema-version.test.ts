@@ -132,6 +132,7 @@ describe('the version table, and the states schemaStatus reports', () => {
     // fixture that was lying about being old.
     await db.query(`DROP TABLE audit_checkpoint`);
     await db.query(`DROP TABLE job_run`);
+    await db.query(`DROP TABLE filelayer_install`);
     await db.query(`ALTER TABLE usage_daily RENAME COLUMN bytes_written TO bytes_stored`);
     await db.query(`ALTER TABLE usage_daily ADD COLUMN authz_checks bigint NOT NULL DEFAULT 0`);
     await db.query(`DROP INDEX grant_idempotency_idx`);
@@ -149,6 +150,7 @@ describe('the version table, and the states schemaStatus reports', () => {
       '013-share-idempotency.sql',
       '014-usage-columns.sql',
       '015-job-run.sql',
+      '016-install-id.sql',
     ]);
   });
 
@@ -159,6 +161,7 @@ describe('the version table, and the states schemaStatus reports', () => {
     await db.query(`DROP TABLE filelayer_schema_version`);
     await db.query(`DROP TABLE audit_checkpoint`);
     await db.query(`DROP TABLE job_run`);
+    await db.query(`DROP TABLE filelayer_install`);
     await db.query(`ALTER TABLE usage_daily RENAME COLUMN bytes_written TO bytes_stored`);
     await db.query(`ALTER TABLE usage_daily ADD COLUMN authz_checks bigint NOT NULL DEFAULT 0`);
     await db.query(`DROP INDEX grant_idempotency_idx`);
@@ -170,7 +173,7 @@ describe('the version table, and the states schemaStatus reports', () => {
     assert.match(s.inferred!.because, /audit_no_truncate/);
     assert.deepEqual(
       s.outstanding.map((m) => m.version),
-      [8, 10, 11, 12, 13, 14, 15],
+      [8, 10, 11, 12, 13, 14, 15, 16],
       'and every outstanding migration is named, in order',
     );
   });
@@ -185,7 +188,7 @@ describe('the version table, and the states schemaStatus reports', () => {
     const s = await schemaStatus(db);
     assert.equal(s.state, 'behind');
     assert.equal(s.at, 6);
-    assert.deepEqual(s.outstanding.map((m) => m.version), [8, 10, 11, 12, 13, 14, 15]);
+    assert.deepEqual(s.outstanding.map((m) => m.version), [8, 10, 11, 12, 13, 14, 15, 16]);
   });
 
   it('reports ahead rather than pretending to understand a newer schema', async () => {
@@ -220,7 +223,7 @@ describe('schema.sql refuses a database it did not create', () => {
     await assert.rejects(
       () => (raw as Exec).exec(sql),
       (err: Error) => {
-        assert.match(err.message, /already at schema version 15/);
+        assert.match(err.message, /already at schema version 16/);
         assert.match(err.message, /migrations\//, 'and points at what to do instead');
         return true;
       },

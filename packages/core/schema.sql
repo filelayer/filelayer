@@ -1770,6 +1770,19 @@ CREATE TABLE file_owning_user_daily (
     PRIMARY KEY (org_id, day, actor_id)
 );
 
+-- One random identifier for this deployment, for the local usage report
+-- (`buildUsageReport()`, `filelayer usage-report`). Written by the first report,
+-- never by anything else, and linked to nothing: no org, no actor, no host. Its
+-- only purpose is to let two reports from the same deployment, weeks apart, be
+-- recognised as one deployment by whoever the adopter chooses to send them to.
+-- One row at most, enforced by the unique index on a constant. Deleting the row
+-- is allowed and is how an operator gives the deployment a new identity.
+CREATE TABLE filelayer_install (
+    id          uuid PRIMARY KEY,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX filelayer_install_one_row ON filelayer_install ((1));
+
 -- -----------------------------------------------------------------------------
 -- THE STAMP, LAST
 -- -----------------------------------------------------------------------------
@@ -1784,4 +1797,4 @@ CREATE TABLE file_owning_user_daily (
 -- be a fabricated history in a table whose whole purpose is to be believed. The
 -- note says which it is.
 INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
-    (15, '0.34.2', 'created whole from schema.sql at this version; migrations 1-14 were never run against this database because it never held an earlier schema');
+    (16, '0.34.2', 'created whole from schema.sql at this version; migrations 1-15 were never run against this database because it never held an earlier schema');
