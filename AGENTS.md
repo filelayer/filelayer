@@ -153,7 +153,17 @@ git -c credential.helper= -c credential.helper='!f() { echo username=x-access-to
 
 `.github/workflows/publish.yml` refuses a tag that does not name the version in
 `packages/core/package.json` or does not point at a commit on `main`, runs both
-verification chains, and publishes with npm trusted publishing. Nobody runs
+verification chains, and publishes with npm trusted publishing. Its
+`mcp-registry` job then publishes the MCP registry entry for the same version,
+only if the npm publish succeeded. To publish the entry alone for the version
+`main` carries (a catch-up), run the workflow by hand on `main`, after an
+"ok publish" for that:
+
+```
+gh workflow run publish.yml --ref main
+```
+
+(or the GitHub UI: Actions, Publish, Run workflow, branch main). Nobody runs
 `npm publish` by hand and no npm token exists. Moving the `alpha` dist-tag is
 manual and stays with the maintainer.
 

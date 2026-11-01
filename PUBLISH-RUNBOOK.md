@@ -707,6 +707,13 @@ Wait for propagation, then check it:
 dig +short TXT filelayer.dev | grep MCPv1
 ```
 
+> **From `0.35.1` on, CI publishes this entry** (D049): the `mcp-registry` job
+> of `.github/workflows/publish.yml` runs after a successful `npm publish` on
+> the same tag, with the DNS key as the `npm-publish` environment secret
+> `MCP_DNS_PRIVATE_KEY`, and a manual run of the workflow on `main` publishes
+> the entry for the version `main` carries. The steps below are the manual
+> procedure, kept for when CI cannot be used.
+
 ### Log in and publish
 
 > **`mcp-publisher login github` does not authorize this name.** It is the

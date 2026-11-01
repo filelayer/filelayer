@@ -341,6 +341,13 @@ jobs:
       - name: The publish guards' own controls, run and counted
         run: npm run check:publish-guards
 
+      # publish.yml holds the MCP registry key for filelayer.dev (D049). This
+      # reads the workflow and fails if the key is read more than once, printed,
+      # encoded or traced, or if the registry entry could be published without a
+      # successful npm publish first, or by an unpinned mcp-publisher.
+      - name: The publish workflow never prints the MCP key, and publishes the entry after npm
+        run: npm run check:publish-workflow
+
       # CHEAP, AND IT CATCHES WHAT THE EXPENSIVE ONE CANNOT SEE.
       # `check:migrations` executes every migration against the schema it
       # upgrades, so a migration FILE is never in doubt. Nothing compared the

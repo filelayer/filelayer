@@ -18,6 +18,9 @@ name: Publish
 on:
   push:
     tags: ['v*']
+  # Catch-up path: publish the MCP registry entry for the version main already
+  # carries, without publishing to npm. Its own "ok publish" (D049).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -34,6 +37,7 @@ defaults:
 jobs:
   publish:
     name: publish ${{ github.ref_name }}
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     environment: npm-publish
     permissions:
@@ -95,3 +99,79 @@ jobs:
       - name: npm publish (trusted publishing, with provenance)
         working-directory: packages/core
         run: npm publish --provenance --access public --tag latest
+
+  # THE MCP REGISTRY ENTRY, PUBLISHED AFTER npm AND ONLY AFTER A SUCCESSFUL npm
+  # PUBLISH (D049). An MCP client reads the registry entry and installs what it
+  # names, so an entry ahead of npm points at a version that does not exist and
+  # an entry behind it points at an old one. On a tag push this job needs
+  # `publish` to have succeeded; on a manual run `publish` is skipped by design
+  # and this publishes the entry for the version main carries, which must
+  # already be on npm.
+  #
+  # The DNS key for filelayer.dev is the environment secret MCP_DNS_PRIVATE_KEY
+  # (hex, ECDSA P-384), available only to jobs in the npm-publish environment
+  # and only to this step. GitHub masks it in logs; nothing here prints it, and
+  # tools/check-publish-workflow.mjs fails the build if anything starts to.
+  mcp-registry:
+    name: MCP registry entry
+    needs: publish
+    if: >-
+      always() &&
+      ((github.event_name == 'push' && needs.publish.result == 'success') ||
+       (github.event_name == 'workflow_dispatch' && needs.publish.result == 'skipped' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    environment: npm-publish
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+
+      # The entry may only describe a version npm already serves, and only the
+      # version this tree is at. server.json and package.json agreeing is
+      # check:registry's job; this asks npm.
+      - name: server.json names a version npm serves
+        run: |
+          v=$(node -p 'require("./server.json").version')
+          p=$(node -p 'require("./packages/core/package.json").version')
+          [ "$v" = "$p" ] || { echo "::error::server.json says $v and package.json says $p"; exit 1; }
+          npm view "@filelayer/core@$v" version | grep -qx "$v" \
+            || { echo "::error::@filelayer/core@$v is not on npm; the entry would point at nothing"; exit 1; }
+
+      # PINNED BY VERSION AND BY CHECKSUM. The checksum is the published one for
+      # this exact archive (registry_1.8.7_checksums.txt), recomputed when the
+      # pin was written. A changed archive under the same version fails here.
+      - name: Install mcp-publisher 1.8.7, verified
+        env:
+          MCP_PUBLISHER_VERSION: '1.8.7'
+          MCP_PUBLISHER_SHA256: '00b21004149a4ce66f0782508ae4a2bce67d1bea395a8da0bd8028159fb59579'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/mcp-publisher.tar.gz" \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  $RUNNER_TEMP/mcp-publisher.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/mcp-publisher.tar.gz" -C "$RUNNER_TEMP" mcp-publisher
+          "$RUNNER_TEMP/mcp-publisher" --version
+
+      - name: Log in to the MCP registry for filelayer.dev
+        env:
+          MCP_DNS_PRIVATE_KEY: ${{ secrets.MCP_DNS_PRIVATE_KEY }}
+        run: |
+          [ -n "$MCP_DNS_PRIVATE_KEY" ] || { echo "::error::the npm-publish environment has no MCP_DNS_PRIVATE_KEY secret"; exit 1; }
+          "$RUNNER_TEMP/mcp-publisher" login dns --algorithm ecdsap384 --domain filelayer.dev --private-key "$MCP_DNS_PRIVATE_KEY" >/dev/null
+
+      - name: Publish the entry
+        run: |
+          "$RUNNER_TEMP/mcp-publisher" publish
+
+      # And ask the registry what it now serves, rather than trusting the exit
+      # status. Retries, because the registry is read from a replica.
+      - name: The registry serves the version npm serves
+        run: |
+          for i in 1 2 3 4 5 6; do
+            node tools/check-mcp-registry-live.mjs && exit 0
+            sleep 20
+          done
+          exit 1
