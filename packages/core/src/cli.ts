@@ -82,11 +82,12 @@
  * reads prose inside a `.ts`.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { schemaStatus, type SchemaStatus } from './db.ts';
+import { buildUsageReport, isoWeekRange } from './usage-report.ts';
 
 const VERSION = (() => {
   try {
@@ -109,16 +110,27 @@ const USAGE = `filelayer ${VERSION}
 
   filelayer doctor           is this environment ready to run Filelayer?
   filelayer schema status    what schema version is the database at?
+  filelayer usage-report     write one week of this deployment's usage to a file
 
 Options
   --json                     machine-readable output on stdout
   --help, -h                 this
   --version, -v              the version
 
+usage-report
+  --week YYYY-Www            the ISO week to report (default: the last complete one)
+  --out <path>               where to write it (default: ./filelayer-usage-report-<id>-<week>.json)
+  --print                    print the report and write no file
+
+  The report is aggregate counts only, with the fields published in
+  usage-report.schema.json. Nothing is sent anywhere: it is a file you read and
+  may choose to share. An existing file is never overwritten.
+
 Reads DATABASE_URL from the environment. There is deliberately no flag for it:
 an argument lands in shell history, in \`ps\` output, and in CI logs.
 
-Everything here is read-only. This tool holds your database credential, which
+Everything here is read-only, except that the first \`usage-report\` writes one
+random id into filelayer_install. This tool holds your database credential, which
 is complete authority over every file and grant, so it does not pretend to
 enforce permissions -- see the comment at the top of src/cli.ts.
 
@@ -149,7 +161,13 @@ type Finding = {
 
 const argv = process.argv.slice(2);
 const wantsJson = argv.includes('--json');
-const positional = argv.filter((a) => !a.startsWith('-'));
+/** Flags that take a value: the value is not a word of the command. */
+const VALUE_FLAGS = ['--week', '--out'];
+const positional = argv.filter((a, i) => !a.startsWith('-') && !VALUE_FLAGS.includes(argv[i - 1] ?? ''));
+const flagValue = (name: string): string | undefined => {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
+};
 
 /** Secrets as arguments are refused rather than ignored. */
 const SECRET_FLAGS = [
@@ -613,6 +631,60 @@ if (command === 'schema status') {
     process.exit(status.state === 'current' ? 0 : 1);
   }
   report([describeSchema(status)]);
+}
+
+// THE LOCAL USAGE REPORT. The one command that writes: a single random id into
+// filelayer_install on its first run, and the report file. It writes the file
+// where the operator can read it before anything leaves, never overwrites one,
+// and sends nothing. `buildUsageReport()` validates the report against the
+// shipped schema before this sees it.
+if (command === 'usage-report') {
+  const week = flagValue('--week');
+  const out = flagValue('--out');
+  for (const [flag, value] of [['--week', week], ['--out', out]] as const) {
+    if (argv.includes(flag) && (value === undefined || value.startsWith('-'))) {
+      process.stderr.write(`filelayer usage-report: ${flag} needs a value.\n`);
+      process.exit(2);
+    }
+  }
+  if (week !== undefined) {
+    try {
+      isoWeekRange(week);
+    } catch (e) {
+      process.stderr.write(`filelayer usage-report: ${(e as Error).message}\n`);
+      process.exit(2);
+    }
+  }
+  const conn = await connect();
+  if (!conn.ok) report([conn.finding]);
+  let json: string;
+  let name: string;
+  try {
+    const r = await buildUsageReport(conn.pool as never, week !== undefined ? { week } : {});
+    json = `${JSON.stringify(r, null, 2)}\n`;
+    name = `filelayer-usage-report-${r.install_id.slice(0, 8)}-${r.week}.json`;
+  } catch (e) {
+    await conn.pool.end().catch(() => {});
+    process.stderr.write(`filelayer usage-report: ${String((e as Error).message).slice(0, 400)}\n`);
+    process.exit(1);
+  }
+  await conn.pool.end().catch(() => {});
+  if (argv.includes('--print')) {
+    process.stdout.write(json);
+    process.exit(0);
+  }
+  const path = out ?? join(process.cwd(), name);
+  if (existsSync(path)) {
+    process.stderr.write(`filelayer usage-report: ${path} already exists and was not overwritten.\n`);
+    process.exit(1);
+  }
+  writeFileSync(path, json, { flag: 'wx' });
+  process.stdout.write(
+    `${json}\nWritten to ${path}\n` +
+      'Nothing was sent anywhere. The file contains exactly what is printed above.\n' +
+      'To share it, attach it to an issue: https://github.com/filelayer/filelayer/issues\n',
+  );
+  process.exit(0);
 }
 
 // A DECIDED ABSENCE EXPLAINS ITSELF WHERE SOMEBODY LOOKS FOR IT.
