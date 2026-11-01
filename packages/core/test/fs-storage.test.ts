@@ -308,12 +308,30 @@ describe('FsStorage', () => {
     );
   });
 
-  it('refuses to report an unreadable store as an empty one', async () => {
+  it('refuses to report an unreadable store as an empty one', async (t) => {
     // THE DEFECT: every `readdir` error was swallowed, so a root with no read
     // permission returned `{ entries: [] }` -- indistinguishable from a store
     // nobody has written to. The caller is the orphan collector, and "nothing
     // is stored" is the single answer that makes it delete rows for files that
     // do exist. ENOENT stays benign, because an unused store has no directory.
+    const empty = new FsStorage(freshRoot());
+    assert.deepEqual(
+      (await empty.list('')).entries,
+      [],
+      'a store that was never written to is empty, not an error',
+    );
+
+    // AS ROOT THE UNREADABLE HALF CANNOT BE STAGED. `chmod 000` does not bind
+    // root, so the directory stays readable, `list()` succeeds, and the test
+    // failed while the code was right. Agent sandboxes and CI containers often
+    // run as root, and the published verify procedure promised them 0 failures
+    // (clean-room verification of 0.34.0). Skipped there, with the reason, never
+    // passed: a pass would claim a refusal nobody observed.
+    if (process.getuid?.() === 0) {
+      t.skip('running as root: chmod 000 does not deny root, so an unreadable directory cannot be staged');
+      return;
+    }
+
     const root = freshRoot();
     const s = new FsStorage(root);
     await s.put('k', bytes('x'), 'text/plain');
@@ -334,13 +352,6 @@ describe('FsStorage', () => {
     } finally {
       await chmod(leaf, 0o700);
     }
-
-    const empty = new FsStorage(freshRoot());
-    assert.deepEqual(
-      (await empty.list('')).entries,
-      [],
-      'a store that was never written to is empty, not an error',
-    );
   });
 
   it('streams, in chunks, instead of buffering the object to slice it', async () => {

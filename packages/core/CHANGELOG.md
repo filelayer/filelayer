@@ -19,6 +19,18 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [Unreleased]
+
+### Fixed — the shipped suite failed one test when run as root
+
+`test/fs-storage.test.ts` checks that an unreadable store is reported as an
+error rather than as an empty one, by `chmod 000` on a directory. Root ignores
+that mode, so as root the directory stayed readable and the test failed while
+the code was right. Agent sandboxes and CI containers often run as root, and
+`docs/VERIFY-WHAT-YOU-INSTALLED.md` promises them zero failures. As root the
+test now skips with that reason; as any other user it runs unchanged. The
+"never written means empty" half of the test runs in both cases.
+
 ## [0.34.0] — 2026-10-31
 
 `@filelayer/core` is a TypeScript library for the files your SaaS users upload:
