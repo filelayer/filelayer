@@ -46,7 +46,13 @@ describe('usage report', () => {
     assert.equal(r.ops.unshare, null, 'unshare leaves no row of its own, so null, not 0');
     assert.equal(r.storage_kind, null, 'no file exists, so the storage in use is unknown');
     assert.equal(r.first_success_day, null);
-    assert.deepEqual(r.notes, ['errors_not_measured', 'unshare_not_recorded', 'no_files', 'no_successful_read']);
+    // `lib_version_unknown` appears only where package.json carries no version,
+    // which is the documented shape of running this suite from an install.
+    assert.deepEqual(
+      r.notes.filter((n) => n !== 'lib_version_unknown'),
+      ['errors_not_measured', 'unshare_not_recorded', 'no_files', 'no_successful_read'],
+    );
+    assert.equal(r.lib_version === null, r.notes.includes('lib_version_unknown'), 'null iff noted');
     assert.equal(r.ops.upload, 0, 'the audit log is intact for this week, so zero is a measured zero');
     assert.deepEqual(r.scale_bucket, { files: '0', orgs: '0' });
   });

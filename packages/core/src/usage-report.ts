@@ -50,7 +50,8 @@ export type UsageReportNote =
   | 'unshare_not_recorded'
   | 'audit_trimmed'
   | 'no_files'
-  | 'no_successful_read';
+  | 'no_successful_read'
+  | 'lib_version_unknown';
 
 export type ScaleBucket = '0' | '1-10' | '11-1k' | '1k-100k' | '>100k';
 
@@ -60,7 +61,7 @@ export interface UsageReport {
   format: 1;
   install_id: string;
   week: string;
-  lib_version: string;
+  lib_version: string | null;
   node_major: number;
   storage_kind: StorageKind[] | null;
   schema_version: number;
@@ -216,6 +217,7 @@ const NOTE_ORDER: readonly UsageReportNote[] = [
   'audit_trimmed',
   'no_files',
   'no_successful_read',
+  'lib_version_unknown',
 ];
 
 /**
@@ -357,11 +359,24 @@ export async function buildUsageReport(
     `SELECT (SELECT COUNT(*) FROM file) AS files, (SELECT COUNT(*) FROM org) AS orgs`,
   );
 
+  // The package's own version, from its package.json. Null rather than a guess
+  // when that file has no version: the documented way to run this suite from
+  // an install replaces package.json with a stub, and an adopter's tooling can
+  // too.
+  let libVersion: string | null = null;
+  try {
+    const v = (JSON.parse(readFileSync(PKG_PATH, 'utf8')) as { version?: unknown }).version;
+    if (typeof v === 'string' && /^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-[0-9A-Za-z.]{1,32})?$/.test(v)) libVersion = v;
+  } catch {
+    libVersion = null;
+  }
+  if (libVersion === null) notes.add('lib_version_unknown');
+
   const report: UsageReport = {
     format: 1,
     install_id: installId,
     week,
-    lib_version: (JSON.parse(readFileSync(PKG_PATH, 'utf8')) as { version: string }).version,
+    lib_version: libVersion,
     node_major: Number(process.versions.node.split('.')[0]),
     storage_kind: storageKind,
     schema_version: schemaVersion,

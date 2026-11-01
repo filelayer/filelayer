@@ -36,7 +36,8 @@
       "pattern": "^[0-9]{4}-W(0[1-9]|[1-4][0-9]|5[0-3])$"
     },
     "lib_version": {
-      "type": "string",
+      "$comment": "null when the package's own package.json has no readable version (note lib_version_unknown).",
+      "type": ["string", "null"],
       "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}(-[0-9A-Za-z.]{1,32})?$"
     },
     "node_major": {
@@ -110,14 +111,15 @@
       "$comment": "Why a field is null. Fixed codes only.",
       "type": "array",
       "uniqueItems": true,
-      "maxItems": 5,
+      "maxItems": 6,
       "items": {
         "enum": [
           "errors_not_measured",
           "unshare_not_recorded",
           "audit_trimmed",
           "no_files",
-          "no_successful_read"
+          "no_successful_read",
+          "lib_version_unknown"
         ]
       }
     }

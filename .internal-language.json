@@ -61,6 +61,7 @@
     "packages/core/TRUST.md",
     "packages/core/SECURITY.md",
     "packages/core/migrations/*.sql",
+    "packages/core/usage-report.schema.json",
     "packages/core/migrations/*.md",
     "packages/core/migrations/*.json",
     "LIMITATIONS.md",
