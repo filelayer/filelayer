@@ -85,7 +85,7 @@ Put the cheap check that can fail in front of the expensive work, not behind it.
 
 ## A release note is read by strangers, so write its first paragraph for one
 
-`benchmark/gate4/RESULTS.md` searched for this project on 16 October 2026 and got
+A search measurement run on 16 October 2026 looked for this project and got
 ten results: the repository, and **nine release pages**. Not the website, which
 has eight pages, six rendered guides, a sitemap and JSON-LD and did not appear
 at all.

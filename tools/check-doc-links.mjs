@@ -382,8 +382,22 @@ for (const doc of DOCS) {
       // resolve to a path whose tracked status is checked by the first
       // candidate when it is the same file, and keeping them loose avoids
       // re-deriving repository-root-relative forms here.
+      //
+      // AND THE CANDIDATES ARE HELD TO THE SAME RULE. "Stay on the filesystem"
+      // let a document at the repository root cite an ignored file: its
+      // relative candidate IS the root-relative path, it exists on the author's
+      // disk, and the check passed there. AGENTS.md cited
+      // benchmark/gate4/RESULTS.md (kept out of the repository on purpose) from
+      // 16 October, every local run was green, and CI's clean checkout failed
+      // this step on every push to main for two weeks. A candidate inside the
+      // repository counts only if it is tracked; one outside it (none today)
+      // still falls back to the filesystem.
       const candidates = [resolve(dirname(abs), path), join(ROOT, 'packages/core', path)];
-      if (!isTracked(path) && !candidates.some(existsSync)) {
+      const resolves = (c) => {
+        const rel = relative(ROOT, c).split(sep).join('/');
+        return rel.startsWith('..') ? existsSync(c) : isTracked(rel);
+      };
+      if (!isTracked(path) && !candidates.some(resolves)) {
         fail(
           doc,
           n,
