@@ -143,6 +143,22 @@ describe('the CLI', () => {
     assert.ok(!/ at /.test(r.stderr), `a stack trace reached stderr:\n${r.stderr}`);
   });
 
+  it('usage-report refuses a malformed week before it connects to anything', async () => {
+    for (const args of [['--week', '2026-W99'], ['--week', 'last'], ['--week']]) {
+      const r = await run(['usage-report', ...args]);
+      assert.equal(r.status, 2, `${args.join(' ')} is a usage error`);
+      assert.match(r.stderr, /usage-report:/);
+      assert.ok(!/DATABASE_URL/.test(r.stdout), 'it did not get as far as the database');
+    }
+  });
+
+  it('usage-report reads the week value as a value, not as part of the command', async () => {
+    const r = await run(['usage-report', '--week', '2026-W40']);
+    assert.ok(!/unknown command/.test(r.stderr), r.stderr);
+    assert.equal(r.status, 1, 'it went on to look for a database');
+    assert.match(r.stdout, /DATABASE_URL/);
+  });
+
   it('emits parseable json, because an agent reads it', async () => {
     const r = await run(['doctor', '--json']);
     assert.equal(r.status, 1);
