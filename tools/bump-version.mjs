@@ -203,6 +203,12 @@ const DATED = [
  * whole of the next, so a line read alone carries no dating word at all. The
  * DATED test therefore reads each line together with the one before it.
  */
+//
+// KNOWN LIMIT: a pair of lines, not a paragraph. A dating word two or more
+// lines above the version is still invisible, and so is history written
+// without any of the DATED words. The direction of that error is the one
+// nothing catches (an over-replacement reads as a current claim), so read the
+// diff of every bump line by line; 0.34.1's review found four such sentences.
 const datedInContext = (prev, text) => DATED.some((re) => re.test(text) || re.test(`${prev} ${text}`));
 
 const tracked = execFileSync('git', ['ls-files', '-z'], {
