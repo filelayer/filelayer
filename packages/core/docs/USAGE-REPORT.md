@@ -16,6 +16,25 @@ addresses and no event contents. It contains the fields listed on this page and
 nothing else: its shape is `usage-report.schema.json`, which ships in the
 package, and the report is checked against it before it is written.
 
+## Before you run it
+
+The command opens its own connection to PostgreSQL, so it needs two things
+from the project you run it in:
+
+- **The `pg` driver:** `npm install pg`. `@filelayer/core` has no runtime
+  dependencies, and the CLI is the only part of it that needs a driver.
+- **`DATABASE_URL`**, pointing at the PostgreSQL database your deployment uses,
+  and reachable from where you run the command.
+
+If either is missing, it stops before reading anything and says which one.
+
+**If your Filelayer runs on PGlite** (`Filelayer.quickstart()`, or a PGlite
+instance of your own), the database lives inside your application's process
+and the command has nothing to connect to. Build the report from code instead,
+with the same `db` you hand to `new Filelayer(db, storage, options)`; on an
+instance from `Filelayer.quickstart()` that is `fl.store.db`. That route is
+shown below, under the options.
+
 ## Run it
 
 ```bash
@@ -42,9 +61,10 @@ see is what the file holds.
   reads.
 
 From code, the same report is `buildUsageReport(db, { week })`, where `db` is
-your `pg.Pool` or anything with the same `query()`, and
-`validateUsageReport(report)` returns the list of ways a value differs from the
-schema (empty when it matches). Here on a throwaway instance:
+your `pg.Pool`, your PGlite instance, or anything else you hand to
+`new Filelayer()`. `validateUsageReport(report)` returns the list of ways a
+value differs from the schema (empty when it matches). Here on a throwaway
+PGlite instance:
 
 <!-- doccheck-setup
 import { Filelayer } from '@filelayer/core';
@@ -61,6 +81,19 @@ const report = await buildUsageReport(fl.store.db, { week: isoWeekOf(new Date())
 assert.deepEqual(validateUsageReport(report), []);
 assert.equal(report.ops.upload, 1);
 assert.equal(report.errors, null);
+```
+
+From code, writing the file is yours, and so are the two things the command
+does for you: it never overwrites a file, and it shows you what it wrote.
+
+<!-- doccheck: skip reason="writes a file into the working directory, which a documentation check must not do" -->
+
+```ts
+import { writeFileSync } from 'node:fs';
+
+const json = `${JSON.stringify(report, null, 2)}\n`;
+writeFileSync(`filelayer-usage-report-${report.install_id.slice(0, 8)}-${report.week}.json`, json, { flag: 'wx' });
+console.log(json);
 ```
 
 ## What a report looks like

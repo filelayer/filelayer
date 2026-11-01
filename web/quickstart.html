@@ -192,6 +192,7 @@ await fl.files.put(handbook, { org: 'acme', owner: 'ceo', visibility: 'org' }); 
 // share.secret is returned EXACTLY ONCE. Only its SHA-256 is stored.
 // share.url is the ready-made link, built from the baseUrl you constructed with.
 // share.grantId is what you pass to revoke().</code></pre>
+<p>Taking it back is one call, made as someone allowed to: <code>await fl.shares.revoke(share.grantId, { as: 'ceo' })</code>. It takes effect on the next request, for URLs already sent; it is shown in full further down this section.</p>
 <p><strong><code>capabilities</code> is how you hand over more than reading</strong>, and it defaults to <code>['read']</code>. Until you find it, delegation reads as broken: the person you shared with tries to share onward and gets a <code>404</code>, because what they hold says <code>read</code> and nothing else.</p>
 <p><strong>A LINK can only ever carry <code>read</code>.</strong> <code>shares.create</code> refuses anything else with <code>400 link_is_read_only</code> before any query, and the <code>grant_link_read_only</code> constraint refuses the row even from a <code>psql</code> session. Not a policy you can argue with: a bearer secret that can mint further authority is a bearer secret that escapes. So delegation is granted to a NAMED user:</p>
 <pre><code class="lang-ts">const delegable = await fl.shares.create(fileId, {

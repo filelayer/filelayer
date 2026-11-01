@@ -282,6 +282,11 @@ const share = await fl.shares.create(fileId, {
 // share.grantId is what you pass to revoke().
 ```
 
+Taking it back is one call, made as someone allowed to:
+`await fl.shares.revoke(share.grantId, { as: 'ceo' })`. It takes effect on the
+next request, for URLs already sent; it is shown in full further down this
+section.
+
 **`capabilities` is how you hand over more than reading**, and it defaults to
 `['read']`. Until you find it, delegation reads as broken: the person you shared
 with tries to share onward and gets a `404`, because what they hold says `read`

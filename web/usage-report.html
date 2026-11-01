@@ -90,6 +90,12 @@
 <p>Filelayer sends nothing, ever. There is no telemetry and no background request, and this command does not add one.</p>
 <p><code>filelayer usage-report</code> reads your own database and writes one week of your deployment's usage, as aggregate counts, to a JSON file on your disk. You read the file. You decide whether to share it, and if you do, the place to share it is an <a href="https://github.com/filelayer/filelayer/issues" rel="noopener">issue on the repository</a>. A report you share is what lets us count your deployment as a verified adopter: Filelayer runs inside your application, so without one we cannot tell that your deployment exists at all.</p>
 <p>The file contains no file names, no user, org, file or grant identifiers, no IP addresses and no event contents. It contains the fields listed on this page and nothing else: its shape is <code>usage-report.schema.json</code>, which ships in the package, and the report is checked against it before it is written.</p>
+<h2 id="before-you-run-it">Before you run it</h2>
+<p>The command opens its own connection to PostgreSQL, so it needs two things from the project you run it in:</p>
+<ul><li><strong>The <code>pg</code> driver:</strong> <code>npm install pg</code>. <code>@filelayer/core</code> has no runtime dependencies, and the CLI is the only part of it that needs a driver.</li>
+<li><strong><code>DATABASE_URL</code></strong>, pointing at the PostgreSQL database your deployment uses, and reachable from where you run the command.</li></ul>
+<p>If either is missing, it stops before reading anything and says which one.</p>
+<p><strong>If your Filelayer runs on PGlite</strong> (<code>Filelayer.quickstart()</code>, or a PGlite instance of your own), the database lives inside your application's process and the command has nothing to connect to. Build the report from code instead, with the same <code>db</code> you hand to <code>new Filelayer(db, storage, options)</code>; on an instance from <code>Filelayer.quickstart()</code> that is <code>fl.store.db</code>. That route is shown below, under the options.</p>
 <h2 id="run-it">Run it</h2>
 <pre><code class="lang-bash">npx filelayer usage-report</code></pre>
 <p>It reads <code>DATABASE_URL</code> from the environment, as the rest of the CLI does, and writes <code>./filelayer-usage-report-&lt;first 8 characters of install_id&gt;-&lt;week&gt;.json</code> for the last complete ISO week (UTC). Then it prints the same JSON, so what you see is what the file holds.</p>
@@ -102,7 +108,7 @@
 <ul><li><strong>It never overwrites a file.</strong> If the file exists, it says so and exits 1.</li>
 <li><strong>A bad week, or <code>--week</code> or <code>--out</code> with no value,</strong> exits 2 before it connects to anything.</li>
 <li><strong>The first report writes one row to your database:</strong> a random <code>install_id</code> in the table <code>filelayer_install</code> (schema version 16). That happens on the first run with or without <code>--print</code>. Every other part of the command only reads.</li></ul>
-<p>From code, the same report is <code>buildUsageReport(db, { week })</code>, where <code>db</code> is your <code>pg.Pool</code> or anything with the same <code>query()</code>, and <code>validateUsageReport(report)</code> returns the list of ways a value differs from the schema (empty when it matches). Here on a throwaway instance:</p>
+<p>From code, the same report is <code>buildUsageReport(db, { week })</code>, where <code>db</code> is your <code>pg.Pool</code>, your PGlite instance, or anything else you hand to <code>new Filelayer()</code>. <code>validateUsageReport(report)</code> returns the list of ways a value differs from the schema (empty when it matches). Here on a throwaway PGlite instance:</p>
 <pre><code class="lang-ts">import { buildUsageReport, validateUsageReport, isoWeekOf } from '@filelayer/core';
 
 await fl.files.put(new TextEncoder().encode('hello'), { org: 'acme', owner: 'ana' });
@@ -111,6 +117,12 @@ const report = await buildUsageReport(fl.store.db, { week: isoWeekOf(new Date())
 assert.deepEqual(validateUsageReport(report), []);
 assert.equal(report.ops.upload, 1);
 assert.equal(report.errors, null);</code></pre>
+<p>From code, writing the file is yours, and so are the two things the command does for you: it never overwrites a file, and it shows you what it wrote.</p>
+<pre><code class="lang-ts">import { writeFileSync } from 'node:fs';
+
+const json = `${JSON.stringify(report, null, 2)}\n`;
+writeFileSync(`filelayer-usage-report-${report.install_id.slice(0, 8)}-${report.week}.json`, json, { flag: 'wx' });
+console.log(json);</code></pre>
 <h2 id="what-a-report-looks-like">What a report looks like</h2>
 <p>One week of a deployment that stored one file and read it once:</p>
 <pre><code class="lang-json">{
