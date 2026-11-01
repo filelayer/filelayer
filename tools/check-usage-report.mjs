@@ -36,10 +36,20 @@
  *      `net`, `tls` and `dns` replaced by functions that throw.
  *   4. THE VALIDATOR REFUSES WHAT MUST NOT BE THERE: a planted `org_id`, an
  *      unknown `ops` key, a storage kind outside the list, an `errors` of 0.
+ *   5. THE PUBLISHED PAGE SAYS WHAT THE SCHEMA SAYS. docs/USAGE-REPORT.md's
+ *      field table, `ops` table and notes table name exactly the schema's
+ *      fields, `ops` keys and note codes, both ways; its example report has
+ *      exactly the schema's keys; every `ops.x` / `scale_bucket.x` it or
+ *      llms.txt mentions exists, and nothing reads as a note code that is not
+ *      one. A page that documents a field the report does not have is the
+ *      published claim the artifact does not satisfy (D020). The package copy
+ *      is held to this page by check:copies.
  *
  * --self-test plants `import 'node:https'` and a `fetch(` into a copy of the
- * module and requires check 2 to name both, and plants an open object into a
- * copy of the schema and requires check 1 to refuse it.
+ * module and requires check 2 to name both, plants an open object into a copy
+ * of the schema and requires check 1 to refuse it, and plants a field row, an
+ * `ops` row, a dotted field and a note code into a copy of the page and
+ * requires check 5 to refuse each.
  */
 
 import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
@@ -114,6 +124,86 @@ export function networkProblems(entry) {
   return { problems: out, files: seen.size };
 }
 
+// --- 5. the published page and llms.txt say what the schema says ----------------
+const PAGE = join(ROOT, 'docs', 'USAGE-REPORT.md');
+const LLMS = join(ROOT, 'llms.txt');
+
+/** Rows of the markdown table that follows `heading`: first cell, unwrapped from backticks. */
+function tableFirstCells(md, heading) {
+  const at = md.indexOf(heading);
+  if (at < 0) return null;
+  const lines = md.slice(at).split('\n').slice(1);
+  const start = lines.findIndex((l) => l.startsWith('|'));
+  if (start < 0) return null;
+  const cells = [];
+  for (const l of lines.slice(start + 2)) {
+    if (!l.startsWith('|')) break;
+    cells.push(l.split('|')[1].trim());
+  }
+  return cells;
+}
+
+const codes = (cell) => [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+
+export function pageProblems(md, schema) {
+  const out = [];
+  const top = Object.keys(schema.properties);
+  const ops = Object.keys(schema.properties.ops.properties);
+  const scale = Object.keys(schema.properties.scale_bucket.properties);
+  const notes = schema.properties.notes.items.enum;
+  const expectFields = top.flatMap((k) => (k === 'scale_bucket' ? scale.map((s) => `scale_bucket.${s}`) : [k]));
+  const compare = (what, documented, expected) => {
+    if (documented === null) { out.push(`${what}: table not found`); return; }
+    const d = new Set(documented);
+    for (const e of expected) if (!d.has(e)) out.push(`${what}: the schema has \`${e}\`, the page does not`);
+    for (const x of d) if (!expected.includes(x)) out.push(`${what}: the page has \`${x}\`, the schema does not`);
+  };
+  const fieldCells = tableFirstCells(md, '## What each field means');
+  compare('field table', fieldCells && fieldCells.flatMap(codes), expectFields);
+  const opsCells = tableFirstCells(md, 'The `ops` counts come from');
+  compare('ops table', opsCells && opsCells.flatMap(codes), ops);
+  const noteCells = tableFirstCells(md, '## `null` means');
+  compare('notes table', noteCells && noteCells.flatMap(codes), notes);
+  // The example report has exactly the schema's keys, at both levels.
+  const ex = /## What a report looks like[\s\S]*?```json\n([\s\S]*?)```/.exec(md);
+  if (!ex) out.push('example: no JSON example found');
+  else {
+    let obj = null;
+    try { obj = JSON.parse(ex[1]); } catch (e) { out.push(`example: not JSON (${e.message})`); }
+    if (obj) {
+      compare('example keys', Object.keys(obj), top);
+      compare('example ops keys', Object.keys(obj.ops ?? {}), ops);
+    }
+  }
+  out.push(...dottedProblems(md, schema, 'page'));
+  return out;
+}
+
+/** Every `ops.x` / `scale_bucket.x` reference names a real field, and every note code is real. */
+export function dottedProblems(text, schema, where) {
+  const out = [];
+  const ops = Object.keys(schema.properties.ops.properties);
+  const scale = Object.keys(schema.properties.scale_bucket.properties);
+  for (const m of text.matchAll(/`(ops|scale_bucket)\.([a-z_]+)`/g)) {
+    const ok = (m[1] === 'ops' ? ops : scale).includes(m[2]);
+    if (!ok) out.push(`${where}: \`${m[1]}.${m[2]}\` is not a field of the schema`);
+  }
+  const notes = schema.properties.notes.items.enum;
+  for (const m of text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)) {
+    const t = m[1];
+    if (/^(errors_not|unshare_not|audit_trim|no_files|no_success|lib_version_)/.test(t) && !notes.includes(t)) {
+      out.push(`${where}: \`${t}\` reads as a note code and is not one`);
+    }
+  }
+  return out;
+}
+
+export function llmsProblems(text, schema) {
+  const lines = text.split('\n').filter((l) => l.includes('usage-report'));
+  if (lines.length === 0) return ['llms.txt: no line about the usage report'];
+  return dottedProblems(lines.join('\n'), schema, 'llms.txt');
+}
+
 if (process.argv.includes('--self-test')) {
   let bad = 0;
   const dir = mkdtempSync(join(tmpdir(), 'usage-report-selftest-'));
@@ -139,7 +229,20 @@ if (process.argv.includes('--self-test')) {
   const clean = schemaProblems(schema).length === 0;
   if (!clean) bad++;
   console.log(`  ${clean ? 'ok  ' : 'FAIL'} the real schema passes`);
-  console.log(`check-usage-report --self-test: ${3 - bad}/3 controls behaved`);
+
+  const page = readFileSync(PAGE, 'utf8');
+  const plantedRow = page.replace('| `node_major` |', '| `host_name` | the machine it ran on |\n| `node_major` |');
+  const plantedOps = page.replace('| `job_run` |', '| `list` | every listing |\n| `job_run` |');
+  const plantedRef = `${page}\nSee \`ops.downloads\` and \`audit_trimmed_partly\`.\n`;
+  const pageOk =
+    plantedRow !== page && pageProblems(plantedRow, schema).some((p) => /host_name/.test(p)) &&
+    plantedOps !== page && pageProblems(plantedOps, schema).some((p) => /`list`/.test(p)) &&
+    pageProblems(plantedRef, schema).some((p) => /ops\.downloads/.test(p)) &&
+    pageProblems(plantedRef, schema).some((p) => /audit_trimmed_partly/.test(p)) &&
+    pageProblems(page, schema).length === 0;
+  if (!pageOk) bad++;
+  console.log(`  ${pageOk ? 'ok  ' : 'FAIL'} planted page field, ops row, dotted field and note code are refused; the real page passes`);
+  console.log(`check-usage-report --self-test: ${4 - bad}/4 controls behaved`);
   process.exit(bad === 0 ? 0 : 1);
 }
 
@@ -150,6 +253,10 @@ problems.push(...schemaProblems(schema).map((p) => `schema ${p}`));
 
 const net = networkProblems(ENTRY);
 problems.push(...net.problems.map((p) => `network ${p}`));
+
+if (!existsSync(PAGE)) problems.push('page: docs/USAGE-REPORT.md does not exist');
+else problems.push(...pageProblems(readFileSync(PAGE, 'utf8'), schema).map((p) => `docs/USAGE-REPORT.md ${p}`));
+problems.push(...llmsProblems(readFileSync(LLMS, 'utf8'), schema));
 
 // --- 3 and 4, against the built package ---------------------------------------
 const dist = join(CORE, 'dist', 'index.js');
@@ -226,5 +333,6 @@ if (problems.length) {
 }
 console.log(
   `check-usage-report: clean. Schema closed; ${net.files} module(s) in the import graph, no network; ` +
-    `report built with the network trapped and valid (${built}); four planted violations refused.`,
+    `report built with the network trapped and valid (${built}); four planted violations refused; ` +
+    'docs/USAGE-REPORT.md tables, example and llms.txt agree with the schema.',
 );
