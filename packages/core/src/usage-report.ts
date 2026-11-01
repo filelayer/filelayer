@@ -51,7 +51,8 @@ export type UsageReportNote =
   | 'audit_trimmed'
   | 'no_files'
   | 'no_successful_read'
-  | 'lib_version_unknown';
+  | 'lib_version_unknown'
+  | 'before_install';
 
 export type ScaleBucket = '0' | '1-10' | '11-1k' | '1k-100k' | '>100k';
 
@@ -72,7 +73,7 @@ export interface UsageReport {
     read_denied: number | null;
     share_create: number | null;
     share_revoke: number | null;
-    unshare: number | null;
+    unshare: null;
     direct_upload: number | null;
     job_run: number | null;
   };
@@ -94,7 +95,7 @@ type Schema = Record<string, unknown>;
 const KNOWN = new Set([
   '$schema', '$id', '$comment', 'title', 'type', 'const', 'enum', 'pattern',
   'minimum', 'maximum', 'properties', 'required', 'additionalProperties',
-  'items', 'uniqueItems', 'maxItems',
+  'items', 'uniqueItems', 'maxItems', 'x-nullRequiresNote',
 ]);
 
 let cachedSchema: Schema | null = null;
@@ -165,9 +166,41 @@ export function validateAgainst(schema: Schema, value: unknown, path = '$'): str
   return out;
 }
 
+function at(value: unknown, path: string): unknown {
+  let cur: unknown = value;
+  for (const part of path.split('.')) {
+    if (cur === null || typeof cur !== 'object') return undefined;
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return cur;
+}
+
+/**
+ * A null that nothing explains. The schema's `x-nullRequiresNote` maps every
+ * nullable field to the note codes that may explain it; a field that is null
+ * with none of them in `notes` is refused, because a reader cannot tell an
+ * unexplained null from a bug, and the one thing this format promises is that
+ * a null always says why.
+ */
+export function unexplainedNulls(schema: Schema, value: unknown): string[] {
+  const rules = (schema['x-nullRequiresNote'] ?? {}) as Record<string, unknown>;
+  const notes = at(value, 'notes');
+  const have = new Set(Array.isArray(notes) ? (notes as unknown[]) : []);
+  const out: string[] = [];
+  for (const [path, codes] of Object.entries(rules)) {
+    if (path.startsWith('$') || !Array.isArray(codes)) continue;
+    if (at(value, path) === null && !codes.some((c) => have.has(c))) {
+      out.push(`$.${path}: is null, and notes carry none of ${JSON.stringify(codes)}`);
+    }
+  }
+  return out;
+}
+
 /** Problems with a report against the shipped schema. Empty means valid. */
 export function validateUsageReport(value: unknown): string[] {
-  return validateAgainst(usageReportSchema(), value);
+  const schema = usageReportSchema();
+  const shape = validateAgainst(schema, value);
+  return shape.length > 0 ? shape : unexplainedNulls(schema, value);
 }
 
 // -----------------------------------------------------------------------------
@@ -218,6 +251,7 @@ const NOTE_ORDER: readonly UsageReportNote[] = [
   'no_files',
   'no_successful_read',
   'lib_version_unknown',
+  'before_install',
 ];
 
 /**
@@ -235,7 +269,7 @@ const NOTE_ORDER: readonly UsageReportNote[] = [
  * it removes and nothing of its own, so it cannot be counted apart from
  * `share_revoke` and is null.
  */
-const AUDIT_OPS: readonly { action: string; decision: 'allow' | 'deny'; field: keyof UsageReport['ops'] }[] = [
+const AUDIT_OPS: readonly { action: string; decision: 'allow' | 'deny'; field: Exclude<keyof UsageReport['ops'], 'unshare' | 'job_run'> }[] = [
   { action: 'file.create', decision: 'allow', field: 'upload' },
   { action: 'file.read', decision: 'allow', field: 'read_allowed' },
   { action: 'file.read', decision: 'deny', field: 'read_denied' },
@@ -305,11 +339,17 @@ export async function buildUsageReport(
   const trimmed = count(trimRows[0]?.n) > 0;
   if (trimmed) notes.add('audit_trimmed');
 
+  // A WEEK THAT ENDED BEFORE THE SCHEMA EXISTED has nothing to count, and its
+  // zeros would read as "this deployment was idle". It was not idle; it did not
+  // exist yet, which is a different fact and gets its own code.
+  const beforeInstall = createdAt !== null && end.getTime() <= createdAt.getTime();
+  if (beforeInstall) notes.add('before_install');
+
   const ops: UsageReport['ops'] = {
     upload: null, read_allowed: null, read_denied: null, share_create: null,
     share_revoke: null, unshare: null, direct_upload: null, job_run: null,
   };
-  if (!trimmed) {
+  if (!trimmed && !beforeInstall) {
     const { rows } = await db.query<{ action: string; decision: string; n: number | string }>(
       `SELECT action, decision, COUNT(*) AS n FROM audit_event
         WHERE occurred_at >= $1 AND occurred_at < $2 AND action = ANY($3::text[])
@@ -325,10 +365,10 @@ export async function buildUsageReport(
     `SELECT COUNT(*) AS n FROM job_run WHERE finished_at >= $1 AND finished_at < $2`,
     [start.toISOString(), end.toISOString()],
   );
-  ops.job_run = count(jobRows[0]?.n);
+  ops.job_run = beforeInstall ? null : count(jobRows[0]?.n);
 
   let daysActive: number | null = null;
-  if (!trimmed) {
+  if (!trimmed && !beforeInstall) {
     const { rows } = await db.query<{ n: number | string }>(
       `SELECT COUNT(DISTINCT d) AS n FROM (
          SELECT day AS d FROM usage_daily WHERE day >= $1::date AND day < $2::date
@@ -346,7 +386,9 @@ export async function buildUsageReport(
     `SELECT MIN(occurred_at) AS t FROM audit_event WHERE action = 'file.read' AND decision = 'allow'`,
   );
   const first = firstRows[0]?.t ? new Date(firstRows[0].t) : null;
-  if (first && createdAt) {
+  if (beforeInstall) {
+    firstSuccessDay = null;
+  } else if (first && createdAt) {
     firstSuccessDay = Math.max(0, Math.floor((first.getTime() - createdAt.getTime()) / 86_400_000));
   } else {
     const { rows: anyTrim } = await db.query<{ n: number | string }>(

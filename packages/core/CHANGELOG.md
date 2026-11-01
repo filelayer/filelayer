@@ -19,6 +19,28 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [Unreleased]
+
+### Fixed — the usage report's schema now enforces what its page promised
+
+`docs/USAGE-REPORT.md` says a `null` always carries its reason in `notes`, and
+that `errors` and `ops.unshare` are always `null` in format 1. The schema did
+not enforce either: `validateUsageReport()` accepted `ops.unshare: 0`, an
+`ops.upload: null` with no note explaining it, and `notes: []` beside a `null`
+`errors`. Found by the clean-room verification of 0.35.0. Now:
+
+- `ops.unshare` is `null`-only, like `errors`.
+- The schema's `x-nullRequiresNote` lists, for every field that can be `null`,
+  the note codes that may explain it, and `validateUsageReport()` refuses a
+  `null` that none of them explains.
+- A week that ended before the schema was created reports its counts,
+  `days_active` and `first_success_day` as `null` with the new note
+  `before_install`, instead of zeros that read as an idle deployment that did
+  not yet exist.
+
+This stays format 1. No report has been submitted to us yet, so no reader
+holds a format-1 report that the stricter schema would now refuse.
+
 ## [0.35.0] — 2026-11-01
 
 `@filelayer/core` is a TypeScript library for the files your SaaS users upload:

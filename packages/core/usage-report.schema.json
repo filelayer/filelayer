@@ -37,7 +37,10 @@
     },
     "lib_version": {
       "$comment": "null when the package's own package.json has no readable version (note lib_version_unknown).",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}(-[0-9A-Za-z.]{1,32})?$"
     },
     "node_major": {
@@ -47,11 +50,20 @@
     },
     "storage_kind": {
       "$comment": "Every kind of storage the file table records, mapped onto the fixed list. null when no file exists.",
-      "type": ["array", "null"],
+      "type": [
+        "array",
+        "null"
+      ],
       "uniqueItems": true,
       "maxItems": 5,
       "items": {
-        "enum": ["memory", "fs", "s3", "r2", "other"]
+        "enum": [
+          "memory",
+          "fs",
+          "s3",
+          "r2",
+          "other"
+        ]
       }
     },
     "schema_version": {
@@ -60,7 +72,10 @@
       "maximum": 999
     },
     "days_active": {
-      "type": ["integer", "null"],
+      "type": [
+        "integer",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 7
     },
@@ -78,14 +93,66 @@
         "job_run"
       ],
       "properties": {
-        "upload": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
-        "read_allowed": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
-        "read_denied": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
-        "share_create": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
-        "share_revoke": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
-        "unshare": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
-        "direct_upload": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 },
-        "job_run": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000000 }
+        "upload": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "read_allowed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "read_denied": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "share_create": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "share_revoke": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "unshare": {
+          "$comment": "Not measured in format 1: unshare() writes only grant.revoke rows. Always null.",
+          "type": "null"
+        },
+        "direct_upload": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "job_run": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000000
+        }
       }
     },
     "errors": {
@@ -94,24 +161,46 @@
     },
     "first_success_day": {
       "$comment": "Days from the schema being created to the first allowed file read. null when there is none, or when it is no longer in the audit log.",
-      "type": ["integer", "null"],
+      "type": [
+        "integer",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 36500
     },
     "scale_bucket": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["files", "orgs"],
+      "required": [
+        "files",
+        "orgs"
+      ],
       "properties": {
-        "files": { "enum": ["0", "1-10", "11-1k", "1k-100k", ">100k"] },
-        "orgs": { "enum": ["0", "1-10", "11-1k", "1k-100k", ">100k"] }
+        "files": {
+          "enum": [
+            "0",
+            "1-10",
+            "11-1k",
+            "1k-100k",
+            ">100k"
+          ]
+        },
+        "orgs": {
+          "enum": [
+            "0",
+            "1-10",
+            "11-1k",
+            "1k-100k",
+            ">100k"
+          ]
+        }
       }
     },
     "notes": {
       "$comment": "Why a field is null. Fixed codes only.",
       "type": "array",
       "uniqueItems": true,
-      "maxItems": 6,
+      "maxItems": 7,
       "items": {
         "enum": [
           "errors_not_measured",
@@ -119,9 +208,61 @@
           "audit_trimmed",
           "no_files",
           "no_successful_read",
-          "lib_version_unknown"
+          "lib_version_unknown",
+          "before_install"
         ]
       }
     }
+  },
+  "x-nullRequiresNote": {
+    "$comment": "A field that is null must be explained: at least one of the listed note codes is in notes. Enforced by validateUsageReport().",
+    "errors": [
+      "errors_not_measured"
+    ],
+    "ops.unshare": [
+      "unshare_not_recorded"
+    ],
+    "ops.upload": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.read_allowed": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.read_denied": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.share_create": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.share_revoke": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.direct_upload": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.job_run": [
+      "before_install"
+    ],
+    "days_active": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "storage_kind": [
+      "no_files"
+    ],
+    "first_success_day": [
+      "no_successful_read",
+      "audit_trimmed",
+      "before_install"
+    ],
+    "lib_version": [
+      "lib_version_unknown"
+    ]
   }
 }

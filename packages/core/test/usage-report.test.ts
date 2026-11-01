@@ -117,6 +117,26 @@ describe('usage report', () => {
     assert.equal(typeof r.ops.job_run, 'number', 'job_run is not read from the audit log');
   });
 
+  it('reports a week that ended before the schema existed as not measured, not as zeros', async () => {
+    const { db, fl } = await deployment();
+    const { id } = await fl.files.put(new TextEncoder().encode('a'), { owner: 'alice' });
+    await fl.files.get(id, { as: 'alice' });
+    // createTestDb() created the schema just now, so any earlier week predates it.
+    const r = await buildUsageReport(db, { now: new Date(), week: '2026-W02' });
+    assert.deepEqual(validateUsageReport(r), []);
+    assert.ok(r.notes.includes('before_install'));
+    for (const k of ['upload', 'read_allowed', 'read_denied', 'share_create', 'share_revoke', 'direct_upload', 'job_run'] as const) {
+      assert.equal(r.ops[k], null, `${k}: the deployment did not exist that week`);
+    }
+    assert.equal(r.days_active, null);
+    assert.equal(r.first_success_day, null);
+    // And the current week, same database, is measured as usual.
+    const now = await buildUsageReport(db, thisWeek());
+    assert.ok(!now.notes.includes('before_install'));
+    assert.equal(now.ops.upload, 1);
+    assert.equal(now.first_success_day, 0);
+  });
+
   it('defaults to the last complete week, and refuses a week that has not started', async () => {
     const { db } = await deployment();
     const now = new Date('2026-11-04T12:00:00Z');
@@ -171,5 +191,9 @@ describe('usage report', () => {
     assert.match(planted((x) => { x.errors = 0; }).join(), /must be null/);
     assert.match(planted((x) => { x.days_active = 8; }).join(), /above 7/);
     assert.match(planted((x) => { delete x.notes; }).join(), /missing notes/);
+    // A null always carries its note, and the always-null fields are null.
+    assert.match(planted((x) => { x.ops.unshare = 0; }).join(), /ops\.unshare: is integer, must be null/);
+    assert.match(planted((x) => { x.ops.upload = null; }).join(), /ops\.upload: is null, and notes carry none of/);
+    assert.match(planted((x) => { x.notes = []; }).join(), /errors: is null, and notes carry none of/);
   });
 });

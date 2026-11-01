@@ -35,7 +35,10 @@
  *      fresh embedded database with real activity, with `fetch`, `http(s)`,
  *      `net`, `tls` and `dns` replaced by functions that throw.
  *   4. THE VALIDATOR REFUSES WHAT MUST NOT BE THERE: a planted `org_id`, an
- *      unknown `ops` key, a storage kind outside the list, an `errors` of 0.
+ *      unknown `ops` key, a storage kind outside the list, an `errors` of 0,
+ *      an `ops.unshare` of 0, a null count with no note explaining it, and
+ *      emptied notes under always-null fields. And `x-nullRequiresNote` gives
+ *      every nullable field at least one real note code (1b).
  *   5. THE PUBLISHED PAGE SAYS WHAT THE SCHEMA SAYS. docs/USAGE-REPORT.md's
  *      field table, `ops` table and notes table name exactly the schema's
  *      fields, `ops` keys and note codes, both ways; its example report has
@@ -93,6 +96,34 @@ export function schemaProblems(node, path = '$') {
     if (typeof node.maxItems !== 'number') out.push(`${path}: array without maxItems`);
   }
   if (node.type === undefined) out.push(`${path}: no type, const or enum`);
+  return out;
+}
+
+// --- 1b. every nullable field says which notes may explain it ------------------
+// `x-nullRequiresNote` is what makes "a null always says why" enforceable. A
+// nullable field missing from it could be null with no reason, and a rule that
+// names a note code the schema does not have could never be satisfied.
+export function nullRuleProblems(schema) {
+  const out = [];
+  const rules = schema['x-nullRequiresNote'];
+  if (!rules || typeof rules !== 'object') return ['schema: no x-nullRequiresNote, so a null need not say why'];
+  const codes = schema.properties.notes.items.enum;
+  const nullable = [];
+  const walk = (props, prefix) => {
+    for (const [k, v] of Object.entries(props)) {
+      const types = Array.isArray(v.type) ? v.type : [v.type];
+      if (types.includes('null')) nullable.push(prefix + k);
+      if (types.includes('object') && v.properties) walk(v.properties, `${prefix}${k}.`);
+    }
+  };
+  walk(schema.properties, '');
+  for (const f of nullable) if (!(f in rules)) out.push(`x-nullRequiresNote: ${f} can be null and has no rule`);
+  for (const [f, list] of Object.entries(rules)) {
+    if (f.startsWith('$')) continue;
+    if (!nullable.includes(f)) out.push(`x-nullRequiresNote: ${f} is not a nullable field`);
+    if (!Array.isArray(list) || list.length === 0) out.push(`x-nullRequiresNote: ${f} names no note`);
+    else for (const c of list) if (!codes.includes(c)) out.push(`x-nullRequiresNote: ${f} names ${c}, which is not a note code`);
+  }
   return out;
 }
 
@@ -242,6 +273,13 @@ if (process.argv.includes('--self-test')) {
   if (!schemaOk) bad++;
   console.log(`  ${schemaOk ? 'ok  ' : 'FAIL'} an opened object and a free-text string in the schema are refused`);
 
+  const noRule = structuredClone(schema);
+  delete noRule['x-nullRequiresNote'].days_active;
+  noRule['x-nullRequiresNote'].errors = ['no_such_code'];
+  const nr = nullRuleProblems(noRule).join('\n');
+  const ruleOk = /days_active can be null and has no rule/.test(nr) && /no_such_code/.test(nr) && nullRuleProblems(schema).length === 0;
+  if (!ruleOk) bad++;
+  console.log(`  ${ruleOk ? 'ok  ' : 'FAIL'} a nullable field with no rule, and a rule naming no real code, are refused`);
   const clean = schemaProblems(schema).length === 0;
   if (!clean) bad++;
   console.log(`  ${clean ? 'ok  ' : 'FAIL'} the real schema passes`);
@@ -264,7 +302,7 @@ if (process.argv.includes('--self-test')) {
     idProblems({ ...schema, $id: 'https://example.com/x.json' }, text).length === 1;
   if (!idOk) bad++;
   console.log(`  ${idOk ? 'ok  ' : 'FAIL'} an $id with no file under web/, and an $id off the domain, are refused`);
-  console.log(`check-usage-report --self-test: ${5 - bad}/5 controls behaved`);
+  console.log(`check-usage-report --self-test: ${6 - bad}/6 controls behaved`);
   process.exit(bad === 0 ? 0 : 1);
 }
 
@@ -272,6 +310,7 @@ const problems = [];
 
 const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'));
 problems.push(...schemaProblems(schema).map((p) => `schema ${p}`));
+problems.push(...nullRuleProblems(schema));
 problems.push(...idProblems(schema, readFileSync(SCHEMA_PATH, 'utf8')));
 
 const net = networkProblems(ENTRY);
@@ -330,6 +369,9 @@ if (!existsSync(dist)) {
       ['an unknown ops key', (r) => { r.ops.list = 1; }],
       ['a storage kind outside the list', (r) => { r.storage_kind = ['dropbox']; }],
       ['errors reported as 0', (r) => { r.errors = 0; }],
+      ['ops.unshare reported as 0', (r) => { r.ops.unshare = 0; }],
+      ['ops.upload null without audit_trimmed or before_install', (r) => { r.ops.upload = null; }],
+      ['notes emptied while errors is null', (r) => { r.notes = []; }],
     ]) {
       const r = structuredClone(report);
       mutate(r);
@@ -356,6 +398,6 @@ if (problems.length) {
 }
 console.log(
   `check-usage-report: clean. Schema closed; ${net.files} module(s) in the import graph, no network; ` +
-    `report built with the network trapped and valid (${built}); four planted violations refused; ` +
+    `report built with the network trapped and valid (${built}); seven planted violations refused; ` +
     'docs/USAGE-REPORT.md tables, example and llms.txt agree with the schema.',
 );
