@@ -5,7 +5,10 @@ ship inside the npm tarball so you do not have to take our word for either. This
 page is the exact procedure, and it is executed by CI on every commit against a
 freshly packed tarball, so it cannot quietly stop working.
 
-It takes about two minutes and needs no account, no credentials and no database.
+It needs no account, no credentials and no database. On a clean install on a
+2 vCPU machine it took about 12 minutes (742 s as a normal user, 730 s as
+root); that is a measurement on one machine, not a promise, and yours will
+differ.
 
 ## Why it is not simply `node --test node_modules/@filelayer/core/test/`
 
@@ -70,13 +73,13 @@ Four details in there are load-bearing:
 
 ## What you should see
 
-| | |
-|---|---|
-| tests | 736 |
-| pass | 701 |
-| fail | **0** |
-| skipped | 35 |
-| suites | 162 |
+| | as a normal user | as root |
+|---|---|---|
+| tests | 736 | 736 |
+| pass | 701 | 700 |
+| fail | **0** | **0** |
+| skipped | 35 | 36 |
+| suites | 162 | 162 |
 
 The lines will look different depending on your Node version and whether you are
 piping the output: Node 22 writes `# tests 736`, Node 24 writes `ℹ tests 736`,
@@ -84,7 +87,11 @@ and a terminal gets ticks and timings as well. The numbers are the same. Only
 the reporter changed, and CI reads both, because reading one of them is how this
 gate first reported a passing run as a failure.
 
-The thirty-five skips are four groups.
+The thirty-five skips are four groups. As root there is a thirty-sixth:
+mode bits do not bind root, so `test/fs-storage.test.ts` cannot stage an
+unreadable directory, and its check that an unreadable store is not reported
+as empty skips and says why. It is skipped rather than passed, because a pass
+would claim a refusal nobody observed.
 
 **One** is `test/mcp-server.test.ts`, which launches the MCP server as a client would and needs a real PostgreSQL, because that server builds a `pg.Pool` and PGlite is not a server. CI runs it against a real one in a job that FAILS if it skips there.
 
