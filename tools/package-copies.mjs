@@ -180,6 +180,13 @@ export const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/USAGE-REPORT.md',
+    why:
+      'the usage report is run from an install, by the adopter, and what each field means and ' +
+      'that nothing is sent must be readable before the file is shared, without a network.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/deleting-files-and-orphaned-objects.md',
     why: 'the fourth guide: the sweeper deletes on an absence, and a partial answer is an absence.',
     versionStamp: null,

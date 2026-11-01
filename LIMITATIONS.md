@@ -229,6 +229,14 @@ Each one is current as of
    not own, which is ambient authority through the back door. But it is a cost
    paid at exactly the moment somebody decides to adopt this, and saying so
    here is cheaper than letting them find out.
+17. **The usage report does not measure errors or `unshare()`.** In format 1,
+   `errors` is always `null`: nothing records an error anywhere a report can
+   read it, so a failing deployment and a healthy one look the same in it.
+   `ops.unshare` is always `null` too, because `unshare()` writes one
+   `grant.revoke` per grant it removes and nothing of its own, so it is counted
+   inside `share_revoke`. Both say so in the report's `notes`
+   (`errors_not_measured`, `unshare_not_recorded`). See
+   [docs/USAGE-REPORT.md](docs/USAGE-REPORT.md).
 
 ---
 
