@@ -191,7 +191,19 @@ const DATED = [
   /\bin\s+`?\d+\.\d+\.\d+`?,?\s+(?:which|when|and)\b/,
   /\bverifiedAgainst\b/,
   /"(?:from|to)":\s*"v?\d+\.\d+\.\d+"/,
+  // A span of releases is history at both ends: "from `0.15.0` to `0.33.0` it
+  // said six". And a drift is reported against the release where it was seen.
+  // Both were rewritten by the 0.34.0 bump and shipped saying 0.34.0.
+  /\bfrom\s+`?v?\d+\.\d+\.\d+`?\s+to\s+`?v?\d+\.\d+\.\d+/,
+  /\bdrifted\b/,
 ];
+
+/**
+ * Prose wraps. "had drifted again by" ends one line and "`0.33.0`." is the
+ * whole of the next, so a line read alone carries no dating word at all. The
+ * DATED test therefore reads each line together with the one before it.
+ */
+const datedInContext = (prev, text) => DATED.some((re) => re.test(text) || re.test(`${prev} ${text}`));
 
 const tracked = execFileSync('git', ['ls-files', '-z'], {
   cwd: ROOT,
@@ -254,7 +266,7 @@ for (const rel of tracked) {
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i];
     if (!BARE.test(text) && !BARE_LINE.test(text)) continue;
-    if (DATED.some((re) => re.test(text))) {
+    if (datedInContext(i > 0 ? lines[i - 1] : '', text)) {
       skipped.push({ rel, line: i + 1, text: text.trim().slice(0, 110) });
       continue;
     }

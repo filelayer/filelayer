@@ -174,7 +174,7 @@ matter:
   cannot be verified: they predate the oldest tag in the repository, so there is
   no earlier schema to apply them to.
   **This line has been wrong twice.** It said "one breaking change" until
-  `0.15.0`, and from `0.15.0` to `0.34.0` it said six — while the README said
+  `0.15.0`, and from `0.15.0` to `0.33.0` it said six — while the README said
   seven and the real figure was twelve. Three published numbers, none of them
   right, all of them understating what adopting us costs, on the pages that
   exist to not do that. Every figure in this bullet is now derived from
