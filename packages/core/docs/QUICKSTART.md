@@ -902,21 +902,38 @@ What is still yours: the directory's **owner**. Run the application as a user
 nobody else can become, and do not put the data directory somewhere a backup
 agent or a log shipper reads as a different account.
 
-**Four operational jobs are yours to schedule.** None of them runs on its own,
-and this list said "two" until `0.12.0` — an engineer deploying the published
-`0.11.0` had to grep the type declarations to find out it was wrong:
+**Four background jobs are yours to schedule.** None of them runs on its own,
+and this list said "two" until `0.12.0`: an engineer deploying the published
+`0.11.0` had to grep the type declarations to find out it was wrong.
 
-- `collectStorageOrphans()` — bytes are written before metadata commits, so a
+- `collectStorageOrphans()`: bytes are written before metadata commits, so a
   crash in between leaves an unreferenced object. Defaults to `dryRun: true`.
-- `collectUploadReservations()` — only if you enabled `directUpload`. A
+- `collectUploadReservations()`: only if you enabled `directUpload`. A
   reservation nobody redeems is a `pending` row no read path can see, so nothing
   will draw your attention to it. Also `dryRun: true` by default.
+- `sealAuditChain()`: records where the chain's head is, so that
+  `verifyAuditChain()` can report the removal of the most recent events. It
+  only adds rows.
+- `trimAuditChain()`: retention. Nothing is trimmed unless you ask, so the
+  audit log grows without bound until you choose a policy, which is yours to
+  choose and frequently a legal one.
+
+`runMaintenance()` runs all four from one schedule entry and names all four in
+its summary every time. It keeps their safety profiles apart: it is dry by
+default (`dryRun: false` makes the destructive jobs act), and the trim runs only
+when you pass `auditTrim: { keepLast or before, note }`, otherwise it is listed
+in `summary.skipped` with the reason. Each job writes its own `job_run` row. One
+failing job does not stop the others, and the call then throws with the whole
+summary on the error as `.summary`, so a cron entry fails on its exit status.
+
+Two things are yours that no job does:
+
 - `verifyAuditChain(principal, orgId)`, and **pin the result somewhere outside
-  this database.** Replay detects edits and interior deletions, not truncation
-  of the most recent events; comparing `lastId`/`lastHash` against a copy you
-  keep elsewhere is what closes that. It is authorized per org and there is no
-  "verify every tenant" call, so you need the list of orgs and an admin
-  identity for each. A tenant you forget is silently unmonitored.
+  this database.** A seal lives in the same database as the events, so whoever
+  deletes the rows can delete the seals too; comparing `lastId`/`lastHash`
+  against a copy you keep elsewhere is what closes that. It is authorized per
+  org and there is no "verify every tenant" call, so you need the list of orgs
+  and an admin identity for each. A tenant you forget is silently unmonitored.
 - Rate limiting at ingest, per project and per source address, before a request
   reaches the engine. Denials are audited by design (P5), so an unauthenticated
   caller who can reach your API can grow a tenant's chain.

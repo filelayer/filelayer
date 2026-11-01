@@ -38,11 +38,10 @@ Run this from any project that already has `@filelayer/core` installed.
 
 ```bash
 PKG=$(node -p "require.resolve('@filelayer/core/package.json')" | xargs dirname)
-VERIFY="${TMPDIR:-/tmp}/filelayer-verify"
+VERIFY=$(mktemp -d "${TMPDIR:-/tmp}/filelayer-verify.XXXXXX")
 
-rm -rf "$VERIFY" && mkdir -p "$VERIFY" && cd "$VERIFY"
-cp -R "$PKG"/. .
-rm -rf node_modules dist
+cd "$VERIFY"
+(cd "$PKG" && tar --exclude=./node_modules --exclude=./dist -cf - .) | tar -xf -
 
 printf '{"name":"filelayer-verify","private":true,"type":"module"}\n' > package.json
 npm install --no-save "@electric-sql/pglite@^0.3.11"
@@ -50,7 +49,7 @@ npm install --no-save "@electric-sql/pglite@^0.3.11"
 node --test 'test/*.test.ts'
 ```
 
-Three details in there are load-bearing:
+Four details in there are load-bearing:
 
 - **The whole package directory is copied, not a hand-picked subset.** The suite
   reads `schema.sql`, the files under `migrations/`, and the applications under
@@ -60,6 +59,11 @@ Three details in there are load-bearing:
 - **`package.json` is replaced.** Ours lists development dependencies, and
   installing those would pull in the very packages whose absence you may be
   trying to test.
+- **Nothing is deleted.** The directory comes from `mktemp -d`, so every run
+  starts in an empty one, and `node_modules` and `dist` are left out of the
+  copy. An agent's sandbox refused the earlier version's `rm -rf`, and the
+  agent had to rewrite the block by hand, which is the one thing this procedure
+  must not require.
 - **PGlite is the only thing installed.** It runs PostgreSQL in-process, so the
   suite needs no server. It is pinned to `0.3.x`; npm's `latest` is `0.5.x` and
   installing that fails to resolve.
