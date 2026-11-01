@@ -137,8 +137,25 @@ this way:
    its first characters either: a prefix is part of the secret.
 
 Never force-push and never push another branch or repository. A rejected push
-stops the work and is reported, not retried another way. `npm publish` and
-dist-tags are not part of this; they stay with the maintainer.
+stops the work and is reported, not retried another way.
+
+### How a release happens
+
+A release is a tag, and the tag is what publishes. Show the maintainer the
+version, the CHANGELOG headline and the tarball's file count
+(`npm pack --dry-run` in `packages/core`), wait for **ok publish** for that
+version, then push the tag `vX.Y.Z` the same way as a commit:
+
+```
+git tag -a vX.Y.Z -m "@filelayer/core X.Y.Z"
+git -c credential.helper= -c credential.helper='!f() { echo username=x-access-token; printf "password=%s\n" "$(tr -d "\r\n" < .env.github-push)"; }; f' push https://github.com/filelayer/filelayer.git refs/tags/vX.Y.Z
+```
+
+`.github/workflows/publish.yml` refuses a tag that does not name the version in
+`packages/core/package.json` or does not point at a commit on `main`, runs both
+verification chains, and publishes with npm trusted publishing. Nobody runs
+`npm publish` by hand and no npm token exists. Moving the `alpha` dist-tag is
+manual and stays with the maintainer.
 
 ### And verify BEFORE you push
 
@@ -293,7 +310,8 @@ project already shipped once.
 
 Do not do these on your own initiative: ask.
 
-- `npm publish`, `npm deprecate`, or moving a dist-tag
+- pushing a release tag without an "ok publish" for that version
+- `npm publish` by hand, `npm deprecate`, or moving a dist-tag
 - anything that changes the published version number
 - rewriting git history, or force-pushing
 - pushing without an "ok push" for exactly the commits being pushed

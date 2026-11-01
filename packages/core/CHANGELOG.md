@@ -21,6 +21,17 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
+### Changed — published from CI, with provenance, and no npm token anywhere
+
+From this release `@filelayer/core` is published by
+`.github/workflows/publish.yml` when a release tag is pushed, using npm
+trusted publishing. npm attaches a provenance statement to the version, so
+the registry page shows which commit of `filelayer/filelayer` and which
+workflow run built the tarball you install, and `npm audit signatures`
+verifies it. The workflow refuses a tag that does not name the version in
+`package.json` or does not point at a commit on `main`, and runs both
+verification chains before it publishes.
+
 ### Fixed — the shipped suite failed one test when run as root
 
 `test/fs-storage.test.ts` checks that an unreadable store is reported as an

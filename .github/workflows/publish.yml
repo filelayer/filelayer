@@ -1,0 +1,97 @@
+# PUBLISH @filelayer/core TO npm, FROM A TAG, WITH NO npm TOKEN ANYWHERE.
+#
+# A release is a tag `vX.Y.Z` pushed after the maintainer approved that exact
+# version. This workflow is the only thing that runs `npm publish`. It
+# authenticates with npm trusted publishing (OIDC): npm trusts this repository,
+# this file and the `npm-publish` environment, and exchanges the job's
+# short-lived OIDC token for a one-shot publish token. No npm credential exists
+# on any machine, in this repository or in its secrets. npm attaches provenance
+# to what it publishes, so anyone can check which commit and which workflow
+# built a version.
+#
+# The trusted publisher on npmjs.com names this file by path and the
+# environment by name. Renaming either breaks publishing until the npm
+# configuration is changed to match.
+
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+# One release at a time, and never cancelled halfway through a publish.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    name: publish ${{ github.ref_name }}
+    runs-on: ubuntu-24.04
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # Full history: check:since and check:migrations read schema.sql at older
+      # tags, and the "is this commit on main" check below needs main.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+
+      # FIRST, before six minutes of gates: the tag must name the version in
+      # package.json, and the tagged commit must be on main. A tag is the
+      # maintainer's approval of one named version from main, nothing else.
+      - name: The tag names the package version, and the commit is on main
+        run: |
+          node tools/check-release-tag.mjs --self-test
+          node tools/check-release-tag.mjs "$GITHUB_REF_NAME"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$GITHUB_REF_NAME points at a commit that is not on main"; exit 1; }
+
+      # Trusted publishing needs npm 11.5.1 or later; older clients skip the
+      # OIDC exchange and fail with a misleading 401 or 404. And no token may be
+      # present, because a token in the environment would be used instead of
+      # OIDC and the release would no longer be what the trust names.
+      - name: An npm that supports trusted publishing, and no npm token
+        run: |
+          npm install -g npm@^11.5.1
+          node -e '
+            const [a, b, c] = process.argv[1].split(".").map(Number);
+            if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) {
+              console.error("npm " + process.argv[1] + " cannot use trusted publishing (needs 11.5.1+)");
+              process.exit(1);
+            }
+            console.log("npm " + process.argv[1]);
+          ' "$(npm --version)"
+          if [ -n "${NODE_AUTH_TOKEN:-}${NPM_TOKEN:-}" ]; then
+            echo "::error::an npm token is set; this workflow publishes through OIDC only"
+            exit 1
+          fi
+
+      - name: Install
+        run: npm run bootstrap
+
+      # The same two chains a release has always needed. Each ends in a stamp
+      # for this exact tree, and `prepublishOnly` refuses to publish without
+      # both, so a red gate cannot be followed by an upload.
+      - name: npm run verify
+        run: npm run verify
+
+      - name: npm run verify:release
+        run: npm run verify:release
+
+      - name: npm publish (trusted publishing, with provenance)
+        working-directory: packages/core
+        run: npm publish --provenance --access public --tag latest

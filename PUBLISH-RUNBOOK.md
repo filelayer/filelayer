@@ -3,6 +3,17 @@
 The exact commands to make this repository public and to publish
 `@filelayer/core` to npm.
 
+> **From `0.34.1` on, nobody runs `npm publish` by hand.** A release is the
+> tag `vX.Y.Z`, pushed after the maintainer approves that exact version, and
+> `.github/workflows/publish.yml` publishes it: it checks that the tag names the
+> version in `packages/core/package.json` and points at a commit on `main`,
+> runs `npm run verify` and `npm run verify:release`, then `npm publish` with
+> npm trusted publishing (OIDC) and provenance. No npm token exists anywhere.
+> The rest of this file is kept as the manual procedure and its history; its
+> checks are the ones the workflow runs. Moving the `alpha` dist-tag is the one
+> step the workflow cannot do (a trusted-publishing token can only publish),
+> and stays a manual `npm dist-tag add`.
+
 > **This runbook was written for the first public release, `0.3.0`.** The
 > repository is public and the version being published is **`0.34.0`**. Steps 0,
 > 3, 4 and 6 have been updated to that version so the commands are
