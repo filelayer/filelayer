@@ -88,7 +88,7 @@ or that the fourth VALIDATES the second.
 >
 > **Exit 1 is the one to read carefully, and 3 exists because of it.** On
 > 13 October 2026, four minutes after `npm publish` printed
-> `+ @filelayer/core@0.34.0`, this tool said *"is NOT published. Both the
+> `+ @filelayer/core@0.31.0`, this tool said *"is NOT published. Both the
 > packument and the tarball agree."* Both replicas were equally behind. Two
 > reads of a system that propagates in order are not two witnesses while
 > neither has arrived — agreement that something is absent is evidence only
@@ -722,7 +722,7 @@ dig +short TXT filelayer.dev | grep MCPv1
 > The GitHub device flow grants the `io.github.<user>/*` namespace and nothing
 > else. `dev.filelayer/core` is a DNS-namespaced name, so it is authorized by
 > the TXT record above and only by it. This happened on 13 October 2026 while
-> publishing `0.34.0`, from this runbook, by someone who had read it — the DNS
+> publishing `0.31.0`, from this runbook, by someone who had read it — the DNS
 > command was three lines below and the GitHub one was in muscle memory. The
 > 403 is the registry working: it refused a name the credential did not cover.
 > Nothing was half-published, because the login and the publish are separate
