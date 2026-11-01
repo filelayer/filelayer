@@ -168,7 +168,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **736 tests**, every commit, all of them against a real PostgreSQL |
+| The suite | **745 tests**, every commit, all of them against a real PostgreSQL |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends — races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **27 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -221,7 +221,7 @@ apply to you:
    and legal hold are useless if the people accountable for them cannot see
    what they are holding. But it is a policy decision, and if you need to
    exclude the operator you need envelope encryption, which we do not have.
-5. **Alpha, and the schema has changed twelve times.** Any `0.x` → `0.(x+1)` may
+5. **Alpha, and the schema has changed thirteen times.** Any `0.x` → `0.(x+1)` may
    break the API, the schema or both. Every break has a numbered entry in
    [`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) and a runnable file
    under `migrations/` that CI applies to the previous release's schema and
@@ -354,8 +354,8 @@ Pre-1.0. The version is `0.MINOR.PATCH` and the promise is deliberately narrow:
   action, no signature change.
 - There is no long-term support branch and no backporting before 1.0.
 
-**The schema has changed twelve times.** `MIGRATIONS.md` has fifteen numbered
-entries, ten of which carry forward SQL; the other two schema changes predate
+**The schema has changed thirteen times.** `MIGRATIONS.md` has sixteen numbered
+entries, eleven of which carry forward SQL; the other two schema changes predate
 the oldest tag in the repository and cannot be verified against an earlier
 schema. Budget an upgrade against that file rather than against this paragraph.
 Every figure in this paragraph is derived from `migrations/manifest.json` by

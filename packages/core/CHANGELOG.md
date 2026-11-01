@@ -19,6 +19,36 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [Unreleased]
+
+### Added — a local usage report, which sends nothing
+
+`buildUsageReport(db, { week? })` and `npx filelayer usage-report` produce one
+ISO week of a deployment's activity as aggregate counts: files created, reads
+allowed and refused, shares created and revoked, direct uploads completed,
+maintenance runs, days active, the storage kinds in use, the schema version,
+and the size of the deployment in coarse buckets. The command writes it to a
+file in the current directory and prints it; nothing is sent anywhere. An
+operator who wants to say their deployment exists can share that file, and a
+deployment that shares nothing is unknown to us, not zero.
+
+The fields are exactly those in `usage-report.schema.json`, which ships in the
+package. The schema is closed: the builder validates its own output against it
+and throws on any field the schema does not publish. A count that cannot be
+read is `null` with a fixed reason in `notes`, never 0: `errors` is not
+measured in this first format, `unshare` leaves no audit row of its own, and a
+week from which a trim or an erasure removed events reports its audit-derived
+counts as `null` (`audit_trimmed`). No query reads an org, actor, file or grant
+id, an IP, a user agent or a name.
+
+Building the report touches nothing but the database it is given: its module
+imports no socket library, and the suite builds it with every network entry
+point replaced by one that throws.
+
+Schema 15 -> 16: `filelayer_install` holds one random id, written by the first
+report, so two reports from one deployment can be recognised as one. See
+`MIGRATIONS.md` entry 16.
+
 ## [0.34.2] — 2026-11-01
 
 `@filelayer/core` is a TypeScript library for the files your SaaS users upload:

@@ -7,7 +7,7 @@ code in this repository, from the repository root. Reproduce with:
 
 ```bash
 npm run bootstrap                  # npm ci in packages/core
-npm test                     # 736 tests, 0 failures
+npm test                     # 745 tests, 0 failures
 npm run dev:fracture               # the four §2 experiments
 npm run loc:tiers                  # LOC per tier (§4.2)
 node benchmark/count-loc.mjs       # LOC for the full-vault implementations
@@ -15,7 +15,7 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **736 / 736 passing** across 162 suites:
+**Test status.** `npm test` is **745 / 745 passing** across 163 suites:
 
 | Suite | Tests |
 |---|---|
@@ -29,13 +29,13 @@ npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 | `test/audit-resolution.test.ts` — the trail reads back in your words, and verification pages | 16 |
 | `test/schema-version.test.ts` — which version a database is at, and that asking changes nothing | 16 |
 | `test/mcp.test.ts` — the MCP server as a privilege boundary | 9 |
-| `test/cli.test.ts` — the CLI, spawned: refused credentials, exit codes, the bucket probe | 15 |
+| `test/cli.test.ts` — the CLI, spawned: refused credentials, exit codes, the bucket probe | 17 |
 | `test/mcp-server.test.ts` — the launchable MCP server, started by a client | 6 |
 | `test/audit-context.test.ts` — an agent's reads are distinguishable from a person's | 5 |
-| everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 318 |
-| **total** | **736** |
+| everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 325 |
+| **total** | **745** |
 
-Eight of the 736 are the contention tests, which need a real PostgreSQL with
+Eight of the 745 are the contention tests, which need a real PostgreSQL with
 two backends. CI provides one, so all 526 run there; on a machine without one
 they skip and you will see **397 passing, 8 skipped**. Two further suites — the
 live S3 ones — skip unless the five `FILELAYER_TEST_S3_*` variables are set.
