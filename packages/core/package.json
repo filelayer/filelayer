@@ -1,6 +1,6 @@
 {
   "name": "@filelayer/core",
-  "version": "0.34.2",
+  "version": "0.35.0",
   "description": "File authorization middleware for multi-tenant files on Postgres: file sharing permissions per user, org and role, revocable links that expire, delegated share links and a hash-chained audit trail.",
   "license": "Apache-2.0",
   "type": "module",

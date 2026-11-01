@@ -196,6 +196,9 @@ const DATED = [
   // Both were rewritten by the 0.34.0 bump and shipped saying 0.34.0.
   /\bfrom\s+`?v?\d+\.\d+\.\d+`?\s+to\s+`?v?\d+\.\d+\.\d+/,
   /\bdrifted\b/,
+  // "From `0.34.2` on, nobody runs npm publish by hand": the release where a
+  // practice started. The 0.35.0 bump rewrote it to 0.35.0.
+  /\b[Ff]rom\s+`?v?\d+\.\d+\.\d+`?\s+on\b/,
 ];
 
 /**

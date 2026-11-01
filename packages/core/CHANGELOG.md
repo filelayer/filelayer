@@ -19,7 +19,16 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
-## [Unreleased]
+## [0.35.0] — 2026-11-01
+
+`@filelayer/core` is a TypeScript library for the files your SaaS users upload:
+you tell it who the caller is, and it decides what they may do with a file,
+serves the bytes and writes the audit event, on your own Postgres and your own
+bucket. This release adds a local usage report: one week of a deployment's
+activity as aggregate counts, written to a file you read and may choose to
+share, with nothing sent anywhere. It adds one table, `filelayer_install`
+(schema 15 -> 16, `MIGRATIONS.md` entry 16). The report's schema is also served
+at https://filelayer.dev/usage-report.schema.json, the URL its `$id` names.
 
 ### Added — a local usage report, which sends nothing
 
