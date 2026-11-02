@@ -123,6 +123,27 @@ top of a shared helper, so the module failed to load before the skip logic it
 contained could run. Anyone who followed our invitation to run the tests saw a
 failure, and nobody had followed it.
 
+## From a clone of the repository
+
+The table above is for the procedure on this page: the published tarball, with
+PGlite as the only thing installed. `npm test` in a clone of the repository
+runs the same tests in a different environment, because a clone installs our
+development dependencies, so fewer of them skip. Measured on Linux as a normal
+user, 2 November 2026, the difference is exactly two of the groups above:
+
+- **The ten MCP tests run.** The nine in `test/mcp.test.ts` find
+  `@modelcontextprotocol/sdk` and `zod`, and the launch test in
+  `test/mcp-server.test.ts` finds `pg` and `embedded-postgres` and starts an
+  embedded PostgreSQL by itself. That leaves twenty-five skipped.
+- **The twenty-five contention and audit-retention tests stay opt-in.** They
+  skip unless `FILELAYER_TEST_CONTENTION=1` or `FILELAYER_TEST_DATABASE_URL` is
+  set. With the first they start an embedded PostgreSQL; with the second they
+  use the server it names, which is what CI does on every commit. With either,
+  nothing skips and every test passes.
+
+As root the embedded server refuses to start, so use a normal user or
+`FILELAYER_TEST_DATABASE_URL`.
+
 ## If the numbers do not match
 
 That is a real finding and we want it. Please
