@@ -52,7 +52,7 @@
     "name": "Filelayer",
     "alternateName": "@filelayer/core",
     "codeRepository": "https://github.com/filelayer/filelayer",
-    "softwareVersion": "0.35.0"
+    "softwareVersion": "0.35.1"
   },
   "author": {
     "@type": "Organization",
@@ -89,19 +89,19 @@
 <h1>Should you depend on this?</h1>
 <p>Here are the numbers to answer that in two minutes, including the ones that are zero. No page you can reach from here will tell you something this one leaves out.</p>
 <p>Filelayer is a file layer for SaaS applications: files with owners, orgs and roles, share links that expire and can be revoked, lifecycle, and an audit trail that records denials.</p>
-<p><strong>What is tested is the authorization engine, and it is tested hard.</strong> One function answers every access question. 745 tests run against a real PostgreSQL on every commit; 27 adversarial attacks score zero breaches, and the same suite scores three against an earlier revision of this library, so the suite is calibrated rather than merely passing. The storage adapter runs against live Cloudflare R2 and live AWS S3 on every commit. There are no runtime dependencies. From <code>npm install</code> of the published package to a stored byte: no account, no credential, no dashboard, four lines.</p>
+<p><strong>What is tested is the authorization engine, and it is tested hard.</strong> One function answers every access question. 746 tests run against a real PostgreSQL on every commit; 27 adversarial attacks score zero breaches, and the same suite scores three against an earlier revision of this library, so the suite is calibrated rather than merely passing. The storage adapter runs against live Cloudflare R2 and live AWS S3 on every commit. There are no runtime dependencies. From <code>npm install</code> of the published package to a stored byte: no account, no credential, no dashboard, four lines.</p>
 <p><strong>What is not tested is us in production.</strong> That is the table below, and it is the honest trade: a design that has been attacked on purpose and has not met real traffic.</p>
 <hr>
 <h2 id="the-state-of-it-in-numbers">The state of it, in numbers</h2>
 <div class="table-scroll"><table>
 <thead><tr><th></th><th></th></tr></thead>
-<tbody><tr><td>Version</td><td>0.35.0 — alpha</td></tr>
+<tbody><tr><td>Version</td><td>0.35.1 — alpha</td></tr>
 <tr><td>Known production deployments</td><td><strong>0</strong></td></tr>
 <tr><td>Maintainers with commit rights</td><td><strong>1</strong></td></tr>
 <tr><td>Independent security review</td><td><strong>none</strong></td></tr>
 <tr><td>Load measured</td><td>First run 4 October 2026, <code>benchmark/load/RESULTS.md</code>. One machine, no network, no object store, seconds per cell</td></tr>
 <tr><td>Time to first stored file</td><td>Measured 17 October 2026, <code>benchmark/ttff/RESULTS.md</code>. From <code>npm install</code> of the <strong>published</strong> package to a stored byte, with a cold npm cache: <strong>0 accounts, 0 credentials, 0 dashboards, 4 lines</strong>. The program is asserted to appear verbatim in the quickstart that shipped in the tarball</td></tr>
-<tr><td>Tests</td><td>745, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves</td></tr>
+<tr><td>Tests</td><td>746, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves</td></tr>
 <tr><td>Concurrency, against a real PostgreSQL with two backends</td><td>8 tests, every commit</td></tr>
 <tr><td>Adversarial suite</td><td>27 attacks, 0 breaches</td></tr>
 <tr><td>Runtime dependencies</td><td><strong>0</strong></td></tr>
@@ -169,7 +169,7 @@
     <a href="/trust">Should you depend on this?</a>
   </p>
   <p class="fine">
-    Filelayer 0.35.0, alpha. Apache-2.0, with a patent grant.
+    Filelayer 0.35.1, alpha. Apache-2.0, with a patent grant.
     Copyright 2026 Technology Pro Bono S.L.
   </p>
 </footer>

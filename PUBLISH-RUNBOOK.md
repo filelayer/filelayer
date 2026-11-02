@@ -15,7 +15,7 @@ The exact commands to make this repository public and to publish
 > and stays a manual `npm dist-tag add`.
 
 > **This runbook was written for the first public release, `0.3.0`.** The
-> repository is public and the version being published is **`0.35.0`**. Steps 0,
+> repository is public and the version being published is **`0.35.1`**. Steps 0,
 > 3, 4 and 6 have been updated to that version so the commands are
 > copy-pasteable; steps 1 and 2 are the one-time org and repository setup and
 > are kept as the record of what was done. Everything else — the gate, the
@@ -133,7 +133,7 @@ command never runs.
 git status
 git branch --show-current          # -> main
 
-# The whole gate: typecheck, 745 tests, build, language, links, OpenAPI,
+# The whole gate: typecheck, 746 tests, build, language, links, OpenAPI,
 # doc samples, adversarial suite. Must exit 0.
 npm run verify
 echo "verify exit: $?"
@@ -707,7 +707,7 @@ Wait for propagation, then check it:
 dig +short TXT filelayer.dev | grep MCPv1
 ```
 
-> **From `0.35.1` on, CI publishes this entry** (D049): the `mcp-registry` job
+> **From `0.35.0` on, CI publishes this entry** (D049): the `mcp-registry` job
 > of `.github/workflows/publish.yml` runs after a successful `npm publish` on
 > the same tag, with the DNS key as the `npm-publish` environment secret
 > `MCP_DNS_PRIVATE_KEY`, and a manual run of the workflow on `main` publishes

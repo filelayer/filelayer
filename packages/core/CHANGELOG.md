@@ -19,7 +19,17 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
-## [Unreleased]
+## [0.35.1] — 2026-11-02
+
+`@filelayer/core` is a TypeScript library for the files your SaaS users upload:
+you tell it who the caller is, and it decides what they may do with a file,
+serves the bytes and writes the audit event, on your own Postgres and your own
+bucket. This patch tightens the local usage report added in 0.35.0: a `null`
+must now carry its reason, the fields that are never measured can only be
+`null`, and a week before the deployment existed is reported as not measured
+rather than as zeros. No API change and no schema change (still version 16).
+From this release, the MCP registry entry is published by the same CI run as
+the npm package.
 
 ### Fixed — the usage report's schema now enforces what its page promised
 
