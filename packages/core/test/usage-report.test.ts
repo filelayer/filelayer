@@ -82,6 +82,38 @@ describe('usage report', () => {
     assert.ok(!r.notes.includes('no_successful_read'));
   });
 
+  // A SERVER WHOSE TimeZone IS NOT UTC. The report's week and its audit days are
+  // UTC; until 0.35.2 `usage_daily.day` was the SESSION's `current_date`, so on
+  // a server set to Europe/Madrid one day of activity just after local midnight
+  // counted as two days, and could land in another week. A test cannot move the
+  // clock to midnight, so beside Europe/Madrid it uses the zone that puts the
+  // local date on another day than UTC at whatever time the suite runs: UTC+14
+  // in the second half of the UTC day, UTC-12 in the first. That is the same
+  // mechanism as Madrid at 00:30, on every run.
+  for (const zone of ['Europe/Madrid', new Date().getUTCHours() >= 12 ? 'Etc/GMT-14' : 'Etc/GMT+12']) {
+    it(`writes every day the report reads as a UTC day, with the session TimeZone at ${zone}`, async () => {
+      const { db, fl } = await deployment();
+      await db.query(`SET TIME ZONE '${zone}'`);
+      const utcBefore = new Date().toISOString().slice(0, 10);
+      const { id } = await fl.files.put(new TextEncoder().encode('a'), { owner: 'alice' });
+      await fl.files.get(id, { as: 'alice' });
+      const utcAfter = new Date().toISOString().slice(0, 10);
+      const utcDays = new Set([utcBefore, utcAfter]);
+
+      const { rows } = await db.query<{ t: string; day: string }>(
+        `SELECT 'usage_daily' AS t, day::text AS day FROM usage_daily
+         UNION ALL SELECT 'file_owning_user_daily', day::text FROM file_owning_user_daily`,
+      );
+      assert.ok(rows.some((r) => r.t === 'usage_daily'), 'the write and the read were metered');
+      for (const r of rows) {
+        assert.ok(utcDays.has(r.day), `${r.t}.day is ${r.day}, the UTC day is ${[...utcDays].join(' or ')}`);
+      }
+      const r = await buildUsageReport(db, thisWeek());
+      assert.deepEqual(validateUsageReport(r), []);
+      assert.equal(r.days_active, 1, 'one day of activity is one day, whatever the server zone');
+    });
+  }
+
   it('keeps one install id across reports, and a deleted row is a new identity', async () => {
     const { db } = await deployment();
     const a = await buildUsageReport(db, thisWeek());

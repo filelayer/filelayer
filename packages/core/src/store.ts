@@ -1817,13 +1817,21 @@ export class PostgresStore implements AuthzDeps {
     return out;
   }
 
+  /**
+   * THE DAY IS THE UTC DAY, never the session's. `current_date` follows the
+   * connection's TimeZone, and the usage report reads its week and its audit
+   * days in UTC, so on a server set to Europe/Madrid a read at 00:30 local was
+   * metered on the next day and one day of activity counted as two (found by
+   * the 0.35.1 clean room; fixed in 0.35.2). `file_owning_user_daily` below uses
+   * the same expression for the same reason.
+   */
   async recordUsage(orgId: string, kind: 'read' | 'write', bytes = 0): Promise<void> {
     const col = kind === 'read' ? 'file_reads' : 'file_writes';
     // A read sends bytes OUT. A write puts bytes IN.
     const byteCol = kind === 'read' ? 'bytes_egressed' : 'bytes_written';
     await this.db.query(
       `INSERT INTO usage_daily (org_id, day, ${col}, ${byteCol})
-       VALUES ($1, current_date, 1, $2)
+       VALUES ($1, (now() AT TIME ZONE 'UTC')::date, 1, $2)
        ON CONFLICT (org_id, day) DO UPDATE
          SET ${col} = usage_daily.${col} + 1,
              ${byteCol} = usage_daily.${byteCol} + EXCLUDED.${byteCol}`,
@@ -1842,7 +1850,7 @@ export class PostgresStore implements AuthzDeps {
     if (!isUuid(orgId) || !isUuid(actorId)) return;
     await this.db.query(
       `INSERT INTO file_owning_user_daily (org_id, day, actor_id)
-       VALUES ($1, current_date, $2)
+       VALUES ($1, (now() AT TIME ZONE 'UTC')::date, $2)
        ON CONFLICT (org_id, day, actor_id) DO NOTHING`,
       [orgId, actorId],
     );
