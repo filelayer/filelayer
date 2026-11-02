@@ -133,13 +133,20 @@ jobs:
       # The entry may only describe a version npm already serves, and only the
       # version this tree is at. server.json and package.json agreeing is
       # check:registry's job; this asks npm.
+      #
+      # IT WAITS, A BOUNDED TIME. On the v0.35.1 release run this job started
+      # seconds after npm accepted the package, asked once, got a 404 because
+      # the version had not propagated, and stopped; the entry went out from the
+      # catch-up run. Up to ten minutes, asking every fifteen seconds, and still
+      # a failure if npm never serves it. tools/wait-npm-version.mjs --self-test
+      # shows the loop failing on a version that never appears.
       - name: server.json names a version npm serves
         run: |
           v=$(node -p 'require("./server.json").version')
           p=$(node -p 'require("./packages/core/package.json").version')
           [ "$v" = "$p" ] || { echo "::error::server.json says $v and package.json says $p"; exit 1; }
-          npm view "@filelayer/core@$v" version | grep -qx "$v" \
-            || { echo "::error::@filelayer/core@$v is not on npm; the entry would point at nothing"; exit 1; }
+          node tools/wait-npm-version.mjs --self-test
+          node tools/wait-npm-version.mjs "@filelayer/core" "$v" --timeout-s 600 --interval-s 15
 
       # PINNED BY VERSION AND BY CHECKSUM. The checksum is the published one for
       # this exact archive (registry_1.8.7_checksums.txt), recomputed when the

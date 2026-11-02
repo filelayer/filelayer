@@ -39,6 +39,11 @@
  *      only when publish was skipped, on main.
  *   4. mcp-publisher is pinned: a version, a sha256, and `sha256sum --check`
  *      before the binary is run.
+ *   5. Before the entry is published, the job waits for npm to serve the
+ *      version through tools/wait-npm-version.mjs with an explicit
+ *      `--timeout-s`: bounded, and not a single ask. A single ask is what failed
+ *      on the v0.35.1 release run (npm had not propagated yet); an unbounded
+ *      wait would hang a release instead of refusing it.
  *
  * --self-test feeds it a copy of the workflow with each of those broken, one at
  * a time, and requires each to be refused.
@@ -110,6 +115,11 @@ export function judge(text) {
     const firstRun = mcp.indexOf('"$RUNNER_TEMP/mcp-publisher"');
     if (check < 0) out.push('the mcp-publisher archive is not checked with sha256sum --check');
     else if (firstRun >= 0 && firstRun < check) out.push('mcp-publisher is run before its checksum is checked');
+    // 5. A bounded wait for npm, before publishing.
+    const wait = /node tools\/wait-npm-version\.mjs "@filelayer\/core" "\$v" --timeout-s \d+/.exec(mcp);
+    const publishAt = mcp.indexOf('"$RUNNER_TEMP/mcp-publisher" publish');
+    if (!wait) out.push('the mcp-registry job does not wait, a bounded time (--timeout-s), for npm to serve the version');
+    else if (publishAt >= 0 && publishAt < wait.index) out.push('the entry is published before npm is seen to serve the version');
   }
   return out;
 }
@@ -127,6 +137,8 @@ if (process.argv.includes('--self-test')) {
     ['success no longer required', real.replace("needs.publish.result == 'success'", "needs.publish.result != 'cancelled'")],
     ['a manual run allowed off main', real.replace(" && github.ref == 'refs/heads/main'", '')],
     ['the checksum check removed', real.replace(/\n.*sha256sum --check --strict/, '')],
+    ['the npm wait replaced by a single ask', real.replace(/node tools\/wait-npm-version\.mjs "@filelayer\/core" "\$v"[^\n]*/, 'npm view "@filelayer/core@$v" version | grep -qx "$v"')],
+    ['the npm wait with no bound', real.replace(/ --timeout-s \d+/, '')],
   ];
   let bad = 0;
   for (const [name, text] of cases) {
@@ -147,4 +159,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  - ${p}`);
   process.exit(1);
 }
-console.log(`check-publish-workflow: clean. ${SECRET} is read once, never printed, and the MCP entry is published only after a successful npm publish, by a pinned and checksummed mcp-publisher.`);
+console.log(`check-publish-workflow: clean. ${SECRET} is read once, never printed, and the MCP entry is published only after a successful npm publish, by a pinned and checksummed mcp-publisher, once npm is seen serving the version (a bounded wait).`);
