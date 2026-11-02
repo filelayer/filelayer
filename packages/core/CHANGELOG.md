@@ -19,6 +19,70 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [0.35.2] — 2026-11-03
+
+`@filelayer/core` is a TypeScript library for the files your SaaS users upload:
+you tell it who the caller is, and it decides what they may do with a file,
+serves the bytes and writes the audit event, on your own Postgres and your own
+bucket. This patch fixes two defects in the local usage report, both found by
+the clean-room verification of 0.35.1: on a PostgreSQL server whose time zone
+is not UTC, one day of activity could count as two, and the report's schema did
+not compile under a standard JSON Schema validator's default settings. No schema
+change (still version 16). One exported helper changed its first argument; see
+below.
+
+### Fixed — a day in the usage data is the UTC day, whatever the server's time zone
+
+The usage report reads its week and its audit days in UTC, but `usage_daily.day`
+and `file_owning_user_daily.day` were written with `current_date`, which follows
+the connection's `TimeZone`. On a server set to `Europe/Madrid`, a read at
+00:30 local time was filed under the next day, so one day of activity counted as
+two in `days_active`, and activity near the end of a week could land in the
+next one. Present since 0.35.0. Both tables are now written with the UTC day.
+
+**What existing rows mean.** Rows written before this release carry the day in
+the server's time zone at the time of the write. On PGlite, and on a server
+whose `TimeZone` is `UTC` (the default of the official `postgres` image), that
+already was the UTC day and nothing changes. On a server in another time zone,
+an event in the hours between local midnight and UTC midnight was filed one day
+away from its UTC day: one day later east of UTC, one day earlier west of it.
+Those rows are not rewritten, because the table holds no time of day to correct
+them from. A report for a week that ended before the upgrade may therefore
+count one extra day in `days_active`, or place a day in the neighbouring week.
+A week that starts after the upgrade is exact. The `ops` counts are unaffected:
+they come from `audit_event`, which stores a full timestamp.
+
+### Fixed — the usage report's schema compiles under a standard validator's defaults
+
+0.35.1 put the rule "every `null` carries a note that explains it" inside the
+schema, as a custom keyword `x-nullRequiresNote`. Ajv, run with its default
+options, refuses to compile a schema with an unknown keyword, so an integrator
+validating reports that way was stuck. The rule now ships beside the schema, in
+`usage-report.null-notes.json`, also served at
+`https://filelayer.dev/usage-report.null-notes.json`, and the schema is plain
+JSON Schema (draft 2020-12) again. `validateUsageReport()` applies both and
+refuses exactly what it refused in 0.35.1.
+
+### Changed
+
+- `unexplainedNulls(rules, report)`: the first argument is now the
+  null-to-note rules, `usageReportNullNotes()`, not the schema. In 0.35.1 it
+  was the schema, which carried the rules; a schema passed now carries none,
+  and would accept every `null`, so the call throws a `TypeError` that says
+  what to pass. `validateUsageReport(report)` is unchanged and is the call
+  most code wants.
+- New exports: `usageReportNullNotes()`, `USAGE_REPORT_NULL_NOTES_PATH` and the
+  type `UsageReportNullNotes`.
+
+### Release
+
+0.35.1's entry below says its MCP registry entry was published by the same CI
+run as the npm package. It was not: the registry job asked npm once, seconds
+after the publish, got a 404 because the version had not propagated yet, and
+stopped; the entry went out from a manual catch-up run. The job now waits for
+npm to serve the version, up to ten minutes, and still refuses if it never
+does.
+
 ## [0.35.1] — 2026-11-02
 
 `@filelayer/core` is a TypeScript library for the files your SaaS users upload:
