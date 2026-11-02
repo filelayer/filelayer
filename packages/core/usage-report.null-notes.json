@@ -1,0 +1,55 @@
+{
+  "$comment": "Format 1 of the Filelayer usage report: which note codes may explain each field of usage-report.schema.json that can be null. A report is valid only when it matches the schema AND every field listed here that is null has at least one of its codes in notes. validateUsageReport() applies both. This lives outside the schema so that the schema compiles under any standard JSON Schema validator's defaults.",
+  "schema": "https://filelayer.dev/usage-report.schema.json",
+  "format": 1,
+  "nullRequiresNote": {
+    "errors": [
+      "errors_not_measured"
+    ],
+    "ops.unshare": [
+      "unshare_not_recorded"
+    ],
+    "ops.upload": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.read_allowed": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.read_denied": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.share_create": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.share_revoke": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.direct_upload": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "ops.job_run": [
+      "before_install"
+    ],
+    "days_active": [
+      "audit_trimmed",
+      "before_install"
+    ],
+    "storage_kind": [
+      "no_files"
+    ],
+    "first_success_day": [
+      "no_successful_read",
+      "audit_trimmed",
+      "before_install"
+    ],
+    "lib_version": [
+      "lib_version_unknown"
+    ]
+  }
+}

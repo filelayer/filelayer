@@ -138,8 +138,11 @@ for and did not happen. Reading a `null` as `0` is the one mistake this format
 is built to prevent.
 
 **A `null` always carries its note.** `validateUsageReport()` rejects a report
-with a `null` that no note in `notes` explains, and which notes explain which
-field is part of the schema, under `x-nullRequiresNote`. In format 1, `errors`
+with a `null` that no note in `notes` explains. Which notes explain which
+field is in `usage-report.null-notes.json`, shipped beside the schema. The
+schema is plain JSON Schema (draft 2020-12), so a standard validator such as Ajv
+compiles it with its default options and checks the shape; the null-to-note
+rule is the one check only `validateUsageReport()` makes. In format 1, `errors`
 and `ops.unshare` can only be `null`.
 
 | Note | When it appears | Fields that are `null` because of it |

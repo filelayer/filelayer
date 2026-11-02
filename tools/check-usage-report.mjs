@@ -37,8 +37,8 @@
  *   4. THE VALIDATOR REFUSES WHAT MUST NOT BE THERE: a planted `org_id`, an
  *      unknown `ops` key, a storage kind outside the list, an `errors` of 0,
  *      an `ops.unshare` of 0, a null count with no note explaining it, and
- *      emptied notes under always-null fields. And `x-nullRequiresNote` gives
- *      every nullable field at least one real note code (1b).
+ *      emptied notes under always-null fields. And `usage-report.null-notes.json`
+ *      gives every nullable field at least one real note code (1b).
  *   5. THE PUBLISHED PAGE SAYS WHAT THE SCHEMA SAYS. docs/USAGE-REPORT.md's
  *      field table, `ops` table and notes table name exactly the schema's
  *      fields, `ops` keys and note codes, both ways; its example report has
@@ -49,23 +49,34 @@
  *      is held to this page by check:copies.
  *   6. THE SCHEMA'S `$id` RESOLVES. It names https://filelayer.dev/<path>, so
  *      web/<path> must exist and hold the same bytes the package ships
- *      (build:guides writes it; check:guides holds it there).
+ *      (build:guides writes it; check:guides holds it there). The same for
+ *      usage-report.null-notes.json, which the schema's $comment names.
+ *   7. A STANDARD VALIDATOR COMPILES THE SCHEMA WITH ITS DEFAULTS. Ajv, draft
+ *      2020-12, no options: strict mode on, so an unknown keyword is an error.
+ *      0.35.1 shipped a custom `x-nullRequiresNote` keyword and failed exactly
+ *      this (clean room 0.35.1); an integrator validating with defaults was
+ *      stuck. The report built in check 3 must also pass Ajv, so our validator
+ *      and an independent one agree on a real report.
  *
  * --self-test plants `import 'node:https'` and a `fetch(` into a copy of the
  * module and requires check 2 to name both, plants an open object into a copy
  * of the schema and requires check 1 to refuse it, and plants a field row, an
  * `ops` row, a dotted field and a note code into a copy of the page and
- * requires check 5 to refuse each.
+ * requires check 5 to refuse each. It puts `x-nullRequiresNote` back into a
+ * copy of the schema, which is 0.35.1's schema, and requires check 7 to refuse
+ * it.
  */
 
 import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CORE = join(ROOT, 'packages', 'core');
 const SCHEMA_PATH = join(CORE, 'usage-report.schema.json');
+const NULL_NOTES_PATH = join(CORE, 'usage-report.null-notes.json');
 const ENTRY = join(CORE, 'src', 'usage-report.ts');
 
 const NET_MODULES = ['http', 'https', 'net', 'tls', 'dgram', 'dns', 'http2', 'undici'];
@@ -100,13 +111,15 @@ export function schemaProblems(node, path = '$') {
 }
 
 // --- 1b. every nullable field says which notes may explain it ------------------
-// `x-nullRequiresNote` is what makes "a null always says why" enforceable. A
-// nullable field missing from it could be null with no reason, and a rule that
-// names a note code the schema does not have could never be satisfied.
-export function nullRuleProblems(schema) {
+// usage-report.null-notes.json is what makes "a null always says why"
+// enforceable. A nullable field missing from it could be null with no reason,
+// and a rule that names a note code the schema does not have could never be
+// satisfied.
+export function nullRuleProblems(schema, nullNotes) {
   const out = [];
-  const rules = schema['x-nullRequiresNote'];
-  if (!rules || typeof rules !== 'object') return ['schema: no x-nullRequiresNote, so a null need not say why'];
+  const rules = nullNotes?.nullRequiresNote;
+  if (!rules || typeof rules !== 'object') return ['null-notes: no nullRequiresNote object, so a null need not say why'];
+  if (nullNotes.schema !== schema.$id) out.push(`null-notes: names schema ${JSON.stringify(nullNotes.schema)}, the schema is ${schema.$id}`);
   const codes = schema.properties.notes.items.enum;
   const nullable = [];
   const walk = (props, prefix) => {
@@ -117,12 +130,12 @@ export function nullRuleProblems(schema) {
     }
   };
   walk(schema.properties, '');
-  for (const f of nullable) if (!(f in rules)) out.push(`x-nullRequiresNote: ${f} can be null and has no rule`);
+  for (const f of nullable) if (!(f in rules)) out.push(`null-notes: ${f} can be null and has no rule`);
   for (const [f, list] of Object.entries(rules)) {
     if (f.startsWith('$')) continue;
-    if (!nullable.includes(f)) out.push(`x-nullRequiresNote: ${f} is not a nullable field`);
-    if (!Array.isArray(list) || list.length === 0) out.push(`x-nullRequiresNote: ${f} names no note`);
-    else for (const c of list) if (!codes.includes(c)) out.push(`x-nullRequiresNote: ${f} names ${c}, which is not a note code`);
+    if (!nullable.includes(f)) out.push(`null-notes: ${f} is not a nullable field`);
+    if (!Array.isArray(list) || list.length === 0) out.push(`null-notes: ${f} names no note`);
+    else for (const c of list) if (!codes.includes(c)) out.push(`null-notes: ${f} names ${c}, which is not a note code`);
   }
   return out;
 }
@@ -251,6 +264,21 @@ export function idProblems(schemaObj, schemaText, webRoot = join(ROOT, 'web')) {
   return [];
 }
 
+// --- 7. a standard validator compiles the schema with its defaults ------------
+const requireFromCore = createRequire(join(CORE, 'package.json'));
+export function ajv() {
+  const Ajv2020 = requireFromCore('ajv/dist/2020').default;
+  return new Ajv2020();
+}
+export function ajvProblems(schemaObj) {
+  try {
+    ajv().compile(schemaObj);
+    return [];
+  } catch (e) {
+    return [`ajv (draft 2020-12, default options) cannot compile the schema: ${e.message}`];
+  }
+}
+
 if (process.argv.includes('--self-test')) {
   let bad = 0;
   const dir = mkdtempSync(join(tmpdir(), 'usage-report-selftest-'));
@@ -273,11 +301,12 @@ if (process.argv.includes('--self-test')) {
   if (!schemaOk) bad++;
   console.log(`  ${schemaOk ? 'ok  ' : 'FAIL'} an opened object and a free-text string in the schema are refused`);
 
-  const noRule = structuredClone(schema);
-  delete noRule['x-nullRequiresNote'].days_active;
-  noRule['x-nullRequiresNote'].errors = ['no_such_code'];
-  const nr = nullRuleProblems(noRule).join('\n');
-  const ruleOk = /days_active can be null and has no rule/.test(nr) && /no_such_code/.test(nr) && nullRuleProblems(schema).length === 0;
+  const nullNotes = JSON.parse(readFileSync(NULL_NOTES_PATH, 'utf8'));
+  const noRule = structuredClone(nullNotes);
+  delete noRule.nullRequiresNote.days_active;
+  noRule.nullRequiresNote.errors = ['no_such_code'];
+  const nr = nullRuleProblems(schema, noRule).join('\n');
+  const ruleOk = /days_active can be null and has no rule/.test(nr) && /no_such_code/.test(nr) && nullRuleProblems(schema, nullNotes).length === 0;
   if (!ruleOk) bad++;
   console.log(`  ${ruleOk ? 'ok  ' : 'FAIL'} a nullable field with no rule, and a rule naming no real code, are refused`);
   const clean = schemaProblems(schema).length === 0;
@@ -302,7 +331,13 @@ if (process.argv.includes('--self-test')) {
     idProblems({ ...schema, $id: 'https://example.com/x.json' }, text).length === 1;
   if (!idOk) bad++;
   console.log(`  ${idOk ? 'ok  ' : 'FAIL'} an $id with no file under web/, and an $id off the domain, are refused`);
-  console.log(`check-usage-report --self-test: ${6 - bad}/6 controls behaved`);
+  // 0.35.1's schema: today's, with the rules back inside it as a custom keyword.
+  const v0351 = { ...structuredClone(schema), 'x-nullRequiresNote': structuredClone(nullNotes.nullRequiresNote) };
+  const ap = ajvProblems(v0351).join('\n');
+  const ajvOk = /unknown keyword: "x-nullRequiresNote"/.test(ap) && ajvProblems(schema).length === 0;
+  if (!ajvOk) bad++;
+  console.log(`  ${ajvOk ? 'ok  ' : 'FAIL'} 0.35.1's schema (x-nullRequiresNote inside it) does not compile under Ajv defaults; today's does`);
+  console.log(`check-usage-report --self-test: ${7 - bad}/7 controls behaved`);
   process.exit(bad === 0 ? 0 : 1);
 }
 
@@ -310,8 +345,11 @@ const problems = [];
 
 const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'));
 problems.push(...schemaProblems(schema).map((p) => `schema ${p}`));
-problems.push(...nullRuleProblems(schema));
+const nullNotesText = readFileSync(NULL_NOTES_PATH, 'utf8');
+problems.push(...nullRuleProblems(schema, JSON.parse(nullNotesText)));
 problems.push(...idProblems(schema, readFileSync(SCHEMA_PATH, 'utf8')));
+problems.push(...idProblems({ $id: JSON.parse(nullNotesText).schema.replace(/usage-report\.schema\.json$/, 'usage-report.null-notes.json') }, nullNotesText));
+problems.push(...ajvProblems(schema));
 
 const net = networkProblems(ENTRY);
 problems.push(...net.problems.map((p) => `network ${p}`));
@@ -360,6 +398,12 @@ if (!existsSync(dist)) {
     const again = await core.buildUsageReport(db, { now, week: core.isoWeekOf(now) });
     const v = core.validateUsageReport(report);
     if (v.length) problems.push(`runtime: built report is invalid: ${v.join('; ')}`);
+    try {
+      const validate = ajv().compile(schema);
+      if (!validate(report)) problems.push(`runtime: Ajv refuses the built report: ${JSON.stringify(validate.errors)}`);
+    } catch {
+      // check 7 already names a schema Ajv cannot compile.
+    }
     if (report.install_id !== again.install_id) problems.push('runtime: install_id changed between two reports of one database');
     if (report.ops.upload !== 1 || report.ops.read_allowed !== 1 || report.ops.read_denied < 1) {
       problems.push(`runtime: counts do not match the activity (upload 1, read_allowed 1, read_denied >= 1): ${JSON.stringify(report.ops)}`);
@@ -398,6 +442,7 @@ if (problems.length) {
 }
 console.log(
   `check-usage-report: clean. Schema closed; ${net.files} module(s) in the import graph, no network; ` +
-    `report built with the network trapped and valid (${built}); seven planted violations refused; ` +
+    `report built with the network trapped and valid (${built}), and Ajv agrees; seven planted violations refused; ` +
+    'Ajv compiles the schema with its defaults; schema and null-notes served at their URLs; ' +
     'docs/USAGE-REPORT.md tables, example and llms.txt agree with the schema.',
 );

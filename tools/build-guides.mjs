@@ -888,9 +888,11 @@ ${sitemapEntries
 // so the site has to answer that URL with the same bytes the package ships. It
 // is copied here, from the one source in packages/core, and --check fails on a
 // one-byte difference like every page above. check:usage-report separately
-// fails if the `$id` names a path that is not in web/.
+// fails if the `$id` names a path that is not in web/. The null-to-note rules
+// the schema's $comment points at are served beside it, for the same reason.
 const verbatim = [
   { from: join('packages', 'core', 'usage-report.schema.json'), path: join('web', 'usage-report.schema.json') },
+  { from: join('packages', 'core', 'usage-report.null-notes.json'), path: join('web', 'usage-report.null-notes.json') },
 ];
 
 const artifacts = [

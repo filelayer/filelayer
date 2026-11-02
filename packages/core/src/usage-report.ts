@@ -24,11 +24,14 @@
  *    be returned. `tools/check-usage-report.mjs` checks the schema itself is
  *    closed at every level.
  * 2. NO NETWORK. This module imports nothing that can open a socket; the only
- *    I/O is the database it is handed and the schema file it ships with. The
+ *    I/O is the database it is handed and the two files it ships with (the
+ *    schema and `usage-report.null-notes.json`). The
  *    gate checks the import graph, and the suite runs the builder with every
  *    network entry point replaced by one that throws.
  * 3. MISSING IS NULL, NEVER ZERO. A count that cannot be read is `null` and the
- *    report says why in `notes`, with a fixed code.
+ *    report says why in `notes`, with a fixed code. Which codes may explain
+ *    which null is `usage-report.null-notes.json`, and the validator refuses a
+ *    null that none of them explains.
  *
  * Aggregation happens in SQL. No query reads an org, actor, file or grant id,
  * an IP, a user agent, an event context or any name into this process.
@@ -44,6 +47,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Path of the shipped schema: one level above src/ and dist/ alike. */
 export const USAGE_REPORT_SCHEMA_PATH = join(HERE, '..', 'usage-report.schema.json');
+
+/**
+ * Path of the shipped null-to-note rules, beside the schema. Until 0.35.2 they
+ * were a custom keyword inside the schema, `x-nullRequiresNote`, and Ajv's
+ * default strict mode refuses to compile a schema with an unknown keyword (found
+ * by the 0.35.1 clean room). The schema is now plain JSON Schema that any
+ * standard validator compiles with its defaults; this file is the one rule
+ * JSON Schema cannot express.
+ */
+export const USAGE_REPORT_NULL_NOTES_PATH = join(HERE, '..', 'usage-report.null-notes.json');
 
 export type UsageReportNote =
   | 'errors_not_measured'
@@ -95,7 +108,7 @@ type Schema = Record<string, unknown>;
 const KNOWN = new Set([
   '$schema', '$id', '$comment', 'title', 'type', 'const', 'enum', 'pattern',
   'minimum', 'maximum', 'properties', 'required', 'additionalProperties',
-  'items', 'uniqueItems', 'maxItems', 'x-nullRequiresNote',
+  'items', 'uniqueItems', 'maxItems',
 ]);
 
 let cachedSchema: Schema | null = null;
@@ -105,6 +118,24 @@ export function usageReportSchema(): Schema {
     cachedSchema = JSON.parse(readFileSync(USAGE_REPORT_SCHEMA_PATH, 'utf8')) as Schema;
   }
   return cachedSchema;
+}
+
+/** For each field that can be null, the note codes that may explain it. */
+export type UsageReportNullNotes = Record<string, readonly string[]>;
+
+let cachedNullNotes: UsageReportNullNotes | null = null;
+
+export function usageReportNullNotes(): UsageReportNullNotes {
+  if (cachedNullNotes === null) {
+    const file = JSON.parse(readFileSync(USAGE_REPORT_NULL_NOTES_PATH, 'utf8')) as {
+      nullRequiresNote?: UsageReportNullNotes;
+    };
+    if (!file.nullRequiresNote || typeof file.nullRequiresNote !== 'object') {
+      throw new Error(`${USAGE_REPORT_NULL_NOTES_PATH} has no nullRequiresNote object`);
+    }
+    cachedNullNotes = file.nullRequiresNote;
+  }
+  return cachedNullNotes;
 }
 
 function typeOf(v: unknown): string {
@@ -176,14 +207,22 @@ function at(value: unknown, path: string): unknown {
 }
 
 /**
- * A null that nothing explains. The schema's `x-nullRequiresNote` maps every
+ * A null that nothing explains. `usage-report.null-notes.json` maps every
  * nullable field to the note codes that may explain it; a field that is null
  * with none of them in `notes` is refused, because a reader cannot tell an
  * unexplained null from a bug, and the one thing this format promises is that
  * a null always says why.
+ *
+ * In 0.35.1 the first argument was the schema, which carried the rules. Passing
+ * a schema now would silently find no rules and accept every null, so it throws.
  */
-export function unexplainedNulls(schema: Schema, value: unknown): string[] {
-  const rules = (schema['x-nullRequiresNote'] ?? {}) as Record<string, unknown>;
+export function unexplainedNulls(rules: UsageReportNullNotes, value: unknown): string[] {
+  if ('$schema' in rules || 'x-nullRequiresNote' in rules) {
+    throw new TypeError(
+      'unexplainedNulls(rules, report): since 0.35.2 the first argument is the null-to-note rules ' +
+        '(usageReportNullNotes()), not the schema. validateUsageReport(report) applies both.',
+    );
+  }
   const notes = at(value, 'notes');
   const have = new Set(Array.isArray(notes) ? (notes as unknown[]) : []);
   const out: string[] = [];
@@ -200,7 +239,7 @@ export function unexplainedNulls(schema: Schema, value: unknown): string[] {
 export function validateUsageReport(value: unknown): string[] {
   const schema = usageReportSchema();
   const shape = validateAgainst(schema, value);
-  return shape.length > 0 ? shape : unexplainedNulls(schema, value);
+  return shape.length > 0 ? shape : unexplainedNulls(usageReportNullNotes(), value);
 }
 
 // -----------------------------------------------------------------------------

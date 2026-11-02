@@ -51,6 +51,7 @@
     "ERRORS.md",
     "skills",
     "usage-report.schema.json",
+    "usage-report.null-notes.json",
     "!skills/*/evals"
   ],
   "sideEffects": false,
@@ -127,6 +128,7 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.23.1",
+    "ajv": "^8.20.0",
     "embedded-postgres": "^18.4.0-beta.17",
     "pg": "^8.23.1",
     "typescript": "^5.7.0",

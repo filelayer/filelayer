@@ -25,6 +25,9 @@ import {
   validateUsageReport,
   isoWeekOf,
   isoWeekRange,
+  unexplainedNulls,
+  usageReportNullNotes,
+  usageReportSchema,
 } from '../src/index.ts';
 
 async function deployment() {
@@ -207,6 +210,20 @@ describe('usage report', () => {
       dns.lookup = saved.dns;
     }
     assert.deepEqual(calls, []);
+  });
+
+  it('keeps the null-to-note rules outside the schema, and refuses the 0.35.1 call shape', async () => {
+    const schema = usageReportSchema();
+    assert.deepEqual(Object.keys(schema).filter((k) => k.startsWith('x-')), [], 'no custom keyword in the schema');
+    const rules = usageReportNullNotes();
+    assert.deepEqual(rules['errors'], ['errors_not_measured']);
+    const { db } = await deployment();
+    const r = await buildUsageReport(db, thisWeek());
+    assert.deepEqual(unexplainedNulls(rules, r), []);
+    assert.deepEqual(unexplainedNulls(rules, { ...r, notes: [] }).length > 0, true);
+    // 0.35.1 took the schema here. Now that the schema carries no rules, that
+    // call would accept every null; it throws instead.
+    assert.throws(() => unexplainedNulls(schema as never, r), /first argument is the null-to-note rules/);
   });
 
   it('the validator refuses what the schema does not publish', async () => {

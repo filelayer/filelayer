@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://filelayer.dev/usage-report.schema.json",
   "title": "Filelayer local usage report",
-  "$comment": "The whole of what `filelayer usage-report` can write. Closed at every level: an unknown field is a validation failure, every string is an enum, a const or a fixed pattern, and every number is bounded. A field that cannot be measured is null and says why in `notes`; it is never 0. Nothing in this report is sent anywhere by Filelayer: it is a file the adopter reads and may choose to share.",
+  "$comment": "The whole of what `filelayer usage-report` can write. Closed at every level: an unknown field is a validation failure, every string is an enum, a const or a fixed pattern, and every number is bounded. A field that cannot be measured is null and says why in `notes`; it is never 0. Nothing in this report is sent anywhere by Filelayer: it is a file the adopter reads and may choose to share. Which note codes may explain which null is in usage-report.null-notes.json, shipped beside this file and served at https://filelayer.dev/usage-report.null-notes.json; validateUsageReport() applies both, so a null with no note is refused.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -213,56 +213,5 @@
         ]
       }
     }
-  },
-  "x-nullRequiresNote": {
-    "$comment": "A field that is null must be explained: at least one of the listed note codes is in notes. Enforced by validateUsageReport().",
-    "errors": [
-      "errors_not_measured"
-    ],
-    "ops.unshare": [
-      "unshare_not_recorded"
-    ],
-    "ops.upload": [
-      "audit_trimmed",
-      "before_install"
-    ],
-    "ops.read_allowed": [
-      "audit_trimmed",
-      "before_install"
-    ],
-    "ops.read_denied": [
-      "audit_trimmed",
-      "before_install"
-    ],
-    "ops.share_create": [
-      "audit_trimmed",
-      "before_install"
-    ],
-    "ops.share_revoke": [
-      "audit_trimmed",
-      "before_install"
-    ],
-    "ops.direct_upload": [
-      "audit_trimmed",
-      "before_install"
-    ],
-    "ops.job_run": [
-      "before_install"
-    ],
-    "days_active": [
-      "audit_trimmed",
-      "before_install"
-    ],
-    "storage_kind": [
-      "no_files"
-    ],
-    "first_success_day": [
-      "no_successful_read",
-      "audit_trimmed",
-      "before_install"
-    ],
-    "lib_version": [
-      "lib_version_unknown"
-    ]
   }
 }
