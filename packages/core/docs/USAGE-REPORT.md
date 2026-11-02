@@ -21,19 +21,22 @@ package, and the report is checked against it before it is written.
 The command opens its own connection to PostgreSQL, so it needs two things
 from the project you run it in:
 
-- **The `pg` driver:** `npm install pg`. `@filelayer/core` has no runtime
-  dependencies, and the CLI is the only part of it that needs a driver.
-- **`DATABASE_URL`**, pointing at the PostgreSQL database your deployment uses,
-  and reachable from where you run the command.
+- **The `pg` driver:** `npm install pg`. It is an optional peer dependency
+  (`^8.0.0`): `@filelayer/core` has no runtime dependencies, and the CLI is the
+  only part of it that needs a driver.
+- **`DATABASE_URL`**, pointing at the PostgreSQL server and database your
+  deployment uses, and reachable from where you run the command. CI runs it
+  against PostgreSQL 17.
 
 If either is missing, it stops before reading anything and says which one.
 
-**If your Filelayer runs on PGlite** (`Filelayer.quickstart()`, or a PGlite
-instance of your own), the database lives inside your application's process
-and the command has nothing to connect to. Build the report from code instead,
-with the same `db` you hand to `new Filelayer(db, storage, options)`; on an
-instance from `Filelayer.quickstart()` that is `fl.store.db`. That route is
-shown below, under the options.
+**The command does not work with PGlite.** If your Filelayer runs on PGlite
+(`Filelayer.quickstart()`, or `createTestDb()` in tests), the database lives
+inside your application's process and the command has nothing to connect to.
+Build the report from code instead, with `buildUsageReport(db, { week })`: on
+an instance from `Filelayer.quickstart()`, `db` is `fl.store.db`; with
+`createTestDb()`, it is the `db` that returns. That route is shown below,
+under the options.
 
 ## Run it
 
@@ -130,18 +133,37 @@ One week of a deployment that stored one file and read it once:
 ## `null` means "not measured", never zero
 
 A field the report cannot measure honestly is `null`, and `notes` says why
-with one of six fixed codes. A `0` is a measured zero: the thing was looked for
-and did not happen. Reading a `null` as `0` is the one mistake this format is
-built to prevent.
+with one of seven fixed codes. A `0` is a measured zero: the thing was looked
+for and did not happen. Reading a `null` as `0` is the one mistake this format
+is built to prevent.
+
+**A `null` always carries its note.** `validateUsageReport()` rejects a report
+with a `null` that no note in `notes` explains, and which notes explain which
+field is part of the schema, under `x-nullRequiresNote`. In format 1, `errors`
+and `ops.unshare` can only be `null`.
 
 | Note | When it appears | Fields that are `null` because of it |
 |---|---|---|
 | `errors_not_measured` | always, in format 1 | `errors` |
 | `unshare_not_recorded` | always, in format 1 | `ops.unshare` |
-| `audit_trimmed` | a trim (`trimAuditChain()`) or an erasure (`eraseActorFromAuditChain()`) removed audit events from that week, so any count read from the audit log would be an undercount | every `ops` count except `job_run`, and `days_active`; also `first_success_day` when the first allowed read is no longer in the log |
+| `audit_trimmed` | a trim (`trimAuditChain()`) or an erasure (`eraseActorFromAuditChain()`) removed audit events from that week, so any count read from the audit log would be an undercount | every `ops` count except `job_run` and `unshare`, and `days_active`; also `first_success_day` when the first allowed read is no longer in the log |
 | `no_files` | the database has no file rows | `storage_kind` |
 | `no_successful_read` | no file has ever been read successfully | `first_success_day` |
 | `lib_version_unknown` | the installed package's `package.json` has no readable version | `lib_version` |
+| `before_install` | the week ended before Filelayer's schema was created in that database, so the deployment did not exist yet. Zeros would read as an idle deployment. A week that overlaps the install is measured | every `ops` count, `job_run` included, `days_active` and `first_success_day` |
+
+Which note may explain which `null`, as the schema states it:
+
+| Field | Notes that explain a `null` |
+|---|---|
+| `errors` | `errors_not_measured` |
+| `ops.unshare` | `unshare_not_recorded` |
+| `ops.upload`, `ops.read_allowed`, `ops.read_denied`, `ops.share_create`, `ops.share_revoke`, `ops.direct_upload` | `audit_trimmed`, `before_install` |
+| `ops.job_run` | `before_install` |
+| `days_active` | `audit_trimmed`, `before_install` |
+| `storage_kind` | `no_files` |
+| `first_success_day` | `no_successful_read`, `audit_trimmed`, `before_install` |
+| `lib_version` | `lib_version_unknown` |
 
 ## What each field means
 
@@ -173,7 +195,7 @@ action and decision, counted over the week:
 | `share_revoke` | `grant.revoke`, allowed. |
 | `unshare` | Always `null` (`unshare_not_recorded`): `unshare()` writes one `grant.revoke` per grant it removes and nothing of its own, so its revocations are inside `share_revoke` and cannot be counted apart. |
 | `direct_upload` | `file.upload_complete`, allowed: direct uploads that finished. |
-| `job_run` | Rows in `job_run` that finished during the week: background jobs, run directly or through `runMaintenance()`. This one is read from `job_run`, not from the audit log, so a trim never makes it `null`. |
+| `job_run` | Rows in `job_run` that finished during the week: background jobs, run directly or through `runMaintenance()`. This one is read from `job_run`, not from the audit log, so a trim never makes it `null`; a week before the install does (`before_install`). |
 
 ## What it does not measure
 

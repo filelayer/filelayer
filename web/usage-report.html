@@ -92,10 +92,10 @@
 <p>The file contains no file names, no user, org, file or grant identifiers, no IP addresses and no event contents. It contains the fields listed on this page and nothing else: its shape is <code>usage-report.schema.json</code>, which ships in the package, and the report is checked against it before it is written.</p>
 <h2 id="before-you-run-it">Before you run it</h2>
 <p>The command opens its own connection to PostgreSQL, so it needs two things from the project you run it in:</p>
-<ul><li><strong>The <code>pg</code> driver:</strong> <code>npm install pg</code>. <code>@filelayer/core</code> has no runtime dependencies, and the CLI is the only part of it that needs a driver.</li>
-<li><strong><code>DATABASE_URL</code></strong>, pointing at the PostgreSQL database your deployment uses, and reachable from where you run the command.</li></ul>
+<ul><li><strong>The <code>pg</code> driver:</strong> <code>npm install pg</code>. It is an optional peer dependency (<code>^8.0.0</code>): <code>@filelayer/core</code> has no runtime dependencies, and the CLI is the only part of it that needs a driver.</li>
+<li><strong><code>DATABASE_URL</code></strong>, pointing at the PostgreSQL server and database your deployment uses, and reachable from where you run the command. CI runs it against PostgreSQL 17.</li></ul>
 <p>If either is missing, it stops before reading anything and says which one.</p>
-<p><strong>If your Filelayer runs on PGlite</strong> (<code>Filelayer.quickstart()</code>, or a PGlite instance of your own), the database lives inside your application's process and the command has nothing to connect to. Build the report from code instead, with the same <code>db</code> you hand to <code>new Filelayer(db, storage, options)</code>; on an instance from <code>Filelayer.quickstart()</code> that is <code>fl.store.db</code>. That route is shown below, under the options.</p>
+<p><strong>The command does not work with PGlite.</strong> If your Filelayer runs on PGlite (<code>Filelayer.quickstart()</code>, or <code>createTestDb()</code> in tests), the database lives inside your application's process and the command has nothing to connect to. Build the report from code instead, with <code>buildUsageReport(db, { week })</code>: on an instance from <code>Filelayer.quickstart()</code>, <code>db</code> is <code>fl.store.db</code>; with <code>createTestDb()</code>, it is the <code>db</code> that returns. That route is shown below, under the options.</p>
 <h2 id="run-it">Run it</h2>
 <pre><code class="lang-bash">npx filelayer usage-report</code></pre>
 <p>It reads <code>DATABASE_URL</code> from the environment, as the rest of the CLI does, and writes <code>./filelayer-usage-report-&lt;first 8 characters of install_id&gt;-&lt;week&gt;.json</code> for the last complete ISO week (UTC). Then it prints the same JSON, so what you see is what the file holds.</p>
@@ -150,15 +150,29 @@ console.log(json);</code></pre>
   &quot;notes&quot;: [&quot;errors_not_measured&quot;, &quot;unshare_not_recorded&quot;]
 }</code></pre>
 <h2 id="null-means-not-measured-never-zero"><code>null</code> means &quot;not measured&quot;, never zero</h2>
-<p>A field the report cannot measure honestly is <code>null</code>, and <code>notes</code> says why with one of six fixed codes. A <code>0</code> is a measured zero: the thing was looked for and did not happen. Reading a <code>null</code> as <code>0</code> is the one mistake this format is built to prevent.</p>
+<p>A field the report cannot measure honestly is <code>null</code>, and <code>notes</code> says why with one of seven fixed codes. A <code>0</code> is a measured zero: the thing was looked for and did not happen. Reading a <code>null</code> as <code>0</code> is the one mistake this format is built to prevent.</p>
+<p><strong>A <code>null</code> always carries its note.</strong> <code>validateUsageReport()</code> rejects a report with a <code>null</code> that no note in <code>notes</code> explains, and which notes explain which field is part of the schema, under <code>x-nullRequiresNote</code>. In format 1, <code>errors</code> and <code>ops.unshare</code> can only be <code>null</code>.</p>
 <div class="table-scroll"><table>
 <thead><tr><th>Note</th><th>When it appears</th><th>Fields that are <code>null</code> because of it</th></tr></thead>
 <tbody><tr><td><code>errors_not_measured</code></td><td>always, in format 1</td><td><code>errors</code></td></tr>
 <tr><td><code>unshare_not_recorded</code></td><td>always, in format 1</td><td><code>ops.unshare</code></td></tr>
-<tr><td><code>audit_trimmed</code></td><td>a trim (<code>trimAuditChain()</code>) or an erasure (<code>eraseActorFromAuditChain()</code>) removed audit events from that week, so any count read from the audit log would be an undercount</td><td>every <code>ops</code> count except <code>job_run</code>, and <code>days_active</code>; also <code>first_success_day</code> when the first allowed read is no longer in the log</td></tr>
+<tr><td><code>audit_trimmed</code></td><td>a trim (<code>trimAuditChain()</code>) or an erasure (<code>eraseActorFromAuditChain()</code>) removed audit events from that week, so any count read from the audit log would be an undercount</td><td>every <code>ops</code> count except <code>job_run</code> and <code>unshare</code>, and <code>days_active</code>; also <code>first_success_day</code> when the first allowed read is no longer in the log</td></tr>
 <tr><td><code>no_files</code></td><td>the database has no file rows</td><td><code>storage_kind</code></td></tr>
 <tr><td><code>no_successful_read</code></td><td>no file has ever been read successfully</td><td><code>first_success_day</code></td></tr>
-<tr><td><code>lib_version_unknown</code></td><td>the installed package's <code>package.json</code> has no readable version</td><td><code>lib_version</code></td></tr></tbody>
+<tr><td><code>lib_version_unknown</code></td><td>the installed package's <code>package.json</code> has no readable version</td><td><code>lib_version</code></td></tr>
+<tr><td><code>before_install</code></td><td>the week ended before Filelayer's schema was created in that database, so the deployment did not exist yet. Zeros would read as an idle deployment. A week that overlaps the install is measured</td><td>every <code>ops</code> count, <code>job_run</code> included, <code>days_active</code> and <code>first_success_day</code></td></tr></tbody>
+</table></div>
+<p>Which note may explain which <code>null</code>, as the schema states it:</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Field</th><th>Notes that explain a <code>null</code></th></tr></thead>
+<tbody><tr><td><code>errors</code></td><td><code>errors_not_measured</code></td></tr>
+<tr><td><code>ops.unshare</code></td><td><code>unshare_not_recorded</code></td></tr>
+<tr><td><code>ops.upload</code>, <code>ops.read_allowed</code>, <code>ops.read_denied</code>, <code>ops.share_create</code>, <code>ops.share_revoke</code>, <code>ops.direct_upload</code></td><td><code>audit_trimmed</code>, <code>before_install</code></td></tr>
+<tr><td><code>ops.job_run</code></td><td><code>before_install</code></td></tr>
+<tr><td><code>days_active</code></td><td><code>audit_trimmed</code>, <code>before_install</code></td></tr>
+<tr><td><code>storage_kind</code></td><td><code>no_files</code></td></tr>
+<tr><td><code>first_success_day</code></td><td><code>no_successful_read</code>, <code>audit_trimmed</code>, <code>before_install</code></td></tr>
+<tr><td><code>lib_version</code></td><td><code>lib_version_unknown</code></td></tr></tbody>
 </table></div>
 <h2 id="what-each-field-means">What each field means</h2>
 <div class="table-scroll"><table>
@@ -187,7 +201,7 @@ console.log(json);</code></pre>
 <tr><td><code>share_revoke</code></td><td><code>grant.revoke</code>, allowed.</td></tr>
 <tr><td><code>unshare</code></td><td>Always <code>null</code> (<code>unshare_not_recorded</code>): <code>unshare()</code> writes one <code>grant.revoke</code> per grant it removes and nothing of its own, so its revocations are inside <code>share_revoke</code> and cannot be counted apart.</td></tr>
 <tr><td><code>direct_upload</code></td><td><code>file.upload_complete</code>, allowed: direct uploads that finished.</td></tr>
-<tr><td><code>job_run</code></td><td>Rows in <code>job_run</code> that finished during the week: background jobs, run directly or through <code>runMaintenance()</code>. This one is read from <code>job_run</code>, not from the audit log, so a trim never makes it <code>null</code>.</td></tr></tbody>
+<tr><td><code>job_run</code></td><td>Rows in <code>job_run</code> that finished during the week: background jobs, run directly or through <code>runMaintenance()</code>. This one is read from <code>job_run</code>, not from the audit log, so a trim never makes it <code>null</code>; a week before the install does (<code>before_install</code>).</td></tr></tbody>
 </table></div>
 <h2 id="what-it-does-not-measure">What it does not measure</h2>
 <ul><li><strong>Errors.</strong> Nothing records an error anywhere a report could read it, so <code>errors</code> is always <code>null</code> in format 1. A deployment that is failing and a deployment that is not look the same in this report.</li>
