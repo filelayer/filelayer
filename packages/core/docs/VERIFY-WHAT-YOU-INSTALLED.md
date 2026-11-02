@@ -129,14 +129,16 @@ The table above is for the procedure on this page: the published tarball, with
 PGlite as the only thing installed. `npm test` in a clone of the repository
 runs the same tests in a different environment, because a clone installs our
 development dependencies, so fewer of them skip. Measured on Linux as a normal
-user, 2 November 2026, the difference is exactly two of the groups above:
+user, 2 November 2026, two of the four skip groups above stop skipping and the
+other two do not:
 
-- **The ten MCP tests run.** The nine in `test/mcp.test.ts` find
+- **The two MCP groups run, ten tests in all.** The nine in `test/mcp.test.ts` find
   `@modelcontextprotocol/sdk` and `zod`, and the launch test in
   `test/mcp-server.test.ts` finds `pg` and `embedded-postgres` and starts an
   embedded PostgreSQL by itself. That leaves twenty-five skipped.
-- **The twenty-five contention and audit-retention tests stay opt-in.** They
-  skip unless `FILELAYER_TEST_CONTENTION=1` or `FILELAYER_TEST_DATABASE_URL` is
+- **The other two groups, the twenty-five contention and audit-retention
+  tests, still skip, exactly as from the tarball.** They are opt-in: they skip
+  unless `FILELAYER_TEST_CONTENTION=1` or `FILELAYER_TEST_DATABASE_URL` is
   set. With the first they start an embedded PostgreSQL; with the second they
   use the server it names, which is what CI does on every commit. With either,
   nothing skips and every test passes.
