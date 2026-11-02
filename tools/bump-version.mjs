@@ -199,6 +199,10 @@ const DATED = [
   // "From `0.34.2` on, nobody runs npm publish by hand": the release where a
   // practice started. The 0.35.0 bump rewrote it to 0.35.0.
   /\b[Ff]rom\s+`?v?\d+\.\d+\.\d+`?\s+on\b/,
+  // "On the v0.35.1 release run this job started seconds after npm accepted
+  // the package": a run of CI is an event, dated to the release that ran it.
+  // The 0.35.2 bump rewrote it to v0.35.2.
+  /\bv?\d+\.\d+\.\d+`?\s+(?:release|catch-up|publish)\s+run\b/,
 ];
 
 /**
