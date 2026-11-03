@@ -12,8 +12,8 @@
   markdown.
 -->
 
-<title>How do I erase a user when my audit log is append-only? · Filelayer</title>
-<meta name="description" content="A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and…">
+<title>How do I delete a user's data when my audit log is append-only?</title>
+<meta name="description" content="A user asks you to delete their data, often citing GDPR's right to erasure. Deleting their rows and their files is ordinary work. The audit log is the hard part: it records every file…">
 
 <link rel="canonical" href="https://filelayer.dev/guides/erasing-a-user-with-an-append-only-audit-log">
 <link rel="stylesheet" href="/styles.css">
@@ -23,13 +23,13 @@
 
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://filelayer.dev/guides/erasing-a-user-with-an-append-only-audit-log">
-<meta property="og:title" content="How do I erase a user when my audit log is append-only?">
-<meta property="og:description" content="A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and…">
+<meta property="og:title" content="How do I delete a user's data when my audit log is append-only?">
+<meta property="og:description" content="A user asks you to delete their data, often citing GDPR's right to erasure. Deleting their rows and their files is ordinary work. The audit log is the hard part: it records every file…">
 <meta property="og:image" content="https://filelayer.dev/og.png">
 <meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="How do I erase a user when my audit log is append-only?">
-<meta name="twitter:description" content="A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and…">
+<meta name="twitter:title" content="How do I delete a user's data when my audit log is append-only?">
+<meta name="twitter:description" content="A user asks you to delete their data, often citing GDPR's right to erasure. Deleting their rows and their files is ordinary work. The audit log is the hard part: it records every file…">
 <meta name="twitter:image" content="https://filelayer.dev/og.png">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -38,8 +38,8 @@
 {
   "@context": "https://schema.org",
   "@type": "TechArticle",
-  "headline": "How do I erase a user when my audit log is append-only?",
-  "description": "A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and…",
+  "headline": "How do I delete a user's data when my audit log is append-only?",
+  "description": "A user asks you to delete their data, often citing GDPR's right to erasure. Deleting their rows and their files is ordinary work. The audit log is the hard part: it records every file…",
   "url": "https://filelayer.dev/guides/erasing-a-user-with-an-append-only-audit-log",
   "inLanguage": "en",
   "isPartOf": {
@@ -86,8 +86,8 @@
 
 <main id="main" class="wrap">
 <article class="guide">
-<h1>How do I erase a user when my audit log is append-only?</h1>
-<p>A user asks you to delete their data. You delete their rows, you delete their files from the bucket, and then you reach the audit log, which records every file they ever opened and which you built to be impossible to change.</p>
+<h1>How do I delete a user's data when my audit log is append-only?</h1>
+<p>A user asks you to delete their data, often citing GDPR's right to erasure. Deleting their rows and their files is ordinary work. The audit log is the hard part: it records every file they ever opened, and you built it so it cannot be changed. This page shows how to remove one person's events from an append-only, hash-chained log and still verify it, and what that does not do: it is not legal erasure, which is a question for your counsel.</p>
 <p>The advice you will find is about rows: encrypt each subject's fields under a per-subject key and destroy the key, or blank the personal columns and leave the hashes alone. Both are reasonable and neither is about <strong>files</strong>, which is the harder case, because the bytes live outside the database and the thing you have to reconcile is a log of access to them.</p>
 <p>Everything below is reproduced by <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/erasing-a-user-with-an-append-only-audit-log.proof.mjs" rel="noopener"><code>erasing-a-user-with-an-append-only-audit-log.proof.mjs</code></a>, which starts a real PostgreSQL. Every output block below is copied from a run of it, and every claim with a number attached is asserted there. Three claims are NOT: that a rule does not stop <code>TRUNCATE</code>, what sealing costs, and the concurrent-append defect, which belongs to <a href="/guides/tamper-evident-file-audit">another page</a> and is proved there.</p>
 <h2 id="the-short-answer">The short answer</h2>

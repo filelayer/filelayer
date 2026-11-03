@@ -117,10 +117,11 @@
     <h1>The file layer for SaaS&nbsp;applications.</h1>
 
     <p class="lead">
-      Every application that stores files ends up rebuilding the same thing:
-      <strong>who owns this file, who can reach it, how it gets shared, and when that ends.</strong>
-      Filelayer is that model, built once, on the S3 or R2 bucket you already own,
-      from a public avatar to a contract with a link you can take back.
+      The questions arrive late. A customer's security review asks who could open a file and who tried.
+      A link you shared has to stop working today. A user asks to be erased, and your audit log is append-only.
+      Filelayer is the file layer that already has the answers: per-file permissions, revocable links
+      and a hash-chained record of every allowed and denied access, in your own Postgres,
+      on the S3 or R2 bucket you already own.
     </p>
 
     <p class="lead"><span class="keep">Keep your storage.</span> You are adding a dependency, not a vendor.</p>

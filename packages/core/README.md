@@ -9,8 +9,12 @@
      npmjs.com/package/@filelayer/core, so the badges resolve on their own with
      no edit here. -->
 
-**The file layer for SaaS applications.** Public files and private files, with
-one authorization model behind both. → **[filelayer.dev](https://filelayer.dev)**
+**The file layer for SaaS applications.** A customer's security review asks who
+opened a file and who was refused. A link you sent has to stop working now.
+[Someone asks to be erased from your logs](https://github.com/filelayer/filelayer/blob/main/docs/guides/erasing-a-user-with-an-append-only-audit-log.md).
+Filelayer answers all three for the files your users upload: per-file
+permissions, links you can take back, and an audit trail of every allowed and
+denied access, on your own Postgres. → **[filelayer.dev](https://filelayer.dev)**
 
 You tell Filelayer who the caller is. Filelayer decides what they may do with a
 file, serves the bytes with the right headers, and writes the audit event. For

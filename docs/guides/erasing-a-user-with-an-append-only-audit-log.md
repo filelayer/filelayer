@@ -1,8 +1,11 @@
-# How do I erase a user when my audit log is append-only?
+# How do I delete a user's data when my audit log is append-only?
 
-A user asks you to delete their data. You delete their rows, you delete their
-files from the bucket, and then you reach the audit log, which records every
-file they ever opened and which you built to be impossible to change.
+A user asks you to delete their data, often citing GDPR's right to erasure.
+Deleting their rows and their files is ordinary work. The audit log is the hard
+part: it records every file they ever opened, and you built it so it cannot be
+changed. This page shows how to remove one person's events from an append-only,
+hash-chained log and still verify it, and what that does not do: it is not
+legal erasure, which is a question for your counsel.
 
 The advice you will find is about rows: encrypt each subject's fields under a
 per-subject key and destroy the key, or blank the personal columns and leave

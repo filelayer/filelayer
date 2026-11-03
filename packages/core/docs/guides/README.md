@@ -111,7 +111,7 @@ concurrency.
 
 → [`tamper-evident-file-audit.proof.mjs`](tamper-evident-file-audit.proof.mjs)
 
-### [How do I erase a user when my audit log is append-only?](erasing-a-user-with-an-append-only-audit-log.md)
+### [How do I delete a user's data when my audit log is append-only?](erasing-a-user-with-an-append-only-audit-log.md)
 
 Every published answer is about rows — encrypt per subject and destroy the key,
 blank the personal columns. **None is about files**, where the bytes live
