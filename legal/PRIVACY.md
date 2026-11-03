@@ -1,20 +1,20 @@
 # Privacy policy for buyers of the Filelayer plans
 
-This policy explains how Technology Pro Bono S.L., a company registered in
-Spain ("we"), handles personal data about the people who buy a Filelayer paid
-plan, write to us for support, or take part in a review under a plan. It does
+This policy explains how Technology Pro Bono S.L. ("we") handles personal data about the people who buy a Filelayer paid
+plan, write to us for support, or send us material to examine under a plan. It does
 not cover the files your applications store with the Filelayer library: the
 library runs on your own database and your own storage bucket, and we never
 receive that data.
 
-<!-- [LEGAL] Add the company's tax ID (NIF), registered address and the
-     Mercantile Registry entry, as required by article 13 GDPR and by
-     Ley 34/2002 (LSSI). Confirm whether a data protection officer is required;
-     we believe it is not. -->
 
 ## 1. Who is responsible
 
-Technology Pro Bono S.L. is the controller of the personal data described here.
+The controller of the personal data described here is Technology Pro Bono
+S.L., NIF B88502364, Serrano 17, 28001 Madrid, Spain. It is registered in the
+Mercantile Registry of Madrid, volume 39704, folio 98, sheet M-705482, first
+entry, and was incorporated by deed of 17 October 2019 before the Madrid notary
+Francisco Javier Barreiros Fernández, protocol number 2019/2767.
+
 You can reach us about anything in this policy at support@filelayer.dev.
 
 ## 2. What we collect, and why
@@ -38,15 +38,13 @@ you not to send personal data about your own users unless it is necessary; if
 you do, we use it only for that review and delete it when the review is
 closed.
 
-**When you visit filelayer.dev.** The site sets no cookies, runs no analytics
-and loads no third-party scripts. It is served by Cloudflare, which processes
-the technical data of each request, such as the IP address, to deliver the
-page and protect the site.
+**When you visit filelayer.dev.** The site sets no cookies. It is served by
+Cloudflare, which processes the technical data of each request, such as the IP
+address, to deliver the page and protect the site. To know which pages are
+read, we use Cloudflare Web Analytics, which counts visits without cookies and
+does not store the parameters in a page's address. It is the only script on
+the site that is not part of the page itself.
 
-<!-- [LEGAL] Confirm that Cloudflare Web Analytics and any request logging
-     beyond Cloudflare's own security processing are off for the Pages
-     project, and whether this needs a mention of Cloudflare as processor or as
-     independent controller. -->
 
 ## 3. Legal basis
 
@@ -57,6 +55,8 @@ page and protect the site.
 - Invoices, accounting and tax records: a legal obligation (article 6(1)(c)).
 - Emails from people without a plan: our legitimate interest in answering the
   questions people send us (article 6(1)(f)).
+- Visit counts and the technical data of each request: our legitimate interest
+  in delivering, protecting and improving the site (article 6(1)(f)).
 
 We do not use your data for advertising, we do not sell it, and we do not send
 marketing email.
@@ -71,10 +71,6 @@ marketing email.
 - Review material: deleted when the review is closed, except the written report
   we send you, which we keep with the support emails.
 
-<!-- [LEGAL] Check the retention periods: Código de Comercio art. 30 (six
-     years) and Ley General Tributaria (four years for tax purposes, longer in
-     some cases). Confirm one year after the end of the plan is reasonable for
-     support email. -->
 
 ## 5. Who receives it
 
@@ -83,27 +79,23 @@ behalf or under its own terms, only as far as its service needs:
 
 - Stripe, for checkout, payments, invoices, tax calculation and the customer
   portal.
-- Our email provider, for support@filelayer.dev and the other Filelayer
-  addresses.
-- Cloudflare, for hosting filelayer.dev.
+- Google, through Google Workspace, for support@filelayer.dev and the other
+  Filelayer addresses.
+- Cloudflare, for hosting filelayer.dev and for its web analytics.
+
+Google and Cloudflare act as our processors.
 
 We also give data to the tax authorities, courts and other public bodies where
 the law requires it.
 
-<!-- [LEGAL] Name the email provider once confirmed. Stripe Tax is used to
-     calculate VAT; check whether Stripe acts as processor or as independent
-     controller for checkout data under its own terms. -->
 
 ## 6. Transfers outside the European Economic Area
 
 Some of these providers process data in the United States or other countries
 outside the European Economic Area. Where they do, the transfer relies on the
-EU-US Data Privacy Framework for providers certified under it, or on the
-European Commission's standard contractual clauses.
+EU-US Data Privacy Framework, under which Stripe, Google and Cloudflare are
+certified.
 
-<!-- [LEGAL] Confirm the transfer mechanism for each provider (Stripe and
-     Cloudflare are DPF-certified at the time of writing; check the email
-     provider). -->
 
 ## 7. Your rights
 
@@ -122,4 +114,4 @@ Spanish data protection authority, the Agencia Española de Protección de Datos
 If we change this policy in a way that matters to you, we will update this page
 and tell customers with an active plan by email before the change applies.
 
-Last updated: 3 November 2026.
+Last updated: 4 November 2026.
