@@ -157,6 +157,84 @@ for (const r of rows) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// TITLES AND DESCRIPTIONS: ZERO, NOT A DENSITY.
+//
+// The density above strips tags, and with them every attribute, so a meta
+// description was never measured; a <title> was, but one dash in 1,700 words
+// is under any floor. On 3 November 2026 the homepage title read
+// "Filelayer — the file layer for SaaS applications": the first line a search
+// result or a shared link shows, carrying the one habit this project's register rule says no
+// public surface has. These strings are short, there is no rhythm to thin, and
+// the rule for them is none.
+//
+// Every git-tracked page under web/ (so a new page is covered without an
+// edit here): <title>, meta description, the Open Graph and Twitter titles,
+// descriptions and image alt, and the JSON-LD headline, name and description.
+// ---------------------------------------------------------------------------
+import { execFileSync } from 'node:child_process';
+
+const META_DASH = /[‒–—―]|&mdash;|&ndash;|&#8212;|&#8211;|\s--\s|\S\s-\s\S/;
+const META_NAMES = new Set([
+  'description', 'og:title', 'og:description', 'og:image:alt', 'twitter:title', 'twitter:description',
+]);
+
+export function metadataStrings(html) {
+  const out = [];
+  const t = /<title>([\s\S]*?)<\/title>/i.exec(html);
+  if (t) out.push(['<title>', t[1]]);
+  for (const m of html.matchAll(/<meta\s+(?:name|property)="([^"]+)"\s+content="([^"]*)"/gi)) {
+    if (META_NAMES.has(m[1])) out.push([m[1], m[2]]);
+  }
+  for (const m of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi)) {
+    for (const k of m[1].matchAll(/"(headline|name|description)"\s*:\s*"((?:[^"\\]|\\.)*)"/g)) {
+      out.push([`JSON-LD ${k[1]}`, k[2]]);
+    }
+  }
+  return out;
+}
+
+export function metadataDashes(html) {
+  return metadataStrings(html).filter(([, v]) => META_DASH.test(v));
+}
+
+// Seen failing: a title with an em dash, an en dash and a spaced hyphen, and a
+// description with &mdash;, each must be caught; a hyphenated word must not.
+{
+  const probe = (h) => metadataDashes(h).length;
+  const must = [
+    '<title>A — B</title>',
+    '<title>A – B</title>',
+    '<title>A - B</title>',
+    '<meta name="description" content="A &mdash; B">',
+    '<script type="application/ld+json">{"headline": "A — B"}</script>',
+  ];
+  for (const h of must) if (probe(h) !== 1) { console.error(`check-register: self-test missed: ${h}`); process.exit(1); }
+  if (probe('<title>Multi-tenant, read-only file links</title>') !== 0) {
+    console.error('check-register: self-test flagged a hyphenated word'); process.exit(1);
+  }
+}
+
+const metaFailures = [];
+const pages = execFileSync('git', ['ls-files', '-z', '--', 'web/*.html', 'web/**/*.html'], { cwd: ROOT, encoding: 'utf8' })
+  .split('\0').filter(Boolean);
+for (const page of [...new Set(pages)]) {
+  for (const [field, value] of metadataDashes(readFileSync(join(ROOT, page), 'utf8'))) {
+    metaFailures.push(`${page}: ${field}: ${value.slice(0, 120)}`);
+  }
+}
+if (metaFailures.length) {
+  console.error('\ncheck-register: FAILED (titles and descriptions)\n');
+  for (const f of metaFailures) console.error(`  - ${f}`);
+  console.error(
+    '\n  A title or description is the first line a search result or a shared link\n' +
+      '  shows. No dash there at all: use a colon, a comma or a full stop. For a\n' +
+      '  generated page, fix the markdown source (its H1 or first paragraph) or the\n' +
+      '  template in tools/build-guides.mjs, then rebuild.\n',
+  );
+  failures++;
+}
+
 if (failures) {
   console.error('\ncheck-register: FAILED\n');
   for (const r of rows.filter((x) => x.bad.length)) {

@@ -26,7 +26,7 @@
 <meta property="og:title" content="Guides">
 <meta property="og:description" content="Answers to questions people actually ask about user files in a SaaS application.">
 <meta property="og:image" content="https://filelayer.dev/og.png">
-<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta property="og:image:alt" content="Filelayer: the file layer for SaaS applications">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Guides">
 <meta name="twitter:description" content="Answers to questions people actually ask about user files in a SaaS application.">
@@ -94,7 +94,7 @@
 <li><strong>The numbers are measured.</strong> Where a guide states what happens under concurrency, or what PostgreSQL does, or what a constraint refuses, a script beside it reproduces that against a real PostgreSQL in about twenty seconds. A measurement nobody can re-run is an assertion in a confident voice.</li></ul>
 <hr>
 <h2 id="the-guides">The guides</h2>
-<h3 id="how-do-i-make-a-file-link-that-expires--and-that-i-can-take-backexpiring-and-revocable-file-linksmd"><a href="/guides/expiring-and-revocable-file-links">How do I make a file link that expires — and that I can take back?</a></h3>
+<h3 id="how-do-i-make-a-file-link-that-expires-and-that-i-can-take-backexpiring-and-revocable-file-linksmd"><a href="/guides/expiring-and-revocable-file-links">How do I make a file link that expires, and that I can take back?</a></h3>
 <p>The usual answer is a presigned URL with an expiry. It is right about expiry and wrong about taking it back: <strong>a presigned URL cannot be revoked individually.</strong> What you can do instead, what each option costs, and the one query that is easy to write wrong — with the schema, the SQL, and four measurements of what happens when two people redeem the same link at the same moment.</p>
 <p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/expiring-and-revocable-file-links.proof.mjs" rel="noopener"><code>expiring-and-revocable-file-links.proof.mjs</code></a></p>
 <h3 id="how-do-i-let-users-upload-files-privatelyprivate-file-uploadsmd"><a href="/guides/private-file-uploads">How do I let users upload files privately?</a></h3>

@@ -1,4 +1,4 @@
-# How do I make a file link that expires — and that I can take back?
+# How do I make a file link that expires, and that I can take back?
 
 The usual answer is "generate a presigned URL with an expiry". That answer is
 right about expiry and wrong about taking it back, and the difference only shows

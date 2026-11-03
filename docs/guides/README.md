@@ -21,7 +21,7 @@ Two consequences of that rule, both deliberate:
 
 ## The guides
 
-### [How do I make a file link that expires — and that I can take back?](expiring-and-revocable-file-links.md)
+### [How do I make a file link that expires, and that I can take back?](expiring-and-revocable-file-links.md)
 
 The usual answer is a presigned URL with an expiry. It is right about expiry and
 wrong about taking it back: **a presigned URL cannot be revoked individually.**

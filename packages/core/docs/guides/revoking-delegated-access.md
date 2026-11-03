@@ -442,7 +442,7 @@ has the numbers, including the ones sitting at zero.
 
 ## Related
 
-- [How do I make a file link that expires — and that I can take back?](expiring-and-revocable-file-links.md) —
+- [How do I make a file link that expires, and that I can take back?](expiring-and-revocable-file-links.md) —
   why a presigned URL cannot be taken back, and the one query that is hard.
 - [How do I do multi-tenant file access control?](multi-tenant-file-access.md) — the
   composite foreign key, applied to tenants rather than to lineage.

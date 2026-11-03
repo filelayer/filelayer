@@ -328,6 +328,9 @@ for (const [label, file] of PAGES) {
   }
   for (const [label] of PAGES) {
     if (label === 'web/index.html') continue;
+    // The not-found page is reached by a URL that does not exist; linking to it
+    // would make it a page.
+    if (label === 'web/404.html') continue;
     if (!linkedTo.has(label)) {
       fail(
         label,
@@ -336,6 +339,26 @@ for (const [label, file] of PAGES) {
           'masthead, the footer, or a page it belongs under -- or delete it.',
       );
     }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 3c. A missing page is a 404, not the homepage
+// -----------------------------------------------------------------------------
+//
+// Cloudflare Pages treats a site with no top-level 404.html as a single-page
+// application and answers EVERY unknown path with index.html and a 200. Until
+// 3 November 2026 that was this site: /no-such-page returned the homepage, which
+// a search engine reads as a soft 404, which hides every broken link, and which
+// makes "the new page answers 200" true of a page that was never deployed.
+// The fix is a file, so the guard is that the file exists and asks not to be
+// indexed. Whether the deployed site honours it is `npm run live:pages`.
+{
+  const nf = join(WEB, '404.html');
+  if (!existsSync(nf)) {
+    fail('web/404.html', 'missing. Without it Cloudflare Pages serves the homepage with a 200 for every unknown path (a soft 404).');
+  } else if (!/<meta name="robots" content="noindex"/i.test(readFileSync(nf, 'utf8'))) {
+    fail('web/404.html', 'must carry <meta name="robots" content="noindex">: a not-found page is not content.');
   }
 }
 

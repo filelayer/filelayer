@@ -252,7 +252,7 @@ has the numbers, including the ones sitting at zero.
 - [What background jobs does a file feature need, and did they run?](background-jobs-for-user-files.md) —
   the other three jobs, and the table that makes a cron which silently stopped
   firing visible before the bucket bill does.
-- [How do I make a file link that expires — and that I can take back?](expiring-and-revocable-file-links.md)
+- [How do I make a file link that expires, and that I can take back?](expiring-and-revocable-file-links.md)
 - [How do I do multi-tenant file access control?](multi-tenant-file-access.md)
 
 ---

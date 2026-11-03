@@ -1,7 +1,7 @@
 # What background jobs does a file feature need, and did they run?
 
 A file feature is not finished when upload, download, share and delete work. It
-is finished when the things those four leave behind are collected — and the cost
+is finished when the things those four leave behind are collected, and the cost
 of a file feature in production is almost entirely in that second half.
 
 There are four jobs. Writing them is a morning. The part that goes wrong is

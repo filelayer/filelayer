@@ -61,6 +61,7 @@
     "bench:load": "node --experimental-strip-types packages/core/dev/bench-load.ts",
     "build:guides": "node tools/build-guides.mjs",
     "check:guides": "node tools/build-guides.mjs --check",
+    "live:pages": "node tools/check-live-pages.mjs",
     "check:guide-api": "node tools/check-guide-api.mjs --self-test && node tools/check-guide-api.mjs",
     "build:errors": "node tools/build-errors.mjs",
     "check:errors": "node tools/build-errors.mjs --check",

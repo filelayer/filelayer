@@ -204,7 +204,7 @@ has the numbers, including the ones sitting at zero.
 
 ## Related
 
-- [How do I make a file link that expires — and that I can take back?](expiring-and-revocable-file-links.md) —
+- [How do I make a file link that expires, and that I can take back?](expiring-and-revocable-file-links.md) —
   why a presigned URL cannot be taken back.
 - [How do I let users upload files privately?](private-file-uploads.md) — why a presigned PUT does not
   limit what gets uploaded.

@@ -26,7 +26,7 @@
 <meta property="og:title" content="How do I delete a file without leaving orphaned objects in S3?">
 <meta property="og:description" content="The usual answer is right and well covered: Postgres and S3 do not share a transaction, so every delete is two deletes, and when only one of them runs the two systems drift apart. Run…">
 <meta property="og:image" content="https://filelayer.dev/og.png">
-<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta property="og:image:alt" content="Filelayer: the file layer for SaaS applications">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="How do I delete a file without leaving orphaned objects in S3?">
 <meta name="twitter:description" content="The usual answer is right and well covered: Postgres and S3 do not share a transaction, so every delete is two deletes, and when only one of them runs the two systems drift apart. Run…">
@@ -184,7 +184,7 @@ assert.equal(typeof planned.truncated, 'boolean');</code></pre>
 <h2 id="related">Related</h2>
 <ul><li><a href="/guides/private-file-uploads">How do I let users upload files privately?</a> — the other end of the same gap: the upload that happens outside your transaction is what creates these orphans.</li>
 <li><a href="/guides/background-jobs-for-user-files">What background jobs does a file feature need, and did they run?</a> — the other three jobs, and the table that makes a cron which silently stopped firing visible before the bucket bill does.</li>
-<li><a href="/guides/expiring-and-revocable-file-links">How do I make a file link that expires — and that I can take back?</a></li>
+<li><a href="/guides/expiring-and-revocable-file-links">How do I make a file link that expires, and that I can take back?</a></li>
 <li><a href="/guides/multi-tenant-file-access">How do I do multi-tenant file access control?</a></li></ul>
 <hr>
 <h2 id="sources">Sources</h2>

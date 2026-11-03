@@ -566,7 +566,7 @@ function page({ url, source, title, lede, body }) {
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:image" content="${SITE}/og.png">
-<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta property="og:image:alt" content="Filelayer: the file layer for SaaS applications">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(desc)}">
@@ -870,6 +870,8 @@ const sitemapEntries = execFileSync('git', ['ls-files', '-z', '--', 'web'], {
 })
   .split('\0')
   .filter((f) => f.endsWith('.html'))
+  // The not-found page is not content and asks not to be indexed.
+  .filter((f) => f !== 'web/404.html')
   .map(pageUrl)
   // Root first, then alphabetically, which is what the previous ordering
   // produced and what keeps the diff on this file readable.
