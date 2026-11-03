@@ -27,9 +27,23 @@
  * the baselines. It is a control.
  */
 import { createServer } from 'node:http';
-import { createTestDb } from '../../../packages/core/src/db.ts';
-import { MemoryStorage } from '../../../packages/core/src/storage.ts';
-import { Filelayer, FilelayerError } from '../../../packages/core/src/index.ts';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+// Imported as `filelayer-prerebuild.mjs?published`, the old server runs on the
+// engine of the @filelayer/core that benchmark/package.json pins, as installed
+// from npm, so the control and the scored entry run on the same build. Plain, it
+// runs on this working tree's packages/core/src. See filelayer.mjs.
+const PUBLISHED = new URL(import.meta.url).searchParams.has('published');
+const lib = PUBLISHED
+  ? await import(
+      pathToFileURL(
+        createRequire(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json')).resolve('@filelayer/core'),
+      ).href
+    )
+  : await import('../../../packages/core/src/index.ts');
+const { createTestDb, MemoryStorage, Filelayer, FilelayerError } = lib;
 
 const b64 = (s) => Buffer.from(s).toString('base64');
 

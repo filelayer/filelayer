@@ -50,6 +50,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -163,6 +164,14 @@ function classify(rel, rules) {
 }
 
 const wanted = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const PUBLISHED = process.argv.includes('--published');
+const PUBLISHED_PKG = PUBLISHED
+  ? path.dirname(createRequire(path.join(HERE, 'package.json')).resolve('@filelayer/core/package.json'))
+  : null;
+if (PUBLISHED) {
+  const v = JSON.parse(fs.readFileSync(path.join(PUBLISHED_PKG, 'package.json'), 'utf8')).version;
+  console.log(`filelayer counted from the published @filelayer/core ${v} (benchmark/node_modules)\n`);
+}
 const asJson = process.argv.includes('--json');
 const targets = Object.entries(MANIFEST.implementations).filter(
   ([name]) => wanted.length === 0 || wanted.includes(name),
@@ -172,7 +181,14 @@ let unclassifiedTotal = 0;
 const results = {};
 
 for (const [name, impl] of targets) {
-  const root = path.resolve(HERE, impl.root);
+  // --published counts the Filelayer integration that ships inside the
+  // @filelayer/core benchmark/package.json pins, instead of this checkout's
+  // examples/. The two differ only in the import path; the flag is what makes
+  // a published number traceable to a published artifact.
+  const root =
+    name === 'filelayer' && PUBLISHED
+      ? path.join(PUBLISHED_PKG, 'examples', 'vault')
+      : path.resolve(HERE, impl.root);
   if (!fs.existsSync(root)) {
     console.error(`!! ${name}: root ${impl.root} does not exist`);
     process.exitCode = 1;

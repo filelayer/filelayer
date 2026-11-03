@@ -111,6 +111,15 @@
 !/benchmark/ttff/
 !/benchmark/decisions.json
 !/benchmark/loc.manifest.json
+# One command from a fresh clone: run.mjs, the package.json that pins the
+# published @filelayer/core it measures (with its lockfile), the README that
+# says how to run it and RESULTS.md, which run.mjs writes. node_modules and
+# .published/ (the published example with its import rewritten) stay out.
+!/benchmark/README.md
+!/benchmark/run.mjs
+!/benchmark/package.json
+!/benchmark/package-lock.json
+!/benchmark/RESULTS.md
 
 # --- dependencies ------------------------------------------------------------
 node_modules/

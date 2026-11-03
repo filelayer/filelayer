@@ -22,6 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 // Paths are resolved against the repo root, not the cwd, so this gives the same
 // answer from `npm run loc:tiers` inside packages/core and from the root.
@@ -56,10 +57,22 @@ const TIERS = [
   ['tier 4  full vault, over HTTP', 'examples/vault/server.ts'],
 ];
 
+// --published counts the copies inside the @filelayer/core that
+// benchmark/package.json pins; see count-loc.mjs.
+let base = ROOT;
+if (process.argv.includes('--published')) {
+  const pkg = path.dirname(
+    createRequire(path.join(ROOT, 'benchmark', 'package.json')).resolve('@filelayer/core/package.json'),
+  );
+  const v = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json'), 'utf8')).version;
+  console.log(`counted from the published @filelayer/core ${v} (benchmark/node_modules)\n`);
+  base = pkg;
+}
+
 console.log('tier                            gross    net  imports   boot   core');
 console.log('-'.repeat(68));
 for (const [label, file] of TIERS) {
-  const c = count(at(file));
+  const c = count(path.join(base, file));
   console.log(
     `${label} ${String(c.gross).padStart(6)} ${String(c.net).padStart(6)} ` +
       `${String(c.imports).padStart(8)} ${String(c.boot).padStart(6)} ${String(c.core).padStart(6)}`,

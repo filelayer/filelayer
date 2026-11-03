@@ -5,9 +5,49 @@
  * the library API directly, because the thing under attack is the integration,
  * not the engine.
  */
-import { createTestDb } from '../../../packages/core/src/db.ts';
-import { MemoryStorage } from '../../../packages/core/src/storage.ts';
-import { createVaultApp } from '../../../examples/vault/server.ts';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+// TWO SOURCES, ONE ADAPTER. Imported plainly, this drives the working tree:
+// packages/core/src and examples/vault, which is what the CI gate
+// (`npm run adversarial`) checks on every commit. Imported as
+// `filelayer.mjs?published`, it drives what a stranger installs: the
+// @filelayer/core that benchmark/package.json pins, its compiled dist, and the
+// examples/vault/server.ts that ships inside that tarball. The published example
+// imports '../../src/index.ts'; that one line is rewritten to '@filelayer/core'
+// so the example runs against the published build rather than the TypeScript
+// sources beside it. Nothing else in the file changes, and the rewrite fails
+// loudly if that line is not there exactly once.
+const PUBLISHED = new URL(import.meta.url).searchParams.has('published');
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+async function loadLib() {
+  if (!PUBLISHED) {
+    const { createTestDb } = await import('../../../packages/core/src/db.ts');
+    const { MemoryStorage } = await import('../../../packages/core/src/storage.ts');
+    const { createVaultApp } = await import('../../../examples/vault/server.ts');
+    return { createTestDb, MemoryStorage, createVaultApp, version: 'working tree' };
+  }
+  const bench = join(HERE, '..', '..');
+  const req = createRequire(join(bench, 'package.json'));
+  const pkgDir = dirname(req.resolve('@filelayer/core/package.json'));
+  const version = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).version;
+  const src = readFileSync(join(pkgDir, 'examples', 'vault', 'server.ts'), 'utf8');
+  const from = "from '../../src/index.ts';";
+  if (src.split(from).length !== 2) {
+    throw new Error(`published examples/vault/server.ts does not import ${from} exactly once; the rewrite would be a guess`);
+  }
+  const outDir = join(bench, '.published', `vault-${version}`);
+  mkdirSync(outDir, { recursive: true });
+  const out = join(outDir, 'server.ts');
+  writeFileSync(out, src.replace(from, "from '@filelayer/core';"));
+  const core = await import(pathToFileURL(req.resolve('@filelayer/core')).href);
+  const { createVaultApp } = await import(pathToFileURL(out).href);
+  return { createTestDb: core.createTestDb, MemoryStorage: core.MemoryStorage, createVaultApp, version };
+}
+const { createTestDb, MemoryStorage, createVaultApp, version } = await loadLib();
 
 const b64 = (s) => Buffer.from(s).toString('base64');
 
@@ -15,7 +55,9 @@ export const meta = {
   name: 'filelayer',
   executable: true,
   singleBackend: true,
-  note: 'examples/vault/server.ts over HTTP, PGlite + MemoryStorage',
+  note: PUBLISHED
+    ? `@filelayer/core ${version} from npm: its dist, and the examples/vault/server.ts in its tarball, over HTTP, PGlite + MemoryStorage`
+    : 'examples/vault/server.ts in this working tree over HTTP, PGlite + MemoryStorage',
 };
 
 export async function create() {

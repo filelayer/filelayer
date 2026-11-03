@@ -9,7 +9,7 @@
   },
 
   "filelayer": {
-    "artifact": "examples/vault/server.ts (post-rebuild)",
+    "artifact": "examples/vault/server.ts as shipped in @filelayer/core 0.35.2 (re-checked 2026-11-03; September: post-rebuild working tree)",
     "decisions": [
       { "id": 1, "d": "How the caller's identity is established", "sites": 1, "where": "currentActor(), server.ts" },
       { "id": 2, "d": "Where the one-time share secret is delivered", "sites": 1, "where": "the POST /files/:id/shares response" },
@@ -17,12 +17,14 @@
       { "id": 4, "d": "The object store must be private", "sites": 1, "where": "deployment; not exercised (MemoryStorage)" },
       { "id": 5, "d": "Routing byte delivery through the library rather than hand-writing the response. `delivery.body` is public, so a developer who ignores fileDownloadRoute/sendNodeResponse and writes their own writeHead re-opens the stored-XSS and cache-replay defects. Weaker than the pre-rebuild version -- the safe path is now the short one -- but still a silent choice.", "sites": 1, "where": "the two route constructions in server.ts" },
       { "id": 6, "d": "The scope of the object-store credential Filelayer is handed. It is the blast radius of everything the library ever reads or writes. Equivalent to raw-S3 #20 and Convex #32; NOT previously counted for Filelayer.", "sites": 1, "where": "S3Storage config" },
-      { "id": 7, "d": "Object-store versioning off, or a retention story for versions. `storage.delete()` writes a delete marker on a versioned bucket and the bytes remain, so 'delete my document' becomes a lie. Equivalent to raw-S3 #19; NOT previously counted for Filelayer.", "sites": 1, "where": "bucket config" },
-      { "id": 8, "d": "Multi-writer audit-chain serialisation. Self-reported: the chain is SELECT-then-INSERT and forks silently under a second writer unless the deployment adds pg_advisory_xact_lock. Equivalent to Vercel #21; NOT previously counted for Filelayer.", "sites": 1, "where": "deployment topology" }
+      { "id": 7, "d": "Object-store versioning off, or a retention story for versions. `storage.delete()` writes a delete marker on a versioned bucket and the bytes remain, so 'delete my document' becomes a lie. Equivalent to raw-S3 #19; NOT previously counted for Filelayer.", "sites": 1, "where": "bucket config" }
     ],
     "arguable": [
-      { "d": "Choosing visibility:'org' when you meant 'private'", "why_excluded": "the effect is observable in normal operation: it is a column, it is on every FileRecord, it is in the file.create audit event, and since the rebuild it is visible in the listing screen itself. Excluded under clause (c). It was the closest call in this review, and it stays close. Count it and Filelayer is 9." },
-      { "d": "Relying on maxDownloads for an ACTOR grant", "why_excluded": "Self-reported: the counter is charged only on redeem(), so an actor grant with maxDownloads:1 permits unlimited direct reads. This is a library defect rather than a developer choice, but a developer who uses the field is silently wrong. Count it and Filelayer is 9 (or 10 with the row above)." }
+      { "d": "Choosing visibility:'org' when you meant 'private'", "why_excluded": "the effect is observable in normal operation: it is a column, it is on every FileRecord, it is in the file.create audit event, and since the rebuild it is visible in the listing screen itself. Excluded under clause (c). It was the closest call in this review, and it stays close. Count it and Filelayer is 8." }
+    ],
+    "removedSinceGate1": [
+      { "d": "Multi-writer audit-chain serialisation (decision #8 in the September count, 1 site). The chain was SELECT-then-INSERT and forked under a second writer unless the deployment added pg_advisory_xact_lock.", "removedIn": "0.3.0", "evidence": "audit_append() takes pg_advisory_xact_lock inside the transaction of the mutation it records (schema.sql). test/contention.test.ts 'twenty concurrent writers leave one verifiable chain' runs against a real PostgreSQL in CI on every commit, beside a control that shows the chain forking without the lock. CHANGELOG: 'The audit chain could fork under concurrent writers. Fixed in 0.3.0.'" },
+      { "d": "Relying on maxDownloads for an ACTOR grant (arguable in the September count; counting it made Filelayer 9 or 10). The counter was charged only by redeem(), so an actor grant with maxDownloads:1 permitted unlimited direct reads.", "removedIn": "0.3.0", "evidence": "maxDownloads is charged on every delivery, through any path, by any principal (consume_download in schema.sql). CHANGELOG: '`maxDownloads` charged only on redemption. Fixed in 0.3.0.'" }
     ],
     "removedByTheRebuild": [
       "upload() taking a bare actorId -- the signature now requires a Principal; there is no second identity argument to confuse with a request field",

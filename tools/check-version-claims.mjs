@@ -563,6 +563,13 @@ const SWEEP_EXCEPTIONS = [
   { match: /405 tests when the run says/, why: 'quotes the stale number in order to record it' },
   { match: /said the suite was \d+ tests/, why: 'historical, describes a past claim' },
   { match: /while[\s\S]{0,40}said \d+ across/, why: 'historical, quotes a superseded count' },
+  // benchmark/RESULTS.md prints count-loc.mjs verbatim, and that script files
+  // each implementation's test directories in a bucket named `test`: "test
+  // files= 2 gross= 615 net= 451" is lines of code in those files, not a count
+  // of tests, and so is each file row under it, "test/vault.test.js  532 / 383"
+  // (gross / net lines). Excluded by the shape of those two output lines.
+  { match: /^\s*test\s+files=\s*\d+\s+gross=\s*\d+\s+net=\s*\d+/, why: "count-loc.mjs's `test` bucket: lines, not tests" },
+  { match: /^\s+\S+\.(?:m?js|ts|sql)\s+\d+ \/\s+\d+\s*$/, why: "count-loc.mjs's per-file row: gross / net lines of one file" },
 ];
 
 if (recorded && Number(recorded.tests) > 0) {

@@ -1,0 +1,16 @@
+{
+  "name": "filelayer-vault-measurements",
+  "private": true,
+  "type": "module",
+  "description": "One document-workspace application built with @filelayer/core as published on npm and by hand on Supabase Storage, raw S3/R2, Convex and Vercel Blob, measured by the same scripts.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "bench": "node run.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.3.16",
+    "@filelayer/core": "0.35.2"
+  }
+}
