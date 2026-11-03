@@ -89,9 +89,11 @@ move to the right plan from the following billing month.
   applies, are added at checkout. You can enter your VAT number at checkout, and
   where the reverse-charge rules apply, no VAT is charged.
 - Plans are billed monthly in advance, per organization.
-- You can cancel at any time. The plan ends at the end of the month already
-  paid for, and that month is not refunded, except where the law requires a
-  refund.
+- You can cancel at any time, in the
+  [customer portal](https://billing.stripe.com/p/login/fZucN7gmZenA2Bu3iN7AI00)
+  or by email to support@filelayer.dev. The plan ends at the end of the period
+  already paid for, and that period is not refunded, except where the law
+  requires a refund.
 - We may change prices with at least 30 days' notice before your next billing
   date.
 - If a payment fails, we may suspend the paid services until it is paid. A plan
@@ -103,6 +105,9 @@ Support and reviews work from what you choose to send us. Send only what is
 needed, and do not send personal data about your users unless it is necessary
 for the request. If you do, tell us, and we will use it only to answer that
 request and delete it once the request is closed.
+
+How we handle personal data about you, as a buyer of a plan, is in the
+[privacy policy](https://filelayer.dev/privacy).
 
 ## 7. Warranty and liability
 

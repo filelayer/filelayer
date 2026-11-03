@@ -713,6 +713,15 @@ const sources = [
     isGuide: false,
     isIndex: false,
   },
+  // THE PRIVACY POLICY FOR BUYERS, linked from the pricing page and the terms.
+  {
+    src: 'legal/PRIVACY.md',
+    out: 'privacy.html',
+    url: `${SITE}/privacy`,
+    slug: null,
+    isGuide: false,
+    isIndex: false,
+  },
   {
     src: 'TRUST.md',
     out: 'trust.html',
