@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A question
+    url: https://github.com/filelayer/filelayer/discussions/categories/q-a
+    about: How to do something, or whether Filelayer fits your case.
+  - name: An idea
+    url: https://github.com/filelayer/filelayer/discussions/categories/ideas
+    about: Something Filelayer does not do yet.
+  - name: A security problem
+    url: https://github.com/filelayer/filelayer/blob/main/SECURITY.md
+    about: Report it privately. Never in an issue or a discussion.

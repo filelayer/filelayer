@@ -1,0 +1,37 @@
+title: "Stuck integrating: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us where you got stuck, even if you got past it. If something is broken, the [Stuck integrating issue](https://github.com/filelayer/filelayer/issues/new?template=stuck-integrating.yml) is the better place.
+        Leave out secrets, share link secrets and your users' data.
+  - type: input
+    id: version
+    attributes:
+      label: Filelayer version
+      placeholder: "@filelayer/core@0.x.y"
+    validations:
+      required: true
+  - type: input
+    id: stack
+    attributes:
+      label: Your stack
+      placeholder: "Next.js 16 App Router, Better Auth, Postgres with Drizzle, R2"
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where you got stuck
+      description: What you were doing, what you read, and what happened.
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Who wrote the integration
+      options:
+        - I wrote it myself
+        - A coding agent wrote it, and I was helping
+        - A coding agent wrote it on its own
+        - Prefer not to say

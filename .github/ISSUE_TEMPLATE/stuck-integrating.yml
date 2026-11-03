@@ -1,0 +1,64 @@
+name: Stuck integrating
+description: You, or your coding agent, could not get Filelayer working in your application.
+title: "Stuck integrating: "
+labels: ["stuck-integrating"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Being stuck is a defect here, in the docs or in the API, so this is the most useful issue you can open.
+        A question with no defect behind it fits better in the [Stuck integrating discussions](https://github.com/filelayer/filelayer/discussions/categories/stuck-integrating).
+        A security problem goes to [SECURITY.md](https://github.com/filelayer/filelayer/blob/main/SECURITY.md), never here.
+  - type: input
+    id: version
+    attributes:
+      label: Filelayer version
+      description: The output of `npm ls @filelayer/core`.
+      placeholder: "@filelayer/core@0.x.y"
+    validations:
+      required: true
+  - type: input
+    id: stack
+    attributes:
+      label: Your stack
+      description: Framework, auth provider, database, ORM and storage.
+      placeholder: "Next.js 16 App Router, Better Auth, Postgres with Drizzle, R2"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you were trying to do
+      placeholder: "Upload a file into the user's organization and share it with an expiring link."
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you did
+      description: The smallest code that shows it, and the doc or guide you followed.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: The error `code` and `status`, or the output. Leave out secrets, share link secrets and your users' data.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Who wrote the integration
+      description: Optional. It tells us whether the docs failed a person or an agent.
+      options:
+        - I wrote it myself
+        - A coding agent wrote it, and I was helping
+        - A coding agent wrote it on its own
+        - Prefer not to say
