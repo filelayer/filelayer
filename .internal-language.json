@@ -65,6 +65,7 @@
     "packages/core/usage-report.null-notes.json",
     "benchmark/README.md",
     "benchmark/PAGE.md",
+    "legal/*.md",
     "benchmark/package.json",
     "packages/core/migrations/*.md",
     "packages/core/migrations/*.json",

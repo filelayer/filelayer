@@ -703,6 +703,16 @@ const sources = [
     isGuide: false,
     isIndex: false,
   },
+  // THE TERMS OF THE PAID PLANS, linked from the pricing page, which cannot be
+  // published without them.
+  {
+    src: 'legal/TERMS.md',
+    out: 'terms.html',
+    url: `${SITE}/terms`,
+    slug: null,
+    isGuide: false,
+    isIndex: false,
+  },
   {
     src: 'TRUST.md',
     out: 'trust.html',

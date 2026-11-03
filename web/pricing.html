@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Pricing · Filelayer</title>
+<meta name="description" content="Filelayer is Apache-2.0 and free in production, with no limits and no charge for storage or bandwidth. Paid plans add support and priority: Team $99 and Business $299 per month per organization.">
+
+<link rel="canonical" href="https://filelayer.dev/pricing">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://filelayer.dev/pricing">
+<meta property="og:title" content="Pricing · Filelayer">
+<meta property="og:description" content="The library is Apache-2.0 and free in production. Paid plans add support and priority: Team $99 and Business $299 per month per organization.">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer, the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Pricing · Filelayer">
+<meta name="twitter:description" content="The library is Apache-2.0 and free in production. Paid plans add support and priority.">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "name": "Filelayer pricing",
+  "description": "Filelayer is Apache-2.0 and free in production. Paid plans add support and priority: Team $99 and Business $299 per month per organization; Enterprise by email.",
+  "url": "https://filelayer.dev/pricing",
+  "inLanguage": "en",
+  "isPartOf": { "@type": "WebSite", "name": "Filelayer", "url": "https://filelayer.dev" }
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md">Docs</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+
+<h1>Pricing</h1>
+
+<p>The library is Apache-2.0: free to use in production, with no limits. We do
+not charge for storage or bandwidth. Your files stay in your own bucket and your
+metadata in your own Postgres.</p>
+
+<p>Paid plans add support and priority for teams that depend on Filelayer. Every
+plan runs the same library, and nothing in it is held back for paying
+customers.</p>
+
+<div class="table-scroll">
+<table>
+  <thead>
+    <tr><th>Plan</th><th>Price</th><th>Billable file owners</th><th>What it adds</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Free</td>
+      <td>$0</td>
+      <td>Unlimited</td>
+      <td>The full library, every feature, in production. Questions and defects go to
+        <a href="https://github.com/filelayer/filelayer/issues">GitHub issues</a>.</td>
+    </tr>
+    <tr>
+      <td>Team</td>
+      <td>$99 a month per organization</td>
+      <td>Up to 5,000, across all of the organization's applications</td>
+      <td>Email support with a target of a reply within two business days.
+        Priority on the defects you report. Security advisories before public disclosure.</td>
+    </tr>
+    <tr>
+      <td>Business</td>
+      <td>$299 a month per organization</td>
+      <td>Up to 50,000</td>
+      <td>Everything in Team, plus a review of your file model against the adversarial
+        suite, and a quarterly written architecture review, with a target of
+        delivery within 10 business days of your request.</td>
+    </tr>
+    <tr>
+      <td>Enterprise</td>
+      <td>By email</td>
+      <td>More than 50,000</td>
+      <td>Contract terms. Write to <a href="mailto:enterprise@filelayer.dev">enterprise@filelayer.dev</a>;
+        there are no sales calls.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p class="cta-row">
+  <a class="btn btn-secondary" href="/quickstart">Start free</a>
+  <a class="btn btn-primary" href="https://buy.stripe.com/4gMdRb7Qt93g6RK4mR7AI01">Buy Team</a>
+  <a class="btn btn-primary" href="https://buy.stripe.com/cNifZjgmZbbo2Buf1v7AI02">Buy Business</a>
+</p>
+
+<h2>What a billable file owner is</h2>
+
+<p>A billable file owner is a distinct owner with at least one live, ready file
+during a calendar month (UTC), counted per organization. You declare the number
+yourself, under the <a href="/terms">plan terms</a>, by running this query
+against each Filelayer database on the first day of the following month and
+adding up the results. A person a file is shared with is not its owner and is
+not counted.</p>
+
+<pre><code>SELECT count(DISTINCT owner_id) AS billable_file_owners
+  FROM file
+ WHERE state &lt;&gt; 'pending'
+   AND owner_id IS NOT NULL
+   AND created_at &lt;  '2026-12-01T00:00:00Z'
+   AND (deleted_at IS NULL OR deleted_at &gt;= '2026-11-01T00:00:00Z')
+   AND (expires_at IS NULL OR expires_at &gt;= '2026-11-01T00:00:00Z');
+</code></pre>
+
+<p>The two dates are the first instant of the month and of the next one; the
+example counts November 2026.</p>
+
+<h2>How the paid plans work</h2>
+
+<ul>
+  <li>Prices are in US dollars and exclude taxes. You can enter your VAT number
+    at checkout. The plans are sold by Technology Pro Bono S.L., and payments are
+    processed by Stripe.</li>
+  <li>Support for paying organizations is at
+    <a href="mailto:support@filelayer.dev">support@filelayer.dev</a>.</li>
+  <li>Monthly, per organization, and you can cancel at any time; the plan ends at
+    the end of the month you have paid for.</li>
+  <li>Every paid service is in writing: email, written reviews and advisories.
+    There are no calls.</li>
+  <li>The reply time and the review delivery time are targets, not
+    guarantees.</li>
+  <li>Filelayer runs in your own infrastructure, so no plan carries an uptime
+    commitment, and no plan includes a certification or a compliance
+    attestation.</li>
+  <li>Paying adds nothing to the library itself. If something in Filelayer is
+    free and open source today, it stays that way.</li>
+  <li>The full terms are at <a href="/terms">filelayer.dev/terms</a>.</li>
+</ul>
+
+<h2>How much does Filelayer cost?</h2>
+
+<p>Nothing, to use it in production: the library is free and open source,
+Apache-2.0, with no limit on files, users or applications. The paid plans are
+for support and priority: Team at $99 a month for up to 5,000 billable file
+owners, Business at $299 a month for up to 50,000, and Enterprise by email above
+that.</p>
+
+<footer class="guide-foot">
+  <p>
+    What Filelayer does not do is listed in
+    <a href="https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md" rel="noopener">LIMITATIONS.md</a>,
+    and whether you should depend on it at all is argued in
+    <a href="/trust">Should you depend on this?</a>
+  </p>
+  <p>
+    <a href="/">Filelayer</a> ·
+    <a href="/guides/">Guides</a> ·
+    <a href="https://www.npmjs.com/package/@filelayer/core" rel="noopener">npm</a> ·
+    <a href="/trust">Should you depend on this?</a>
+  </p>
+</footer>
+
+</article>
+</main>
+
+</body>
+</html>

@@ -363,6 +363,21 @@ for (const [label, file] of PAGES) {
 }
 
 // -----------------------------------------------------------------------------
+// 3d. No placeholder ships
+// -----------------------------------------------------------------------------
+//
+// The pricing page was drafted before its checkout links, its addresses and its
+// terms existed, with markers where they would go. A marker that reaches the
+// site is a buy button that goes nowhere or an address that bounces, on the one
+// page where that costs money. So no tracked page may carry one: a
+// PENDING-... token, a #...-pending anchor, or a [LEGAL ...] / [TODO ...] note.
+for (const [label, file] of PAGES) {
+  const html = readFileSync(file, 'utf8');
+  const m = /PENDING-[A-Z-]+|#[a-z-]+-pending\b|\[(?:LEGAL|TODO)\b/.exec(html);
+  if (m) fail(label, `placeholder "${m[0]}" would ship. Replace it with the real value before this page is published.`);
+}
+
+// -----------------------------------------------------------------------------
 // 4. Companion files
 // -----------------------------------------------------------------------------
 for (const f of ['styles.css', 'robots.txt', 'sitemap.xml', 'og.png']) {
