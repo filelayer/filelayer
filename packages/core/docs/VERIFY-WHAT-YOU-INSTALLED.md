@@ -5,10 +5,11 @@ ship inside the npm tarball so you do not have to take our word for either. This
 page is the exact procedure, and it is executed by CI on every commit against a
 freshly packed tarball, so it cannot quietly stop working.
 
-It needs no account, no credentials and no database. On a clean install on a
-2 vCPU machine it took about 12 minutes (742 s as a normal user, 730 s as
-root); that is a measurement on one machine, not a promise, and yours will
-differ.
+It needs no account, no credentials and no database. Expect roughly 12 to 25
+minutes. Two clean installs on 2 vCPU machines took about 12 minutes (742 s as
+a normal user, 730 s as root) and about 25 minutes (1475 s, as root), so the
+core count alone does not predict it. Those are measurements,
+not a promise, and yours will differ.
 
 ## Why it is not simply `node --test node_modules/@filelayer/core/test/`
 

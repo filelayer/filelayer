@@ -152,6 +152,19 @@ console.log(json);</code></pre>
 <h2 id="null-means-not-measured-never-zero"><code>null</code> means &quot;not measured&quot;, never zero</h2>
 <p>A field the report cannot measure honestly is <code>null</code>, and <code>notes</code> says why with one of seven fixed codes. A <code>0</code> is a measured zero: the thing was looked for and did not happen. Reading a <code>null</code> as <code>0</code> is the one mistake this format is built to prevent.</p>
 <p><strong>A <code>null</code> always carries its note.</strong> <code>validateUsageReport()</code> rejects a report with a <code>null</code> that no note in <code>notes</code> explains. Which notes explain which field is in <code>usage-report.null-notes.json</code>, shipped beside the schema. The schema is plain JSON Schema (draft 2020-12), so a standard validator such as Ajv compiles it with its default options and checks the shape; the null-to-note rule is the one check only <code>validateUsageReport()</code> makes. In format 1, <code>errors</code> and <code>ops.unshare</code> can only be <code>null</code>.</p>
+<p>To load the schema, ask the package for it. The JSON file ships in the tarball but is not in the package's <code>exports</code>, so <code>import '@filelayer/core/usage-report.schema.json'</code> fails with <code>ERR_PACKAGE_PATH_NOT_EXPORTED</code>. <code>usageReportSchema()</code> returns the parsed schema, and <code>USAGE_REPORT_SCHEMA_PATH</code> is the absolute path of the file on disk:</p>
+<pre><code class="lang-ts">import { usageReportSchema, USAGE_REPORT_SCHEMA_PATH } from '@filelayer/core';
+
+const schema = usageReportSchema();
+assert.equal(schema.$id, 'https://filelayer.dev/usage-report.schema.json');
+assert.ok(USAGE_REPORT_SCHEMA_PATH.endsWith('usage-report.schema.json'));</code></pre>
+<p>With Ajv, which is not a dependency of this package (<code>npm install ajv</code>):</p>
+<pre><code class="lang-ts">import Ajv2020 from 'ajv/dist/2020.js';
+import { usageReportSchema, validateUsageReport } from '@filelayer/core';
+
+const checkShape = new Ajv2020().compile(usageReportSchema());
+checkShape(report);           // the shape, as the schema states it
+validateUsageReport(report);  // the shape, plus a null always carrying its note</code></pre>
 <div class="table-scroll"><table>
 <thead><tr><th>Note</th><th>When it appears</th><th>Fields that are <code>null</code> because of it</th></tr></thead>
 <tbody><tr><td><code>errors_not_measured</code></td><td>always, in format 1</td><td><code>errors</code></td></tr>

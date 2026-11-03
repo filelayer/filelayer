@@ -145,6 +145,33 @@ compiles it with its default options and checks the shape; the null-to-note
 rule is the one check only `validateUsageReport()` makes. In format 1, `errors`
 and `ops.unshare` can only be `null`.
 
+To load the schema, ask the package for it. The JSON file ships in the tarball
+but is not in the package's `exports`, so
+`import '@filelayer/core/usage-report.schema.json'` fails with
+`ERR_PACKAGE_PATH_NOT_EXPORTED`. `usageReportSchema()` returns the parsed
+schema, and `USAGE_REPORT_SCHEMA_PATH` is the absolute path of the file on disk:
+
+```ts
+import { usageReportSchema, USAGE_REPORT_SCHEMA_PATH } from '@filelayer/core';
+
+const schema = usageReportSchema();
+assert.equal(schema.$id, 'https://filelayer.dev/usage-report.schema.json');
+assert.ok(USAGE_REPORT_SCHEMA_PATH.endsWith('usage-report.schema.json'));
+```
+
+With Ajv, which is not a dependency of this package (`npm install ajv`):
+
+<!-- doccheck: skip reason="imports ajv, which this package does not depend on and this checker does not install" -->
+
+```ts
+import Ajv2020 from 'ajv/dist/2020.js';
+import { usageReportSchema, validateUsageReport } from '@filelayer/core';
+
+const checkShape = new Ajv2020().compile(usageReportSchema());
+checkShape(report);           // the shape, as the schema states it
+validateUsageReport(report);  // the shape, plus a null always carrying its note
+```
+
 | Note | When it appears | Fields that are `null` because of it |
 |---|---|---|
 | `errors_not_measured` | always, in format 1 | `errors` |
@@ -207,4 +234,4 @@ action and decision, counted over the week:
   deployment that is not look the same in this report.
 - **`unshare()` apart from other revocations.** See `ops.unshare` above.
 
-Both are in [LIMITATIONS.md](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md).
+Both are in [LIMITATIONS.md](../LIMITATIONS.md).

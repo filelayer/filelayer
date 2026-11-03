@@ -74,8 +74,8 @@ does not work. **That is not a reason to clone us.** Copying the package
 directory out to a scratch directory runs the same suite against *the bytes you
 were sent*, which is the only thing worth verifying, and the exact procedure is
 in
-[docs/VERIFY-WHAT-YOU-INSTALLED.md](https://github.com/filelayer/filelayer/blob/main/docs/VERIFY-WHAT-YOU-INSTALLED.md):
-about 12 minutes measured on a 2 vCPU machine, no account, no credentials,
+[docs/VERIFY-WHAT-YOU-INSTALLED.md](VERIFY-WHAT-YOU-INSTALLED.md):
+roughly 12 to 25 minutes measured on 2 vCPU machines, no account, no credentials,
 no database. CI runs that document's
 commands verbatim against a freshly packed tarball on every commit, so it cannot
 quietly stop working.
@@ -328,6 +328,11 @@ Redeem it (the secret is the credential; no identity needed):
 
 ```ts
 const dl = await fl.shares.redeem(share.secret!, { password: 'hunter2' });
+// dl.file                the file's record: name, contentType, sizeBytes, ...
+// dl.body                the bytes, a Uint8Array
+// dl.headers             the response headers to send with them
+// dl.remainingDownloads  downloads left on this link, or null if it has no cap
+if (dl.remainingDownloads !== 2) throw new Error('one of three downloads used');
 ```
 
 Share with a named user instead of minting a link:

@@ -7,7 +7,9 @@
 
 <!-- Every URL on this page is rooted at github.com/filelayer/filelayer and
      npmjs.com/package/@filelayer/core, so the badges resolve on their own with
-     no edit here. -->
+     no edit here. The exception is a link to a document that ships in the
+     package: that one is relative, so a reader of an install opens the copy
+     on disk. -->
 
 **The file layer for SaaS applications.** A customer's security review asks who
 opened a file and who was refused. A link you sent has to stop working now.
@@ -341,7 +343,7 @@ on disk.
 | The 29 error codes, and `FilelayerError` | [QUICKSTART §9](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) · [`ERRORS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/ERRORS.md) |
 | Proving **your** routes hold, not ours (`auditIntegration()`) | [QUICKSTART §8](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) |
 | Reading the audit trail, with a time window and no storage adapter | [QUICKSTART §4](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) |
-| Running the suite yourself, from a clone | [CONTRIBUTING](https://github.com/filelayer/filelayer/blob/main/CONTRIBUTING.md) · [from an install](https://github.com/filelayer/filelayer/blob/main/docs/VERIFY-WHAT-YOU-INSTALLED.md) |
+| Running the suite yourself, from a clone | [CONTRIBUTING](https://github.com/filelayer/filelayer/blob/main/CONTRIBUTING.md) · [from an install](docs/VERIFY-WHAT-YOU-INSTALLED.md) |
 
 The guides are also rendered at **[filelayer.dev/guides](https://filelayer.dev/guides/)**,
 which is the same markdown and is easier to read than a repository file.
