@@ -64,6 +64,7 @@ export const COPIES = [
     versionStamp: /describes `@filelayer\/core` version (\d+\.\d+\.\d+)/,
   },
   ...[
+    'skills/filelayer-integration/references/auth-membership.md',
     'skills/filelayer-integration/references/direct-upload.md',
     'skills/filelayer-integration/references/errors.md',
     'skills/filelayer-integration/references/node-http.md',

@@ -189,7 +189,9 @@ await fl.orgs.setRole('acme', 'newcomer', 'member', { as: 'founder' });
 ```
 
 Wire that to the event that makes somebody a member in their system, not to
-the upload.
+the upload. For Better Auth's organization plugin and for Clerk, the hooks, the
+role mapping and the rule that the organization comes from the session are in
+[`references/auth-membership.md`](references/auth-membership.md).
 
 ### A grant id is not a person's access
 
@@ -359,6 +361,7 @@ Read the one that matches the task; do not read all of them.
 | [`references/node-http.md`](references/node-http.md) | Express, Fastify, `node:http` |
 | [`references/range-and-media.md`](references/range-and-media.md) | Video, audio, PDFs: byte ranges, inline disposition, seeking |
 | [`references/sharing-and-links.md`](references/sharing-and-links.md) | Expiring links, passwords, download caps, revocation |
+| [`references/auth-membership.md`](references/auth-membership.md) | Better Auth or Clerk organizations: mirroring membership and roles |
 | [`references/direct-upload.md`](references/direct-upload.md) | Browser uploads straight to the bucket, and the size trap |
 | [`references/errors.md`](references/errors.md) | Mapping failures onto the application's own responses |
 
