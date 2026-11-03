@@ -690,6 +690,19 @@ const sources = [
     isGuide: false,
     isIndex: false,
   },
+  // ONE FEATURE, FIVE IMPLEMENTATIONS, measured by the same scripts: the
+  // numbers are the content of the launch (D050) and a reader should not need
+  // GitHub to read them. The source is benchmark/PAGE.md; benchmark/README.md
+  // is for whoever clones. The URL says what the page is, because
+  // .internal-language.json keeps comparison framing out of published text.
+  {
+    src: 'benchmark/PAGE.md',
+    out: 'one-feature-five-ways.html',
+    url: `${SITE}/one-feature-five-ways`,
+    slug: null,
+    isGuide: false,
+    isIndex: false,
+  },
   {
     src: 'TRUST.md',
     out: 'trust.html',

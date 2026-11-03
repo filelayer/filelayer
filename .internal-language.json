@@ -64,6 +64,7 @@
     "packages/core/usage-report.schema.json",
     "packages/core/usage-report.null-notes.json",
     "benchmark/README.md",
+    "benchmark/PAGE.md",
     "benchmark/package.json",
     "packages/core/migrations/*.md",
     "packages/core/migrations/*.json",

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: benchmark/PAGE.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>One file feature, built five ways · Filelayer</title>
+<meta name="description" content="A B2B document workspace, built five times: once with Filelayer and four times the way each platform's own documentation recommends. Then the same scripts count what each one asks the…">
+
+<link rel="canonical" href="https://filelayer.dev/one-feature-five-ways">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/one-feature-five-ways">
+<meta property="og:title" content="One file feature, built five ways">
+<meta property="og:description" content="A B2B document workspace, built five times: once with Filelayer and four times the way each platform's own documentation recommends. Then the same scripts count what each one asks the…">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer — the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="One file feature, built five ways">
+<meta name="twitter:description" content="A B2B document workspace, built five times: once with Filelayer and four times the way each platform's own documentation recommends. Then the same scripts count what each one asks the…">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "One file feature, built five ways",
+  "description": "A B2B document workspace, built five times: once with Filelayer and four times the way each platform's own documentation recommends. Then the same scripts count what each one asks the…",
+  "url": "https://filelayer.dev/one-feature-five-ways",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.35.2"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/quickstart">Quickstart</a>
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>One file feature, built five ways</h1>
+<p>A B2B document workspace, built five times: once with Filelayer and four times the way each platform's own documentation recommends. Then the same scripts count what each one asks the developer to write and to get right, and the same 27 attacks are run against every version that can run.</p>
+<p>The workspace is the same in all five: organizations and roles, upload, per-role access, share links with an expiry, a password and a download cap, revocation of a link already handed out, and an audit trail.</p>
+<p>Everything here is reproducible from a fresh clone with one command, and every number comes from data in the repository that you can change to get your own.</p>
+<pre><code class="lang-bash">git clone https://github.com/filelayer/filelayer.git
+cd filelayer
+node benchmark/run.mjs</code></pre>
+<p>It needs Node 22.18 or later, no account, no credential and no environment variable. The network is used for npm and nothing else.</p>
+<h2 id="the-five-implementations">The five implementations</h2>
+<div class="table-scroll"><table>
+<thead><tr><th>Implementation</th><th>Built with</th><th>Ran?</th></tr></thead>
+<tbody><tr><td>Filelayer</td><td><code>@filelayer/core</code> 0.35.2 from npm, on PostgreSQL</td><td>Yes</td></tr>
+<tr><td>Supabase</td><td>Supabase Storage and Postgres row-level security</td><td>Yes: real RLS policies on PostgreSQL (PGlite), with the platform schema emulated</td></tr>
+<tr><td>Raw S3</td><td>S3 or R2 presigned URLs and Postgres</td><td>Yes: against a local store that verifies SigV4 signatures</td></tr>
+<tr><td>Convex</td><td>Convex and its R2 component</td><td>No: it needs a live Convex deployment and an R2 bucket</td></tr>
+<tr><td>Vercel Blob</td><td>Vercel Blob (a private store) and Postgres</td><td>No: private Blob delivery has no local emulation</td></tr></tbody>
+</table></div>
+<p><strong>Who built them.</strong> We did, in September 2026. Each alternative was written by a separate AI agent, told to follow its platform's documented best practice and to argue for that platform. Each one's directory has a <code>REPORT.md</code> with its sources, what it could not implement, and a section called &quot;Where this approach is genuinely good&quot;. The Filelayer version is the <code>examples/vault/server.ts</code> that ships in the npm package. The attack suite was written by the same team that builds Filelayer. That is a conflict of interest, and the section on the attacks says what we did about it.</p>
+<h2 id="results">Results</h2>
+<h3 id="lines-the-developer-writes">Lines the developer writes</h3>
+<p>Non-blank, non-comment application lines. Tests, tooling and the platform emulation are not counted. The Filelayer library itself is not counted either: it is vendor code, the way the Supabase or AWS SDK is.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Implementation</th><th>Application lines</th><th>Infrastructure config</th><th>Relative</th></tr></thead>
+<tbody><tr><td>Filelayer</td><td>133</td><td>0</td><td>1.0x</td></tr>
+<tr><td>Supabase</td><td>564</td><td>0</td><td>4.2x</td></tr>
+<tr><td>Raw S3</td><td>700</td><td>122</td><td>5.3x</td></tr>
+<tr><td>Convex</td><td>841</td><td>0</td><td>6.3x</td></tr>
+<tr><td>Vercel Blob</td><td>884</td><td>21</td><td>6.6x</td></tr></tbody>
+</table></div>
+<p>Every inclusion and exclusion is a rule in <code>benchmark/loc.manifest.json</code>, and a file that matches no rule fails the run.</p>
+<h3 id="security-sensitive-decisions">Security-sensitive decisions</h3>
+<p>A decision here is a point where the developer can choose an option that leaks or loses data and nothing reports it: no error, no failing test, no warning. Counted as kinds, and as the places in the code where each must be got right.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Implementation</th><th>Kinds</th><th>Places</th></tr></thead>
+<tbody><tr><td>Filelayer</td><td>7</td><td>7</td></tr>
+<tr><td>Supabase</td><td>29</td><td>79</td></tr>
+<tr><td>Raw S3</td><td>26</td><td>46</td></tr>
+<tr><td>Vercel Blob</td><td>22</td><td>61</td></tr>
+<tr><td>Convex</td><td>20</td><td>43</td></tr></tbody>
+</table></div>
+<p>Median reduction against Filelayer: 3.4x on kinds, 7.6x on places. One Filelayer decision is listed as arguable; counting it gives 8 kinds and a median of 3.0x and 6.7x.</p>
+<p>Two decisions that the first count in September held against Filelayer are no longer in it, because the library fixed them in 0.3.0: the audit chain could fork under concurrent writers, and a download cap was not charged on direct reads. Both are listed in <code>decisions.json</code> under <code>removedSinceGate1</code>, with the test that now holds each.</p>
+<p>The Convex and Vercel Blob counts come from their authors' own lists only. The attack suite added decisions to both executed alternatives that their authors had missed, and it cannot do that for code that does not run, so those two counts are probably low. That works against Filelayer and is left as it is.</p>
+<h3 id="the-27-attacks">The 27 attacks</h3>
+<p>Written once, in <code>benchmark/adversarial/attacks.mjs</code>, and run over HTTP against every implementation that can run.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Implementation</th><th>Defended</th><th>Partial</th><th>Breach</th><th>Cannot express the attack</th></tr></thead>
+<tbody><tr><td>Filelayer 0.35.2</td><td>27</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>Supabase</td><td>15</td><td>2</td><td>2</td><td>8</td></tr>
+<tr><td>Raw S3</td><td>19</td><td>1</td><td>2</td><td>5</td></tr>
+<tr><td>Filelayer, earlier version (control)</td><td>20</td><td>2</td><td>3</td><td>2</td></tr></tbody>
+</table></div>
+<p>&quot;Cannot express the attack&quot; is never counted as a pass. It means, for example, that the implementation hands out a URL and the object store serves the bytes, so an attack on the application's response headers has nothing to hit.</p>
+<p>Both executed alternatives were breached on the same two attacks: probing for documents that do not exist left no audit record, and a cross-tenant access attempt that was refused left no record anywhere. Supabase's revocation is partial: the gateway refuses at once, but a signed URL already issued stays valid for 30 seconds.</p>
+<p><strong>Why a perfect score is not the headline.</strong> A suite that the implementation it was written alongside passes 27 out of 27 is exactly the suite a reader should distrust. So the suite is also run against an earlier version of Filelayer's own example, from before its delivery and authorization were rebuilt, on the same library. That version is breached 3 times: a revoked download replayable from a cache, a forged but well-formed caller id treated as real, and user-uploaded HTML rendered on the authenticated read path. The suite finds real defects in Filelayer's own code, which is the best evidence we have that it is not shaped around it. It is still our suite. Independent attacks are welcome, as an issue or a pull request.</p>
+<h3 id="from-install-to-a-stored-file">From install to a stored file</h3>
+<p>From <code>npm install</code> to the first stored file, using the program printed in the quickstart that ships in the package: 4 lines of application code, no step that needs a person, and no account, credential or dashboard. On the machine that generated these results it took 5.4 seconds; seconds depend on the machine and the network.</p>
+<h2 id="where-the-alternatives-are-better">Where the alternatives are better</h2>
+<p>Each alternative's <code>REPORT.md</code> has this section in full. The short version:</p>
+<ul><li><strong>Supabase fails closed, and its rules cannot be bypassed by new code.</strong> No policy means no access, every rule is in one declarative file you can query and show a compliance auditor, and the policies apply to every path into the database, a <code>psql</code> session included. Filelayer is authorization middleware: it decides for calls made through it, and a direct <code>SELECT</code> against its tables is not checked by anything. If your team already runs on Supabase, it is one vendor instead of two.</li>
+<li><strong>Presigned URLs are the right answer when you do not need to take a link back.</strong> Bytes never touch your server, so there is no body limit, no memory pressure and no bandwidth bill on your app tier. For a 5 GB file it is the only sane option. Filelayer's default serves bytes through your process, because that is how revocation works on the next request, and that means no CDN on the private path.</li>
+<li><strong>Vercel Blob's private store makes immediate revocation the default.</strong> A private blob has no fetchable URL, so every byte goes through your code. Its credentials rotate on their own, and there is far less infrastructure to configure.</li>
+<li><strong>For a public, cacheable file, such as an avatar on a recipe site, a bucket and a CDN are the better tool.</strong> Filelayer can serve public files, but its value is in the private ones.</li></ul>
+<h2 id="what-this-does-not-measure">What this does not measure</h2>
+<ul><li>Load, or anyone's production. Filelayer has no known production deployment.</li>
+<li>How long each implementation took to build, or would take a person.</li>
+<li>Two of the five alternatives, which did not run.</li>
+<li>Anything an independent security reviewer would: there has been no independent security review of Filelayer.</li></ul>
+<h2 id="disagreeing-with-a-number">Disagreeing with a number</h2>
+<p>Every number comes from data in <code>benchmark/</code>. Remove a row from <code>decisions.json</code>, or change a rule in <code>loc.manifest.json</code>, run <code>node benchmark/run.mjs</code> again and you have your own figure. If you think an alternative was built badly, its directory says what it followed and where; an issue that shows the better version is the most useful thing you can send us.</p>
+<p>Filelayer is Apache-2.0. The quickstart is at <a href="https://filelayer.dev/quickstart" rel="noopener">filelayer.dev/quickstart</a>.</p>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/benchmark/PAGE.md" rel="noopener"><code>benchmark/PAGE.md</code></a>
+    in a public repository.
+  </p>
+  <p>
+    <a href="/quickstart">Quickstart</a> ·
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="/trust">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.35.2, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

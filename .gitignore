@@ -120,6 +120,10 @@
 !/benchmark/package.json
 !/benchmark/package-lock.json
 !/benchmark/RESULTS.md
+# The public page filelayer.dev/benchmark is rendered from PAGE.md by
+# tools/build-guides.mjs. Owned by 03 Surfaces; README.md stays 02's, for
+# whoever clones.
+!/benchmark/PAGE.md
 
 # --- dependencies ------------------------------------------------------------
 node_modules/
