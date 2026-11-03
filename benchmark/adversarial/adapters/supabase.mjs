@@ -99,7 +99,12 @@ export async function create() {
   const shareTokens = new Map(); // shareId -> token, so revoke/expire can find it
 
   const countAudit = async (org) => {
-    if (org === null) return 0; // no system chain in this baseline
+    // This application keeps its audit trail per organization and has no
+    // system-level one, so there is nothing to count for `org: null`. That is
+    // a statement about the application's own audit table only: Supabase's API
+    // gateway and Postgres logs may hold the request, and this emulation
+    // cannot read them, so the suite never claims they are empty.
+    if (org === null) return 0;
     const { rows } = await db.query(`select count(*)::int as n from public.audit_log where org_id=$1`, [
       org,
     ]);

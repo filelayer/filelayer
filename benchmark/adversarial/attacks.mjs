@@ -41,6 +41,14 @@
 const ok = (detail) => ({ verdict: 'defended', detail });
 const breach = (detail) => ({ verdict: 'BREACH', detail });
 const partial = (detail) => ({ verdict: 'partial', detail });
+// AN AUDIT GAP IS NOT A BREACH. Nothing was disclosed, altered or lost: the
+// application's own audit trail simply does not record that something was
+// refused. Request logs outside the application (a load balancer, an API
+// gateway, the platform's edge) may well hold the HTTP request; this suite
+// cannot read them and does not claim they are empty. Until 2026-11-03 this was
+// scored BREACH, twice (C4 and E1, now merged into E1), which counted one
+// missing log line as two breaches.
+const auditGap = (detail) => ({ verdict: 'audit-gap', detail });
 const na = (detail) => ({ verdict: 'n/a', detail });
 
 /** A response is "success" if the implementation delivered or authorized it. */
@@ -352,27 +360,6 @@ export const ATTACKS = [
         : partial(`known stranger=${known.status}, forged identity=${forged.status}`);
     },
   },
-  {
-    id: 'C4',
-    name: 'enumeration leaves no trace',
-    category: 'audit',
-    severity: 'high',
-    requires: ['read', 'countAudit'],
-    async run(impl, w) {
-      const before = await impl.countAudit({ w, org: w.orgA });
-      const beforeSystem = await impl.countAudit({ w, org: null });
-      for (const doc of w.ghostDocs) await impl.read({ w, as: w.eve, org: w.orgA, doc });
-      const after = await impl.countAudit({ w, org: w.orgA });
-      const afterSystem = await impl.countAudit({ w, org: null });
-      const recorded = after - before + (afterSystem - beforeSystem);
-      if (recorded === 0) {
-        return breach(`${w.ghostDocs.length} probes at unknown document ids produced 0 audit events`);
-      }
-      return recorded >= w.ghostDocs.length
-        ? ok(`${recorded} events for ${w.ghostDocs.length} probes`)
-        : partial(`${recorded} events for ${w.ghostDocs.length} probes`);
-    },
-  },
 
   // ---------------------------------------------------------------------------
   // PRIVILEGE ESCALATION
@@ -430,20 +417,30 @@ export const ATTACKS = [
   // ---------------------------------------------------------------------------
   {
     id: 'E1',
-    name: 'a denied access is recorded',
+    name: "refused reads are in the application's audit trail: one cross-tenant read, and probes at unknown ids",
     category: 'audit',
-    severity: 'high',
+    severity: 'medium',
     requires: ['read', 'countAudit'],
     async run(impl, w) {
-      const before = await impl.countAudit({ w, org: w.orgA });
-      const beforeSystem = await impl.countAudit({ w, org: null });
+      // Two refusals of different shapes, scored together because they are one
+      // property: a document that exists and belongs to another tenant, and
+      // eight ids that do not exist at all (the enumeration case, formerly C4).
+      const total = async () =>
+        (await impl.countAudit({ w, org: w.orgA })) + (await impl.countAudit({ w, org: null }));
+      const t0 = await total();
       await impl.read({ w, as: w.eve, org: w.orgA, doc: w.docA });
-      const delta =
-        (await impl.countAudit({ w, org: w.orgA })) - before +
-        ((await impl.countAudit({ w, org: null })) - beforeSystem);
-      return delta > 0
-        ? ok(`${delta} event(s) recorded for the refused access`)
-        : breach('a cross-tenant access attempt left no record anywhere');
+      const t1 = await total();
+      for (const doc of w.ghostDocs) await impl.read({ w, as: w.eve, org: w.orgA, doc });
+      const t2 = await total();
+      const refused = t1 - t0;
+      const probes = t2 - t1;
+      const n = w.ghostDocs.length;
+      const said = `${refused} event(s) for the cross-tenant read, ${probes} for ${n} probes at unknown ids`;
+      if (refused > 0 && probes >= n) return ok(said);
+      if (refused === 0 && probes === 0) {
+        return auditGap(`${said}: the application's audit trail does not record refused reads`);
+      }
+      return partial(said);
     },
   },
   {

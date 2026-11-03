@@ -18,7 +18,7 @@
  *      summed from decisions.json.
  *   4. count-tiers.mjs --published: lines per tier, from the examples that ship
  *      in the published tarball.
- *   5. adversarial/run.mjs --published: 27 attacks against every implementation
+ *   5. adversarial/run.mjs --published: 26 attacks against every implementation
  *      that can be executed. Writes adversarial/RESULTS.md.
  *   6. ttff/measure.mjs --print: install to first stored file, from the npm
  *      registry. This is the one step that needs the network beyond npm ci.
@@ -124,7 +124,7 @@ const report = [
   '',
   'The full matrix, with every attack, is in [`adversarial/RESULTS.md`](adversarial/RESULTS.md).',
   '',
-  section(adversarial, '## Tallies', '## Every non-').replace(/^## /gm, '### '),
+  section(adversarial, '## The ', '## Tallies over every').replace(/^## /gm, '### '),
   '',
   '## Time to first file',
   '',

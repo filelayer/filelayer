@@ -2,7 +2,7 @@
  * CALIBRATION ADAPTER: Filelayer as it was BEFORE the delivery and
  * authorization rebuild.
  *
- * WHY THIS EXISTS. The shared suite defends 27/27 on the current Filelayer
+ * WHY THIS EXISTS. The shared suite defends 26/26 on the current Filelayer
  * artifact. A suite that the implementation it was written alongside passes
  * perfectly is exactly the suite a reader should distrust -- it is
  * indistinguishable from a suite shaped, consciously or not, around what that
@@ -21,7 +21,7 @@
  *   - `audit_event.actor_id` carries the foreign key it used to carry
  *
  * Nothing else is reverted. If the suite has teeth, it must fail this. If it
- * does not fail this, the 27/27 above means nothing.
+ * does not fail this, the 26/26 above means nothing.
  *
  * This adapter is NOT a benchmark implementation and is never scored against
  * the baselines. It is a control.

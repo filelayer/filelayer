@@ -10,7 +10,7 @@ that records denials.
 
 **What is tested is the authorization engine, and it is tested hard.** One
 function answers every access question. 749 tests run against a real PostgreSQL
-on every commit; 27 adversarial attacks score zero breaches, and the same suite
+on every commit; 26 adversarial attacks score zero breaches, and the same suite
 scores three against an earlier revision of this library, so the suite is
 calibrated rather than merely passing. The storage adapter runs against live
 Cloudflare R2 and live AWS S3 on every commit. There are no runtime
@@ -35,7 +35,7 @@ real traffic.
 | Time to first stored file | Measured 17 October 2026, `benchmark/ttff/RESULTS.md`. From `npm install` of the **published** package to a stored byte, with a cold npm cache: **0 accounts, 0 credentials, 0 dashboards, 4 lines**. The program is asserted to appear verbatim in the quickstart that shipped in the tarball |
 | Tests | 749, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
-| Adversarial suite | 27 attacks, 0 breaches |
+| Adversarial suite | 26 attacks, 0 breaches |
 | Runtime dependencies | **0** |
 | Licence | Apache-2.0 |
 | Storage adapter against live Cloudflare R2 | 12 tests every commit, 13 nightly |

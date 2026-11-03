@@ -50,7 +50,20 @@ for (const r of others) {
 }
 const mt = median(others.map((r) => r.types));
 const ms = median(others.map((r) => r.sites));
-console.log(`| **median**   | **${(mt / fl.types).toFixed(1)}x** | **${(ms / fl.sites).toFixed(1)}x** |`);
+console.log(`| median, all four (two never executed or compiled) | ${(mt / fl.types).toFixed(1)}x | ${(ms / fl.sites).toFixed(1)}x |`);
+// The headline median is over the alternatives that run (loc.manifest.json
+// marks the other two `executed: false`): a number built on code nobody has
+// compiled is not one to lead with.
+const NOT_EXECUTED = new Set(['vercel-blob', 'convex']);
+const ran = others.filter((r) => !NOT_EXECUTED.has(r.name));
+const et = median(ran.map((r) => r.types));
+const es = median(ran.map((r) => r.sites));
+console.log(`| median, the ${ran.length} executed | ${(et / fl.types).toFixed(1)}x | ${(es / fl.sites).toFixed(1)}x |`);
+console.log(
+  '\nUNDER REVIEW: the site counts are being recounted under one rule for all five (a decision\n' +
+    'enforced in one helper is one site; decisions the platform\'s own linter catches are dropped).\n' +
+    'Until then, neither median above is a headline.',
+);
 
 if (fl.arguable) {
   const worst = fl.types + fl.arguable;

@@ -40,7 +40,7 @@ verifies SigV4 signatures.
 | Application lines | `count-loc.mjs` | Non-blank, non-comment lines the developer writes, per implementation, with every inclusion and exclusion written down in `loc.manifest.json`. A file that matches no rule fails the run. |
 | Security-sensitive decisions | `count-decisions.mjs` | Points where the developer can choose an option that leaks or loses data and nothing reports it: no error, no failing test, no warning. Counted as kinds and as places, from `decisions.json`. |
 | Lines per tier | `count-tiers.mjs` | The four Filelayer examples, from a public avatar to the full workspace. |
-| Attacks | `adversarial/run.mjs` | 27 attacks, written once in `adversarial/attacks.mjs`, run over HTTP against every implementation that can be executed. |
+| Attacks | `adversarial/run.mjs` | 26 attacks, written once in `adversarial/attacks.mjs`, against every implementation that can be executed: over HTTP for Filelayer and raw S3, and as direct calls into the application's functions for Supabase, whose platform is emulated on PGlite. The headline table holds only the attacks every executed implementation can express. |
 | Time to first file | `ttff/measure.mjs` | Install from npm to the first stored file, using the program printed in the `QUICKSTART.md` that ships in the package. |
 
 ## Which Filelayer is measured

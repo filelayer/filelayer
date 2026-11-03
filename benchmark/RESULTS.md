@@ -53,7 +53,7 @@ test      files= 2  gross=  593  net=  446   [not counted]
   test/local-s3.mjs                        174 /   134
 APPLICATION LOC: gross 926  net 700   (+ infra net 122)
 
-=== baseline-vercel-blob ===   (Vercel Blob (private store) + Postgres; NEVER EXECUTED)
+=== baseline-vercel-blob ===   (Vercel Blob (private store) + Postgres; NEVER EXECUTED OR COMPILED)
 app       files=21  gross= 1241  net=  884
   lib/audit.ts                             126 /    95
   app/api/s/[token]/download/route.ts      105 /    75
@@ -80,7 +80,7 @@ infra     files= 1  gross=   21  net=   21
   infra/vercel.json                         21 /    21
 APPLICATION LOC: gross 1241  net 884   (+ infra net 21)
 
-=== baseline-convex ===   (Convex + the Cloudflare R2 component; NEVER EXECUTED)
+=== baseline-convex ===   (Convex + the Cloudflare R2 component; NEVER EXECUTED OR COMPILED)
 app       files=11  gross= 1267  net=  841
   convex/shares.ts                         256 /   193
   convex/http.ts                           177 /   110
@@ -103,8 +103,10 @@ APPLICATION LOC: gross 1267  net 841   (+ infra net 0)
   filelayer              app   133   infra    0 1.0x
   baseline-supabase      app   564   infra    0 4.2x
   baseline-raw-s3        app   700   infra  122 5.3x
-  baseline-convex        app   841   infra    0 6.3x
-  baseline-vercel-blob   app   884   infra   21 6.6x
+  baseline-convex        app   841   infra    0 6.3x   not executed, not compiled
+  baseline-vercel-blob   app   884   infra   21 6.6x   not executed, not compiled
+
+  median over the 2 executed alternatives: 632 vs 133 = 4.8x (Convex and Vercel Blob excluded: never executed or compiled)
 ```
 
 ## Security-sensitive decisions
@@ -129,7 +131,12 @@ REDUCTION vs Filelayer
 | raw-s3       | 3.7x | 6.6x |
 | vercel-blob  | 3.1x | 8.7x |
 | convex       | 2.9x | 6.1x |
-| **median**   | **3.4x** | **7.6x** |
+| median, all four (two never executed or compiled) | 3.4x | 7.6x |
+| median, the 2 executed | 3.9x | 8.9x |
+
+UNDER REVIEW: the site counts are being recounted under one rule for all five (a decision
+enforced in one helper is one site; decisions the platform's own linter catches are dropped).
+Until then, neither median above is a headline.
 
 Sensitivity: 1 Filelayer decision(s) are listed as arguable (see decisions.json).
 Counting all of them gives Filelayer 8 types, median reduction 3.0x on types and 6.7x on sites.
@@ -159,32 +166,65 @@ core = net - imports - the `if (import.meta.url ...)` demo boot block.
 
 The full matrix, with every attack, is in [`adversarial/RESULTS.md`](adversarial/RESULTS.md).
 
-### Tallies
+### The 18 attacks every executed implementation can express
 
-| Implementation | defended | partial | BREACH | n/a |
+| Implementation | defended | partial | audit-gap | BREACH |
 |---|---:|---:|---:|---:|
-| filelayer | 27 | 0 | 0 | 0 |
-| supabase | 15 | 2 | 2 | 8 |
-| raw-s3 | 19 | 1 | 2 | 5 |
-| filelayer-prerebuild | 20 | 2 | 3 | 2 |
+| filelayer | 18/18 | 0 | 0 | 0 |
+| supabase | 15/18 | 2 | 1 | 0 |
+| raw-s3 | 17/18 | 0 | 1 | 0 |
+| filelayer-prerebuild (control) | 16/18 | 0 | 0 | 1 |
 
-### Not run
+| # | Attack | Severity | filelayer | supabase | raw-s3 | filelayer-prerebuild |
+|---|---|---|---|---|---|---|
+| A1 | cross-tenant read by document id | critical | PASS | PASS | PASS | PASS |
+| A2 | cross-tenant read by naming the victim org on your own route | critical | PASS | PASS | PASS | PASS |
+| A3 | cross-tenant listing | critical | PASS | PASS | PASS | n/a |
+| A4 | cross-tenant delete | critical | PASS | PASS | PASS | PASS |
+| A5 | cross-tenant share minting (deputy mints a link over a foreign file) | critical | PASS | PASS | PASS | PASS |
+| A6 | cross-tenant audit read | high | PASS | PASS | PASS | PASS |
+| B1 | confused deputy: a valid token for document 1 fetches document 2 | critical | PASS | PASS | PASS | PASS |
+| B2 | revoked-URL replay | critical | PASS | PART | PASS | PASS |
+| B4 | expired grant still redeems | high | PASS | PASS | PASS | PASS |
+| B5 | download-cap race: 20 concurrent redemptions against max=1 | high | PASS | PASS | PASS | PASS |
+| B6 | a wrong password consumes a download from the cap | medium | PASS | PASS | PASS | PASS |
+| C1 | existence oracle: a real document you cannot see vs one that does not exist | medium | PASS | PASS | PASS | PASS |
+| C3 | identity oracle: a forged (well-formed, unregistered) caller id | high | PASS | PASS | PASS | BREACH |
+| D1 | self-promotion: a member sets their own role to admin | critical | PASS | PASS | PASS | PASS |
+| D2 | admin promotes themselves to owner | high | PASS | PASS | PASS | PASS |
+| D3 | outsider adds themselves to a tenant | critical | PASS | PASS | PASS | PASS |
+| E1 | refused reads are in the application's audit trail: one cross-tenant read, and probes at unknown ids | medium | PASS | GAP | GAP | PASS |
+| E2 | a byte delivery is recorded as a delivery, not as a URL issuance | high | PASS | PART | PASS | PASS |
 
-- **convex** — No executable form. The Convex baseline targets a hosted platform: `query`/`mutation` functions are executed by the Convex runtime and `@convex-dev/r2` is a hosted component. Running it requires a live deployment and an R2 bucket, which the benchmark rules do not permit (no network, no accounts). Its REPORT.md says so prominently and independently of this suite.
-- **vercel-blob** — No executable form. 21 Next.js route handlers plus `@vercel/blob` against a private store; `issueSignedToken` and private-blob delivery have no local emulation, and faking one would test the fake. Its REPORT.md leads with this caveat.
+### The 8 attacks not every implementation can express
+
+Reported apart, and not added into the comparison above. Most test a feature that
+only some implementations have; the rest depend on whether the application serves
+the bytes itself or redirects to a signed URL.
+
+| # | Attack | Severity | cannot express | filelayer | supabase | raw-s3 | filelayer-prerebuild |
+|---|---|---|---|---|---|---|---|
+| A7 | intra-tenant privilege: a member reads a document they were not given | high | supabase, raw-s3 | PASS | n/a | n/a | PASS |
+| B3 | cache replay: is a revoked download replayable from a cache? | high | supabase | PASS | n/a | PASS | BREACH |
+| B7 | listing shares leaks the raw token | high | supabase, raw-s3 | PASS | n/a | n/a | PASS |
+| C2 | lifecycle oracle: an expired/held document distinguishable to a stranger | medium | supabase, raw-s3 | PASS | n/a | n/a | PASS |
+| D4 | escalation via delegation: pass on more authority than you hold | high | supabase, raw-s3 | PASS | n/a | n/a | n/a |
+| F1 | stored XSS: user-uploaded HTML served renderable from our own origin | high | supabase | PASS | n/a | PASS | PART |
+| F3 | stored XSS on the AUTHENTICATED read path | high | supabase, raw-s3 | PASS | n/a | n/a | BREACH |
+| F2 | response splitting through a hostile filename | medium | supabase | PASS | n/a | PART | PART |
 
 ## Time to first file
 
 ```
 time to first file, from the registry
 
-  npm init -y   (not counted: scaffolding)                0.5s
+  npm init -y   (not counted: scaffolding)                0.7s
   npm install @filelayer/core                             1.5s
-  npm install --save-dev "@electric-sql/pglite@^0.3.11"    1.1s
+  npm install --save-dev "@electric-sql/pglite@^0.3.11"    0.8s
   every program line found in the shipped page              3
-  node --experimental-strip-types app.ts                  2.8s
+  node --experimental-strip-types app.ts                  2.2s
 
-  TOTAL, install to stored byte                           5.4s
+  TOTAL, install to stored byte                           4.6s
   steps requiring a human                                   0
   lines of application code                                 4
   accounts, credentials, dashboards                         0

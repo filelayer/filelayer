@@ -257,9 +257,23 @@ if (!asJson && targets.length > 1) {
   const rows = Object.entries(results).map(([n, r]) => [n, r.app.net, r.infra.net]);
   const fl = rows.find(([n]) => n === 'filelayer')?.[1];
   console.log('\n=== APPLICATION LOC (net), one counter, all implementations ===');
+  const executed = (n) => MANIFEST.implementations[n]?.executed !== false;
   for (const [n, app, infra] of rows.sort((a, b) => a[1] - b[1])) {
     const ratio = fl ? ` ${(app / fl).toFixed(1)}x` : '';
-    console.log(`  ${n.padEnd(22)} app ${String(app).padStart(5)}   infra ${String(infra).padStart(4)}${ratio}`);
+    const status = executed(n) ? '' : '   not executed, not compiled';
+    console.log(`  ${n.padEnd(22)} app ${String(app).padStart(5)}   infra ${String(infra).padStart(4)}${ratio}${status}`);
+  }
+  // THE MEDIAN IS OVER THE ALTERNATIVES THAT RUN. Two of the four have never
+  // been executed or compiled, so a median that includes them quotes code
+  // nobody has seen work. They stay in the table above, labelled, and out of
+  // this number.
+  const ran = rows.filter(([n]) => n !== 'filelayer' && executed(n)).map(([, app]) => app).sort((a, b) => a - b);
+  if (fl && ran.length) {
+    const m = ran.length % 2 ? ran[ran.length >> 1] : (ran[ran.length / 2 - 1] + ran[ran.length / 2]) / 2;
+    console.log(
+      `\n  median over the ${ran.length} executed alternatives: ${m} vs ${fl} = ${(m / fl).toFixed(1)}x` +
+        ' (Convex and Vercel Blob excluded: never executed or compiled)',
+    );
   }
 }
 

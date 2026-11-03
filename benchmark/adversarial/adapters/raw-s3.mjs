@@ -105,7 +105,10 @@ export async function create() {
   };
 
   const auditCount = async (org) => {
-    if (org === null) return 0; // there is no system chain on this platform
+    // The application's audit trail is per organization, with no system-level
+    // one. This counts that table only; S3 server access logs or a load
+    // balancer may hold the request, outside what the suite can read.
+    if (org === null) return 0;
     const { rows } = await db.query(`SELECT count(*)::int AS n FROM audit_log WHERE org_id = $1`, [
       org,
     ]);

@@ -20,6 +20,8 @@ import { ATTACKS } from './attacks.mjs';
 // installed from npm, instead of this working tree. That is the run the
 // published numbers come from; the plain run is the CI gate on the tree.
 const PUBLISHED = process.argv.includes('--published');
+// Controls are reported but never decide which attacks count as shared.
+const CONTROL = new Set(['filelayer-prerebuild']);
 const ADAPTERS = [
   {
     name: 'filelayer',
@@ -54,18 +56,20 @@ const NOT_RUN = [
       'functions are executed by the Convex runtime and `@convex-dev/r2` is a hosted ' +
       'component. Running it requires a live deployment and an R2 bucket, which the ' +
       'benchmark rules do not permit (no network, no accounts). Its REPORT.md says so ' +
-      'prominently and independently of this suite.',
+      'prominently and independently of this suite. It has also never been compiled: there is ' +
+      'no tsconfig.json and no generated convex/_generated/ in the directory.',
   },
   {
     name: 'vercel-blob',
     why:
       'No executable form. 21 Next.js route handlers plus `@vercel/blob` against a private ' +
       'store; `issueSignedToken` and private-blob delivery have no local emulation, and ' +
-      'faking one would test the fake. Its REPORT.md leads with this caveat.',
+      'faking one would test the fake. Its REPORT.md leads with this caveat. It has also never ' +
+      'been compiled: there is no tsconfig.json in the directory.',
   },
 ];
 
-const SYMBOL = { defended: 'PASS', BREACH: 'BREACH', partial: 'PART', 'n/a': 'n/a' };
+const SYMBOL = { defended: 'PASS', BREACH: 'BREACH', partial: 'PART', 'audit-gap': 'GAP', 'n/a': 'n/a' };
 
 async function runOne(adapterMod, attack) {
   let impl;
@@ -118,6 +122,7 @@ const tally = (impl) => {
     defended: vs.filter((v) => v.verdict === 'defended').length,
     partial: vs.filter((v) => v.verdict === 'partial').length,
     breach: vs.filter((v) => v.verdict === 'BREACH').length,
+    gap: vs.filter((v) => v.verdict === 'audit-gap').length,
     na: vs.filter((v) => v.verdict === 'n/a').length,
     error: vs.filter((v) => v.verdict === 'error').length,
   };
@@ -139,21 +144,61 @@ if (asMarkdown) {
     out.push('');
   }
   out.push('`n/a` means the implementation cannot express the attack. **It is not a pass.**');
+  out.push('`GAP` (audit-gap) means nothing was disclosed or changed, but the application\'s own audit');
+  out.push('trail does not record the refusal. Request logs outside the application may hold it;');
+  out.push('the suite cannot read those and does not claim they are empty. It is not a breach.');
   out.push('');
-  out.push(`| # | Attack | Severity | ${names.join(' | ')} |`);
-  out.push(`|---|---|---|${names.map(() => '---').join('|')}|`);
-  for (const attack of ATTACKS) {
+  // The headline compares like with like: only the attacks that EVERY scored
+  // implementation can express. An attack on a feature only one of them has
+  // (per-file visibility, delegation, file-level expiry, a share listing) is
+  // reported below, separately, and never added into that comparison.
+  const scored = names.filter((n) => !CONTROL.has(n));
+  const shared = ATTACKS.filter((attack) => scored.every((n) => results[n][attack.id].verdict !== 'n/a'));
+  const partialSet = ATTACKS.filter((attack) => !shared.includes(attack));
+  const row = (attack) => {
     const cells = names.map((n) => SYMBOL[results[n][attack.id].verdict] ?? 'ERR');
-    out.push(`| ${attack.id} | ${attack.name} | ${attack.severity} | ${cells.join(' | ')} |`);
-  }
+    return `| ${attack.id} | ${attack.name} | ${attack.severity} | ${cells.join(' | ')} |`;
+  };
+  const head = [`| # | Attack | Severity | ${names.join(' | ')} |`, `|---|---|---|${names.map(() => '---').join('|')}|`];
+  const tallyOn = (n, set) => {
+    const vs = set.map((a) => results[n][a.id].verdict);
+    const c = (v) => vs.filter((x) => x === v).length;
+    return { defended: c('defended'), partial: c('partial'), gap: c('audit-gap'), breach: c('BREACH'), na: c('n/a') };
+  };
+  out.push(`## The ${shared.length} attacks every executed implementation can express`);
   out.push('');
-  out.push('## Tallies');
-  out.push('');
-  out.push('| Implementation | defended | partial | BREACH | n/a |');
+  out.push('| Implementation | defended | partial | audit-gap | BREACH |');
   out.push('|---|---:|---:|---:|---:|');
   for (const n of names) {
+    const t = tallyOn(n, shared);
+    const label = CONTROL.has(n) ? `${n} (control)` : n;
+    out.push(`| ${label} | ${t.defended}/${shared.length} | ${t.partial} | ${t.gap} | ${t.breach} |`);
+  }
+  out.push('');
+  out.push(...head);
+  for (const attack of shared) out.push(row(attack));
+  out.push('');
+  out.push(`## The ${partialSet.length} attacks not every implementation can express`);
+  out.push('');
+  out.push('Reported apart, and not added into the comparison above. Most test a feature that');
+  out.push('only some implementations have; the rest depend on whether the application serves');
+  out.push('the bytes itself or redirects to a signed URL.');
+  out.push('');
+  out.push(head[0].replace('| Severity |', '| Severity | cannot express |'));
+  out.push(head[1].replace('|---|---|---|', '|---|---|---|---|'));
+  for (const attack of partialSet) {
+    const missing = scored.filter((n) => results[n][attack.id].verdict === 'n/a').join(', ');
+    const cells = names.map((n) => SYMBOL[results[n][attack.id].verdict] ?? 'ERR');
+    out.push(`| ${attack.id} | ${attack.name} | ${attack.severity} | ${missing} | ${cells.join(' | ')} |`);
+  }
+  out.push('');
+  out.push('## Tallies over every attack each implementation can express');
+  out.push('');
+  out.push('| Implementation | defended | partial | audit-gap | BREACH | n/a |');
+  out.push('|---|---:|---:|---:|---:|---:|');
+  for (const n of names) {
     const t = tally(n);
-    out.push(`| ${n} | ${t.defended} | ${t.partial} | ${t.breach} | ${t.na} |`);
+    out.push(`| ${n} | ${t.defended} | ${t.partial} | ${t.gap} | ${t.breach} | ${t.na} |`);
   }
   out.push('');
   out.push('## Not run');
@@ -181,7 +226,7 @@ if (asMarkdown) {
   for (const n of Object.keys(results)) {
     const t = tally(n);
     console.log(
-      `${n.padEnd(10)} defended=${t.defended} partial=${t.partial} BREACH=${t.breach} n/a=${t.na} error=${t.error}`,
+      `${n.padEnd(10)} defended=${t.defended} partial=${t.partial} audit-gap=${t.gap} BREACH=${t.breach} n/a=${t.na} error=${t.error}`,
     );
   }
   console.log('\nnot run (no executable form):');

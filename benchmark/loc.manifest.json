@@ -54,7 +54,8 @@
 
     "baseline-vercel-blob": {
       "root": "./baseline-vercel-blob",
-      "note": "Vercel Blob (private store) + Postgres; NEVER EXECUTED",
+      "note": "Vercel Blob (private store) + Postgres; NEVER EXECUTED OR COMPILED",
+      "executed": false,
       "app": [
         { "glob": "app/**", "why": "Next.js route handlers" },
         { "glob": "lib/**", "why": "authz, audit, shares, blob, db" }
@@ -65,7 +66,8 @@
 
     "baseline-convex": {
       "root": "./baseline-convex",
-      "note": "Convex + the Cloudflare R2 component; NEVER EXECUTED",
+      "note": "Convex + the Cloudflare R2 component; NEVER EXECUTED OR COMPILED",
+      "executed": false,
       "app": [{ "glob": "convex/**", "why": "the whole implementation lives here" }],
       "excluded": [
         {
