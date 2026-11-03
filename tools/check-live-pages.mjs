@@ -19,9 +19,82 @@
  *   1. A path that cannot exist answers 404, and not with the homepage.
  *   2. Every URL in the deployed sitemap answers 200 with its OWN <title>, which
  *      the homepage's title cannot be for any page but the root.
+ *   3. Every served page carries exactly the <script> elements of its file in
+ *      web/, plus at most ONE thing the host may add: the Cloudflare Web
+ *      Analytics beacon, an empty <script> loaded from
+ *      static.cloudflareinsights.com/beacon.min.js. Cloudflare injects it at the
+ *      edge since 4 November 2026, so the served HTML no longer matches the tree
+ *      byte for byte. Anything else the edge adds (email obfuscation, a
+ *      challenge script, a second beacon) fails, and so does a script of ours
+ *      the deploy is missing. The privacy policy says the beacon is the only
+ *      script that is not part of the page; this is what keeps that sentence true.
+ *
+ *     node tools/check-live-pages.mjs --self-test   the comparator, against fixtures
  *
  * Network: plain GETs to the site, nothing else.
  */
+
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// One element, exactly: an EMPTY script whose src is the beacon, with only the
+// attributes Cloudflare writes. Not a prefix match on the host.
+const BEACON_SRC = /^https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js(?:\/v[0-9A-Za-z.]+)?$/;
+const BEACON_ATTRS = new Set(['defer', 'src', 'integrity', 'data-cf-beacon', 'crossorigin']);
+
+const scriptsOf = (html) => [...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)].map((m) => m[0]);
+
+function isBeacon(el) {
+  const m = /^<script\b([^>]*)>([\s\S]*)<\/script>$/i.exec(el);
+  if (!m || m[2].trim() !== '') return false;
+  const attrs = [...m[1].matchAll(/([a-zA-Z-]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s>]+))?/g)];
+  const src = attrs.find((a) => a[1].toLowerCase() === 'src')?.[2]?.replace(/^["']|["']$/g, '');
+  return Boolean(src && BEACON_SRC.test(src)) && attrs.every((a) => BEACON_ATTRS.has(a[1].toLowerCase()));
+}
+
+/** What the served page has beyond the tree, and what it lacks. */
+export function compareScripts(local, served) {
+  const left = scriptsOf(local);
+  const extra = [];
+  for (const el of scriptsOf(served)) {
+    const i = left.indexOf(el);
+    if (i > -1) left.splice(i, 1);
+    else extra.push(el);
+  }
+  const beacons = extra.filter(isBeacon);
+  const foreign = extra.filter((el) => !isBeacon(el));
+  if (beacons.length > 1) foreign.push(...beacons.slice(1));
+  return { missing: left, foreign };
+}
+
+if (process.argv.includes('--self-test')) {
+  const page = '<html><head><script type="application/ld+json">{"a":1}</script></head><body>x</body></html>';
+  const beacon = `<script defer src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-abc" data-cf-beacon='{"rayId":"1","token":"t"}' crossorigin="anonymous"></script>`;
+  const inject = (el) => page.replace('</body>', `${el}</body>`);
+  const cases = [
+    ['the page as built', page, true],
+    ['the page plus the beacon', inject(beacon), true],
+    ['two beacons', inject(beacon + beacon), false],
+    ['email obfuscation', inject('<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>'), false],
+    ['a look-alike host', inject(beacon.replace('static.cloudflareinsights.com', 'static.cloudflareinsights.com.evil.test')), false],
+    ['the beacon with a body', inject(beacon.replace('></script>', '>alert(1)</script>')), false],
+    ['the beacon with an onload', inject(beacon.replace('<script defer', '<script defer onload="x()"')), false],
+    ['an inline script', inject('<script>track()</script>'), false],
+    ['our own script missing', page.replace(/<script[\s\S]*?<\/script>/, ''), false],
+  ];
+  let bad = 0;
+  for (const [name, served, ok] of cases) {
+    const r = compareScripts(page, served);
+    const clean = r.missing.length === 0 && r.foreign.length === 0;
+    if (clean !== ok) { bad++; console.error(`  self-test FAILED: ${name} was ${clean ? 'accepted' : 'refused'}`); }
+  }
+  if (bad) process.exit(1);
+  console.log(`check-live-pages --self-test: ${cases.length} cases, the beacon alone is accepted and every other script is refused.`);
+  process.exit(0);
+}
 
 const argBase = process.argv.indexOf('--base');
 const BASE = (argBase > -1 ? process.argv[argBase + 1] : 'https://filelayer.dev').replace(/\/$/, '');
@@ -62,6 +135,17 @@ for (const url of urls) {
   const t = titleOf(r.body);
   if (url !== `${BASE}/` && t === homeTitle) problems.push(`${url} answered 200 with the homepage's title: it is not deployed`);
   if (!t) problems.push(`${url} has no <title>`);
+
+  // 3. Scripts: the tree's, plus at most the analytics beacon.
+  const path = new URL(url).pathname.replace(/^\//, '');
+  const file = join(ROOT, 'web', path === '' ? 'index.html' : path.endsWith('/') ? `${path}index.html` : `${path}.html`);
+  if (!existsSync(file)) {
+    problems.push(`${url} is in the deployed sitemap but ${file.slice(ROOT.length + 1)} is not in this tree`);
+    continue;
+  }
+  const { missing, foreign } = compareScripts(readFileSync(file, 'utf8'), r.body);
+  for (const el of foreign) problems.push(`${url} serves a script that is not in the tree and is not the analytics beacon: ${el.slice(0, 160)}`);
+  for (const el of missing) problems.push(`${url} is missing a script the tree has: ${el.slice(0, 160)}`);
 }
 
 if (problems.length) {
@@ -69,4 +153,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  - ${p}`);
   process.exit(1);
 }
-console.log(`check-live-pages: clean. ${ghost} answered 404; ${checked} sitemap URL(s) answered 200, each with its own <title>.`);
+console.log(`check-live-pages: clean. ${ghost} answered 404; ${checked} sitemap URL(s) answered 200, each with its own <title> and with the tree's scripts plus at most the analytics beacon.`);
