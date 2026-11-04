@@ -3,7 +3,7 @@
 A B2B document workspace, built five times: once with Filelayer and four times
 the way each platform's own documentation recommends. Then the same scripts
 count what each one asks the developer to write and to get right, and the same
-27 attacks are run against every version that can run.
+26 attacks are run against every version that can run.
 
 The workspace is the same in all five: organizations and roles, upload,
 per-role access, share links with an expiry, a password and a download cap,
@@ -28,8 +28,8 @@ variable. The network is used for npm and nothing else.
 | Filelayer | `@filelayer/core` 0.35.2 from npm, on PostgreSQL | Yes |
 | Supabase | Supabase Storage and Postgres row-level security | Yes: real RLS policies on PostgreSQL (PGlite), with the platform schema emulated |
 | Raw S3 | S3 or R2 presigned URLs and Postgres | Yes: against a local store that verifies SigV4 signatures |
-| Convex | Convex and its R2 component | No: it needs a live Convex deployment and an R2 bucket |
-| Vercel Blob | Vercel Blob (a private store) and Postgres | No: private Blob delivery has no local emulation |
+| Convex | Convex and its R2 component | No, not executed and not compiled: it needs a live Convex deployment and an R2 bucket |
+| Vercel Blob | Vercel Blob (a private store) and Postgres | No, not executed and not compiled: private Blob delivery has no local emulation |
 
 **Who built them.** We did, in September 2026. Each alternative was written by
 a separate AI agent, told to follow its platform's documented best practice and
@@ -53,8 +53,12 @@ it is vendor code, the way the Supabase or AWS SDK is.
 | Filelayer | 133 | 0 | 1.0x |
 | Supabase | 564 | 0 | 4.2x |
 | Raw S3 | 700 | 122 | 5.3x |
-| Convex | 841 | 0 | 6.3x |
-| Vercel Blob | 884 | 21 | 6.6x |
+| Convex, not executed or compiled | 841 | 0 | 6.3x |
+| Vercel Blob, not executed or compiled | 884 | 21 | 6.6x |
+
+The median is taken over the two alternatives that ran: 632 lines against 133,
+or 4.8x. Convex and Vercel Blob are listed for completeness and are left out of
+it, because code that was never executed or compiled may not even work.
 
 Every inclusion and exclusion is a rule in `benchmark/loc.manifest.json`, and a
 file that matches no rule fails the run.
@@ -70,12 +74,14 @@ Counted as kinds, and as the places in the code where each must be got right.
 | Filelayer | 7 | 7 |
 | Supabase | 29 | 79 |
 | Raw S3 | 26 | 46 |
-| Vercel Blob | 22 | 61 |
-| Convex | 20 | 43 |
+| Vercel Blob, not executed or compiled | 22 | 61 |
+| Convex, not executed or compiled | 20 | 43 |
 
-Median reduction against Filelayer: 3.4x on kinds, 7.6x on places. One
-Filelayer decision is listed as arguable; counting it gives 8 kinds and a
-median of 3.0x and 6.7x.
+There is no median here on purpose. The places are being recounted under one
+rule for all five: a decision enforced in one helper counts as one place, and a
+decision the platform's own linter catches is dropped. Until that recount is
+done, read this table for its kinds and treat the places as provisional. One
+Filelayer decision is listed as arguable; counting it gives Filelayer 8 kinds.
 
 Two decisions that the first count in September held against Filelayer are no
 longer in it, because the library fixed them in 0.3.0: the audit chain could
@@ -88,45 +94,56 @@ attack suite added decisions to both executed alternatives that their authors
 had missed, and it cannot do that for code that does not run, so those two
 counts are probably low. That works against Filelayer and is left as it is.
 
-### The 27 attacks
+### The 26 attacks
 
-Written once, in `benchmark/adversarial/attacks.mjs`, and run over HTTP against
-every implementation that can run.
+Written once, in `benchmark/adversarial/attacks.mjs`. They run over HTTP against
+Filelayer and raw S3, and as direct calls into the application's functions for
+Supabase, whose platform is emulated.
 
-| Implementation | Defended | Partial | Breach | Cannot express the attack |
+**The comparison uses only the 18 attacks that every executed implementation
+can express.** None of the three was breached on them.
+
+| Implementation | Defended | Partial | Audit gap | Breach |
 |---|---:|---:|---:|---:|
-| Filelayer 0.35.2 | 27 | 0 | 0 | 0 |
-| Supabase | 15 | 2 | 2 | 8 |
-| Raw S3 | 19 | 1 | 2 | 5 |
-| Filelayer, earlier version (control) | 20 | 2 | 3 | 2 |
+| Filelayer 0.35.2 | 18 of 18 | 0 | 0 | 0 |
+| Supabase | 15 of 18 | 2 | 1 | 0 |
+| Raw S3 | 17 of 18 | 0 | 1 | 0 |
+| Filelayer, earlier version (control) | 16 of 18 | 0 | 0 | 1 |
 
-"Cannot express the attack" is never counted as a pass. It means, for example,
-that the implementation hands out a URL and the object store serves the bytes,
-so an attack on the application's response headers has nothing to hit.
+An audit gap means nothing was disclosed or changed, but the application's own
+audit trail does not record the refusal. Supabase and raw S3 both have one, on
+the same attack: a refused cross-tenant read, and probes at documents that do
+not exist, leave no event in the application's audit trail. Gateway, storage or
+load balancer logs may hold them; the suite cannot read those and does not claim
+they are empty. Supabase's two partials are revocation, where the gateway refuses
+at once but a signed URL already issued stays valid for 30 seconds, and a byte
+delivery that is recorded as the issuing of a URL.
 
-Both executed alternatives were breached on the same two attacks: probing for
-documents that do not exist left no audit record, and a cross-tenant access
-attempt that was refused left no record anywhere. Supabase's revocation is
-partial: the gateway refuses at once, but a signed URL already issued stays
-valid for 30 seconds.
+**The other 8 attacks are reported apart and never added into that
+comparison.** Most test a feature only some implementations have, such as
+per-file visibility inside a tenant, delegation or share listing; the rest
+depend on whether the application serves the bytes itself. Filelayer defends
+all 8. Raw S3 can express 3 of them: it defends 2 and is partial on the third, a
+hostile filename in the response headers. Supabase can express none.
+"Cannot express" is never counted as a pass.
 
 **Why a perfect score is not the headline.** A suite that the implementation it
-was written alongside passes 27 out of 27 is exactly the suite a reader should
-distrust. So the suite is also run against an earlier version of Filelayer's own
+was written alongside passes in full is exactly the suite a reader should
+distrust. So it is also run against an earlier version of Filelayer's own
 example, from before its delivery and authorization were rebuilt, on the same
-library. That version is breached 3 times: a revoked download replayable from a
-cache, a forged but well-formed caller id treated as real, and user-uploaded HTML
-rendered on the authenticated read path. The suite finds real defects in
-Filelayer's own code, which is the best evidence we have that it is not shaped
-around it. It is still our suite. Independent attacks are welcome, as an issue
-or a pull request.
+library. That version is breached 3 times: a forged but well-formed caller id
+treated as real, among the 18, and among the other 8, a revoked download
+replayable from a cache and user-uploaded HTML rendered on the authenticated read
+path. The suite finds real defects in Filelayer's own code, which is the best
+evidence we have that it is not shaped around it. It is still our suite.
+Independent attacks are welcome, as an issue or a pull request.
 
 ### From install to a stored file
 
 From `npm install` to the first stored file, using the program printed in the
 quickstart that ships in the package: 4 lines of application code, no step that
 needs a person, and no account, credential or dashboard. On the machine that
-generated these results it took 5.4 seconds; seconds depend on the machine and
+generated these results it took 4.6 seconds; seconds depend on the machine and
 the network.
 
 ## Where the alternatives are better
@@ -158,7 +175,8 @@ Each alternative's `REPORT.md` has this section in full. The short version:
 
 - Load, or anyone's production. Filelayer has no known production deployment.
 - How long each implementation took to build, or would take a person.
-- Two of the five alternatives, which did not run.
+- Two of the five alternatives, Convex and Vercel Blob, which were neither
+  executed nor compiled.
 - Anything an independent security reviewer would: there has been no independent security
   review of Filelayer.
 
