@@ -18,6 +18,36 @@ Filelayer answers all three for the files your users upload: per-file
 permissions, links you can take back, and an audit trail of every allowed and
 denied access, on your own Postgres. → **[filelayer.dev](https://filelayer.dev)**
 
+**One file feature, built five ways and attacked the same way.** The same
+document workspace was built with Filelayer, Supabase Storage with row-level
+security, raw S3 presigned URLs, Convex and Vercel Blob, and every version that
+runs was attacked by one shared suite:
+
+- **18 of 18** for Filelayer on the 18 attacks every executed version can
+  express. The executed alternatives had no breaches on them either: Supabase
+  and raw S3 each had one audit gap, a refused read that left no event in the
+  application's audit trail, and Supabase had two partials.
+- **133 lines** of application code, against a median of 632 for the two
+  alternatives that ran: **4.8x**. Convex and Vercel Blob were neither executed
+  nor compiled, so they are left out of the median.
+
+The results, the method and where each alternative is better:
+**[filelayer.dev/one-feature-five-ways](https://filelayer.dev/one-feature-five-ways)**.
+Everything reruns from a clone with `node benchmark/run.mjs`.
+
+Install it, and store a first file in three lines:
+
+```bash
+npm install @filelayer/core
+npm install --save-dev "@electric-sql/pglite@^0.3.11"
+```
+
+```ts
+import { Filelayer } from '@filelayer/core';
+const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });
+const { url } = await fl.files.put(new TextEncoder().encode('hello'), { public: true });
+```
+
 You tell Filelayer who the caller is. Filelayer decides what they may do with a
 file, serves the bytes with the right headers, and writes the audit event. For
 file access that goes through Filelayer, that decision is made in one place,
