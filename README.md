@@ -123,7 +123,7 @@ no storage of its own, and **zero runtime dependencies**.
 **It is authorization middleware, not row-level security.** It decides for calls
 made through it, in your process. The schema additionally refuses cross-tenant
 grants, cross-project identities and delegation that amplifies authority from
-*every* writer, including a `psql` session — those are constraints and triggers.
+*every* writer, including a `psql` session; those are constraints and triggers.
 But there is no RLS policy in `schema.sql`, and a direct `SELECT` against these
 tables is filtered by nothing. Filelayer composes with database-level
 enforcement; it does not replace it.
@@ -141,7 +141,7 @@ attachments, exports, anything with a share link you might later want back.
 | You need | Use instead | Why |
 |---|---|---|
 | Public images at CDN volume | a CDN-backed bucket | Default delivery proxies every byte. Redirect delivery (below) removes the proxy but is opt-in and narrow. |
-| Video or audio at scale | a CDN / media service | Seeking works — the shipped routes answer `Range` with `206`. But default delivery proxies every byte through your server, and there is no CDN on that path. |
+| Video or audio at scale | a CDN / media service | Seeking works: the shipped routes answer `Range` with `206`. But default delivery proxies every byte through your server, and there is no CDN on that path. |
 | Browser → storage upload with your server out of the data path, in development | a real bucket | `FsStorage` mints the credential so the client code is identical, but it receives the bytes itself and says so: `via: 'server'`. Only S3 and R2 keep your process out of the path. |
 | Resumable or multipart direct upload | presigned S3 directly / tus | One signed PUT, one object. There is no resume. |
 | Thumbnails, transforms, format negotiation | Cloudinary / imgix | We have none. |
@@ -154,7 +154,7 @@ attachments, exports, anything with a share link you might later want back.
 | "Everyone in this org may read" | your own join, recomputed on every join and leave | expressible as an RLS policy | one grant row; membership resolves at request time |
 | Who accessed this, including refusals | whatever you wrote | not a product feature; Postgres logging is not an access log | hash-chained per tenant, written in the decision's transaction |
 | Download cap | your own counter, and the race in it | none | atomic, reserved before the bytes move |
-| CDN on the private path | yes, and that is why you cannot revoke | yes, same trade | **no** — the two facts are the same fact |
+| CDN on the private path | yes, and that is why you cannot revoke | yes, same trade | **no**: the two facts are the same fact |
 | Public images at volume | **yes** | **yes** | no. Use a bucket behind a CDN |
 | Lines for a public avatar | ~10 | **10** | 16 |
 
@@ -173,11 +173,11 @@ engine, not by convention, and each has tests named after it.
 
 | | Property | What it means in practice |
 |---|---|---|
-| **P1** | Deny by default | There is no `public` boolean anywhere in the schema. Public delivery is an explicit, revocable, auditable grant row — there is no flag to leave on by accident. **This is a property of the schema, not of your object store: Filelayer cannot make your bucket private, and a public bucket bypasses everything on this page.** That is the one configuration step it cannot do for you — [QUICKSTART §7](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md). |
+| **P1** | Deny by default | There is no `public` boolean anywhere in the schema. Public delivery is an explicit, revocable, auditable grant row; there is no flag to leave on by accident. **This is a property of the schema, not of your object store: Filelayer cannot make your bucket private, and a public bucket bypasses everything on this page.** That is the one configuration step it cannot do for you: [QUICKSTART §7](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md). |
 | **P2** | No ambient authority | Knowing an object key, a URL or a file id grants nothing. Storage location is never an input to a decision. |
-| **P3** | Cross-tenant grants are structurally impossible to write | A grant's `org_id` must equal its file's `org_id`, enforced by the composite foreign key `FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id)`. No writer — including a migration or a `psql` session — can create a grant pointing at another tenant's file. This is a write-side integrity constraint, not a read filter: it makes the *row* unrepresentable. Reads are scoped by the engine, not by the database. |
+| **P3** | Cross-tenant grants are structurally impossible to write | A grant's `org_id` must equal its file's `org_id`, enforced by the composite foreign key `FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id)`. No writer, including a migration or a `psql` session, can create a grant pointing at another tenant's file. This is a write-side integrity constraint, not a read filter: it makes the *row* unrepresentable. Reads are scoped by the engine, not by the database. |
 | **P4** | A URL never outlives its permission | Every signed URL embeds a grant id and is re-validated on **every** request, transitively through the whole delegation chain. Revocation beats a live URL. |
-| **P5** | Every decision is audited, including denials | Hash-chained per tenant. Probes that cannot be attributed to a tenant go to a system chain rather than being dropped. The log answers in *your* identifiers — `marco`, `contract.pdf`, `acme` — alongside the internal ones, so "who accessed this?" needs no SQL of yours. |
+| **P5** | Every decision is audited, including denials | Hash-chained per tenant. Probes that cannot be attributed to a tenant go to a system chain rather than being dropped. The log answers in *your* identifiers (`marco`, `contract.pdf`, `acme`) alongside the internal ones, so "who accessed this?" needs no SQL of yours. |
 
 Three more properties are enforced in the schema and documented in
 [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): atomic download
@@ -207,7 +207,7 @@ build when a public surface and the run disagree:
 | | |
 |---|---|
 | The suite | **749 tests**, every commit, all of them against a real PostgreSQL |
-| Concurrency | **8 tests** on a real PostgreSQL with two backends — races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
+| Concurrency | **8 tests** on a real PostgreSQL with two backends: races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **26 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
 | Schema migrations | every migration file applied to the **previous release's** `schema.sql` and the result compared against the next one, on real PostgreSQL |
@@ -247,7 +247,7 @@ apply to you:
    The *cost* of that is no longer the problem it was. Until `0.17.0` the read
    paid one recursive chain walk per grant held: 4.3 ms at five, 5 911 ms at a
    hundred thousand. The short-circuit moved into SQL and the cliff went with
-   it — 30.4 ms at **two hundred** thousand concentrated grants, 1.13x the
+   it: 30.4 ms at **two hundred** thousand concentrated grants, 1.13x the
    owner read on the same file, measured in
    [`benchmark/load/RESULTS.md`](https://github.com/filelayer/filelayer/blob/main/benchmark/load/RESULTS.md)
    H4b. What remains is a correctness trap, not a performance cliff.
@@ -397,7 +397,7 @@ entries, eleven of which carry forward SQL; the other two schema changes predate
 the oldest tag in the repository and cannot be verified against an earlier
 schema. Budget an upgrade against that file rather than against this paragraph.
 Every figure in this paragraph is derived from `migrations/manifest.json` by
-`check:versions`, which fails the build if any of them drifts — because these
+`check:versions`, which fails the build if any of them drifts, because these
 numbers were last corrected by hand at `0.15.0` and had drifted again by
 `0.33.0`.
 
@@ -416,7 +416,7 @@ application owns the migration runner, which is the position
 |---|---|
 | `packages/core/schema.sql` | The data model. Every security property is commented at the constraint that enforces it. Read this first if you are reviewing us. |
 | `packages/core/src/authz.ts` | The authorization engine. Two functions, one decision core. |
-| `packages/core/src/simple.ts` | The tiered API (`files`, `orgs`, `shares`). No authorization logic — a facade. |
+| `packages/core/src/simple.ts` | The tiered API (`files`, `orgs`, `shares`). No authorization logic: a facade. |
 | `packages/core/src/delivery.ts` | Byte delivery. Owns the response headers so you cannot get them wrong. |
 | `packages/core/test/` | The property suite. Ships in the tarball. |
 | `packages/core/dev/` | Diagnostic scripts. Not published. |
@@ -428,23 +428,23 @@ application owns the migration runner, which is the position
 
 ## Documents
 
-- [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) — install → first file → the advanced capabilities
-- [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) — the complete list of what this does not do, fourteen entries with their reasoning
-- [`ROADMAP.md`](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md) — the nine things an outside evaluator said would change its answer, eight of them done, and what is deliberately not coming
-- [`docs/guides/`](https://github.com/filelayer/filelayer/blob/main/docs/guides/README.md) — nine answers to questions people actually ask, useful whether or not you use this library; the code in them is executed in CI
-- [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md) — the exact behaviour of every edge: liveness, delegation, deletion, the audit chain
-- [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md) — how schema changes are delivered and what the pre-1.0 compatibility promise is
-- [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) — the real history, including the security defects we found in ourselves
-- [`ARCHITECTURE-PROGRESSIVE.md`](https://github.com/filelayer/filelayer/blob/main/ARCHITECTURE-PROGRESSIVE.md) — the tier model, lines of code versus the alternatives, and where we lose
-- [`architecture/TIER5-DESIGN-NOTE.md`](https://github.com/filelayer/filelayer/blob/main/architecture/TIER5-DESIGN-NOTE.md) — large files, streaming, range requests, CDN
-- [`llms.txt`](https://github.com/filelayer/filelayer/blob/main/llms.txt) — the same map, written for an agent implementing an integration
-- [`openapi.yaml`](https://github.com/filelayer/filelayer/blob/main/openapi.yaml) — the two HTTP routes the library serves, as OpenAPI 3.1
+- [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md): install → first file → the advanced capabilities
+- [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md): the complete list of what this does not do, fourteen entries with their reasoning
+- [`ROADMAP.md`](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md): the nine things an outside evaluator said would change its answer, eight of them done, and what is deliberately not coming
+- [`docs/guides/`](https://github.com/filelayer/filelayer/blob/main/docs/guides/README.md): nine answers to questions people actually ask, useful whether or not you use this library; the code in them is executed in CI
+- [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): the exact behaviour of every edge: liveness, delegation, deletion, the audit chain
+- [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md): how schema changes are delivered and what the pre-1.0 compatibility promise is
+- [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md): the real history, including the security defects we found in ourselves
+- [`ARCHITECTURE-PROGRESSIVE.md`](https://github.com/filelayer/filelayer/blob/main/ARCHITECTURE-PROGRESSIVE.md): the tier model, lines of code versus the alternatives, and where we lose
+- [`architecture/TIER5-DESIGN-NOTE.md`](https://github.com/filelayer/filelayer/blob/main/architecture/TIER5-DESIGN-NOTE.md): large files, streaming, range requests, CDN
+- [`llms.txt`](https://github.com/filelayer/filelayer/blob/main/llms.txt): the same map, written for an agent implementing an integration
+- [`openapi.yaml`](https://github.com/filelayer/filelayer/blob/main/openapi.yaml): the two HTTP routes the library serves, as OpenAPI 3.1
 
 Every link above points at GitHub, and an installed consumer may have no network
 and no browser. The npm package therefore carries the same files on disk under
-`node_modules/@filelayer/core/`, and three resolve as subpath imports —
-`@filelayer/core/llms.txt`, `@filelayer/core/openapi.json` and
-`@filelayer/core/schema.sql` — so a reader does not have to guess at the layout
+`node_modules/@filelayer/core/`, and three resolve as subpath imports
+(`@filelayer/core/llms.txt`, `@filelayer/core/openapi.json` and
+`@filelayer/core/schema.sql`) so a reader does not have to guess at the layout
 of `node_modules`.
 
 ## License
@@ -470,13 +470,13 @@ embedded anywhere in this repository.
 
 ## Contributing, security and conduct
 
-- [`CONTRIBUTING.md`](https://github.com/filelayer/filelayer/blob/main/CONTRIBUTING.md)
-  — how to set up, what `npm run verify` covers, and what a pull request needs.
-- [`SECURITY.md`](https://github.com/filelayer/filelayer/blob/main/SECURITY.md)
-  — **report vulnerabilities privately**, never as a public issue. Includes our
+- [`CONTRIBUTING.md`](https://github.com/filelayer/filelayer/blob/main/CONTRIBUTING.md):
+  how to set up, what `npm run verify` covers, and what a pull request needs.
+- [`SECURITY.md`](https://github.com/filelayer/filelayer/blob/main/SECURITY.md):
+  **report vulnerabilities privately**, never as a public issue. Includes our
   disclosure timetable and what is in and out of scope.
-- [`CODE_OF_CONDUCT.md`](https://github.com/filelayer/filelayer/blob/main/CODE_OF_CONDUCT.md)
-  — Contributor Covenant 2.1.
+- [`CODE_OF_CONDUCT.md`](https://github.com/filelayer/filelayer/blob/main/CODE_OF_CONDUCT.md):
+  Contributor Covenant 2.1.
 
 Bugs, questions and "this document is wrong" reports go to
 [GitHub Issues](https://github.com/filelayer/filelayer/issues). A report that
