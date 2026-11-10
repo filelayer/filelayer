@@ -9,7 +9,7 @@
  * PUT does not constrain the body.
  */
 
-import { getFilelayer, currentUser } from '../../../lib/filelayer.ts';
+import { getFilelayer, currentUser } from '../../../lib/filelayer';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -62,7 +62,9 @@ export async function GET(req: Request): Promise<Response> {
   }
 }
 
-export const dynamic = 'force-dynamic';
+// Not cached: route handlers are not, unless you opt in, and these read the
+// request and the database. See app/[...filelayer]/route.ts for why there is no
+// `dynamic` export (Next 16's cacheComponents refuses to build with one).
 
 // -----------------------------------------------------------------------------
 

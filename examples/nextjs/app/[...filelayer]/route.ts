@@ -25,7 +25,7 @@
  */
 
 import { deliveryFetch } from '@filelayer/core';
-import { getFilelayer, currentUser } from '../../lib/filelayer.ts';
+import { getFilelayer, currentUser } from '../../lib/filelayer';
 
 async function handler(req: Request): Promise<Response> {
   const fl = await getFilelayer();
@@ -58,8 +58,12 @@ export const POST = handler;
 export const HEAD = handler;
 
 /**
- * Authorization is per request and the answer changes the moment a grant is
- * revoked, so nothing here may be cached or statically rendered. Without this,
- * Next can serve a previously authorized response to a later caller.
+ * NOTHING HERE IS CACHED, AND NOTHING NEEDS TO SAY SO. Authorization is per
+ * request and the answer changes the moment a grant is revoked. Route handlers
+ * are not cached unless you opt in, and every handler in this file reads the
+ * request (its URL, its headers) and queries the database, which keeps it out
+ * of any prerender, with or without `cacheComponents`. Until 0.35.3 this file
+ * also exported `dynamic = 'force-dynamic'`; Next 16 with `cacheComponents`
+ * (the default in a new create-next-app project) refuses to build with it.
+ * Do not add `'use cache'` to anything that decides or serves a read.
  */
-export const dynamic = 'force-dynamic';

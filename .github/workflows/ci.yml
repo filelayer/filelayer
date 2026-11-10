@@ -665,6 +665,21 @@ jobs:
       - name: Drive the Next.js example against the packed tarball
         run: npm run verify:nextjs
 
+      # AND BUILT, IN THE PROJECT A DEVELOPER ACTUALLY HAS. The step above calls
+      # the handlers as functions, which says nothing about Next itself. A cold
+      # integration on 2026-11-03 found the example did not build in a new
+      # create-next-app 16 project: `cacheComponents` is on there, and
+      # `export const dynamic` is a build error under it, as is a `.ts`
+      # extension in an import path. This creates that project at a pinned
+      # version, copies the four files in unchanged, runs `next build` and
+      # `next start`, and checks over HTTP that a revoked share link is refused
+      # on the very next request. The self-test shows it failing on the 0.35.2
+      # example and on a variant with `'use cache'` around the share link.
+      - name: Build the Next.js example in a new create-next-app project and serve it
+        run: npm run check:nextjs-build
+      - name: The Next.js build check fails on the two broken variants
+        run: npm run check:nextjs-build -- --self-test
+
       # And the MCP example, spawned as a subprocess and driven over its real
       # stdin and stdout. The package's unit tests use an in-memory transport,
       # which is blind to a whole class of failure: a server that writes one

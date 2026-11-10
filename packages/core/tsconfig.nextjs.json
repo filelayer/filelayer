@@ -1,0 +1,19 @@
+{
+  // examples/nextjs, type-checked the way a Next.js project checks it.
+  //
+  // A Next project resolves modules as a bundler does: `../../lib/filelayer`
+  // with no extension is the normal form there, and a `.ts` extension is an
+  // error (TS5097) unless allowImportingTsExtensions is set, which a new
+  // create-next-app project does not set. Under this package's own nodenext
+  // resolution the same import is TS2835. So the example gets the resolution
+  // its readers have, and everything else from tsconfig.json (strict, the
+  // paths that point @filelayer/core at src/). `check:nextjs-build` then builds
+  // the same four files with `next build` in a real new project.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler"
+  },
+  "include": ["../../examples/nextjs/**/*.ts"],
+  "exclude": []
+}

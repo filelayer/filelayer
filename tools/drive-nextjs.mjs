@@ -25,7 +25,7 @@
  * directly. About forty seconds, almost all of it `npm install`.
  */
 
-import { mkdtempSync, rmSync, readdirSync, writeFileSync, cpSync } from 'node:fs';
+import { mkdtempSync, rmSync, readdirSync, writeFileSync, cpSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,32 @@ const die = (what, out) => {
   console.error(`\n--- ${what} ---\n${out}`);
   process.exit(1);
 };
+
+function addTsExtensions(dir) {
+  let n = 0;
+  const walk = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) {
+        if (e.name !== 'node_modules') walk(p);
+        continue;
+      }
+      if (!e.name.endsWith('.ts')) continue;
+      const src = readFileSync(p, 'utf8');
+      const out = src.replace(/from '(\.{1,2}\/[^']+)'/g, (whole, spec) => {
+        if (/\.[cm]?[jt]s$/.test(spec)) return whole;
+        if (!existsSync(join(dirname(p), `${spec}.ts`))) {
+          throw new Error(`${p}: '${spec}' resolves to no .ts file`);
+        }
+        n++;
+        return `from '${spec}.ts'`;
+      });
+      if (out !== src) writeFileSync(p, out);
+    }
+  };
+  walk(dir);
+  return n;
+}
 
 const workdir = mkdtempSync(join(tmpdir(), 'filelayer-nextjs-'));
 let ok = false;
@@ -77,7 +103,15 @@ try {
   // from the one that ships.
   step('copy the example in');
   cpSync(EXAMPLE, workdir, { recursive: true });
-  console.log('ok');
+  // The example imports `../../lib/filelayer` with no extension, which is what
+  // a Next.js project compiles (a `.ts` extension in an import path is a type
+  // error there without allowImportingTsExtensions; a new create-next-app
+  // project has no such setting, and check:nextjs-build builds exactly that).
+  // Node's type stripping resolves only the exact file, so the copy, and only
+  // the copy, gets the extension written in. Every rewrite is counted, and a
+  // relative import that resolves to no .ts file is an error, not a guess.
+  const rewritten = addTsExtensions(workdir);
+  console.log(`ok (${rewritten} import${rewritten === 1 ? '' : 's'} given a .ts extension in the copy)`);
 
   step('drive the route handlers');
   console.log('');

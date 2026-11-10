@@ -59,10 +59,17 @@ deployment would let the client choose what its own audit log says about it. So
 it does not. Pass `clientIp` if you sit behind an edge you trust, or pass
 nothing and record no address.
 
-**`dynamic = 'force-dynamic'` is load-bearing.** Authorization is per request
-and the answer changes the moment a grant is revoked. Without it Next may serve
-a previously authorized response to a later caller, which is the one caching
-bug in this area that looks like it is working.
+**Nothing is cached, and there is no `dynamic` export.** Authorization is per
+request and the answer changes the moment a grant is revoked. Route handlers
+are not cached unless you opt in, and every handler here reads the request and
+queries the database, which keeps it out of any prerender, with or without
+`cacheComponents`. Next 16 projects created by `create-next-app` turn
+`cacheComponents` on, and with it `export const dynamic = 'force-dynamic'` is a
+build error, so this example no longer carries one. What must not happen is a
+`'use cache'` around anything that decides or serves a read: a cached answer is
+an authorized answer handed to the next caller. CI builds these files in a new
+create-next-app project and checks that a revoked link stops working on the
+next request.
 
 ---
 

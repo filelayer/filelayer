@@ -15,7 +15,7 @@
  * grants, and revoking one of them leaves the other.
  */
 
-import { getFilelayer, currentUser } from '../../../../../lib/filelayer.ts';
+import { getFilelayer, currentUser } from '../../../../../lib/filelayer';
 
 export async function POST(
   req: Request,
@@ -82,7 +82,9 @@ export async function DELETE(
   }
 }
 
-export const dynamic = 'force-dynamic';
+// Not cached: route handlers are not, unless you opt in, and these read the
+// request and the database. See app/[...filelayer]/route.ts for why there is no
+// `dynamic` export (Next 16's cacheComponents refuses to build with one).
 
 // -----------------------------------------------------------------------------
 

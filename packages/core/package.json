@@ -97,7 +97,7 @@
     "clean": "node --eval \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "prepack": "npm run build",
     "test": "node --test --experimental-strip-types \"test/*.test.ts\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.nextjs.json",
     "verify": "npm run typecheck && npm test && npm run build",
     "test:contention": "FILELAYER_TEST_CONTENTION=1 node --test --experimental-strip-types \"test/contention.test.ts\"",
     "test:mcp-server": "node --test --experimental-strip-types \"test/mcp-server.test.ts\"",

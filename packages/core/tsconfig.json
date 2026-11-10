@@ -40,5 +40,8 @@
       "@modelcontextprotocol/sdk/*": ["./node_modules/@modelcontextprotocol/sdk/dist/esm/*"]
     }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "../../examples/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "../../examples/**/*.ts"],
+  // Checked by tsconfig.nextjs.json instead, with the module resolution a
+  // Next.js project uses. `npm run typecheck` runs both.
+  "exclude": ["../../examples/nextjs/**"]
 }

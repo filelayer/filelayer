@@ -68,6 +68,7 @@
     "check:suite-install": "node tools/check-suite-runs-from-install.mjs",
     "check:ci-coverage": "node tools/check-ci-coverage.mjs",
     "verify:nextjs": "node tools/drive-nextjs.mjs",
+    "check:nextjs-build": "node tools/check-nextjs-build.mjs",
     "check:published": "node tools/check-published-install.mjs",
     "check:since": "node tools/check-since-claims.mjs",
     "verify:mcp": "node tools/drive-mcp.mjs",
