@@ -729,15 +729,20 @@ async function handler(req: Request) {
 export const GET = handler;
 export const POST = handler;
 export const HEAD = handler;
-export const dynamic = 'force-dynamic';   // authorization is per request
 ```
 
-Two things it deliberately does not do for you. It will not read
-`X-Forwarded-For`: a `Request` has no socket, that header is written by whoever
-spoke last, and a library that guessed would let a client choose what its own
-audit log says about it — pass `clientIp` if you sit behind an edge you trust.
-And `dynamic = 'force-dynamic'` is yours to set; without it Next may serve a
-previously authorized response to a later caller.
+It deliberately does not read `X-Forwarded-For`: a `Request` has no socket,
+that header is written by whoever spoke last, and a library that guessed would
+let a client choose what its own audit log says about it. Pass `clientIp` if you
+sit behind an edge you trust.
+
+Nothing here is cached, and there is no `dynamic` export. Route handlers are not
+cached unless you opt in, and this handler reads the request, which keeps it out
+of any prerender, with or without `cacheComponents`. Next 16 projects created by
+`create-next-app` turn `cacheComponents` on, and with it
+`export const dynamic = 'force-dynamic'` is a build error, so do not add one.
+What must not happen is a `'use cache'` around anything that decides or serves a
+read: a cached answer is an authorized answer handed to the next caller.
 
 [`examples/nextjs`](https://github.com/filelayer/filelayer/blob/main/examples/nextjs/README.md)
 is the whole thing — upload, list, read, share, revoke — in four files, driven

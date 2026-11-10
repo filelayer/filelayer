@@ -17,11 +17,11 @@ replace `getFilelayer()`'s body with your own pool and bucket.
 
 ## The thing that is not obvious
 
-The README and QUICKSTART mount delivery with `deliveryHandler(fl)`. **That is a
-`node:http` handler and it does not work here.** It takes `(req, res)` with a
-Node `ServerResponse`; an App Router route handler is `(Request) => Response`.
-They are different shapes, and a developer arriving from the README has no way
-to know that except by trying it.
+`deliveryHandler(fl)`, the one-line mount in the QUICKSTART, **is a `node:http`
+handler and it does not work here.** It takes `(req, res)` with a Node
+`ServerResponse`; an App Router route handler is `(Request) => Response`. They
+are different shapes. The README shows both side by side, and this example uses
+`deliveryFetch`.
 
 `deliveryFetch(fl, opts)` is the same two routes for `Request`/`Response`
 runtimes — App Router, Hono, Workers, Deno, Bun. It is not a thin wrapper

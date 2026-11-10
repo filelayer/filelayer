@@ -372,9 +372,9 @@ async function handler(req: Request) {
 
 export const GET = handler;
 export const POST = handler;
-export const HEAD = handler;
-export const dynamic = 'force-dynamic';   // authorization is per request</code></pre>
-<p>Two things it deliberately does not do for you. It will not read <code>X-Forwarded-For</code>: a <code>Request</code> has no socket, that header is written by whoever spoke last, and a library that guessed would let a client choose what its own audit log says about it — pass <code>clientIp</code> if you sit behind an edge you trust. And <code>dynamic = 'force-dynamic'</code> is yours to set; without it Next may serve a previously authorized response to a later caller.</p>
+export const HEAD = handler;</code></pre>
+<p>It deliberately does not read <code>X-Forwarded-For</code>: a <code>Request</code> has no socket, that header is written by whoever spoke last, and a library that guessed would let a client choose what its own audit log says about it. Pass <code>clientIp</code> if you sit behind an edge you trust.</p>
+<p>Nothing here is cached, and there is no <code>dynamic</code> export. Route handlers are not cached unless you opt in, and this handler reads the request, which keeps it out of any prerender, with or without <code>cacheComponents</code>. Next 16 projects created by <code>create-next-app</code> turn <code>cacheComponents</code> on, and with it <code>export const dynamic = 'force-dynamic'</code> is a build error, so do not add one. What must not happen is a <code>'use cache'</code> around anything that decides or serves a read: a cached answer is an authorized answer handed to the next caller.</p>
 <p><a href="https://github.com/filelayer/filelayer/blob/main/examples/nextjs/README.md" rel="noopener"><code>examples/nextjs</code></a> is the whole thing — upload, list, read, share, revoke — in four files, driven by CI on every commit against a freshly packed tarball.</p>
 <p>The lower-level pieces are still exported and still right when you want to build the response yourself: <code>toResponse(delivery)</code> returns a WHATWG <code>Response</code> and <code>toStreamResponse(delivery)</code> returns one that streams.</p>
 <hr>

@@ -32,7 +32,6 @@ async function handler(req: Request): Promise<Response> {
 export const GET = handler;
 export const POST = handler;   // a password-protected link posts its password
 export const HEAD = handler;
-export const dynamic = 'force-dynamic';
 ```
 
 It catches `/f/<id>` (an authorized read) and `/d/<secret>` (a share link).
@@ -46,10 +45,16 @@ for an anonymous caller. Returning an id Filelayer has never seen **denies**
 and records the attempt; it is never a silent downgrade to anonymous, because
 that would turn a typo in a session lookup into a read of every public file.
 
-**`export const dynamic = 'force-dynamic'`** (Next.js). Authorization is per
-request and the answer changes the moment a grant is revoked. Without it Next
-may serve a previously authorized response to a later caller. This is the
-caching bug in this area that looks like it is working.
+**Nothing is cached, and there is no `dynamic` export** (Next.js).
+Authorization is per request and the answer changes the moment a grant is
+revoked. Route handlers are not cached unless you opt in, and this handler
+reads the request, which keeps it out of any prerender, with or without
+`cacheComponents`. Next 16 projects created by `create-next-app` turn
+`cacheComponents` on, and with it `export const dynamic = 'force-dynamic'` is a
+build error, so do not add one. What must not happen is a `'use cache'` around
+anything that decides or serves a read: a cached answer is an authorized answer
+handed to the next caller. This is the caching bug in this area that looks like
+it is working.
 
 **The client address.** `deliveryFetch` will not read `X-Forwarded-For`. A
 `Request` has no socket, so the only candidate is a header, and a header is
