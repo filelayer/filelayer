@@ -50,9 +50,13 @@ const CORE = join(ROOT, 'packages', 'core');
 const EXAMPLE = join(ROOT, 'examples', 'nextjs');
 const SELF_TEST = process.argv.includes('--self-test');
 
+// Every child is bounded. On its first CI run this check printed "clean" and
+// then held the job for ten minutes, because the server it had started was
+// still alive; a hang must be a failure with a name, never a six-hour wait.
 const run = (cmd, args, opts = {}) => {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 1 << 26, ...opts });
-  return { status: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+  const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 1 << 26, timeout: 300_000, killSignal: 'SIGKILL', ...opts });
+  const timedOut = r.error?.code === 'ETIMEDOUT' ? `\n[timed out after 300 s: ${cmd} ${args.join(' ')}]` : '';
+  return { status: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}${timedOut}` };
 };
 
 /** Pack once; every variant installs the same tarball. */
@@ -109,11 +113,16 @@ function variant(app, mutate) {
 
 async function serveAndDrive(app) {
   const port = 4300 + Math.floor(Math.random() * 600);
-  const server = spawn('npx', ['next', 'start', '-p', String(port)], {
+  // `next start` forks `next-server`. Started in its own process group, so the
+  // whole group is stopped at the end: killing only the direct child left
+  // next-server running and the check never exited.
+  const server = spawn(process.execPath, [join(app, 'node_modules', 'next', 'dist', 'bin', 'next'), 'start', '-p', String(port)], {
     cwd: app,
     env: { ...process.env, BASE_URL: `http://127.0.0.1:${port}` },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
+  const exited = new Promise((r) => server.once('exit', r));
   let log = '';
   server.stdout.on('data', (d) => (log += d));
   server.stderr.on('data', (d) => (log += d));
@@ -171,7 +180,15 @@ async function serveAndDrive(app) {
     expect('the SAME link, on the next request, is refused', again.status === 404, `status ${again.status}`);
     return steps;
   } finally {
-    server.kill('SIGTERM');
+    try {
+      process.kill(-server.pid, 'SIGTERM');
+    } catch {}
+    const stopped = await Promise.race([exited.then(() => true), new Promise((r) => setTimeout(() => r(false), 10_000))]);
+    if (!stopped) {
+      try {
+        process.kill(-server.pid, 'SIGKILL');
+      } catch {}
+    }
   }
 }
 
@@ -261,3 +278,5 @@ ${anchor}`,
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
+// Nothing this check started may keep the process, or the job, alive.
+process.exit(failed ? 1 : 0);
