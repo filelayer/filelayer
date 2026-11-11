@@ -1,8 +1,9 @@
 # How do I make a file link that expires, and that I can take back?
 
-The usual answer is "generate a presigned URL with an expiry". That answer is
-right about expiry and wrong about taking it back, and the difference only shows
-up on the day you need it.
+**How do I revoke a presigned URL?** On S3 or R2 you cannot revoke one on its
+own. The usual answer to an expiring file link is "generate a presigned URL with
+an expiry". That answer is right about expiry and wrong about taking it back,
+and the difference only shows up on the day you need it.
 
 This guide is about the second half. It is written to be useful whether or not
 you use Filelayer: the design and the SQL below are yours to copy, and the one
