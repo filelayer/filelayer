@@ -128,7 +128,7 @@
 <p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/background-jobs-for-user-files.proof.mjs" rel="noopener"><code>background-jobs-for-user-files.proof.mjs</code></a></p>
 <hr>
 <h2 id="running-the-proofs">Running the proofs</h2>
-<p>Nothing to install and no server to start: <code>embedded-postgres</code> runs a real PostgreSQL as an ordinary user process and cleans up after itself.</p>
+<p>Nothing to install and no server to start: <code>embedded-postgres</code> runs a real PostgreSQL as an ordinary user process and cleans up after itself. From a clone of the repository:</p>
 <pre><code class="lang-bash">npm run bootstrap        # npm ci in packages/core, once
 node docs/guides/expiring-and-revocable-file-links.proof.mjs
 node docs/guides/multi-tenant-file-access.proof.mjs

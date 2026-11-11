@@ -145,7 +145,8 @@ for free by three-valued logic.
 ## Running the proofs
 
 Nothing to install and no server to start: `embedded-postgres` runs a real
-PostgreSQL as an ordinary user process and cleans up after itself.
+PostgreSQL as an ordinary user process and cleans up after itself. From a clone
+of the repository:
 
 ```bash
 npm run bootstrap        # npm ci in packages/core, once

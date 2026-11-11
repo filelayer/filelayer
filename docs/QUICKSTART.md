@@ -158,7 +158,7 @@ organization row with a reserved id, auto-created on first use. It is not a
 special case in the data model; it is an ordinary tenant you did not have to
 name. Adding `org:` later (§3) moves you to a named one.
 
-Runnable: `npm run example:tier1`.
+Runnable from a clone of the repository: `npm run example:tier1`.
 
 ---
 
@@ -207,7 +207,7 @@ filtered by anything, because there is no RLS policy in the schema.
    Those headers are what stop a user-uploaded `.html` from executing in your
    origin. Writing the content type by hand re-opens stored XSS.
 
-Runnable: `npm run example:tier2`.
+Runnable from a clone of the repository: `npm run example:tier2`.
 
 ---
 
@@ -258,7 +258,7 @@ that confers every other privilege. You may not grant a role above your own, may
 not modify anyone who outranks you, and may not remove the last owner. Every
 attempt — allowed or denied — is audited.
 
-Runnable: `npm run example:tier3`.
+Runnable from a clone of the repository: `npm run example:tier3`.
 
 ---
 
@@ -474,7 +474,7 @@ await fl.files.put(bytes, { org: 'acme', owner: 'ceo', retainFor: 7 * 365 * 8640
 `retainFor` blocks deletion until it passes, **including by the org owner**. That
 is the point of a retention hold.
 
-Runnable: `npm run example:vault` (the full Vault app over HTTP, on :8787).
+Runnable from a clone of the repository: `npm run example:vault` (the full Vault app over HTTP, on :8787).
 
 ---
 

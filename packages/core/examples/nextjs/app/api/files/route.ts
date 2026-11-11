@@ -37,7 +37,8 @@ export async function POST(req: Request): Promise<Response> {
       owner: user,
       name: file.name,
     });
-    // `publicUrl` is the path the catch-all route above serves.
+    // `/f/<id>` is the path the catch-all route above serves; `fl.files.publicUrl(id)`
+    // builds the same path from `baseUrl`.
     return json({ id, url: `/f/${id}` }, 201);
   } catch (err) {
     return fromFilelayerError(err);

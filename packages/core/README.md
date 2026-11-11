@@ -11,6 +11,36 @@
      package: that one is relative, so a reader of an install opens the copy
      on disk. -->
 
+A first file in an organization, and a refusal, in twelve lines:
+
+```bash
+npm install @filelayer/core
+npm install --save-dev "@electric-sql/pglite@^0.3.11"
+```
+
+```ts
+import { Filelayer } from '@filelayer/core';
+const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });
+
+await fl.orgs.create('acme', { owner: 'alice' });                // a tenant and its owner
+await fl.orgs.setRole('acme', 'bob', 'member', { as: 'alice' });  // a member of it
+await fl.orgs.create('globex', { owner: 'eve' });                 // another tenant
+
+const { id } = await fl.files.put(new TextEncoder().encode('Q3 plan'), {
+  org: 'acme', owner: 'alice', visibility: 'org', name: 'q3.txt',
+});
+
+await fl.files.get(id, { as: 'bob' });                            // a member of acme: allowed
+await fl.files.get(id, { as: 'eve' }).catch((e) => console.log(e.status, e.code)); // 404 not_found
+
+const [refusal] = await fl.orgs.audit('acme', { as: 'alice', decision: 'deny' });
+console.log(refusal.summary);   // '<time> eve file.read deny:no_membership q3.txt @acme'
+```
+
+No account, no credential and no dashboard: `quickstart()` runs Postgres in
+process. The refusal is a `404`, so a stranger cannot tell the file exists, and
+the reason is in the audit trail, not in the response.
+
 **The file layer for SaaS applications.** A customer's security review asks who
 opened a file and who was refused. A link you sent has to stop working now.
 [Someone asks to be erased from your logs](https://github.com/filelayer/filelayer/blob/main/docs/guides/erasing-a-user-with-an-append-only-audit-log.md).
@@ -35,23 +65,10 @@ The results, the method and where each alternative is better:
 **[filelayer.dev/one-feature-five-ways](https://filelayer.dev/one-feature-five-ways)**.
 Everything reruns from a clone with `node benchmark/run.mjs`.
 
-Install it, and store a first file in three lines:
-
-```bash
-npm install @filelayer/core
-npm install --save-dev "@electric-sql/pglite@^0.3.11"
-```
-
-```ts
-import { Filelayer } from '@filelayer/core';
-const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });
-const { url } = await fl.files.put(new TextEncoder().encode('hello'), { public: true });
-```
-
 You tell Filelayer who the caller is. Filelayer decides what they may do with a
 file, serves the bytes with the right headers, and writes the audit event. For
 file access that goes through Filelayer, that decision is made in one place,
-`packages/core/src/authz.ts`, so you write no ownership checks in route
+`src/authz.ts`, so you write no ownership checks in route
 handlers, no presigned-URL expiry logic, and no per-route access rules of your
 own.
 
@@ -180,7 +197,7 @@ engine, not by convention, and each has tests named after it.
 | **P5** | Every decision is audited, including denials | Hash-chained per tenant. Probes that cannot be attributed to a tenant go to a system chain rather than being dropped. The log answers in *your* identifiers (`marco`, `contract.pdf`, `acme`) alongside the internal ones, so "who accessed this?" needs no SQL of yours. |
 
 Three more properties are enforced in the schema and documented in
-[`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): atomic download
+[`SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): atomic download
 counters (**P6**), deletion as a liveness predicate rather than a cascade
 (**P7**), and per-project identifier namespaces (**P8**).
 
@@ -195,7 +212,7 @@ Two consequences worth knowing before you adopt:
   than hand out a presigned URL, and it is why the default path has no CDN in
   front of it. The two facts are the same fact. Redirect delivery trades a
   bounded revocation window for that CDN and is opt-in; see
-  [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md).
+  [`SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md).
 
 ---
 
@@ -325,8 +342,9 @@ the rest of your application instead of swallowing it.
 
 **Mounting the wrong one is the most common integration failure we see.** A
 `node:http` handler in an App Router route exports a function with the wrong
-shape; the symptom is not a type error at the mount point but a request that
-never answers.
+shape. In a Next 16 project with TypeScript, `next build` reports it as a type
+error in the route file; without type checking, the symptom is a request that
+never answers. In an App Router route, mount `deliveryFetch`.
 
 <!-- doccheck: skip reason="it is a route module: the export is the deliverable, and there is nothing here to call without inventing a request this page does not need" -->
 ```ts
@@ -385,9 +403,9 @@ which is the same markdown and is easier to read than a repository file.
 Pre-1.0. The version is `0.MINOR.PATCH` and the promise is deliberately narrow:
 
 - **`0.x` → `0.(x+1)`** may break the API, the schema, or both. Every break is
-  in [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md), and every
+  in [`CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md), and every
   schema break has a migration in
-  [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md).
+  [`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md).
 - **`0.x.y` → `0.x.(y+1)`** is additive or a fix. No schema change that requires
   action, no signature change.
 - There is no long-term support branch and no backporting before 1.0.
@@ -414,12 +432,12 @@ application owns the migration runner, which is the position
 
 | Path | What it is |
 |---|---|
-| `packages/core/schema.sql` | The data model. Every security property is commented at the constraint that enforces it. Read this first if you are reviewing us. |
-| `packages/core/src/authz.ts` | The authorization engine. Two functions, one decision core. |
-| `packages/core/src/simple.ts` | The tiered API (`files`, `orgs`, `shares`). No authorization logic: a facade. |
-| `packages/core/src/delivery.ts` | Byte delivery. Owns the response headers so you cannot get them wrong. |
-| `packages/core/test/` | The property suite. Ships in the tarball. |
-| `packages/core/dev/` | Diagnostic scripts. Not published. |
+| `schema.sql` | The data model. Every security property is commented at the constraint that enforces it. Read this first if you are reviewing us. |
+| `src/authz.ts` | The authorization engine. Two functions, one decision core. |
+| `src/simple.ts` | The tiered API (`files`, `orgs`, `shares`). No authorization logic: a facade. |
+| `src/delivery.ts` | Byte delivery. Owns the response headers so you cannot get them wrong. |
+| `test/` | The property suite. Ships in the tarball. |
+| `dev/` | Diagnostic scripts. In the repository only, not in this package. |
 | `examples/tier1-avatar` … `tier3-org-roles` | One runnable example per tier |
 | `examples/vault` | A full B2B document workspace over HTTP |
 | `examples/starter` | A deployable server: your Postgres, `FsStorage`, route helpers mounted |
@@ -432,13 +450,13 @@ application owns the migration runner, which is the position
 - [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md): the complete list of what this does not do, fourteen entries with their reasoning
 - [`ROADMAP.md`](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md): the nine things an outside evaluator said would change its answer, eight of them done, and what is deliberately not coming
 - [`docs/guides/`](https://github.com/filelayer/filelayer/blob/main/docs/guides/README.md): nine answers to questions people actually ask, useful whether or not you use this library; the code in them is executed in CI
-- [`packages/core/SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): the exact behaviour of every edge: liveness, delegation, deletion, the audit chain
-- [`packages/core/MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md): how schema changes are delivered and what the pre-1.0 compatibility promise is
-- [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md): the real history, including the security defects we found in ourselves
+- [`SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): the exact behaviour of every edge: liveness, delegation, deletion, the audit chain
+- [`MIGRATIONS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/MIGRATIONS.md): how schema changes are delivered and what the pre-1.0 compatibility promise is
+- [`CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md): the real history, including the security defects we found in ourselves
 - [`ARCHITECTURE-PROGRESSIVE.md`](https://github.com/filelayer/filelayer/blob/main/ARCHITECTURE-PROGRESSIVE.md): the tier model, lines of code versus the alternatives, and where we lose
 - [`architecture/TIER5-DESIGN-NOTE.md`](https://github.com/filelayer/filelayer/blob/main/architecture/TIER5-DESIGN-NOTE.md): large files, streaming, range requests, CDN
 - [`llms.txt`](https://github.com/filelayer/filelayer/blob/main/llms.txt): the same map, written for an agent implementing an integration
-- [`openapi.yaml`](https://github.com/filelayer/filelayer/blob/main/openapi.yaml): the two HTTP routes the library serves, as OpenAPI 3.1
+- [`openapi.json`](https://github.com/filelayer/filelayer/blob/main/packages/core/openapi.json): the two HTTP routes the library serves, as OpenAPI 3.1, on disk in this package
 
 Every link above points at GitHub, and an installed consumer may have no network
 and no browser. The npm package therefore carries the same files on disk under

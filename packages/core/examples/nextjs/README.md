@@ -75,6 +75,8 @@ next request.
 
 ## Running it
 
+From a clone of the repository:
+
 ```bash
 npm run verify:nextjs
 ```

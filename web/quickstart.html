@@ -134,7 +134,7 @@ await fl.files.unpublish(id);   // the URL stops working on the next request</co
 <h3 id="what-is-actually-happening">What is actually happening</h3>
 <p><code>{ public: true }</code> is one line of sugar. It does <strong>not</strong> set a flag — there is no <code>public</code> column in the schema and there never will be. It creates one explicit grant row with <code>subject_type = 'anonymous'</code> and capability <code>read</code>. That row can be listed, audited and revoked, which is why <code>unpublish()</code> works.</p>
 <p>If you never mention an org, your files land in a <strong>default workspace</strong> — a real organization row with a reserved id, auto-created on first use. It is not a special case in the data model; it is an ordinary tenant you did not have to name. Adding <code>org:</code> later (§3) moves you to a named one.</p>
-<p>Runnable: <code>npm run example:tier1</code>.</p>
+<p>Runnable from a clone of the repository: <code>npm run example:tier1</code>.</p>
 <hr>
 <h2 id="2-tier-2--a-private-user-owned-file">2. Tier 2 — a private, user-owned file</h2>
 <p><strong>New concept: an owner.</strong></p>
@@ -154,7 +154,7 @@ await fl.files.get(id);                                    // throws 404</code><
 const f = await fl.files.get(fid, { as: 'user_123' });
 // res.writeHead(200, f.headers);   not { 'content-type': f.contentType }
 // res.end(f.body);</code></pre><p>Those headers are what stop a user-uploaded <code>.html</code> from executing in your origin. Writing the content type by hand re-opens stored XSS.</p></li></ol>
-<p>Runnable: <code>npm run example:tier2</code>.</p>
+<p>Runnable from a clone of the repository: <code>npm run example:tier2</code>.</p>
 <hr>
 <h2 id="3-tier-3--organizations-and-roles">3. Tier 3 — organizations and roles</h2>
 <p><strong>New concepts: an org, and a role.</strong></p>
@@ -179,7 +179,7 @@ await fl.files.put(handbook, { org: 'acme', owner: 'ceo', visibility: 'org' }); 
 <h3 id="as-is-required-on-membership-changes"><code>as</code> is required on membership changes</h3>
 <pre><code class="lang-ts">await fl.orgs.setRole('acme', 'x', 'admin', { as: 'ceo' });   // authorized</code></pre>
 <p>There is no shortcut here and there will not be. Membership is the privilege that confers every other privilege. You may not grant a role above your own, may not modify anyone who outranks you, and may not remove the last owner. Every attempt — allowed or denied — is audited.</p>
-<p>Runnable: <code>npm run example:tier3</code>.</p>
+<p>Runnable from a clone of the repository: <code>npm run example:tier3</code>.</p>
 <hr>
 <h2 id="4-tier-4--sharing-expiry-caps-revocation-audit">4. Tier 4 — sharing, expiry, caps, revocation, audit</h2>
 <p><strong>New concept: a grant.</strong></p>
@@ -255,7 +255,7 @@ const q2 = await audit.log({ since: apr, until: jul }, orgId);</code></pre>
 <pre><code class="lang-ts">await fl.files.put(bytes, { org: 'acme', owner: 'ceo', expiresIn: 86400 });
 await fl.files.put(bytes, { org: 'acme', owner: 'ceo', retainFor: 7 * 365 * 86400 });</code></pre>
 <p><code>retainFor</code> blocks deletion until it passes, <strong>including by the org owner</strong>. That is the point of a retention hold.</p>
-<p>Runnable: <code>npm run example:vault</code> (the full Vault app over HTTP, on :8787).</p>
+<p>Runnable from a clone of the repository: <code>npm run example:vault</code> (the full Vault app over HTTP, on :8787).</p>
 <hr>
 <h2 id="5-listing-what-a-caller-may-see">5. Listing what a caller may see</h2>
 <p><strong>This is implemented.</strong> It is one call, it paginates, and there is no predicate for you to write:</p>

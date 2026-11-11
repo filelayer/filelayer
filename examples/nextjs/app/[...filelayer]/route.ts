@@ -10,7 +10,7 @@
  * WHY THIS IS NOT `deliveryHandler`
  * ---------------------------------------------------------------------------
  *
- * The `node:http` handler the README shows takes `(req, res)` with a Node
+ * The `node:http` handler, `deliveryHandler`, takes `(req, res)` with a Node
  * `ServerResponse`. An App Router route handler is `(Request) => Response`.
  * They are not the same shape and the node one cannot be mounted here --
  * which is the single thing a developer coming from the README most needs to

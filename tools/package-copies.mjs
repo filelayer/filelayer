@@ -34,6 +34,18 @@ export const COPIES = [
   {
     file: 'README.md',
     why: 'the first thing a stranger reads, on GitHub and in the tarball',
+    // PATHS AS AN INSTALL SEES THEM. The checkout has the package under
+    // `packages/core/`; the tarball IS that directory, so a path a reader of an
+    // install is told to open must not carry the prefix. Found by a cold
+    // first-user run on 11 November 2026. The links stay GitHub URLs, which
+    // work on npmjs.com and anywhere with a network; what changes is the path a
+    // reader reads, and the one file that ships under another name.
+    rewrite: [
+      ['| `packages/core/dev/` | Diagnostic scripts. Not published. |', '| `dev/` | Diagnostic scripts. In the repository only, not in this package. |'],
+      ['`packages/core/', '`'],
+      ['[`openapi.yaml`](https://github.com/filelayer/filelayer/blob/main/openapi.yaml): the two HTTP routes the library serves, as OpenAPI 3.1',
+       '[`openapi.json`](https://github.com/filelayer/filelayer/blob/main/packages/core/openapi.json): the two HTTP routes the library serves, as OpenAPI 3.1, on disk in this package'],
+    ],
     // NO STAMP, SINCE 0.16.0, AND THAT IS A CHANGE WORTH EXPLAINING. The stamp
     // was the "Each one is current as of `0.4.3`" sentence introducing the
     // limitations list, and the list moved to LIMITATIONS.md, where the stamp

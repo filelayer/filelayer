@@ -316,7 +316,7 @@
   org: <span class="c-str">'acme'</span>, owner: <span class="c-str">'ceo'</span>, name: <span class="c-str">'board-deck.pdf'</span>,
 });
 
-<span class="c-key">await</span> fl.files.get(id, { as: <span class="c-str">'analyst'</span> });  <span class="c-deny">// 404 insufficient_role</span>
+<span class="c-key">await</span> fl.files.get(id, { as: <span class="c-str">'analyst'</span> });  <span class="c-deny">// 404 not_found; the audit log says insufficient_role</span>
 </code></pre>
         </figure>
       </div>
@@ -346,7 +346,7 @@
 <span class="c-com">// ...forwarded to someone it should not have been</span>
 <span class="c-key">await</span> fl.shares.revoke(share.grantId, { as: <span class="c-str">'ceo'</span> });
 
-<span class="c-key">await</span> fl.shares.redeem(share.secret, { password: <span class="c-str">'hunter2'</span> });  <span class="c-deny">// 404 grant_revoked</span>
+<span class="c-key">await</span> fl.shares.redeem(share.secret, { password: <span class="c-str">'hunter2'</span> });  <span class="c-deny">// 404 not_found; the audit log says grant_revoked</span>
 </code></pre>
         </figure>
       </div>

@@ -11,6 +11,36 @@
      package: that one is relative, so a reader of an install opens the copy
      on disk. -->
 
+A first file in an organization, and a refusal, in twelve lines:
+
+```bash
+npm install @filelayer/core
+npm install --save-dev "@electric-sql/pglite@^0.3.11"
+```
+
+```ts
+import { Filelayer } from '@filelayer/core';
+const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });
+
+await fl.orgs.create('acme', { owner: 'alice' });                // a tenant and its owner
+await fl.orgs.setRole('acme', 'bob', 'member', { as: 'alice' });  // a member of it
+await fl.orgs.create('globex', { owner: 'eve' });                 // another tenant
+
+const { id } = await fl.files.put(new TextEncoder().encode('Q3 plan'), {
+  org: 'acme', owner: 'alice', visibility: 'org', name: 'q3.txt',
+});
+
+await fl.files.get(id, { as: 'bob' });                            // a member of acme: allowed
+await fl.files.get(id, { as: 'eve' }).catch((e) => console.log(e.status, e.code)); // 404 not_found
+
+const [refusal] = await fl.orgs.audit('acme', { as: 'alice', decision: 'deny' });
+console.log(refusal.summary);   // '<time> eve file.read deny:no_membership q3.txt @acme'
+```
+
+No account, no credential and no dashboard: `quickstart()` runs Postgres in
+process. The refusal is a `404`, so a stranger cannot tell the file exists, and
+the reason is in the audit trail, not in the response.
+
 **The file layer for SaaS applications.** A customer's security review asks who
 opened a file and who was refused. A link you sent has to stop working now.
 [Someone asks to be erased from your logs](https://github.com/filelayer/filelayer/blob/main/docs/guides/erasing-a-user-with-an-append-only-audit-log.md).
@@ -34,19 +64,6 @@ runs was attacked by one shared suite:
 The results, the method and where each alternative is better:
 **[filelayer.dev/one-feature-five-ways](https://filelayer.dev/one-feature-five-ways)**.
 Everything reruns from a clone with `node benchmark/run.mjs`.
-
-Install it, and store a first file in three lines:
-
-```bash
-npm install @filelayer/core
-npm install --save-dev "@electric-sql/pglite@^0.3.11"
-```
-
-```ts
-import { Filelayer } from '@filelayer/core';
-const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });
-const { url } = await fl.files.put(new TextEncoder().encode('hello'), { public: true });
-```
 
 You tell Filelayer who the caller is. Filelayer decides what they may do with a
 file, serves the bytes with the right headers, and writes the audit event. For
@@ -325,8 +342,9 @@ the rest of your application instead of swallowing it.
 
 **Mounting the wrong one is the most common integration failure we see.** A
 `node:http` handler in an App Router route exports a function with the wrong
-shape; the symptom is not a type error at the mount point but a request that
-never answers.
+shape. In a Next 16 project with TypeScript, `next build` reports it as a type
+error in the route file; without type checking, the symptom is a request that
+never answers. In an App Router route, mount `deliveryFetch`.
 
 <!-- doccheck: skip reason="it is a route module: the export is the deliverable, and there is nothing here to call without inventing a request this page does not need" -->
 ```ts
