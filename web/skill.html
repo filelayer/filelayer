@@ -177,7 +177,7 @@ tool reads it as an argument and no tool can change it, which is the only reason
 exposing those tools to an agent is reasonable. Deleting, reading bytes back,
 and the audit trail are each off until you turn them on.</p>
 
-<pre><code>npx -p @filelayer/core filelayer-mcp
+<pre><code>npx -y -p @filelayer/core -p pg -p @modelcontextprotocol/sdk -p zod filelayer-mcp
 </code></pre>
 
 <p>The client configuration, with the environment it needs, is in

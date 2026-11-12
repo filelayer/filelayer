@@ -31,6 +31,30 @@
         },
         {
           "type": "positional",
+          "value": "-p"
+        },
+        {
+          "type": "positional",
+          "value": "pg"
+        },
+        {
+          "type": "positional",
+          "value": "-p"
+        },
+        {
+          "type": "positional",
+          "value": "@modelcontextprotocol/sdk"
+        },
+        {
+          "type": "positional",
+          "value": "-p"
+        },
+        {
+          "type": "positional",
+          "value": "zod"
+        },
+        {
+          "type": "positional",
           "value": "filelayer-mcp"
         }
       ],

@@ -5,13 +5,16 @@
  *     filelayer-mcp
  *
  * Configured entirely from the environment, so an MCP client can start it with
- * a command and an `env` block and nothing else:
+ * a command and an `env` block and nothing else. Apply `schema.sql` to the
+ * database once first. The three extra `-p` packages are optional peers that
+ * npx would otherwise not install:
  *
  *     {
  *       "mcpServers": {
  *         "filelayer": {
  *           "command": "npx",
- *           "args": ["-y", "@filelayer/core", "filelayer-mcp"],
+ *           "args": ["-y", "-p", "@filelayer/core", "-p", "pg", "-p", "@modelcontextprotocol/sdk",
+ *                    "-p", "zod", "filelayer-mcp"],
  *           "env": {
  *             "DATABASE_URL": "postgres://...",
  *             "FILELAYER_AS": "user_alice",
@@ -149,6 +152,9 @@ try {
     '  that needs a PostgreSQL driver.',
     '',
     '    npm install pg',
+    '',
+    'If a client starts this with npx, name the optional peers with -p:',
+    '    npx -y -p @filelayer/core -p pg -p @modelcontextprotocol/sdk -p zod filelayer-mcp',
   ]);
 }
 

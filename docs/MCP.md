@@ -62,14 +62,21 @@ user agent, which is what lets the chain separate "the partner opened this" from
 "the partner's assistant opened this".
 
 If you want a server a client can simply start, there is a second binary that
-builds the instance from the environment:
+builds the instance from the environment. Apply the schema to your database once
+before the first start, from the project where `@filelayer/core` is installed:
+
+```bash
+psql "$DATABASE_URL" -f node_modules/@filelayer/core/schema.sql
+```
+
+Then give the client this:
 
 ```json
 {
   "mcpServers": {
     "filelayer": {
       "command": "npx",
-      "args": ["-y", "-p", "@filelayer/core", "filelayer-mcp"],
+      "args": ["-y", "-p", "@filelayer/core", "-p", "pg", "-p", "@modelcontextprotocol/sdk", "-p", "zod", "filelayer-mcp"],
       "env": {
         "DATABASE_URL": "postgres://...",
         "FILELAYER_AS": "user_alice",
@@ -81,8 +88,12 @@ builds the instance from the environment:
 }
 ```
 
-Like the CLI, this binary opens its own database connection, so it also needs
-`pg`, an optional peer dependency of this package.
+The three extra `-p` packages are the optional peers this binary needs: `pg`
+for its own database connection, and the MCP SDK and `zod` for the server. `npx`
+installs only the packages named with `-p`, so leaving out `pg` or the SDK
+starts a process that stops with "not installed". `zod` arrives with the SDK
+today and is named anyway, so the configuration does not depend on that. CI starts this exact configuration from an
+empty directory against PostgreSQL and lists its tools.
 
 `FILELAYER_AS` comes from whoever configures the client, never from a
 conversation — one process speaks for one subject, and many users means a server
