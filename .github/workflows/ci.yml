@@ -680,6 +680,15 @@ jobs:
       - name: The Next.js build check fails on the two broken variants
         run: npm run check:nextjs-build -- --self-test
 
+      # THE "OPEN IN STACKBLITZ" DEMO. examples/in-the-browser pins
+      # @filelayer/core and its README prints the output a reader will see. This
+      # runs the demo against the packed tarball and requires its output to be
+      # the README's, line by line, and its pin to be this package's version.
+      - name: The in-browser demo prints what its README shows, on this version
+        run: npm run check:browser-demo
+      - name: The in-browser demo check refuses a wrong pin, an edited README and a skipped revoke
+        run: npm run check:browser-demo -- --self-test
+
       # And the MCP example, spawned as a subprocess and driven over its real
       # stdin and stdout. The package's unit tests use an in-memory transport,
       # which is blind to a whole class of failure: a server that writes one

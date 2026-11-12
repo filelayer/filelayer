@@ -335,6 +335,13 @@ export const COPIES = [
     // The MCP example. Same reasoning as the Next.js one: it imports
     // `@filelayer/core` and `@filelayer/core/mcp` by name, so it is what you
     // paste into your own project.
+    // The in-browser demo, what the "Open in StackBlitz" button opens. Same
+    // reasoning again: it imports `@filelayer/core` by name and pins the
+    // version this package is, so the copy in the tarball is the same file.
+    'examples/in-the-browser/README.md',
+    'examples/in-the-browser/package.json',
+    'examples/in-the-browser/demo.mjs',
+    'examples/in-the-browser/.stackblitzrc',
     'examples/mcp/README.md',
     'examples/mcp/package.json',
     'examples/mcp/server.ts',

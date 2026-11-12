@@ -1,0 +1,13 @@
+{
+  "name": "filelayer-in-the-browser",
+  "private": true,
+  "type": "module",
+  "description": "Nine steps of @filelayer/core, as published on npm, on PGlite and in-memory storage: runs in StackBlitz or locally.",
+  "scripts": {
+    "start": "node demo.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.3.16",
+    "@filelayer/core": "0.35.2"
+  }
+}

@@ -55,6 +55,7 @@
     "packages/core/examples/**/*.md",
     "packages/core/examples/**/*.mjs",
     "examples/**/.env.example",
+    "examples/**/.stackblitzrc",
     "packages/core/examples/**/.env.example",
     "packages/core/docs/**/*.mjs",
     "TRUST.md",
