@@ -469,11 +469,33 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
           <a href="https://github.com/filelayer/filelayer/blob/main/docs/VERIFY-WHAT-YOU-INSTALLED.md">run
           them yourself &rarr;</a></p>
       </div>
+      <div class="card">
+        <h3><a href="https://github.com/filelayer/filelayer/blob/main/docs/MCP.md">MCP server</a></h3>
+        <p><code>filelayer-mcp</code> is a stdio server you run yourself, against your own
+          database and bucket. One process acts for one user in one organization, fixed when
+          it starts; no tool can change who it acts for. Alpha, like the rest.</p>
+      </div>
+      <div class="card">
+        <h3><a href="https://github.com/filelayer/filelayer/blob/main/docs/CLI.md">CLI</a></h3>
+        <p><code>filelayer doctor</code>, <code>filelayer schema status</code> and
+          <code>filelayer usage-report</code>: read-only checks of a deployment, each with a
+          <code>fix</code> line and <code>--json</code> for a script.</p>
+      </div>
+      <div class="card">
+        <h3><a href="https://github.com/filelayer/filelayer/blob/main/packages/core/errors.json">errors.json</a></h3>
+        <p>Every error code the library can produce, with what it means and what to do about
+          it, as data an agent can branch on.</p>
+      </div>
+      <div class="card">
+        <h3><a href="/skill">The Agent Skill</a></h3>
+        <p>Instructions a coding agent loads before it integrates Filelayer into somebody
+          else's codebase, shipped in the package under <code>skills/</code>.</p>
+      </div>
     </div>
 
     <p class="t4"><strong>Using a coding agent?</strong> Point it at the map:</p>
     <p><code class="install">Add Filelayer to my app: https://github.com/filelayer/filelayer/blob/main/llms.txt</code></p>
-    <p class="note">No MCP server yet. There is no hosted API to put behind one.</p>
+    <p class="note">An MCP server ships in the package: <code>filelayer-mcp</code>, a stdio server you run yourself. One process acts for one user, fixed at start. Nothing is hosted. Setup: <a href="https://github.com/filelayer/filelayer/blob/main/docs/MCP.md">docs/MCP.md</a>.</p>
   </section>
 </div>
 
@@ -493,7 +515,7 @@ npm install --save-dev <span class="c-str">"@electric-sql/pglite@^0.3.11"</span>
       <li><span>Version</span><span class="v">0.35.2 — alpha</span></li>
       <li><span>Storage adapter against live Cloudflare R2</span><span class="v">12 tests, every commit</span></li>
       <li><span>Storage adapter against live AWS S3</span><span class="v">12 tests, every commit</span></li>
-      <li><span>Tests against a real PostgreSQL, every commit</span><span class="v">749 across 163 suites</span></li>
+      <li><span>Tests (most on PGlite; concurrency, audit retention and the MCP server on a real PostgreSQL 17), every commit</span><span class="v">749 across 163 suites</span></li>
       <li><span>Concurrency, against a real PostgreSQL</span><span class="v">8 tests, every commit</span></li>
       <li><span>Adversarial suite</span><span class="v">26 attacks, 0 breaches</span></li>
       <li><span>Runtime dependencies</span><span class="v">0</span></li>

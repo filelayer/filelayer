@@ -107,17 +107,17 @@ person running this in production.
 - **An independent security review.** Costs money, deferred to January 2027.
   Nothing in this repository has been audited by anyone outside it, and
   `TRUST.md` says so in the one place a reader will look for it.
-- **The agent-facing surfaces that still do not exist.** In `0.18.0` the one
-  that was blocking closed: the delivery routes now have a
-  `Request`/`Response` form, so Next.js, Hono, Workers, Deno and Bun can mount
-  them. These remain, listed
-  rather than implied:
-  - **An MCP server**, so an agent can operate a deployment through a tool
-    interface rather than by writing code against the API.
-  - **Agent Skills**, which is the cheaper half and the one that serves
-    "implement in somebody else's codebase".
-  - **A CLI.** There is no `bin`. `schemaStatus()` exists as a function, so
-    checking what a database has applied means writing a script first.
+- **The agent-facing surfaces.** In `0.18.0` the one that was blocking closed:
+  the delivery routes now have a `Request`/`Response` form, so Next.js, Hono,
+  Workers, Deno and Bun can mount them. The others listed here have shipped
+  since, and stay listed so the history is readable:
+  - ~~An MCP server~~: **shipped.** `filelayer-mcp`, a stdio server you run
+    yourself, and `@filelayer/core/mcp` to build one in code. One process acts
+    for one user, fixed at start. See `docs/MCP.md`.
+  - ~~Agent Skills~~: **shipped.** `skills/filelayer-integration/`, in the
+    package. See `docs/AGENT-SKILL.md`.
+  - ~~A CLI~~: **shipped.** `filelayer doctor`, `filelayer schema status` and
+    `filelayer usage-report`, read-only. See `docs/CLI.md`.
   - ~~A machine-readable error catalogue~~ — **done in `0.19.0`, completed in
     `0.19.1`.** `code` is a union of the 29 codes the library can produce, the
     status is derived from the code rather than passed alongside it, and

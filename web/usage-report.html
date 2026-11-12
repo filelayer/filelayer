@@ -97,7 +97,9 @@
 <p>If either is missing, it stops before reading anything and says which one.</p>
 <p><strong>The command does not work with PGlite.</strong> If your Filelayer runs on PGlite (<code>Filelayer.quickstart()</code>, or <code>createTestDb()</code> in tests), the database lives inside your application's process and the command has nothing to connect to. Build the report from code instead, with <code>buildUsageReport(db, { week })</code>: on an instance from <code>Filelayer.quickstart()</code>, <code>db</code> is <code>fl.store.db</code>; with <code>createTestDb()</code>, it is the <code>db</code> that returns. That route is shown below, under the options.</p>
 <h2 id="run-it">Run it</h2>
+<p>From a project where <code>@filelayer/core</code> is installed:</p>
 <pre><code class="lang-bash">npx filelayer usage-report</code></pre>
+<p>Anywhere else: <code>npx -p @filelayer/core -p pg filelayer usage-report</code>.</p>
 <p>It reads <code>DATABASE_URL</code> from the environment, as the rest of the CLI does, and writes <code>./filelayer-usage-report-&lt;first 8 characters of install_id&gt;-&lt;week&gt;.json</code> for the last complete ISO week (UTC). Then it prints the same JSON, so what you see is what the file holds.</p>
 <div class="table-scroll"><table>
 <thead><tr><th>Option</th><th>What it does</th></tr></thead>

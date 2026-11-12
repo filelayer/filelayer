@@ -40,9 +40,13 @@ under the options.
 
 ## Run it
 
+From a project where `@filelayer/core` is installed:
+
 ```bash
 npx filelayer usage-report
 ```
+
+Anywhere else: `npx -p @filelayer/core -p pg filelayer usage-report`.
 
 It reads `DATABASE_URL` from the environment, as the rest of the CLI does, and
 writes `./filelayer-usage-report-<first 8 characters of install_id>-<week>.json`

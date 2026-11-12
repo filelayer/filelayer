@@ -78,8 +78,15 @@ const CLAIMS = [
   // NOT all run on the three-Node matrix: the eight contention tests need a
   // real PostgreSQL and skip there. The gate watches the FIRST number, which is
   // the suite's size; the second is a property of the matrix, not of the suite.
+  // Reworded 2026-11-12: most suites run on PGlite, and the sentence says so.
   { file: 'TRUST.md', kind: 'tests',
-    re: /\|\s*Tests\s*\|\s*(\d+), all of them against a real PostgreSQL/g },
+    re: /\|\s*Tests\s*\|\s*(\d+) across \d+ suites, every commit/g },
+  { file: 'TRUST.md', kind: 'suites',
+    re: /\|\s*Tests\s*\|\s*\d+ across (\d+) suites, every commit/g },
+  { file: 'README.md', kind: 'tests',
+    re: /\| The suite \| \*\*(\d+) tests across \d+ suites\*\*/g },
+  { file: 'README.md', kind: 'suites',
+    re: /\| The suite \| \*\*\d+ tests across (\d+) suites\*\*/g },
   { file: 'packages/core/llms.txt', kind: 'version',
     re: /developer preview, version ([\d.]+), Apache-2\.0/g },
   { file: 'ARCHITECTURE-PROGRESSIVE.md', kind: 'version',

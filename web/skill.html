@@ -102,8 +102,8 @@ is the authority on that, not ours.</p>
 
 <h3>Why copying beats downloading</h3>
 
-<p>Every copy of this skill carries the version it was written against, on its
-third line:</p>
+<p>Every copy of this skill carries the version it was written against, just
+below its title:</p>
 
 <pre><code>This copy describes `@filelayer/core` version 0.35.2.
 </code></pre>
@@ -180,8 +180,12 @@ and the audit trail are each off until you turn them on.</p>
 <pre><code>npx -p @filelayer/core filelayer-mcp
 </code></pre>
 
-<p>A worked client configuration is in
-<a href="https://github.com/filelayer/filelayer/blob/main/examples/mcp/README.md" rel="noopener">examples/mcp</a>.</p>
+<p>The client configuration, with the environment it needs, is in
+<a href="https://github.com/filelayer/filelayer/blob/main/docs/MCP.md" rel="noopener">docs/MCP.md</a>: <code>DATABASE_URL</code>,
+<code>FILELAYER_AS</code>, <code>FILELAYER_ORG</code>, and storage, either
+<code>FILELAYER_DATA_DIR</code> or the <code>S3_*</code> variables.
+<a href="https://github.com/filelayer/filelayer/blob/main/examples/mcp/README.md" rel="noopener">examples/mcp</a>
+is an in-memory demo you can launch, not a deployment.</p>
 
 <h2>Before you ship any of this</h2>
 

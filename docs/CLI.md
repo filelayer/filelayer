@@ -3,10 +3,14 @@
 `filelayer doctor` and `filelayer schema status` answer "is this deployment
 wired up correctly?" without a running application. Both are read-only.
 
+From a project where `@filelayer/core` is installed:
+
 ```bash
 npx filelayer doctor          # Node, DATABASE_URL, and what state the schema is in
 npx filelayer schema status   # just the schema, with --json for a script
 ```
+
+Anywhere else: `npx -p @filelayer/core -p pg filelayer doctor`.
 
 Every problem comes with a line saying what to do about it, and `--json` gives
 an agent the same findings in a shape it can branch on.
@@ -34,8 +38,9 @@ answers identically and is still public where it matters. And none of this says
 whether your credentials work, which needs a signed request and is not here
 yet.
 
-`pg` is an optional peer dependency: the CLI is the only part of this package
-that needs a driver, and it asks for it by name at runtime.
+`pg` is an optional peer dependency, needed by the CLI and by `filelayer-mcp`,
+the two parts of this package that open a database connection themselves. Each
+asks for it by name at runtime.
 
 ---
 

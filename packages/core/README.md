@@ -223,7 +223,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **749 tests**, every commit, all of them against a real PostgreSQL |
+| The suite | **749 tests across 163 suites**, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17 |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends: races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **26 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -238,7 +238,7 @@ table, including the rows that are zero, is on
 
 ## The five that make people decline
 
-The complete list is [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) -- fourteen
+The complete list is [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) -- seventeen
 entries, each with its reasoning, shipped in the npm tarball so an install has
 it on disk. These five are the ones that should make you close the tab if they
 apply to you:
@@ -447,7 +447,7 @@ application owns the migration runner, which is the position
 ## Documents
 
 - [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md): install → first file → the advanced capabilities
-- [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md): the complete list of what this does not do, fourteen entries with their reasoning
+- [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md): the complete list of what this does not do, seventeen entries with their reasoning
 - [`ROADMAP.md`](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md): the nine things an outside evaluator said would change its answer, eight of them done, and what is deliberately not coming
 - [`docs/guides/`](https://github.com/filelayer/filelayer/blob/main/docs/guides/README.md): nine answers to questions people actually ask, useful whether or not you use this library; the code in them is executed in CI
 - [`SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): the exact behaviour of every edge: liveness, delegation, deletion, the audit chain

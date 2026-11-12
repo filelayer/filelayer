@@ -9,8 +9,10 @@ roles, share links that expire and can be revoked, lifecycle, and an audit trail
 that records denials.
 
 **What is tested is the authorization engine, and it is tested hard.** One
-function answers every access question. 749 tests run against a real PostgreSQL
-on every commit; 26 adversarial attacks score zero breaches, and the same suite
+function answers every access question. 749 tests across 163 suites, every
+commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the
+concurrency, audit retention and MCP server suites run against a real
+PostgreSQL 17. 26 adversarial attacks score zero breaches, and the same suite
 scores three against an earlier revision of this library, so the suite is
 calibrated rather than merely passing. The storage adapter runs against live
 Cloudflare R2 and live AWS S3 on every commit. There are no runtime
@@ -33,7 +35,7 @@ real traffic.
 | Independent security review | **none** |
 | Load measured | First run 4 October 2026, `benchmark/load/RESULTS.md`. One machine, no network, no object store, seconds per cell |
 | Time to first stored file | Measured 17 October 2026, `benchmark/ttff/RESULTS.md`. From `npm install` of the **published** package to a stored byte, with a cold npm cache: **0 accounts, 0 credentials, 0 dashboards, 4 lines**. The program is asserted to appear verbatim in the quickstart that shipped in the tarball |
-| Tests | 749, all of them against a real PostgreSQL, every commit; the suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves |
+| Tests | 749 across 163 suites, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17. The suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 26 attacks, 0 breaches |
 | Runtime dependencies | **0** |
@@ -104,7 +106,7 @@ non-zero failure count, which the first version did not.
 
 Kept current, and complete, in
 [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) —
-fourteen entries, which ship in the npm tarball. The ones most likely to
+seventeen entries, which ship in the npm tarball. The ones most likely to
 matter:
 
 - Byte delivery proxies through your application by default, so there is no CDN
@@ -170,7 +172,7 @@ matter:
   `MIGRATIONS.md` has sixteen numbered entries, eleven of which carry forward SQL.
   Since `0.15.0` each of those has a runnable file under `migrations/`, and CI
   applies it to the previous release's schema and fails the build unless the
-  result matches the next release's, on real PostgreSQL. Two of the twelve
+  result matches the next release's, on real PostgreSQL. Two schema changes
   cannot be verified: they predate the oldest tag in the repository, so there is
   no earlier schema to apply them to.
   **This line has been wrong twice.** It said "one breaking change" until

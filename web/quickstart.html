@@ -386,7 +386,7 @@ psql &quot;$DATABASE_URL&quot; -f packages/core/schema.sql
 
 # from an install
 psql &quot;$DATABASE_URL&quot; -f node_modules/@filelayer/core/schema.sql</code></pre>
-<p>PostgreSQL 15 or later. Requires the <code>pgcrypto</code> extension (the schema creates it). The path is also exported programmatically as <code>SCHEMA_PATH</code>, and <code>loadSchemaSql()</code> returns its contents, so a migration runner does not have to hardcode a path.</p>
+<p>PostgreSQL 15 or later; CI tests PostgreSQL 17. Requires the <code>pgcrypto</code> extension (the schema creates it). The path is also exported programmatically as <code>SCHEMA_PATH</code>, and <code>loadSchemaSql()</code> returns its contents, so a migration runner does not have to hardcode a path.</p>
 <p><code>schema.sql</code> is <strong>not idempotent, and since <code>0.15.0</code> it refuses rather than half-applies.</strong> Run it against a database that already has the schema and its first statement raises, naming the version it found, instead of dying part-way through on <code>relation &quot;project&quot; already exists</code>.</p>
 <p>It creates <code>filelayer_schema_version</code> and stamps it as its last statement, so the database records what it has. <strong><code>schemaStatus(db)</code> reads that</strong> and returns <code>{ state, at, expects, outstanding, history }</code> — which is what a boot sequence should consult rather than counting tables by hand:</p>
 <pre><code class="lang-ts">import { schemaStatus } from '@filelayer/core';

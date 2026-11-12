@@ -769,7 +769,7 @@ psql "$DATABASE_URL" -f packages/core/schema.sql
 psql "$DATABASE_URL" -f node_modules/@filelayer/core/schema.sql
 ```
 
-PostgreSQL 15 or later. Requires the `pgcrypto` extension (the schema creates
+PostgreSQL 15 or later; CI tests PostgreSQL 17. Requires the `pgcrypto` extension (the schema creates
 it). The path is also exported programmatically as `SCHEMA_PATH`, and
 `loadSchemaSql()` returns its contents, so a migration runner does not have to
 hardcode a path.

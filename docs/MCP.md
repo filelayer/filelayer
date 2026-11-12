@@ -34,8 +34,9 @@ constructing several servers, and that cost is the property.
 Seven tools by default: list files, describe one, list its grants, share with a
 person, create a link, revoke one grant, remove a person entirely. Expiry is
 required on both sharing tools, because a permanent grant is a decision a person
-should make. Each tool declares `readOnlyHint` and `destructiveHint` so a client
-can gate the ones that write. Failures come back as the stable error `code` with
+should make. Each tool declares `readOnlyHint`, and each writing tool also declares
+`destructiveHint` and `idempotentHint`, so a client can gate the ones that
+write. Failures come back as the stable error `code` with
 the `meaning` and `fix` from the catalogue, and never with `reason`.
 
 Three things are off by default, each for its own reason: `allowDestructive`
@@ -79,6 +80,9 @@ builds the instance from the environment:
   }
 }
 ```
+
+Like the CLI, this binary opens its own database connection, so it also needs
+`pg`, an optional peer dependency of this package.
 
 `FILELAYER_AS` comes from whoever configures the client, never from a
 conversation — one process speaks for one subject, and many users means a server
