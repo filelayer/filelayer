@@ -32,16 +32,12 @@ not treat as vulnerabilities.
 
 Report it privately, by either route:
 
-- **GitHub Security Advisories** (preferred) —
+- **GitHub Security Advisories** (preferred):
   <https://github.com/filelayer/filelayer/security/advisories/new>. This creates
   a private thread with the maintainers and gives you a CVE path if one is
   warranted.
-- **Email** — `security@filelayer.dev`.
-  > **Not yet live.** `filelayer.dev` currently publishes no MX record, so mail
-  > to this address does not arrive anywhere. Use the GitHub Security Advisory
-  > route above, which is monitored. We would rather tell you an address does
-  > not work than let a report vanish into it; this note is removed once the
-  > mailbox is provisioned and tested end to end.
+- **Email:** `security@filelayer.dev`. GitHub Security Advisories remain the
+  preferred route.
 
 We do not currently run a bug bounty and have no budget for one. We will say so
 plainly rather than imply a reward that does not exist.
