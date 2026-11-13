@@ -19,10 +19,11 @@ import { createVaultApp } from '../examples/vault/server.ts';
 
 let server: Server;
 let base: string;
+const ADMIN = 'test-admin-token-0123456789';
 
 before(async () => {
   const { db } = await createTestDb();
-  server = createVaultApp(db, new MemoryStorage());
+  server = createVaultApp(db, new MemoryStorage(), { adminToken: ADMIN });
   await new Promise<void>((r) => server.listen(0, r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -32,15 +33,16 @@ after(() => server.close());
 async function call(
   method: string,
   path: string,
-  opts: { actor?: string; body?: unknown } = {},
+  opts: { actor?: string; body?: unknown; admin?: boolean; raw?: string } = {},
 ): Promise<{ status: number; json: any; text: string; headers: Headers }> {
   const res = await fetch(base + path, {
     method,
     headers: {
       ...(opts.actor ? { 'x-actor-id': opts.actor } : {}),
-      ...(opts.body ? { 'content-type': 'application/json' } : {}),
+      ...(opts.admin ? { 'x-admin-token': ADMIN } : {}),
+      ...(opts.body || opts.raw ? { 'content-type': 'application/json' } : {}),
     },
-    ...(opts.body ? { body: JSON.stringify(opts.body) } : {}),
+    ...(opts.raw ? { body: opts.raw } : opts.body ? { body: JSON.stringify(opts.body) } : {}),
   });
   const text = await res.text();
   let parsed: unknown = null;
@@ -57,18 +59,20 @@ describe('examples/vault: the whole B2B document workspace scenario over HTTP', 
     // --- setup: two tenants, four people ------------------------------------
     // Actors come first, because an org is created together with its first
     // owner. There is no window in which an org exists with nobody in it.
-    const cfo = (await call('POST', '/actors', { body: { externalId: 'cfo' } })).json.id;
-    const staff = (await call('POST', '/actors', { body: { externalId: 'staff' } })).json.id;
-    const auditorRole = (await call('POST', '/actors', { body: { externalId: 'auditor' } })).json.id;
-    const rival = (await call('POST', '/actors', { body: { externalId: 'rival' } })).json.id;
+    const cfo = (await call('POST', '/actors', { admin: true, body: { externalId: 'cfo' } })).json.id;
+    const staff = (await call('POST', '/actors', { admin: true, body: { externalId: 'staff' } })).json.id;
+    const auditorRole = (await call('POST', '/actors', { admin: true, body: { externalId: 'auditor' } })).json.id;
+    const rival = (await call('POST', '/actors', { admin: true, body: { externalId: 'rival' } })).json.id;
 
     const acme = (
       await call('POST', '/orgs', {
-        body: { externalId: 'acme', name: 'Acme', ownerActorId: cfo },
+        admin: true,
+        actor: cfo,
+        body: { externalId: 'acme', name: 'Acme' },
       })
     ).json.id;
     const initech = (
-      await call('POST', '/orgs', { body: { externalId: 'initech', ownerActorId: rival } })
+      await call('POST', '/orgs', { admin: true, actor: rival, body: { externalId: 'initech' } })
     ).json.id;
 
     // Membership changes are authorized like everything else: the org owner
@@ -301,5 +305,44 @@ describe('examples/vault: the whole B2B document workspace scenario over HTTP', 
     const integrity = (await call('GET', `/orgs/${acme}/audit-integrity`, { actor: cfo })).json;
     assert.equal(integrity.valid, true);
     assert.ok(integrity.checked > 5);
+  });
+});
+
+describe('examples/vault: the bootstrap routes and the request body', () => {
+  it('refuses to create an actor or an org without the admin credential', async () => {
+    assert.equal((await call('POST', '/actors', { body: { externalId: 'mallory' } })).status, 403);
+    const someone = (await call('POST', '/actors', { admin: true, body: { externalId: 'someone' } })).json.id;
+    assert.equal(
+      (await call('POST', '/orgs', { actor: someone, body: { externalId: 'squat' } })).status,
+      403,
+    );
+  });
+
+  it('makes the caller the owner of a new org, whatever the body names', async () => {
+    const maker = (await call('POST', '/actors', { admin: true, body: { externalId: 'maker' } })).json.id;
+    const victim = (await call('POST', '/actors', { admin: true, body: { externalId: 'victim' } })).json.id;
+    const org = (
+      await call('POST', '/orgs', {
+        admin: true,
+        actor: maker,
+        body: { externalId: 'made', ownerActorId: victim },
+      })
+    ).json.id;
+    // The maker can add a member, which only an owner or admin may; the
+    // actor named in the body cannot.
+    const other = (await call('POST', '/actors', { admin: true, body: { externalId: 'other' } })).json.id;
+    assert.equal(
+      (await call('POST', `/orgs/${org}/members`, { actor: victim, body: { actorId: other, role: 'member' } })).status >= 400,
+      true,
+    );
+    assert.equal(
+      (await call('POST', `/orgs/${org}/members`, { actor: maker, body: { actorId: other, role: 'member' } })).status,
+      204,
+    );
+  });
+
+  it('refuses a request body over its limit before holding it', async () => {
+    const big = JSON.stringify({ externalId: 'x'.repeat(70 * 1024) });
+    assert.equal((await call('POST', '/actors', { admin: true, raw: big })).status, 413);
   });
 });

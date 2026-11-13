@@ -38,9 +38,20 @@
  *   4. `upload()` takes the authenticated principal, not a bare actor id out
  *      of the request body.
  *
+ * REVISION 4 (0.35.4). Three silent decisions a review found in this file,
+ * counted against it in the benchmark and now made correctly here:
+ *   5. `POST /orgs` and `POST /actors` need an operator credential
+ *      (`x-admin-token`, compared in constant time). They took none, so anyone
+ *      who could reach them could create a tenant or an identity.
+ *   6. A new org's owner is the caller, never an `ownerActorId` from the body,
+ *      which let a request hand a new tenant to anyone it named.
+ *   7. Request bodies are read with a ceiling (64 KiB, 16 MiB for an upload's
+ *      base64), and refused with 413 before they are held in memory.
+ *
  * Run:  npm --prefix packages/core run example
  */
 
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import {
   Filelayer,
@@ -61,7 +72,25 @@ function currentActor(req: IncomingMessage): string | null {
   return (req.headers['x-actor-id'] as string) ?? null;
 }
 
-export function createVaultApp(db: Queryable, storage: StorageAdapter) {
+// Creating tenants and identities is an operator's act, not any caller's: the
+// two bootstrap routes need this credential, compared in constant time. With
+// none configured they refuse.
+function isAdmin(req: IncomingMessage, adminToken: string | undefined): boolean {
+  const got = Buffer.from(String(req.headers['x-admin-token'] ?? ''));
+  const want = Buffer.from(adminToken ?? '');
+  return want.length > 0 && got.length === want.length && timingSafeEqual(got, want);
+}
+
+// Request bodies are read with a ceiling, and an upload's is larger because it
+// carries the file as base64. Past it, the request is refused before it is held.
+const BODY_LIMIT = 64 * 1024;
+const UPLOAD_BODY_LIMIT = 16 * 1024 * 1024;
+
+export function createVaultApp(
+  db: Queryable,
+  storage: StorageAdapter,
+  opts: { adminToken?: string } = {},
+) {
   const files = new Filelayer(db, storage, { baseUrl: 'https://vault.example.com' });
 
   // Both byte paths belong to the library. Everything that happens to a
@@ -86,14 +115,18 @@ export function createVaultApp(db: Queryable, storage: StorageAdapter) {
 
       // --- admin bootstrap: orgs, actors, roles ---------------------------
       if (req.method === 'POST' && seg[0] === 'orgs' && seg.length === 1) {
+        if (!isAdmin(req, opts.adminToken)) return send(res, 403, { error: 'forbidden' });
+        if (!actorId) return send(res, 401, { error: 'unauthenticated' });
         const b = await json(req);
         // The org's first owner is created with the org, so there is never a
-        // memberless org for someone to walk into.
+        // memberless org for someone to walk into, and it is the caller: an
+        // owner named in the body would let a request hand a tenant to anyone.
         return send(res, 201, await files.createOrg(b.externalId, b.name, {
-          ownerActorId: b.ownerActorId,
+          ownerActorId: actorId,
         }));
       }
       if (req.method === 'POST' && seg[0] === 'actors' && seg.length === 1) {
+        if (!isAdmin(req, opts.adminToken)) return send(res, 403, { error: 'forbidden' });
         const b = await json(req);
         return send(res, 201, await files.createActor(b.externalId));
       }
@@ -109,7 +142,7 @@ export function createVaultApp(db: Queryable, storage: StorageAdapter) {
 
       // --- documents -------------------------------------------------------
       if (req.method === 'POST' && seg[0] === 'orgs' && seg[2] === 'files') {
-        const b = await json(req);
+        const b = await json(req, UPLOAD_BODY_LIMIT);
         const file = await files.upload(principal, seg[1]!, {
           name: b.name,
           contentType: b.contentType,
@@ -189,6 +222,7 @@ export function createVaultApp(db: Queryable, storage: StorageAdapter) {
       // One catch. Filelayer has already collapsed the internal reason into a
       // status that does not leak existence, so there is nothing to decide.
       if (err instanceof FilelayerError) return send(res, err.status, { error: err.code });
+      if (err instanceof BodyTooLarge) return send(res, 413, { error: 'payload_too_large' });
       return send(res, 500, { error: 'internal' });
     }
   });
@@ -200,21 +234,30 @@ function send(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+class BodyTooLarge extends Error {}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function json(req: IncomingMessage): Promise<Record<string, any>> {
+async function json(req: IncomingMessage, limit = BODY_LIMIT): Promise<Record<string, any>> {
+  if (Number(req.headers['content-length'] ?? 0) > limit) throw new BodyTooLarge();
   const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
+  let size = 0;
+  for await (const c of req) {
+    size += (c as Buffer).length;
+    if (size > limit) throw new BodyTooLarge();
+    chunks.push(c as Buffer);
+  }
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {};
 }
 
 // --- boot: production wiring -------------------------------------------------
 // Everything above this line is examples/vault/server.ts from the published
 // tarball, unchanged except for the import path. This block replaces its
-// four-line demo boot (createTestDb + MemoryStorage) with what a deployment
-// needs: a pg pool, the schema applied once under a lock, and S3Storage.
+// demo boot (createTestDb + MemoryStorage) with what a deployment needs: a pg
+// pool, the schema applied once under a lock, S3Storage, the operator
+// credential from the environment, and the background jobs on a schedule.
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { default: pg } = await import('pg');
-  const { S3Storage, schemaStatus } = await import('@filelayer/core');
+  const { Filelayer: Library, S3Storage, schemaStatus } = await import('@filelayer/core');
   const { readFileSync } = await import('node:fs');
   const { createRequire } = await import('node:module');
   const env = (k: string): string => {
@@ -244,5 +287,19 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     accessKeyId: env('AWS_ACCESS_KEY_ID'),
     secretAccessKey: env('AWS_SECRET_ACCESS_KEY'),
   });
-  createVaultApp(pool, storage).listen(Number(process.env.PORT ?? 8787));
+  createVaultApp(pool, storage, { adminToken: env('VAULT_ADMIN_TOKEN') }).listen(
+    Number(process.env.PORT ?? 8787),
+  );
+
+  // The background jobs nothing runs for you: orphaned objects from a crash
+  // between the byte write and the metadata commit, unredeemed upload
+  // reservations, and a seal on the audit chain. Acting, not dry. Trimming the
+  // audit log is left out: retention is a policy, and it is yours to choose.
+  const jobs = new Library(pool, storage, { baseUrl: 'https://vault.example.com' });
+  const maintain = () =>
+    jobs
+      .runMaintenance({ dryRun: false, storageOrphans: { olderThanSeconds: 3600 } })
+      .catch((e) => console.error('maintenance failed', e?.summary ?? e));
+  void maintain();
+  setInterval(maintain, 15 * 60 * 1000).unref();
 }

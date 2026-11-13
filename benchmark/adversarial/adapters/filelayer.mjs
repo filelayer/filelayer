@@ -62,15 +62,19 @@ export const meta = {
 
 export async function create() {
   const { db } = await createTestDb();
-  const server = createVaultApp(db, new MemoryStorage());
+  // The bootstrap routes need an operator credential from 0.35.4 on; an
+  // earlier example ignores both the option and the header.
+  const ADMIN = 'adversarial-suite-admin-token';
+  const server = createVaultApp(db, new MemoryStorage(), { adminToken: ADMIN });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  const call = async (method, path, { as, body, raw } = {}) => {
+  const call = async (method, path, { as, body, raw, admin } = {}) => {
     const res = await fetch(base + path, {
       method,
       headers: {
         ...(as ? { 'x-actor-id': as } : {}),
+        ...(admin ? { 'x-admin-token': ADMIN } : {}),
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -87,7 +91,8 @@ export async function create() {
     return { status: res.status, json, text, headers, raw };
   };
 
-  const actor = async (name) => (await call('POST', '/actors', { body: { externalId: name } })).json.id;
+  const actor = async (name) =>
+    (await call('POST', '/actors', { admin: true, body: { externalId: name } })).json.id;
 
   // ---- the world every attack runs against --------------------------------
   const alice = await actor('alice');      // org A owner
@@ -96,8 +101,10 @@ export async function create() {
   const bob = await actor('bob');          // org B owner
   const eve = await actor('eve');          // org B member -- the attacker
 
-  const orgA = (await call('POST', '/orgs', { body: { externalId: 'acme', ownerActorId: alice } })).json.id;
-  const orgB = (await call('POST', '/orgs', { body: { externalId: 'beta', ownerActorId: bob } })).json.id;
+  // The owner is the caller from 0.35.4 on; `ownerActorId` is what an earlier
+  // example read, and the current one ignores it.
+  const orgA = (await call('POST', '/orgs', { admin: true, as: alice, body: { externalId: 'acme', ownerActorId: alice } })).json.id;
+  const orgB = (await call('POST', '/orgs', { admin: true, as: bob, body: { externalId: 'beta', ownerActorId: bob } })).json.id;
   await call('POST', `/orgs/${orgA}/members`, { as: alice, body: { actorId: adam, role: 'admin' } });
   await call('POST', `/orgs/${orgA}/members`, { as: alice, body: { actorId: mallory, role: 'member' } });
   await call('POST', `/orgs/${orgB}/members`, { as: bob, body: { actorId: eve, role: 'member' } });

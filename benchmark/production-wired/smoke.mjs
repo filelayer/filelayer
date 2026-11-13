@@ -47,7 +47,11 @@ try {
   // The variant must be the published example plus a boot block, nothing else:
   // a variant that drifted from what ships would be counting a different app.
   const { readFileSync } = await import('node:fs');
-  const shipped = readFileSync(join(HERE, '..', 'node_modules', '@filelayer', 'core', 'examples', 'vault', 'server.ts'), 'utf8');
+  // `--against-tree` compares with this repository's example instead, for the
+  // window between changing the example and publishing it.
+  const shipped = process.argv.includes('--against-tree')
+    ? readFileSync(join(HERE, '..', '..', 'packages', 'core', 'examples', 'vault', 'server.ts'), 'utf8')
+    : readFileSync(join(HERE, '..', 'node_modules', '@filelayer', 'core', 'examples', 'vault', 'server.ts'), 'utf8');
   const mine = readFileSync(join(HERE, 'server.ts'), 'utf8');
   const head = (t) => t.slice(0, t.indexOf('// --- boot')).replace("from '../../src/index.ts'", "from '@filelayer/core'");
   if (head(shipped) !== head(mine)) await fail('server.ts above the boot block differs from the published example');
@@ -85,6 +89,7 @@ try {
       S3_BUCKET: 'vault-prod',
       AWS_ACCESS_KEY_ID: 'AKIDSMOKE',
       AWS_SECRET_ACCESS_KEY: 'smoke-secret',
+      VAULT_ADMIN_TOKEN: 'smoke-admin-token',
       PORT: String(port),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -92,10 +97,14 @@ try {
   let stderr = '';
   server.stderr.on('data', (b) => (stderr += b));
 
-  const call = async (method, path, { as, body } = {}) => {
+  const call = async (method, path, { as, body, admin } = {}) => {
     const r = await fetch(`http://127.0.0.1:${port}${path}`, {
       method,
-      headers: { ...(as ? { 'x-actor-id': as } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
+      headers: {
+        ...(as ? { 'x-actor-id': as } : {}),
+        ...(admin ? { 'x-admin-token': 'smoke-admin-token' } : {}),
+        ...(body ? { 'content-type': 'application/json' } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(10_000),
     });
@@ -117,9 +126,12 @@ try {
   }
   if (!up) await fail(`server.ts did not listen within 30 s:\n${stderr}`);
 
-  const alice = (await call('POST', '/actors', { body: { externalId: 'alice' } })).json.id;
-  const eve = (await call('POST', '/actors', { body: { externalId: 'eve' } })).json.id;
-  const org = (await call('POST', '/orgs', { body: { externalId: 'acme', ownerActorId: alice } })).json.id;
+  if ((await call('POST', '/actors', { body: { externalId: 'nobody' } })).status !== 403) {
+    await fail('an actor was created without the admin credential');
+  }
+  const alice = (await call('POST', '/actors', { admin: true, body: { externalId: 'alice' } })).json.id;
+  const eve = (await call('POST', '/actors', { admin: true, body: { externalId: 'eve' } })).json.id;
+  const org = (await call('POST', '/orgs', { admin: true, as: alice, body: { externalId: 'acme' } })).json.id;
   const marker = 'PRODUCTION-WIRED';
   const put = await call('POST', `/orgs/${org}/files`, {
     as: alice,
@@ -133,10 +145,22 @@ try {
   const stored = [...s3.objects.values()].some((o) => o.body.toString() === marker);
   if (!stored) await fail('the bytes are not in the S3 store');
 
+  // The boot block's maintenance ran, acting, and the orphan job among it.
+  const { default: pgLib } = await import(pathToFileURL(createRequire(join(app, 'package.json')).resolve('pg')).href);
+  const check = new pgLib.Client({ connectionString: `postgresql://postgres:postgres@127.0.0.1:${pgPort}/postgres` });
+  await check.connect();
+  const { rows: runs } = await check.query(`SELECT job, outcome FROM job_run ORDER BY started_at`);
+  await check.end();
+  const orphanRun = runs.find((r) => r.job === 'storage_orphans');
+  if (!orphanRun || orphanRun.outcome !== 'ok') {
+    await fail(`no successful storage_orphans run in job_run: ${JSON.stringify(runs)}`);
+  }
+
   console.log(
     'filelayer-production smoke: clean. Schema applied by the boot block on an empty PostgreSQL; ' +
       'upload stored in the S3 store; owner read the bytes back; a non-member was refused ' +
-      `(${refused.status}).`,
+      `(${refused.status}); bootstrap refused without the admin credential; maintenance ran, ` +
+      `storage_orphans included (${runs.map((r) => r.job).join(', ')}).`,
   );
   await cleanup();
 } catch (e) {

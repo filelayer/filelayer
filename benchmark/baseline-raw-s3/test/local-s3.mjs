@@ -134,6 +134,7 @@ export function createLocalS3({ accessKeyId, secretAccessKey }) {
         objects.set(key, {
           body,
           contentType: req.headers['content-type'] ?? 'application/octet-stream',
+          lastModified: new Date(),
         });
         res.writeHead(200, { ETag: `"${sha256hex(body).slice(0, 32)}"` });
         res.end();
@@ -143,6 +144,22 @@ export function createLocalS3({ accessKeyId, secretAccessKey }) {
     if (req.method === 'DELETE') {
       objects.delete(key);
       res.writeHead(204).end();
+      return;
+    }
+    // ListObjectsV2 on a path-style bucket: GET /<bucket>?list-type=2&prefix=.
+    // One page, never truncated. Added so a client's orphan collection can run
+    // here; the raw-S3 baseline itself does not list.
+    if (req.method === 'GET' && url.searchParams.get('list-type') === '2' && !key.includes('/')) {
+      const prefix = `${key}/${url.searchParams.get('prefix') ?? ''}`;
+      const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const items = [...objects.entries()]
+        .filter(([k]) => k.startsWith(prefix))
+        .map(([k, o]) =>
+          `<Contents><Key>${esc(k.slice(key.length + 1))}</Key><Size>${o.body.length}</Size>` +
+          `<LastModified>${(o.lastModified ?? new Date()).toISOString()}</LastModified></Contents>`)
+        .join('');
+      res.writeHead(200, { 'content-type': 'application/xml' });
+      res.end(`<?xml version="1.0"?><ListBucketResult><IsTruncated>false</IsTruncated>${items}</ListBucketResult>`);
       return;
     }
     const obj = objects.get(key);
