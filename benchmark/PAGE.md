@@ -69,18 +69,18 @@ it is vendor code, the way the Supabase or AWS SDK is.
 | Convex, not executed or compiled | 841 | 0 | 6.3x |
 | Vercel Blob, not executed or compiled | 884 | 21 | 6.6x |
 
-The median is taken over the two alternatives that ran: 638.5 lines against
-133, or 4.8x. Convex and Vercel Blob are listed for completeness and are left
-out of it, because code that was never executed or compiled may not even work.
-
-The example runs on an in-memory database and in-memory storage, and the
-alternatives are counted with their production wiring. So the same example is
+**Wired as in production, the median of the alternatives that ran is 699.5
+lines against Filelayer's 211, or 3.3x**, application and infrastructure lines
+together. That is the number to compare if you are comparing deployments. The
+example runs on an in-memory database and in-memory storage, and the
+alternatives are counted with their production wiring, so the same example is
 also counted wired as a deployment needs it: a pg pool, the schema applied once
 under a lock, `S3Storage`, and the IAM and bucket policy it needs. It runs end
 to end against PostgreSQL and an S3 store (`benchmark/production-wired/`).
-Application and infrastructure lines together, the median of the alternatives
-that ran is 699.5 against its 211, or **3.3x**. That is the number to compare
-if you are comparing deployments.
+
+Against the example as it ships, the median is 638.5 application lines against
+133, or 4.8x. Both medians leave out Convex and Vercel Blob, which are listed
+for completeness: code that was never executed or compiled may not even work.
 
 **The library is not nothing.** Its code runs in your process and its schema in
 your database, so it is counted too, apart from the lines you write:
@@ -150,18 +150,18 @@ Supabase, whose platform is emulated.
 **The comparison uses only the 18 attacks that every executed implementation
 can express.** None of the three was breached on them.
 
-| Implementation | Defended | Partial | Audit gap | Breach |
-|---|---:|---:|---:|---:|
-| Filelayer 0.35.2 | 18 of 18 | 0 | 0 | 0 |
-| Raw S3 | 18 of 18 | 0 | 0 | 0 |
-| Supabase | 16 of 18 | 2 | 0 | 0 |
-| Filelayer, earlier version (control) | 16 of 18 | 0 | 0 | 1 |
+| Implementation | Defended | Partial | Breach |
+|---|---:|---:|---:|
+| Filelayer 0.35.2 | 18 of 18 | 0 | 0 |
+| Raw S3 | 18 of 18 | 0 | 0 |
+| Supabase, as built | 16 of 18 | 2 | 0 |
+| Filelayer, earlier version (control) | 16 of 18 | 0 | 1 |
 
-Before the revision round, raw S3 and Supabase each had an audit gap on the same
-attack: a refused cross-tenant read, and probes at documents that do not exist,
-left no event in the application's own audit trail. Nothing was disclosed, and
-gateway or load balancer logs may have held them. A few lines closed it in both;
-the diffs are in `benchmark/revisions/`.
+Before the revision round, neither raw S3 nor Supabase recorded a refused
+cross-tenant read, or probes at documents that do not exist, in the
+application's own audit trail. Nothing was disclosed, and gateway or load
+balancer logs may have held them. A few lines closed it in both; the diffs are
+in `benchmark/revisions/`.
 
 Supabase's two partials are one design choice, labelled "as built": its share
 gateway redirects to a signed URL valid for 30 seconds instead of streaming the
