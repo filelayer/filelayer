@@ -24,8 +24,9 @@ npm run bootstrap        # npm ci in packages/core
 npm test                 # the security property suite
 ```
 
-PGlite is a **devDependency and an optional peer dependency** of
-`@filelayer/core`, never a dependency: a library you point at your own Postgres
+PGlite is a **devDependency** of `@filelayer/core`, and neither a dependency
+nor a peer dependency (a peer turned adding the package to a project with
+PGlite 0.5.x into ERESOLVE; `src/db.ts` checks the version when PGlite loads): a library you point at your own Postgres
 must not put an embedded WebAssembly Postgres into every production
 `node_modules`. `npm run bootstrap` installs it for you here, because the suite
 needs it. If you add a runtime dependency, the release gate below will fail —

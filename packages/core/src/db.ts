@@ -60,6 +60,8 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { FilelayerError } from './errors.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -552,9 +554,10 @@ export async function schemaStatus(db: Queryable): Promise<SchemaStatus> {
  * PGlite is an embedded WASM build of PostgreSQL. It is what `createTestDb()`
  * and `Filelayer.quickstart()` run on, and it is superb for that -- but a
  * library whose premise is "point it at YOUR Postgres" has no business putting
- * a second Postgres into every production `node_modules`. So it is declared as
- * an OPTIONAL PEER DEPENDENCY: named, version-ranged and discoverable, but not
- * installed for anyone who never calls the two helpers that use it.
+ * a second Postgres into every production `node_modules`. So it is not a
+ * dependency, and from 0.35.4 not a peer dependency either (see
+ * PGLITE_SUPPORTED below): you install it yourself, for the two helpers that
+ * use it, and the supported line is checked when it loads.
  *
  * The cost of that choice is this constant and the `catch` below. Without them
  * the failure mode for a consumer who calls `createTestDb()` is a raw
@@ -584,6 +587,39 @@ const PGLITE = '@electric-sql/pglite';
  */
 const PGLITE_INSTALL = 'npm install --save-dev "@electric-sql/pglite@^0.3.11"';
 
+/**
+ * THE SUPPORTED LINE, CHECKED WHEN PGLITE IS LOADED, NOT AT INSTALL.
+ *
+ * Until 0.35.4 the range was a `peerDependencies` entry, optional. npm treats an
+ * optional peer that IS installed as a constraint, so the first thing an agent
+ * types, installing this package together with PGlite and no version, resolved
+ * PGlite's `latest` (0.5.x), met `^0.3.11`, and stopped with ERESOLVE: no tree at all, at
+ * the first contact. Production installs never need PGlite, so the peer entry
+ * protected nobody. It is gone, and the same range is enforced here, at the one
+ * moment it matters, with an error that names the command that fixes it.
+ */
+const PGLITE_SUPPORTED = /^0\.3\./;
+
+/** The installed PGlite's version, read from its own package.json. */
+function installedPgliteVersion(): string | null {
+  try {
+    let dir = dirname(fileURLToPath(import.meta.resolve(PGLITE)));
+    for (;;) {
+      try {
+        const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+        if (pkg.name === PGLITE) return String(pkg.version);
+      } catch {
+        // no package.json at this level; keep walking up
+      }
+      const up = dirname(dir);
+      if (up === dir) return null;
+      dir = up;
+    }
+  } catch {
+    return null;
+  }
+}
+
 /** True when `err` is Node refusing to resolve `spec`, and not some other failure. */
 function isModuleNotFound(err: unknown, spec: string): boolean {
   const code = (err as { code?: unknown } | null)?.code;
@@ -601,7 +637,7 @@ function isModuleNotFound(err: unknown, spec: string): boolean {
  * thing it is NOT is multi-process, which matters for exactly one test; see
  * test/security.test.ts, "atomic download cap", for what that weakens.
  *
- * REQUIRES the optional peer dependency `@electric-sql/pglite`. Production code
+ * REQUIRES `@electric-sql/pglite` 0.3.x, which you install yourself. Production code
  * does not need it: hand `new Filelayer(...)` your own `pg.Pool`, or anything
  * else that satisfies `Queryable`, and this function is never reached.
  */
@@ -620,12 +656,17 @@ async function importPglite(): Promise<{
   PGlite: typeof import('@electric-sql/pglite').PGlite;
   pgcrypto: typeof import('@electric-sql/pglite/contrib/pgcrypto').pgcrypto;
 }> {
+  // Checked before loading it: a version outside the supported line is said to
+  // be one, with the fix, rather than surfacing as an unrelated failure later.
+  const v = installedPgliteVersion();
+  if (v !== null && !PGLITE_SUPPORTED.test(v)) throw unsupported(v);
+  let loaded;
   try {
     const [mod, contrib] = await Promise.all([
       import('@electric-sql/pglite'),
       import('@electric-sql/pglite/contrib/pgcrypto'),
     ]);
-    return { PGlite: mod.PGlite, pgcrypto: contrib.pgcrypto };
+    loaded = { PGlite: mod.PGlite, pgcrypto: contrib.pgcrypto };
   } catch (err) {
     if (!isModuleNotFound(err, PGLITE)) throw err;
     throw new Error(
@@ -639,7 +680,7 @@ async function importPglite(): Promise<{
         `version outside the supported range, and npm then refuses the install with\n` +
         `ERESOLVE rather than giving you a working tree.\n` +
         `\n` +
-        `It is an OPTIONAL peer dependency of @filelayer/core, on purpose: it is an\n` +
+        `It is not a dependency of @filelayer/core, on purpose: it is an\n` +
         `embedded WASM PostgreSQL used by createTestDb() and Filelayer.quickstart()\n` +
         `for tests and local development, and shipping it to production installs of\n` +
         `a library that talks to your own Postgres would be wrong.\n` +
@@ -655,4 +696,14 @@ async function importPglite(): Promise<{
       { cause: err },
     );
   }
+  return loaded;
 }
+
+function unsupported(version: string): FilelayerError {
+  const e = new FilelayerError('pglite_unsupported_version', `installed ${PGLITE} ${version}`);
+  e.message =
+    `pglite_unsupported_version: ${PGLITE} ${version} is installed, and @filelayer/core ` +
+    `supports the 0.3.x line.\n\n  ${PGLITE_INSTALL}\n\n${e.fix}`;
+  return e;
+}
+

@@ -208,6 +208,10 @@ const DATED = [
   // bump rewrote both in ci.yml.
   /\bfailing\s+on\s+the\s+`?v?\d+\.\d+\.\d+/,
   /\bthat\s+is\s+how\s+`?v?\d+\.\d+\.\d+/,
+  // "the same install failing with 0.35.3 from npm": a named published
+  // release, used as the known-bad case of a self-test. Moving it forward would
+  // point the self-test at the fixed release.
+  /\bv?\d+\.\d+\.\d+`?\s+from\s+npm\b/,
 ];
 
 /**

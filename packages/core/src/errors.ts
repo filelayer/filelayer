@@ -184,6 +184,11 @@ export const ERROR_CODES = {
     meaning: '`ttlSeconds` for redirect delivery was below 1.',
     fix: 'Use at least 1. Values above the maximum are clamped rather than refused.',
   },
+  pglite_unsupported_version: {
+    status: 500,
+    meaning: 'createTestDb() or Filelayer.quickstart() found an @electric-sql/pglite outside the 0.3.x line this library supports.',
+    fix: "Install the supported line: npm install --save-dev '@electric-sql/pglite@^0.3.11'. Production code does not need PGlite at all; pass your own pg.Pool to new Filelayer().",
+  },
   storage_cannot_list: {
     status: 500,
     meaning: 'Orphan collection was asked of a storage adapter that cannot list objects.',
@@ -266,5 +271,15 @@ export class FilelayerError extends Error {
     this.code = code;
     this.reason = reason;
     this.headers = headers;
+  }
+
+  /** What the code means, from the catalogue (`errors.json`). */
+  get meaning(): string {
+    return ERROR_CODES[this.code].meaning;
+  }
+
+  /** What to do about it, from the catalogue (`errors.json`). */
+  get fix(): string {
+    return ERROR_CODES[this.code].fix;
   }
 }

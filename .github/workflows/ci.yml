@@ -558,16 +558,15 @@ jobs:
                      console.error("::error::the published package declares runtime dependencies: "+deps.join(", "));
                      process.exit(1);
                    }
-                   const meta=(p.peerDependenciesMeta||{})["@electric-sql/pglite"];
-                   if (!meta || meta.optional !== true) {
-                     console.error("::error::@electric-sql/pglite must be an OPTIONAL peer dependency");
+                   if ((p.peerDependencies||{})["@electric-sql/pglite"]) {
+                     console.error("::error::@electric-sql/pglite must not be a peer dependency: an installed peer is a range npm enforces, and it made adding this package to a project with PGlite 0.5.x fail with ERESOLVE");
                      process.exit(1);
                    }
-                   console.log("tarball declares 0 runtime dependencies; pglite is an optional peer");'
+                   console.log("tarball declares 0 runtime dependencies, and PGlite is not a peer");'
 
       # `verify-install.mjs` drives `Filelayer.quickstart()`, which runs on an
-      # embedded WASM Postgres. That engine is `@electric-sql/pglite`, an
-      # OPTIONAL PEER dependency of @filelayer/core rather than a dependency:
+      # embedded WASM Postgres. That engine is `@electric-sql/pglite`, which is
+      # neither a dependency nor (from 0.35.4) a peer of @filelayer/core:
       # a library you point at your own Postgres must not push a second one
       # into every production install. So the CONSUMER installs it here, as a
       # dev dependency, exactly as our documentation tells a reader to before
@@ -575,16 +574,29 @@ jobs:
       # already there.
       #
       # The version constraint is part of the documented command. pglite's
-      # `latest` on npm is a 0.5.x release, outside the `^0.3.11` peer range
-      # this package declares, so a bare install of it can resolve outside the
-      # range and end in ERESOLVE. tools/check-install-commands.mjs fails the
-      # build if this line, or any other documented install command, loses it.
-      - name: Install the optional peer the quickstart helper needs
+      # `latest` on npm is a 0.5.x release, outside the supported 0.3.x line,
+      # and quickstart() refuses it with pglite_unsupported_version.
+      # tools/check-install-commands.mjs fails the build if this line, or any
+      # other documented install command, loses it.
+      - name: Install the PGlite the quickstart helper needs
         working-directory: ${{ runner.temp }}/consumer
         run: npm install --save-dev "@electric-sql/pglite@^0.3.11"
 
       - name: Import it and use it
         run: node "$GITHUB_WORKSPACE/tools/verify-install.mjs" "$RUNNER_TEMP/consumer"
+
+      # THE LIBRARY ON THE OLDEST NODE 22. `engines` says >=22.18 because the
+      # repository's TypeScript examples and the benchmark run with Node's type
+      # stripping. Whether the compiled library needs it is a separate question,
+      # answered here: the same install, import and round trip on Node 22.0.0.
+      # Evidence for lowering `engines`, not the change itself.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.0.0'
+      - name: The same round trip on Node 22.0.0
+        run: |
+          node --version
+          node "$GITHUB_WORKSPACE/tools/verify-install.mjs" "$RUNNER_TEMP/consumer"
 
   # ---------------------------------------------------------------------------
   # The release gate: the full advertised lifecycle, from an empty directory.
@@ -720,6 +732,19 @@ jobs:
         run: npm run check:mcp-npx -- --self-test
         env:
           FILELAYER_MCP_NPX_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/filelayer_verify
+
+      # A COLD INSTALL WITH PGLITE UNVERSIONED. Until 0.35.4 PGlite was an
+      # optional peer at ^0.3.11, and a project that already had PGlite's
+      # latest (0.5.x) could not add this package: ERESOLVE, at first contact.
+      # The peer is gone and src/db.ts checks the version when PGlite loads.
+      # This installs the packed tarball beside an unversioned PGlite, in both
+      # orders, requires quickstart() to refuse with pglite_unsupported_version
+      # and the command that fixes it, and requires that command to work. The
+      # self-test shows the same install failing with 0.35.3 from npm.
+      - name: The tarball installs beside an unversioned PGlite, and says what to install when it is unsupported
+        run: npm run check:pglite-install
+      - name: The PGlite install check sees ERESOLVE with 0.35.3 from npm
+        run: npm run check:pglite-install -- --self-test
 
       # THE ERROR CATALOGUE, BOTH DIRECTIONS. `src/errors.ts` is the one place
       # the set of codes is decided, and the constructor is typed against it, so

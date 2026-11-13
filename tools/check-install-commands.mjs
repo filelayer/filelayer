@@ -95,7 +95,11 @@ const CORE_PKG = 'packages/core/package.json';
  * `rangeFrom` names the field in packages/core/package.json that is the single
  * source of truth for the range. Nothing in this file hard-codes a version.
  */
-const POLICY = [{ pkg: '@electric-sql/pglite', rangeFrom: 'peerDependencies' }];
+// From 0.35.4 PGlite is not a peer dependency at all (an installed optional
+// peer is a constraint npm enforces, and it turned the first install into
+// ERESOLVE). The supported line is the range the package develops and tests
+// against, `devDependencies`, and src/db.ts refuses any other at runtime.
+const POLICY = [{ pkg: '@electric-sql/pglite', rangeFrom: 'devDependencies' }];
 
 /** The files that must contain the canonical command exactly. */
 const VERBATIM_IN = ['README.md', 'docs/QUICKSTART.md', 'packages/core/src/db.ts'];
@@ -535,11 +539,13 @@ function main(argv) {
   }
   for (const entry of POLICY) {
     const declared = declaredRangeFor(entry);
-    if (corePkg.peerDependenciesMeta?.[entry.pkg]?.optional !== true) {
+    // It must NOT come back as a peer: an installed optional peer is a range
+    // npm enforces, and it made the plain install of both packages ERESOLVE.
+    if (corePkg.peerDependencies?.[entry.pkg] || corePkg.peerDependenciesMeta?.[entry.pkg]) {
       problems.push({
         where: CORE_PKG,
         what: entry.pkg,
-        why: 'is not marked optional in peerDependenciesMeta, so a consumer who never calls the test helper is warned about a package they do not need.',
+        why: 'is declared as a peer dependency again. An installed optional peer is a constraint npm enforces: `npm install` of the package with PGlite\'s latest stops with ERESOLVE. The supported line is checked at runtime in src/db.ts instead.',
       });
     }
     const dev = corePkg.devDependencies?.[entry.pkg];

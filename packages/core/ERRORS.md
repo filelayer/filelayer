@@ -174,6 +174,12 @@ Something failed that is not one of the above. This is the only code here that m
 
 **Fix.** Report it: https://github.com/filelayer/filelayer/issues
 
+### `pglite_unsupported_version` — 500
+
+createTestDb() or Filelayer.quickstart() found an @electric-sql/pglite outside the 0.3.x line this library supports.
+
+**Fix.** Install the supported line: npm install --save-dev '@electric-sql/pglite@^0.3.11'. Production code does not need PGlite at all; pass your own pg.Pool to new Filelayer().
+
 ### `redirect_bad_ttl` — 500
 
 `ttlSeconds` for redirect delivery was below 1.
@@ -206,4 +212,4 @@ The configured storage adapter cannot sign an upload.
 
 ---
 
-30 codes. Generated for `0.35.3`.
+31 codes. Generated for `0.35.3`.

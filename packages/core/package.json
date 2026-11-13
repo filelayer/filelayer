@@ -109,15 +109,11 @@
     "prepublishOnly": "node ../../tools/refuse-unverified-publish.mjs"
   },
   "peerDependencies": {
-    "@electric-sql/pglite": "^0.3.11",
     "@modelcontextprotocol/sdk": "^1.32.0",
     "zod": "^3.25.0 || ^4.0.0",
     "pg": "^8.0.0"
   },
   "peerDependenciesMeta": {
-    "@electric-sql/pglite": {
-      "optional": true
-    },
     "@modelcontextprotocol/sdk": {
       "optional": true
     },

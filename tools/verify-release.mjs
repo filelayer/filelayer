@@ -30,8 +30,8 @@
  * WHY THIS SCRIPT INSTALLS PGLITE HALFWAY THROUGH
  * -----------------------------------------------------------------------------
  *
- * `@electric-sql/pglite` -- an embedded WASM PostgreSQL -- is an OPTIONAL PEER
- * dependency of this package, not a dependency. A production install therefore
+ * `@electric-sql/pglite` -- an embedded WASM PostgreSQL -- is not a dependency
+ * of this package, and from 0.35.4 not a peer dependency either. A production install therefore
  * contains no database at all, which is the whole premise: you point Filelayer
  * at YOUR Postgres. Only two functions need pglite, `createTestDb()` and the
  * `Filelayer.quickstart()` built on it, and both are test/development helpers.
@@ -81,12 +81,16 @@ const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..');
 const CORE = join(ROOT, 'packages', 'core');
 const KEEP = process.argv.includes('--keep');
 
-/** The optional peer dependency. Named once so the two phases cannot disagree. */
+/** The embedded test database. Named once so the two phases cannot disagree. */
 const PGLITE = '@electric-sql/pglite';
 
-/** The range the published package declares. Read, not written. */
+/**
+ * The supported range. Read, not written: from 0.35.4 it is the range the
+ * package develops against (`devDependencies`), enforced at runtime by
+ * src/db.ts, and no longer a peer dependency.
+ */
 const PGLITE_RANGE = JSON.parse(readFileSync(join(CORE, 'package.json'), 'utf8'))
-  .peerDependencies?.[PGLITE];
+  .devDependencies?.[PGLITE];
 
 /**
  * The install command README.md gives a first user, character for character.
@@ -158,7 +162,7 @@ assert.equal(
   found,
   null,
   '@electric-sql/pglite resolved at ' + found + ' -- installing @filelayer/core must not ' +
-    'install an embedded Postgres. It is an OPTIONAL PEER dependency, not a dependency.',
+    'install an embedded Postgres. It is not a dependency.',
 );
 ok('no @electric-sql/pglite on disk');
 
@@ -394,12 +398,12 @@ assert.deepEqual(
   'the published package declares dependencies: ' + JSON.stringify(pkg.dependencies),
 );
 assert.ok(
-  pkg.peerDependenciesMeta?.['@electric-sql/pglite']?.optional === true,
-  '@electric-sql/pglite must be declared an OPTIONAL peer dependency, so that a consumer ' +
-    'who wants createTestDb() is told what to install and a consumer who does not gets no ' +
-    'install warning',
+  !pkg.peerDependencies?.['@electric-sql/pglite'],
+  '@electric-sql/pglite must not be a peer dependency: an installed peer is a range npm ' +
+    'enforces, and it made adding this package to a project with PGlite 0.5.x fail with ' +
+    'ERESOLVE. The supported line is checked when PGlite loads (src/db.ts).',
 );
-ok('0 deps, pglite optional-peer');
+ok('0 deps, PGlite not a peer');
 `;
 
 /** PHASE 1's optional lifecycle: real Postgres, over `pg`, with no pglite. */
@@ -489,7 +493,7 @@ const npmInstall = (args, stage) => {
   return r;
 };
 const install = npmInstall([tarball], 'npm install (from the packed tarball)');
-// An optional peer dependency that is missing must not warn. A consumer who
+// PGlite, absent, must not warn. A consumer who
 // never calls createTestDb() should see nothing at all about pglite.
 const installNoise = (install.stderr || '') + (install.stdout || '');
 if (/pglite/i.test(installNoise)) {
@@ -554,7 +558,7 @@ if (DB_URL) {
   );
 }
 
-// --- PHASE 2: + the optional peer dependency, for the documented quickstart ---
+// --- PHASE 2: + PGlite, installed as documented, for the quickstart ----------
 //
 // `Filelayer.quickstart()` starts an in-process WASM Postgres, so it needs
 // @electric-sql/pglite. That package is deliberately NOT a dependency of

@@ -82,7 +82,7 @@ try {
   if (!tarball) die('pack', `no .tgz landed in ${workdir}\n${packed.out}`);
   console.log(`ok (${tarball})`);
 
-  // PGlite is a peer, not a dependency: `quickstart()` asks for it at runtime
+  // PGlite is not a dependency: `quickstart()` asks for it at runtime
   // and says so in a long error if it is absent. The example uses it, so the
   // harness installs it exactly as the example's README tells a reader to.
   step('install the tarball and pglite');
