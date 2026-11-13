@@ -31,10 +31,10 @@
     "baseline-supabase": {
       "root": "./baseline-supabase",
       "note": "Supabase Storage + Postgres RLS; executed against PGlite",
+      "auditChain": ["sql/30_audit.sql"],
       "app": [
         { "glob": "sql/10_app_schema.sql", "why": "schema the developer owns" },
         { "glob": "sql/20_rls_policies.sql", "why": "the authorization kernel + 19 policies" },
-        { "glob": "sql/25_config_b_lockdown.sql", "why": "Config B lockdown, 8 net lines" },
         { "glob": "sql/30_audit.sql", "why": "tamper-evident audit chain" },
         { "glob": "src/app/**", "why": "application logic" }
       ],
@@ -43,6 +43,10 @@
         { "glob": "src/platform/**", "why": "Storage API + signed URLs Supabase provides" }
       ],
       "excluded": [
+        {
+          "glob": "sql/25_config_b_lockdown.sql",
+          "why": "Config B, the every-byte-through-the-gateway lockdown. The attacks run against Config A, so the lines counted are Config A's (review of 2026-11-13)"
+        },
         {
           "glob": "sql/90_rbac_jwt_variant.sql",
           "why": "measurement artefact: the JWT-claim RBAC variant, quarantined by the baseline's own author and never loaded by the production config"
@@ -55,6 +59,7 @@
     "baseline-raw-s3": {
       "root": "./baseline-raw-s3",
       "note": "raw S3/R2 presigned URLs + Postgres; executed against a SigV4-verifying local store",
+      "auditChain": ["src/audit.mjs"],
       "app": [{ "glob": "src/**", "why": "application logic" }],
       "infra": [{ "glob": "infra/*.json", "why": "bucket policy, CORS, IAM -- authored by the developer" }],
       "excluded": [{ "glob": "infra/*.md", "why": "prose, not config" }],
@@ -64,6 +69,7 @@
     "baseline-vercel-blob": {
       "root": "./baseline-vercel-blob",
       "note": "Vercel Blob (private store) + Postgres; NEVER EXECUTED OR COMPILED",
+      "auditChain": ["lib/audit.ts"],
       "executed": false,
       "app": [
         { "glob": "app/**", "why": "Next.js route handlers" },
@@ -76,6 +82,7 @@
     "baseline-convex": {
       "root": "./baseline-convex",
       "note": "Convex + the Cloudflare R2 component; NEVER EXECUTED OR COMPILED",
+      "auditChain": ["convex/model/audit.ts"],
       "executed": false,
       "app": [{ "glob": "convex/**", "why": "the whole implementation lives here" }],
       "excluded": [

@@ -40,7 +40,9 @@
 
 const ok = (detail) => ({ verdict: 'defended', detail });
 const breach = (detail) => ({ verdict: 'BREACH', detail });
-const partial = (detail) => ({ verdict: 'partial', detail });
+// `summary` is the one line RESULTS.md prints under the headline table for
+// each partial that remains, generated here so no one writes it by hand.
+const partial = (detail, summary = detail) => ({ verdict: 'partial', detail, summary });
 // AN AUDIT GAP IS NOT A BREACH. Nothing was disclosed, altered or lost: the
 // application's own audit trail simply does not record that something was
 // refused. Request logs outside the application (a load balancer, an API
@@ -200,6 +202,7 @@ export const ATTACKS = [
         return partial(
           `the gateway refuses immediately, but a signed URL already minted stays valid for ` +
             `${first.residualWindowSec}s after revocation`,
+          `the signed URL stays valid for up to ${first.residualWindowSec} s after revocation`,
         );
       }
       return ok(`refused with ${after.status}, with no residual window`);
@@ -466,6 +469,7 @@ export const ATTACKS = [
         : partial(
             'an event exists, but the implementation issued a URL rather than serving bytes, ' +
               'so the log records that a URL was ISSUED and cannot record whether it was used',
+            'the audit records the issuing of the URL, not the delivery',
           );
     },
   },

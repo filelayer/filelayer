@@ -59,6 +59,25 @@ const ran = others.filter((r) => !NOT_EXECUTED.has(r.name));
 const et = median(ran.map((r) => r.types));
 const es = median(ran.map((r) => r.sites));
 console.log(`| median, the ${ran.length} executed | ${(et / fl.types).toFixed(1)}x | ${(es / fl.sites).toFixed(1)}x |`);
+// SENSITIVITY: WITHOUT THE AUDIT CHAIN. Whether the brief asked for a
+// tamper-evident chain is not known (BRIEF.md), and every alternative built
+// one. These are the medians with the decisions that exist only because of the
+// chain left out (`auditChain: true` in decisions.json).
+{
+  const noChain = (name) => {
+    const ds = DATA[name].decisions.filter((d) => !d.auditChain);
+    return { types: ds.length, sites: ds.reduce((n, d) => n + d.sites, 0) };
+  };
+  const f = noChain('filelayer');
+  const alt = ran.map((r) => noChain(r.name));
+  const t = median(alt.map((a) => a.types));
+  const si = median(alt.map((a) => a.sites));
+  console.log(
+    `\nWithout the audit chain (sensitivity): Filelayer ${f.types} types / ${f.sites} sites; ` +
+      `median of the ${alt.length} executed, ${(t / f.types).toFixed(1)}x on types and ${(si / f.sites).toFixed(1)}x on sites.`,
+  );
+}
+
 console.log(
   '\nOne rule for all five (decisions.json $convention.oneRule): a decision enforced in one helper\n' +
     'is one site, and a decision the platform\'s linter flags, or whose safe setting is the platform\n' +

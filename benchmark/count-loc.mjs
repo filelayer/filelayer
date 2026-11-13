@@ -120,7 +120,11 @@ function commentSyntax(ext) {
     case '.toml':
       return { line: ['#'], block: null };
     case '.json':
-      return { line: [], block: null }; // JSON has no comments
+      // JSON has no comments, so infrastructure files carry them as a
+      // `"_comment"` key. That text is prose, not configuration, and counting
+      // it as infrastructure charged an implementation for explaining itself
+      // (review of 2026-11-13). Handled in countFile.
+      return { line: [], block: null, jsonComment: true };
     default:
       return { line: ['//'], block: ['/*', '*/'] };
   }
@@ -133,8 +137,22 @@ function countFile(abs) {
   if (lines.at(-1) === '') lines.pop();
   let net = 0;
   let inBlock = false;
+  let inJsonComment = false;
+  const jsonComment = commentSyntax(ext).jsonComment === true;
   for (const raw of lines) {
     const t = raw.trim();
+    // A `"_comment": "..."` line, or every line of a `"_comment": [ ... ]`
+    // array up to and including its closing bracket.
+    if (jsonComment) {
+      if (inJsonComment) {
+        if (/^\]\s*,?$/.test(t)) inJsonComment = false;
+        continue;
+      }
+      if (/^"_comment"\s*:/.test(t)) {
+        if (/^"_comment"\s*:\s*\[/.test(t) && !/\]\s*,?$/.test(t)) inJsonComment = true;
+        continue;
+      }
+    }
     if (inBlock) {
       if (block && t.includes(block[1])) inBlock = false;
       continue;
@@ -223,6 +241,7 @@ for (const [name, impl] of targets) {
       excluded: totals.excluded ?? { gross: 0, net: 0, files: 0 },
     },
     unclassified,
+    appFiles: (detail.app ?? []).map((f) => ({ file: f.file, net: f.net })),
   };
   unclassifiedTotal += unclassified.length;
 
@@ -281,6 +300,18 @@ if (!asJson && targets.length > 1) {
     console.log(
       `\n  median over the ${alt.length} executed alternatives: ${m} vs ${fl} = ${(m / fl).toFixed(1)}x` +
         ' (Convex and Vercel Blob excluded: never executed or compiled)',
+    );
+    // SENSITIVITY: WITHOUT THE AUDIT CHAIN. Every alternative built a
+    // tamper-evident chain and whether the brief asked for one is not known
+    // (BRIEF.md). The same median with each alternative's chain file
+    // (`auditChain` in loc.manifest.json) left out.
+    const chainNet = (n) =>
+      (results[n].appFiles ?? [])
+        .filter((f) => (MANIFEST.implementations[n].auditChain ?? []).includes(f.file))
+        .reduce((x, f) => x + f.net, 0);
+    const mc = median(alt.map(([n, app]) => app - chainNet(n)));
+    console.log(
+      `  without the audit chain (sensitivity): ${mc} vs ${fl} = ${(mc / fl).toFixed(1)}x`,
     );
     const prod = rows.find(([n]) => n === 'filelayer-production');
     if (prod) {

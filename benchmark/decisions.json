@@ -6,6 +6,7 @@
     "whyBoth": "An earlier 27-vs-33 comparison was meaningless because the Supabase report collapsed repeats and the Convex report expanded them. Neither number was wrong; they answered different questions. Reporting both, under one rule, for all five, is the fix.",
     "scopeNote": "Infrastructure/configuration decisions are INCLUDED, because all four baseline reports included them. Authentication ('how the caller's identity is established') is included for ALL FIVE, which none of the baseline reports did -- it is a real silent decision and excluding it only for the baselines would flatter Filelayer.",
     "oneRule": "Applied to all five on 2026-11-13 (review of 2026-11-03, finding 5). (1) A decision enforced in one helper is ONE site, however many call sites use the helper: Filelayer's currentActor() was already counted that way, and now so is every alternative's equivalent. (2) A decision is dropped if the platform's own linter flags the wrong choice, or if the safe choice is the platform's default and leaving it takes a deliberate act; then the wrong choice is not silent and clause (c) fails. Every change is recorded where it was made: `oneRule` on a decision whose sites changed, and `removedByOneRule` for what was dropped, with the reason. For Convex and Vercel Blob, which never ran, the helper is assumed to be built the way the platform documents it (convex-helpers customQuery and row-level security; the retry inside the audit helper); their code was not changed.",
+    "auditChainNote": "`auditChain: true` marks a decision that exists because the implementation keeps a tamper-evident audit chain: serialising appends, and keeping the chain writable only by server code. Filelayer has the same chain inside the library. Whether the brief asked for a chain is not known (BRIEF.md), so count-decisions.mjs also prints the medians with these decisions left out, as a sensitivity.",
     "unexecutedNote": "convex and vercel-blob have never been executed. Their decisions are recounted from their own enumerated lists only. The shared adversarial suite found decisions that the two EXECUTED baselines had missed (filename sanitisation, denial auditing) and those were added to them. No equivalent discovery is possible for the unexecuted two, so their counts are probably UNDERCOUNTS. That asymmetry works against Filelayer and is left in place."
   },
 
@@ -15,7 +16,7 @@
       { "id": 1, "d": "How the caller's identity is established", "sites": 1, "where": "currentActor(), server.ts" },
       { "id": 2, "d": "Where the one-time share secret is delivered", "sites": 1, "where": "the POST /files/:id/shares response" },
       { "id": 3, "d": "err.code vs err.reason in the error body", "sites": 1, "where": "the single catch" },
-      { "id": 5, "d": "Routing byte delivery through the library rather than hand-writing the response. `delivery.body` is public, so a developer who ignores fileDownloadRoute/sendNodeResponse and writes their own writeHead re-opens the stored-XSS and cache-replay defects. Weaker than the pre-rebuild version -- the safe path is now the short one -- but still a silent choice.", "sites": 1, "where": "the two route constructions in server.ts" },
+      { "id": 5, "d": "Routing byte delivery through the library rather than hand-writing the response. `delivery.body` is public, so a developer who ignores fileDownloadRoute/sendNodeResponse and writes their own writeHead re-opens the stored-XSS and cache-replay defects. Weaker than the pre-rebuild version -- the safe path is now the short one -- but still a silent choice.", "sites": 2, "where": "the two route constructions in server.ts", "oneRule": "was 1. Two routes, each built separately (fileDownloadRoute and shareDownloadRoute), and no helper joins them: two sites (review of 2026-11-13)." },
       { "id": 6, "d": "The scope of the object-store credential Filelayer is handed. It is the blast radius of everything the library ever reads or writes. Equivalent to raw-S3 #20 and Convex #32; NOT previously counted for Filelayer.", "sites": 1, "where": "S3Storage config; infra/iam-policy-app.json in the production-wired variant" },
       { "id": 8, "d": "The admin bootstrap routes must authenticate the caller. POST /orgs and POST /actors in the example take no identity at all, so anyone who can reach them can create a tenant or an actor.", "sites": 2, "where": "server.ts:88-99", "addedBy": "review of 2026-11-03, finding 10" },
       { "id": 9, "d": "The new org's owner must be the authenticated caller, not ownerActorId from the request body: as written, a caller names any actor as owner of a new org.", "sites": 1, "where": "server.ts:93", "addedBy": "review of 2026-11-03, finding 10" },
@@ -26,7 +27,7 @@
       { "was": "#7 Object-store versioning off, or a retention story for versions", "why": "versioning is off by default on S3 and R2 and turning it on is a deliberate act. Dropped for raw S3 (#19) by the same rule." }
     ],
     "arguable": [
-      { "d": "Choosing visibility:'org' when you meant 'private'", "why_excluded": "the effect is observable in normal operation: it is a column, it is on every FileRecord, it is in the file.create audit event, and since the rebuild it is visible in the listing screen itself. Excluded under clause (c). It was the closest call in this review, and it stays close. Count it and Filelayer is 8." }
+      { "d": "Choosing visibility:'org' when you meant 'private'", "why_excluded": "the effect is observable in normal operation: it is a column, it is on every FileRecord, it is in the file.create audit event, and since the rebuild it is visible in the listing screen itself. Excluded under clause (c). It was the closest call in this review, and it stays close. Count it and Filelayer is 9." }
     ],
     "removedSinceGate1": [
       { "d": "Multi-writer audit-chain serialisation (decision #8 in the September count, 1 site). The chain was SELECT-then-INSERT and forked under a second writer unless the deployment added pg_advisory_xact_lock.", "removedIn": "0.3.0", "evidence": "audit_append() takes pg_advisory_xact_lock inside the transaction of the mutation it records (schema.sql). test/contention.test.ts 'twenty concurrent writers leave one verifiable chain' runs against a real PostgreSQL in CI on every commit, beside a control that shows the chain forking without the lock. CHANGELOG: 'The audit chain could fork under concurrent writers. Fixed in 0.3.0.'" },
@@ -51,15 +52,14 @@
       { "id": 6, "d": "vault_insert: owner_id = auth.uid()", "sites": 1 },
       { "id": 7, "d": "vault_insert: can_write_org vs is_org_member (viewers uploading)", "sites": 1 },
       { "id": 8, "d": "vault_delete: can_manage_object vs can_read_object", "sites": 1 },
-      { "id": 9, "d": "Every policy authored FOR the right command (FOR ALL where you meant FOR SELECT opens writes, silently)", "sites": 20, "evidence": "grep -ci 'create policy' over counted SQL: 19 in 20_rls_policies.sql + 1 in 25_config_b_lockdown.sql" },
-      { "id": 10, "d": "SECURITY DEFINER on the helper kernel -- each one bypasses RLS on what it reads", "sites": 14, "evidence": "grep -ci 'security definer': 11 in 20_rls_policies.sql + 3 in 30_audit.sql" },
+      { "id": 9, "d": "Every policy authored FOR the right command (FOR ALL where you meant FOR SELECT opens writes, silently)", "sites": 19, "evidence": "the CREATE POLICY statements of Config A, the configuration the attacks run against: 19 in 20_rls_policies.sql", "oneRule": "was 20, which counted the one policy of 25_config_b_lockdown.sql. Config B is not what was attacked, so it is not counted (review of 2026-11-13)." },
       { "id": 13, "d": "documents.storage_path must be UNIQUE", "sites": 1 },
       { "id": 14, "d": "documents_insert: uploader_id = auth.uid()", "sites": 1 },
       { "id": 15, "d": "documents_update WITH CHECK (re-parenting into another org)", "sites": 1 },
       { "id": 16, "d": "The owner-escalation guard on the member policies (write/update/delete)", "sites": 3 },
       { "id": 17, "d": "share_insert: document_id must be checked to belong to org_id", "sites": 1 },
       { "id": 18, "d": "Column-level GRANT UPDATE (revoked_at) on share_links", "sites": 1 },
-      { "id": 19, "d": "audit_log: no INSERT policy AND REVOKE EXECUTE on audit_append", "sites": 2 },
+      { "id": 19, "d": "audit_log: no INSERT policy AND REVOKE EXECUTE on audit_append", "sites": 2, "auditChain": true },
       { "id": 20, "d": "The gateway holds the BYPASSRLS service key", "sites": 1 },
       { "id": 21, "d": "The gateway resolves storage_path server-side from the token", "sites": 1 },
       { "id": 22, "d": "Download-count increment is one atomic conditional UPDATE", "sites": 1 },
@@ -74,7 +74,8 @@
     "removedByOneRule": [
       { "was": "#1 Bucket created with public:false", "why": "the platform default: Supabase buckets are private unless created public, and the database linter flags a public bucket that allows listing (0025)." },
       { "was": "#11 set search_path = '' on every SECURITY DEFINER function (12 sites)", "why": "the Supabase database linter flags it: 0011 function_search_path_mutable." },
-      { "was": "#12 REVOKE EXECUTE from anon/public on the object-resolution helpers (2 sites)", "why": "the Supabase database linter flags it: 0028 anon_security_definer_function_executable and 0029 authenticated_security_definer_function_executable." }
+      { "was": "#12 REVOKE EXECUTE from anon/public on the object-resolution helpers (2 sites)", "why": "the Supabase database linter flags it: 0028 anon_security_definer_function_executable and 0029 authenticated_security_definer_function_executable." },
+      { "was": "#10 SECURITY DEFINER on the helper kernel -- each one bypasses RLS on what it reads (14 sites as first counted; 11 once three matches in comments are left out)", "why": "the same lint as #12, applied the same way (review of 2026-11-13: both or neither). The helpers are SECURITY DEFINER functions in `public`, granted EXECUTE to `authenticated`, which is exactly what 0029 authenticated_security_definer_function_executable reports, one warning per function. Keeping #10 while dropping #12 would count one lint's finding against the platform and excuse the other." }
     ]
   },
 
@@ -96,7 +97,7 @@
       { "id": 13, "d": "Cache-Control: private, no-store on share downloads", "sites": 1 },
       { "id": 14, "d": "Can viewers create share links? (spec ambiguity)", "sites": 1 },
       { "id": 15, "d": "Admins may not create or demote owners; the last owner cannot be demoted", "sites": 2 },
-      { "id": 16, "d": "Audit appends must be serialised per org (row lock on orgs)", "sites": 1, "evidence": "grep -c 'inOrgTx(' src/app.mjs", "oneRule": "was 10 (grep inOrgTx). The revision of 2026-11-13 moves the lock into appendAudit, so it is one helper." },
+      { "id": 16, "d": "Audit appends must be serialised per org (row lock on orgs)", "sites": 1, "evidence": "grep -c 'inOrgTx(' src/app.mjs", "oneRule": "was 10 (grep inOrgTx). The revision of 2026-11-13 moves the lock into appendAudit, so it is one helper.", "auditChain": true },
       { "id": 17, "d": "Deleting a document must cascade-revoke its outstanding shares", "sites": 1 },
       { "id": 20, "d": "iam-policy-app.json scope = the blast radius of every URL issued", "sites": 1 },
       { "id": 21, "d": "CORS AllowedOrigins must be an exact list", "sites": 1 },
@@ -135,7 +136,7 @@
       { "id": 18, "d": "Content-Disposition: attachment + nosniff", "sites": 2 },
       { "id": 19, "d": "Can viewers create share links? (spec ambiguity)", "sites": 1 },
       { "id": 20, "d": "Last-owner protection", "sites": 1 },
-      { "id": 21, "d": "Audit-chain serialisation under serverless concurrency (the retry loop is load-bearing and trivially omitted)", "sites": 1, "evidence": "conservative subset of the 26 audit-append references in app/ + lib/", "oneRule": "was 12. With the retry inside the audit helper, as an expert would build it; the code was not changed and never ran." },
+      { "id": 21, "d": "Audit-chain serialisation under serverless concurrency (the retry loop is load-bearing and trivially omitted)", "sites": 1, "evidence": "conservative subset of the 26 audit-append references in app/ + lib/", "oneRule": "was 12. With the retry inside the audit helper, as an expert would build it; the code was not changed and never ran.", "auditChain": true },
       { "id": 22, "d": "How the caller's identity is established", "sites": 1, "addedBy": "uniform rule, applied to all five" }
     ]
   },
@@ -155,7 +156,7 @@
       { "id": 10, "d": "Constant-time password comparison", "sites": 1 },
       { "id": 11, "d": "A failed password attempt must not consume a download", "sites": 1 },
       { "id": 12, "d": "Share-token entropy", "sites": 1 },
-      { "id": 13, "d": "appendAudit must be reachable only from server code", "sites": 1 },
+      { "id": 13, "d": "appendAudit must be reachable only from server code", "sites": 1, "auditChain": true },
       { "id": 14, "d": "Audit read must check admin, not member", "sites": 1 },
       { "id": 15, "d": "Audit before the redirect, not after", "sites": 1 },
       { "id": 17, "d": "Bucket CORS must not be '*'", "sites": 1 },

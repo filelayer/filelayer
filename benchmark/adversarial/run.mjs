@@ -176,6 +176,19 @@ if (asMarkdown) {
     out.push(`| ${label} | ${t.defended}/${shared.length} | ${t.partial} | ${t.gap} | ${t.breach} |`);
   }
   out.push('');
+  // One generated line per partial that remains on these attacks, from the
+  // attack's own `summary`. None is printed when nothing is partial.
+  const partialLines = [];
+  for (const n of names) {
+    for (const attack of shared) {
+      const r = results[n][attack.id];
+      if (r.verdict === 'partial') partialLines.push(`- ${n}, ${attack.id}: ${r.summary ?? r.detail}.`);
+    }
+  }
+  if (partialLines.length) {
+    out.push(...partialLines);
+    out.push('');
+  }
   out.push(...head);
   for (const attack of shared) out.push(row(attack));
   out.push('');
