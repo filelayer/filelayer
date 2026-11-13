@@ -264,7 +264,7 @@ async () => {
   const token = (await db.query('select token from public.share_links where id=$1',
     [link.id])).rows[0].token;
 
-  const r = await redeemShareLink(sb, { shareToken: token });
+  const r = await redeemShareLink(sb, { shareToken: token, delivery: 'redirect' });
   assert.equal(r.ok, true);
 
   // The cap is now exhausted at the gateway...
@@ -307,7 +307,7 @@ async () => {
   const token = (await db.query('select token from public.share_links where id=$1',
     [link.id])).rows[0].token;
 
-  const r = await redeemShareLink(sb, { shareToken: token });
+  const r = await redeemShareLink(sb, { shareToken: token, delivery: 'redirect' });
   await revokeShareLink(sb, tok.mia, { orgId: orgA, shareLinkId: link.id });
 
   // Gateway: closed. Storage: still open. This is the residual window.
@@ -335,8 +335,8 @@ async () => {
   const tk = async (id) => (await db.query('select token from public.share_links where id=$1',
     [id])).rows[0].token;
 
-  const rX = await redeemShareLink(sb, { shareToken: await tk(linkX.id) });
-  const rY = await redeemShareLink(sb, { shareToken: await tk(linkY.id) });
+  const rX = await redeemShareLink(sb, { shareToken: await tk(linkX.id), delivery: 'redirect' });
+  const rY = await redeemShareLink(sb, { shareToken: await tk(linkY.id), delivery: 'redirect' });
   assert.ok(await sb.fetchSignedUrl(rX.signedUrl));
   assert.ok(await sb.fetchSignedUrl(rY.signedUrl));
 
@@ -529,4 +529,32 @@ async () => {
   await softDeleteDocument(sb, tok.mia, orgA, documentId);
   assert.equal((await sb.fetchSignedUrl(signedUrl)).toString(), 'acme',
     'deleted document, URL still serves bytes for the rest of the hour');
+});
+
+test('REQUIREMENT: streamed share delivery leaves nothing outstanding after revocation',
+async () => {
+  resetClock();
+  const { sb, db, orgA, tok } = await boot();
+  const { documentId } = await uploadDocument(sb, tok.mia,
+    { orgId: orgA, filename: 'a"\r\nb.html', bytes: bytes('<b>acme</b>'), mimeType: 'text/html' });
+  const link = await createShareLink(sb, tok.mia,
+    { orgId: orgA, documentId, expiresInSec: 3600 });
+  const token = (await db.query('select token from public.share_links where id=$1',
+    [link.id])).rows[0].token;
+
+  // The default delivery streams the bytes through the gateway: no URL is handed out.
+  const r = await redeemShareLink(sb, { shareToken: token });
+  assert.equal(r.ok, true);
+  assert.equal(r.signedUrl, undefined);
+  assert.equal(r.residualRevocationWindowSec, 0);
+  assert.equal(r.body.toString(), '<b>acme</b>');
+  assert.match(r.headers['content-disposition'], /^attachment; filename="[^"\r\n]*"$/);
+  assert.equal(r.headers['x-content-type-options'], 'nosniff');
+  assert.equal(r.headers['cache-control'], 'private, no-store');
+
+  await revokeShareLink(sb, tok.mia, { orgId: orgA, shareLinkId: link.id });
+  assert.equal((await redeemShareLink(sb, { shareToken: token })).reason, 'revoked');
+  const delivered = await db.query(
+    `select subject->>'via' as via from public.audit_log where action='download'`);
+  assert.deepEqual(delivered.rows.map((x) => x.via), ['stream']);
 });

@@ -126,7 +126,7 @@ export async function revokeShareLink(sb, token, { orgId, shareLinkId, mode = 'g
 // the bytes, so every check below is load-bearing and none of them are
 // enforced by the platform.
 // ---------------------------------------------------------------------
-export async function redeemShareLink(sb, { shareToken, password = null }) {
+export async function redeemShareLink(sb, { shareToken, password = null, delivery = 'stream' }) {
   const now = new Date(sb.now());
 
   // Single atomic statement. The download-count guard MUST be part of the same
@@ -163,7 +163,7 @@ export async function redeemShareLink(sb, { shareToken, password = null }) {
   if (!claim.rows.length) return deny(sb, link.org_id, link.id, 'download_limit_or_state');
 
   const d = await sb.asService((c) =>
-    c.query(`select storage_path from public.documents
+    c.query(`select storage_path, filename, mime_type from public.documents
              where id=$1 and deleted_at is null`, [link.document_id]));
   if (!d.rows.length) return deny(sb, link.org_id, link.id, 'document_deleted');
 
@@ -171,10 +171,20 @@ export async function redeemShareLink(sb, { shareToken, password = null }) {
   // log over-reports (a download that may not have completed) rather than
   // under-reporting. Over-reporting is the safe direction for an audit trail.
   await audit(sb, link.org_id, null, 'share_link', 'download',
-              { share_link_id: link.id, document_id: link.document_id,
+              { share_link_id: link.id, document_id: link.document_id, via: delivery,
                 download_count: claim.rows[0].download_count,
                 max_downloads: claim.rows[0].max_downloads });
 
+  // Stream the bytes with the service key (an Edge Function in production):
+  // nothing outlives the revocation, and the audit event is the delivery.
+  if (delivery === 'stream') {
+    const doc = d.rows[0];
+    return { ok: true, body: await sb.downloadAsService(BUCKET, doc.storage_path),
+             headers: { 'content-type': doc.mime_type ?? 'application/octet-stream',
+                        'content-disposition': `attachment; filename="${doc.filename.replace(/["\\\r\n]/g, '')}"`,
+                        'x-content-type-options': 'nosniff', 'cache-control': 'private, no-store' },
+             residualRevocationWindowSec: 0, downloadCount: claim.rows[0].download_count };
+  }
   const { signedUrl } = await sb.createSignedUrlAsService(
     BUCKET, d.rows[0].storage_path, SIGNED_URL_TTL_SEC);
 

@@ -1,3 +1,47 @@
+diff --git a/benchmark/baseline-supabase/src/app/share.js b/benchmark/baseline-supabase/src/app/share.js
+index 07041ed..cd3e0d9 100644
+--- a/benchmark/baseline-supabase/src/app/share.js
++++ b/benchmark/baseline-supabase/src/app/share.js
+@@ -126,7 +126,7 @@ export async function revokeShareLink(sb, token, { orgId, shareLinkId, mode = 'g
+ // the bytes, so every check below is load-bearing and none of them are
+ // enforced by the platform.
+ // ---------------------------------------------------------------------
+-export async function redeemShareLink(sb, { shareToken, password = null }) {
++export async function redeemShareLink(sb, { shareToken, password = null, delivery = 'stream' }) {
+   const now = new Date(sb.now());
+ 
+   // Single atomic statement. The download-count guard MUST be part of the same
+@@ -163,7 +163,7 @@ export async function redeemShareLink(sb, { shareToken, password = null }) {
+   if (!claim.rows.length) return deny(sb, link.org_id, link.id, 'download_limit_or_state');
+ 
+   const d = await sb.asService((c) =>
+-    c.query(`select storage_path from public.documents
++    c.query(`select storage_path, filename, mime_type from public.documents
+              where id=$1 and deleted_at is null`, [link.document_id]));
+   if (!d.rows.length) return deny(sb, link.org_id, link.id, 'document_deleted');
+ 
+@@ -171,10 +171,20 @@ export async function redeemShareLink(sb, { shareToken, password = null }) {
+   // log over-reports (a download that may not have completed) rather than
+   // under-reporting. Over-reporting is the safe direction for an audit trail.
+   await audit(sb, link.org_id, null, 'share_link', 'download',
+-              { share_link_id: link.id, document_id: link.document_id,
++              { share_link_id: link.id, document_id: link.document_id, via: delivery,
+                 download_count: claim.rows[0].download_count,
+                 max_downloads: claim.rows[0].max_downloads });
+ 
++  // Stream the bytes with the service key (an Edge Function in production):
++  // nothing outlives the revocation, and the audit event is the delivery.
++  if (delivery === 'stream') {
++    const doc = d.rows[0];
++    return { ok: true, body: await sb.downloadAsService(BUCKET, doc.storage_path),
++             headers: { 'content-type': doc.mime_type ?? 'application/octet-stream',
++                        'content-disposition': `attachment; filename="${doc.filename.replace(/["\\\r\n]/g, '')}"`,
++                        'x-content-type-options': 'nosniff', 'cache-control': 'private, no-store' },
++             residualRevocationWindowSec: 0, downloadCount: claim.rows[0].download_count };
++  }
+   const { signedUrl } = await sb.createSignedUrlAsService(
+     BUCKET, d.rows[0].storage_path, SIGNED_URL_TTL_SEC);
+ 
 diff --git a/benchmark/baseline-supabase/src/app/vault.js b/benchmark/baseline-supabase/src/app/vault.js
 index 87822c4..fba366d 100644
 --- a/benchmark/baseline-supabase/src/app/vault.js
@@ -17,3 +61,90 @@ index 87822c4..fba366d 100644
    const bytes = await sb.downloadAuthenticated(token, BUCKET, r.rows[0].storage_path);
    const who = await sb.asUser(token, (c) => c.query('select (select auth.uid()) as uid'));
    await audit(sb, orgId, who.rows[0].uid, 'user', 'download',
+diff --git a/benchmark/baseline-supabase/src/platform/supabase.js b/benchmark/baseline-supabase/src/platform/supabase.js
+index d07e755..9c7deb3 100644
+--- a/benchmark/baseline-supabase/src/platform/supabase.js
++++ b/benchmark/baseline-supabase/src/platform/supabase.js
+@@ -140,6 +140,17 @@ export class SupabaseProject {
+     return blob;
+   }
+ 
++  /** storage.from(b).download(name) with the service key: no RLS, as the gateway holds it. */
++  async downloadAsService(bucket, name) {
++    const r = await this.asService((c) =>
++      c.query('select id from storage.objects where bucket_id=$1 and name=$2', [bucket, name]),
++      'object.get');
++    if (r.rows.length === 0) { const e = new Error('Object not found'); e.status = 404; throw e; }
++    const blob = this.blobs.get(`${bucket}/${name}`);
++    this.egress.push({ via: 'service', bucket, name, at: this.now() });
++    return blob;
++  }
++
+   async list(accessToken, bucket, prefix) {
+     const r = await this.asUser(accessToken, (c) =>
+       c.query('select name from storage.objects where bucket_id=$1 and name like $2 order by name',
+diff --git a/benchmark/baseline-supabase/test/vault.test.js b/benchmark/baseline-supabase/test/vault.test.js
+index e0b947e..9a0dcd3 100644
+--- a/benchmark/baseline-supabase/test/vault.test.js
++++ b/benchmark/baseline-supabase/test/vault.test.js
+@@ -264,7 +264,7 @@ async () => {
+   const token = (await db.query('select token from public.share_links where id=$1',
+     [link.id])).rows[0].token;
+ 
+-  const r = await redeemShareLink(sb, { shareToken: token });
++  const r = await redeemShareLink(sb, { shareToken: token, delivery: 'redirect' });
+   assert.equal(r.ok, true);
+ 
+   // The cap is now exhausted at the gateway...
+@@ -307,7 +307,7 @@ async () => {
+   const token = (await db.query('select token from public.share_links where id=$1',
+     [link.id])).rows[0].token;
+ 
+-  const r = await redeemShareLink(sb, { shareToken: token });
++  const r = await redeemShareLink(sb, { shareToken: token, delivery: 'redirect' });
+   await revokeShareLink(sb, tok.mia, { orgId: orgA, shareLinkId: link.id });
+ 
+   // Gateway: closed. Storage: still open. This is the residual window.
+@@ -335,8 +335,8 @@ async () => {
+   const tk = async (id) => (await db.query('select token from public.share_links where id=$1',
+     [id])).rows[0].token;
+ 
+-  const rX = await redeemShareLink(sb, { shareToken: await tk(linkX.id) });
+-  const rY = await redeemShareLink(sb, { shareToken: await tk(linkY.id) });
++  const rX = await redeemShareLink(sb, { shareToken: await tk(linkX.id), delivery: 'redirect' });
++  const rY = await redeemShareLink(sb, { shareToken: await tk(linkY.id), delivery: 'redirect' });
+   assert.ok(await sb.fetchSignedUrl(rX.signedUrl));
+   assert.ok(await sb.fetchSignedUrl(rY.signedUrl));
+ 
+@@ -530,3 +530,31 @@ async () => {
+   assert.equal((await sb.fetchSignedUrl(signedUrl)).toString(), 'acme',
+     'deleted document, URL still serves bytes for the rest of the hour');
+ });
++
++test('REQUIREMENT: streamed share delivery leaves nothing outstanding after revocation',
++async () => {
++  resetClock();
++  const { sb, db, orgA, tok } = await boot();
++  const { documentId } = await uploadDocument(sb, tok.mia,
++    { orgId: orgA, filename: 'a"\r\nb.html', bytes: bytes('<b>acme</b>'), mimeType: 'text/html' });
++  const link = await createShareLink(sb, tok.mia,
++    { orgId: orgA, documentId, expiresInSec: 3600 });
++  const token = (await db.query('select token from public.share_links where id=$1',
++    [link.id])).rows[0].token;
++
++  // The default delivery streams the bytes through the gateway: no URL is handed out.
++  const r = await redeemShareLink(sb, { shareToken: token });
++  assert.equal(r.ok, true);
++  assert.equal(r.signedUrl, undefined);
++  assert.equal(r.residualRevocationWindowSec, 0);
++  assert.equal(r.body.toString(), '<b>acme</b>');
++  assert.match(r.headers['content-disposition'], /^attachment; filename="[^"\r\n]*"$/);
++  assert.equal(r.headers['x-content-type-options'], 'nosniff');
++  assert.equal(r.headers['cache-control'], 'private, no-store');
++
++  await revokeShareLink(sb, tok.mia, { orgId: orgA, shareLinkId: link.id });
++  assert.equal((await redeemShareLink(sb, { shareToken: token })).reason, 'revoked');
++  const delivered = await db.query(
++    `select subject->>'via' as via from public.audit_log where action='download'`);
++  assert.deepEqual(delivered.rows.map((x) => x.via), ['stream']);
++});

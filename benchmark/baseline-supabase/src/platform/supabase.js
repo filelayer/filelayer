@@ -140,6 +140,17 @@ export class SupabaseProject {
     return blob;
   }
 
+  /** storage.from(b).download(name) with the service key: no RLS, as the gateway holds it. */
+  async downloadAsService(bucket, name) {
+    const r = await this.asService((c) =>
+      c.query('select id from storage.objects where bucket_id=$1 and name=$2', [bucket, name]),
+      'object.get');
+    if (r.rows.length === 0) { const e = new Error('Object not found'); e.status = 404; throw e; }
+    const blob = this.blobs.get(`${bucket}/${name}`);
+    this.egress.push({ via: 'service', bucket, name, at: this.now() });
+    return blob;
+  }
+
   async list(accessToken, bucket, prefix) {
     const r = await this.asUser(accessToken, (c) =>
       c.query('select name from storage.objects where bucket_id=$1 and name like $2 order by name',

@@ -182,7 +182,7 @@ if (asMarkdown) {
   for (const n of names) {
     for (const attack of shared) {
       const r = results[n][attack.id];
-      if (r.verdict === 'partial') partialLines.push(`- ${n}, ${attack.id}: ${r.summary ?? r.detail}.`);
+      if (r.verdict === 'partial') partialLines.push(`- ${n}, ${attack.id}: ${String(r.summary ?? r.detail).replace(/[.\s]+$/, '')}.`);
     }
   }
   if (partialLines.length) {

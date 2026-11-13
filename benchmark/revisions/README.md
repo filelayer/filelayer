@@ -26,26 +26,32 @@ their own, and a better revision is welcome as an issue.
 | A refused request inside an existing org (403 or 404) goes into that org's audit trail, from the error middleware | E1 audit-gap | E1 PASS |
 | CR and LF are stripped from the filename in `Content-Disposition`, on both the proxy path and the presigned override | F2 partial | F2 PASS |
 
-On the 18 attacks every executed implementation can express: 17/18 with one
-audit-gap before, **18/18 after**. The baseline's own 9 tests still pass.
+On the attacks every executed implementation can express: one audit-gap before,
+**none after**; raw S3 defends all 21. The baseline's own 9 tests still pass.
 
-## Supabase: `supabase.diff`, 8 changed lines
+## Supabase: `supabase.diff`, 24 changed lines of application code
+
+The diff also holds 11 lines of the platform emulation (the service-key
+download the gateway now calls, which Supabase Storage provides) and the
+baseline's tests; neither is application code, and the cap counts application
+code only.
 
 | Change | Before | After |
 |---|---|---|
 | The member download records the refusal when RLS hides the row (another tenant's document, or one that does not exist) | E1 audit-gap | E1 PASS |
+| The share gateway streams the bytes with the service key, as an Edge Function would, with `Content-Disposition: attachment`, `nosniff` and `Cache-Control: private, no-store`, instead of redirecting to a 30-second signed URL. The redirect stays available as `delivery: 'redirect'`, and the baseline's own measurements of it still run | B2 and E2 partial | B2 and E2 PASS |
 
-On the 18 shared attacks: 15/18 with 2 partial and 1 audit-gap before, **16/18
-with 2 partial after**. The baseline's own 28 tests still pass.
+Streaming also means the application now writes the response headers, so three
+attacks that were "cannot express" for Supabase now apply to it: cache replay
+of a revoked download (B3), uploaded HTML served renderable (F1) and a hostile
+filename in the headers (F2). The comparison therefore grows from 18 to 21
+attacks every executed implementation can express. On those 21, Supabase
+defends **21**. The baseline's tests pass, 29 of 29, including a new one that
+fails against the redirect gateway.
 
-**Labelled "as built": share delivery.** The two partials (B2, a revoked link
-replayable for up to 30 seconds; E2, the audit records a signed-URL issuance,
-not a byte delivery) come from one design choice: the share gateway redirects
-to a 30-second signed URL instead of streaming the bytes. An Edge Function that
-streams them would close both, and would cost egress through the function and
-its response limits; the baseline's `REPORT.md` argues the trade-off. That proxy
-was not built in this round, so the two results describe the implementation as
-built, not Supabase as a platform.
+This is the second change to Supabase, made on 14 November after a second cold
+review asked for the proxy instead of the "as built" label the first round
+gave the two partials.
 
 ## Convex and Vercel Blob: no code change
 

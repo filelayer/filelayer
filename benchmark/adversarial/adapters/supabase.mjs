@@ -163,8 +163,20 @@ export async function create() {
         redeemShareLink(sb, { shareToken: token, password: password ?? null }),
       );
       if (r.status !== 200 || !r.value?.ok) return { status: 403 };
-      // Supabase's redeem returns a SIGNED URL, not bytes. Follow it, because
-      // "did the attacker get the bytes" is the only question that matters.
+      // The default delivery streams the bytes through the gateway with the
+      // service key (revision of 2026-11-14), so the application's own
+      // response headers exist and are what the header attacks read.
+      if (r.value.body) {
+        return {
+          status: 200,
+          body: new TextDecoder().decode(r.value.body),
+          headers: r.value.headers,
+          deliveredBytes: true,
+          residualWindowSec: r.value.residualRevocationWindowSec,
+        };
+      }
+      // The redirect delivery returns a SIGNED URL, not bytes. Follow it,
+      // because "did the attacker get the bytes" is the only question.
       const bytes = await attempt(() => sb.fetchSignedUrl(r.value.signedUrl));
       return {
         status: bytes.status,
