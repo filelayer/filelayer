@@ -107,7 +107,15 @@ function expectations(f) {
     [`an average of ${f.prodMedian.exec} lines of application and infrastructure code against Filelayer's ${f.prodMedian.fl}`, 'the production-wired average'],
     [`${f.median.fl} lines, it is about ${f.median.x} times as many`, 'the example ratio'],
   ];
-  return { 'benchmark/PAGE.md': page, 'README.md': readme };
+  // The homepage states the argument with the same figures (14 November 2026).
+  const home = [
+    [`<span class="v">about ${f.prodMedian.x} times as many</span>`, 'the production-wired ratio'],
+    [`<span class="v">about ${f.decMedian.types} times as many</span>`, 'the decisions ratio'],
+    [`averaged ${f.prodMedian.exec} lines against Filelayer's ${f.prodMedian.fl}`, 'the production-wired average'],
+    [`${f.dsup.types} and ${f.ds3.types} kinds of security-sensitive decision against its ${f.dfl.types}`, 'decision kinds'],
+    [`raw S3 defended all ${f.as3.defended} shared attacks`, 'raw S3 on the 18 attacks'],
+  ];
+  return { 'benchmark/PAGE.md': page, 'README.md': readme, 'web/index.html': home };
 }
 
 function check(texts, f) {
@@ -123,7 +131,7 @@ function check(texts, f) {
 
 const results = read('benchmark/RESULTS.md');
 const f = figures(results);
-const texts = { 'benchmark/PAGE.md': read('benchmark/PAGE.md'), 'README.md': read('README.md') };
+const texts = { 'benchmark/PAGE.md': read('benchmark/PAGE.md'), 'README.md': read('README.md'), 'web/index.html': read('web/index.html') };
 
 if (process.argv.includes('--self-test')) {
   let bad = 0;
@@ -149,10 +157,10 @@ if (process.argv.includes('--self-test')) {
 
 const problems = check(texts, f);
 if (problems.length) {
-  console.error(`check-page-figures: FAILED, ${problems.length} figure(s) on the page or the README disagree with benchmark/RESULTS.md\n`);
+  console.error(`check-page-figures: FAILED, ${problems.length} figure(s) on the page, the README or the homepage disagree with benchmark/RESULTS.md\n`);
   for (const p of problems) console.error(`  - ${p}`);
   console.error('\nThe figures come from the run. Change the page, never RESULTS.md by hand.');
   process.exit(1);
 }
 const n = Object.values(expectations(f)).reduce((a, l) => a + l.length, 0);
-console.log(`check-page-figures: clean. ${n} figure phrase(s) on PAGE.md and the README match benchmark/RESULTS.md (measured on ${f.version}).`);
+console.log(`check-page-figures: clean. ${n} figure phrase(s) on PAGE.md, the README and the homepage match benchmark/RESULTS.md (measured on ${f.version}).`);

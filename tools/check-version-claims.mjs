@@ -149,7 +149,7 @@ const CLAIMS = [
   // machine-readable claim and the human-readable one were different numbers on
   // the same page, and only one of them was checked.
   { file: 'web/index.html', kind: 'version',
-    re: /<li><span>Version<\/span><span class="v">([\d.]+) — alpha<\/span><\/li>/g },
+    re: /<li><span>Version<\/span><span class="v">([\d.]+), alpha<\/span><\/li>/g },
   { file: 'web/index.html', kind: 'tests',
     re: /every commit<\/span><span class="v">(\d+) across \d+ suites<\/span>/g },
   { file: 'web/index.html', kind: 'suites',

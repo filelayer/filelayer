@@ -46,7 +46,7 @@
  * this check instead of sliding past it.
  */
 
-import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, existsSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -64,11 +64,11 @@ const ENTRY = join(ROOT, 'packages/core/src/index.ts');
  * silent hole `check-version-claims.mjs` guards against with its
  * "pattern matched nothing" rule.
  */
-const MIN_BLOCKS = 5;
+const MIN_BLOCKS = 2;
 
 const PREAMBLE = `
-import { Filelayer } from ${JSON.stringify(ENTRY)};
-declare const fl: Awaited<ReturnType<typeof Filelayer.quickstart>>;
+import { Filelayer as __Filelayer } from ${JSON.stringify(ENTRY)};
+declare const fl: Awaited<ReturnType<typeof __Filelayer.quickstart>>;
 declare const bytes: Uint8Array;
 declare const deck: Uint8Array;
 declare const id: string;
@@ -116,7 +116,11 @@ function extract(html) {
 // -----------------------------------------------------------------------------
 // Compile
 // -----------------------------------------------------------------------------
-const dir = mkdtempSync(join(tmpdir(), 'filelayer-websamples-'));
+// INSIDE packages/core/node_modules, not the system tmpdir: a sample that
+// imports `pg` (the production snippet does) resolves it the way an install
+// would, from the nearest node_modules. Removed on exit.
+const dir = mkdtempSync(join(ROOT, 'packages/core/node_modules/.websamples-'));
+process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 
 /**
  * Wrapped in a function so top-level `await` is legal and two blocks may both
@@ -125,12 +129,22 @@ const dir = mkdtempSync(join(tmpdir(), 'filelayer-websamples-'));
  * when PREAMBLE changes.
  */
 const HEADER = `${PREAMBLE}\nasync function _sample() {\n`;
-const HEADER_LINES = HEADER.split('\n').length - 1;
+const HEADER_LINES = HEADER.split('\n').length; // + the one line of hoisted imports
 
 /** Returns tsc's diagnostics for one block, or '' when it compiles. */
 function compile(code, name) {
   const file = join(dir, `${name}.ts`);
-  writeFileSync(file, `${HEADER}${code}\n}\nvoid _sample;\n`);
+  // IMPORTS ARE HOISTED out of the wrapper function, where they would be a
+  // syntax error, and `@filelayer/core` is pointed at the library source the
+  // rest of the preamble uses. Added 2026-11-14 for the production snippet,
+  // which imports `pg` and `S3Storage` the way an application does.
+  const lines = code.split('\n');
+  const imports = lines
+    .filter((l) => /^\s*import\s/.test(l))
+    .map((l) => l.replace(/(['"])@filelayer\/core\1/, JSON.stringify(ENTRY)));
+  const body = lines.map((l) => (/^\s*import\s/.test(l) ? '' : l)).join('\n');
+  // One line for every import, so the offset below is a constant.
+  writeFileSync(file, `${imports.join(' ')}\n${HEADER}${body}\n}\nvoid _sample;\n`);
   const r = spawnSync(
     TSC,
     [
@@ -214,6 +228,14 @@ const controls = [
       'c3',
     ) !== ''],
   ['a correct sample still compiles', () => compile("await fl.files.get(id, { as: 'alice' });", 'c4') === ''],
+  ['an imported class used wrongly', () =>
+    compile("import { S3Storage } from '@filelayer/core';\nconst s = new S3Storage({ bucket: 1 });", 'c5') !== ''],
+  ['an imported class used rightly', () =>
+    compile(
+      "import pg from 'pg';\nimport { Filelayer as F, S3Storage } from '@filelayer/core';\n" +
+        "const f = new F(new pg.Pool(), new S3Storage({ endpoint: 'https://x', bucket: 'b', region: 'auto', accessKeyId: 'a', secretAccessKey: 's' }));\nvoid f;",
+      'c6',
+    ) === ''],
 ];
 const failed = controls.filter(([, f]) => !f()).map(([n]) => n);
 
