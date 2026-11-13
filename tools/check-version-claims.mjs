@@ -53,6 +53,15 @@ import { dirname, join, relative } from 'node:path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(ROOT, 'packages/core/package.json'), 'utf8'));
 const VERSION = pkg.version;
+// The @filelayer/core the benchmark measures, pinned exactly in its package.json.
+const BENCH_PIN = (() => {
+  try {
+    const b = JSON.parse(readFileSync(join(ROOT, 'benchmark', 'package.json'), 'utf8'));
+    return /^\d+\.\d+\.\d+$/.test(b.dependencies?.['@filelayer/core'] ?? '') ? b.dependencies['@filelayer/core'] : null;
+  } catch {
+    return null;
+  }
+})();
 const [MAJOR, MINOR] = VERSION.split('.');
 
 /**
@@ -1021,6 +1030,14 @@ function sweepVersions(entries) {
 
       const excused = VERSION_SWEEP_EXCEPTIONS.find((e) => e.match.test(line));
       if (excused) continue;
+
+      // THE BENCHMARK STATES THE VERSION IT MEASURED. Its pages and results
+      // name the @filelayer/core that benchmark/package.json pins, installed
+      // from npm, which during a release is the previous one: the new one is
+      // not on npm until it is published, and only then can it be measured.
+      // Excused only in the benchmark's own files and the page built from them,
+      // and only when the number is exactly that pin.
+      if (BENCH_PIN && value === BENCH_PIN && /(?:^|\/)benchmark\/|one-feature-five-ways\.html$/.test(file)) continue;
 
       out.push(
         `${file}:${lineNo} states \`${value}\` as a current version; packages/core/package.json ` +

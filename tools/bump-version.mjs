@@ -203,6 +203,11 @@ const DATED = [
   // the package": a run of CI is an event, dated to the release that ran it.
   // The 0.35.2 bump rewrote it to v0.35.2.
   /\bv?\d+\.\d+\.\d+`?\s+(?:release|catch-up|publish)\s+run\b/,
+  // "the self-test shows it failing on the 0.35.2 example" and "that is how
+  // 0.35.2 shipped args that ...": what a past release contained. The 0.35.3
+  // bump rewrote both in ci.yml.
+  /\bfailing\s+on\s+the\s+`?v?\d+\.\d+\.\d+/,
+  /\bthat\s+is\s+how\s+`?v?\d+\.\d+\.\d+/,
 ];
 
 /**

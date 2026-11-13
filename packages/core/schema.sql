@@ -1797,4 +1797,4 @@ CREATE UNIQUE INDEX filelayer_install_one_row ON filelayer_install ((1));
 -- be a fabricated history in a table whose whole purpose is to be believed. The
 -- note says which it is.
 INSERT INTO filelayer_schema_version (version, introduced_in, note) VALUES
-    (16, '0.35.2', 'created whole from schema.sql at this version; migrations 1-15 were never run against this database because it never held an earlier schema');
+    (16, '0.35.3', 'created whole from schema.sql at this version; migrations 1-15 were never run against this database because it never held an earlier schema');

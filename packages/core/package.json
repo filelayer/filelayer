@@ -1,6 +1,6 @@
 {
   "name": "@filelayer/core",
-  "version": "0.35.2",
+  "version": "0.35.3",
   "description": "User files for SaaS: file authorization middleware for multi-tenant files on your own Postgres. It covers file sharing permissions and file upload permissions per user, org and role. Expiring file links and delegated share links are revocable links: revoke one and it stops working on the next request, and every allowed or denied access goes into a hash-chained audit trail.",
   "license": "Apache-2.0",
   "type": "module",

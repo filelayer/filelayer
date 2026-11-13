@@ -19,6 +19,93 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [0.35.3] — 2026-11-14
+
+`@filelayer/core` is a TypeScript library for the files your SaaS users upload:
+you tell it who the caller is, and it decides what they may do with a file,
+serves the bytes and writes the audit event, on your own Postgres and your own
+bucket. This patch fixes the MCP client configuration we printed, which started
+a process that could not run, and changes the Next.js example so the
+organization comes from the session. No schema change (still version 16). No
+API change.
+
+### Fixed — the documented MCP client configuration starts a working server
+
+The configuration printed in `docs/MCP.md`, the server's own header comment and
+`llms.txt`, and given to the MCP registry, was
+
+    "command": "npx", "args": ["-y", "-p", "@filelayer/core", "filelayer-mcp"]
+
+`npx` installs only the packages named with `-p`. `pg` and the MCP SDK are
+optional peer dependencies of this package, so they were not installed, and a
+client that pasted the block and filled in the `env` got "the pg driver is not
+installed" and no server. A first-user run found it on 12 November. The release
+check that ran this command ran it with no configuration and accepted the
+refusal about storage, which comes before the server loads `pg`, so it could
+not see the defect.
+
+The configuration is now
+
+    "args": ["-y", "-p", "@filelayer/core", "-p", "pg", "-p", "@modelcontextprotocol/sdk", "-p", "zod", "filelayer-mcp"]
+
+in every place it is printed and in `server.json`, and each says to apply
+`schema.sql` to the database before the first start. When `pg` is missing, the
+server's error now prints this line as well as `npm install pg`. `zod` arrives
+with the SDK today and is named anyway, so the configuration does not depend on
+the SDK's dependency list.
+
+A new release check, `check:mcp-npx`, starts the documented command from an
+empty directory with a new npm cache, the package being the packed tarball,
+against PostgreSQL with the schema applied, and requires the MCP tool listing to return
+the seven default tools over stdio. Its self-test shows it failing on the
+0.35.2 configuration and on the new one without the SDK.
+
+**If you configured a client with the old block,** replace its `args` with the
+line above. **One case this does not fix:** an MCP client that builds the
+command from the registry entry as `npx @filelayer/core@<version> <arguments>`.
+npm then cannot choose between this package's two executables, and no
+`server.json` can change that. A separate package for the server is being
+considered; until then, give such a client the configuration above by hand.
+
+### Changed — the Next.js example takes the organization from the session
+
+`examples/nextjs` read the organization for an upload from a form field and for
+a listing from the query string, so the client chose which tenant it wrote
+into, and the demo relied on the first upload creating the org. Now:
+
+- `examples/nextjs/lib/filelayer.ts` has `currentOrg()`, beside `currentUser()`, and both upload
+  and listing use it. A form field naming another org is ignored.
+- The demo's org is created on purpose, with `fl.orgs.create(id, { name, owner
+  })`, in `getFilelayer()`, and the comment says where that call belongs in an
+  application: where it creates a workspace, never in an upload.
+- The README says both, and its stale line saying the imports end in `.ts` (true
+  until the Next 16 fix) is corrected.
+- `verify.mjs` has two new checks, 30 in all: an org named in the form does not
+  move the file out of the session's org, and a signed-in non-member is refused
+  by Filelayer. Both were run against the previous route and failed there.
+
+The integration skill's reference for Fetch runtimes says the same.
+
+### Changed — everything else since 0.35.2, all documentation
+
+- **Next.js 16.** The example builds in a new `create-next-app` 16 project
+  (with `cacheComponents` on, as that tool now sets it), and CI builds and
+  serves it there and checks that a revoked link is refused on the next
+  request. `export const dynamic = 'force-dynamic'`, a build error under
+  `cacheComponents`, is gone from the example, `QUICKSTART.md` and the skill;
+  what they warn against instead is a `'use cache'` around a read.
+- **An in-browser demo,** `examples/in-the-browser`: nine steps on PGlite with
+  an "Open in StackBlitz" button, and a release check that its output matches
+  its README line for line.
+- **README:** a first stored file in an organization and a refusal at the top,
+  and the comparison of five implementations, from the ones that ran.
+- **The npm description and keywords** say what the package is for in the words
+  people search with.
+- **`SECURITY.md`:** the security@filelayer.dev mailbox is live; private
+  advisories on GitHub stay the preferred route.
+
+---
+
 ## [0.35.2] — 2026-11-03
 
 `@filelayer/core` is a TypeScript library for the files your SaaS users upload:
