@@ -88,7 +88,7 @@ own.
 > **Built to be adopted without us.** The quickstart, the guides, the examples
 > and `llms.txt` are written so that you, or your coding agent, can integrate it
 > alone. Where it breaks, [open an issue](https://github.com/filelayer/filelayer/issues).
-> Free and open source; paid plans add support and priority, see
+> Free and open source, with no usage limits. You pay for support and reviews, see
 > [pricing](https://filelayer.dev/pricing).
 > Alpha, and the numbers behind that word are all on one page:
 > [should you depend on this?](https://github.com/filelayer/filelayer/blob/main/TRUST.md) ·

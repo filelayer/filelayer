@@ -16,8 +16,8 @@ keeps working exactly as before.
 Every paid service is delivered in writing: email, written reviews and security
 advisories. No plan includes calls or meetings.
 
-**Team**, US$99 a month per organization, for up to 5,000 billable file owners
-across the organization's applications:
+**Team**, US$99 a month per organization, for small teams that want answers by
+email:
 
 - Email support from the Filelayer maintainers at support@filelayer.dev, with a
   target of a first reply within two business days. Business days are Monday to
@@ -29,8 +29,8 @@ across the organization's applications:
   disclosed publicly. You agree to keep an advisory confidential, and to use it
   only to protect your own deployments, until it is disclosed publicly.
 
-**Business**, US$299 a month per organization, for up to 50,000 billable file
-owners:
+**Business**, US$299 a month per organization, for products with sensitive data
+or customers' security reviews:
 
 - Everything in Team.
 - One review of your file model against the Filelayer adversarial suite in each
@@ -41,8 +41,8 @@ owners:
   target is to deliver it within 10 business days of your request. There is no
   call.
 
-**Enterprise**, for more than 50,000 billable file owners: terms are agreed in
-writing, by email to enterprise@filelayer.dev.
+**Enterprise**: your own contract, a data processing agreement or other terms of
+your own, agreed in writing by email to enterprise@filelayer.dev.
 
 ## 2. What no plan includes
 
@@ -63,23 +63,12 @@ The two-business-day reply time and the 10-business-day delivery time are
 targets. Missing a target is not a breach of these terms and does not entitle
 you to a refund or a credit.
 
-## 4. Billable file owners
+## 4. No usage limits
 
-A billable file owner is a distinct owner with at least one live, ready file
-during a calendar month (UTC), counted per organization across its
-applications. A person a file is shared with is not its owner and is not
-counted.
-
-You declare the number yourself, using the query published on the
-[pricing page](https://filelayer.dev/pricing), run against each of your
-Filelayer databases. If your count is above your plan's limit for two
-consecutive months, you move to the next plan from the following billing month.
-
-We may ask, at most once a year and with 30 days' notice, for the query results
-behind your declaration for the months in question. We do not access your
-systems to check. Anything you send us for this is confidential and is used
-only to check the declaration. If the count was above your plan's limit, you
-move to the right plan from the following billing month.
+No plan limits the number of files, users, file owners or applications. You pay
+for support and reviews, and the library is always free. The sizes on the
+pricing page are a guide to which plan fits, not a limit, and we do not count
+or ask for your usage.
 
 ## 5. Prices, billing and taxes
 
