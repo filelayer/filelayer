@@ -35,15 +35,17 @@ variable. The network is used for npm and nothing else.
 a separate AI agent, told to follow its platform's documented best practice and
 to argue for that platform. Each one's directory has a `REPORT.md` with its
 sources, what it could not implement, and a section called "Where this approach
-is genuinely good". The brief they were built from and the agents' prompts were
-not kept; `benchmark/BRIEF.md` says so, quotes what survives of the brief in
-their reports, and publishes the prompts that do exist. The Filelayer version is
+is genuinely good". The brief they were built from and the prompt each agent
+was given in September were not kept. `benchmark/BRIEF.md` says so, lists every
+phrase of the brief that the agents quoted in their reports with its file and
+line, and publishes the two prompts used since: the cold review of 3 November
+and the revision round of 13 November. The Filelayer version is
 the `examples/vault/server.ts` that ships in the npm package, and a second copy
 of it wired as in production is counted beside it. The attack suite was written
 by the same team that builds Filelayer. That is a conflict of interest, and the
 section on the attacks says what we did about it.
 
-**Every alternative had one revision round.** The library was fixed each time
+**Each of the two alternatives that ran had one revision round.** The library was fixed each time
 the attacks found a defect in it; the alternatives were frozen after one build.
 So on 13 November each executed alternative got one round against the attacks,
 at most 40 changed lines, done the way someone who knows the platform would do
@@ -53,51 +55,6 @@ have never run, so their code was not changed; their counts assume they were
 built the way their platforms document.
 
 ## Results
-
-### Lines the developer writes
-
-Non-blank, non-comment application lines. Tests, tooling and the platform
-emulation are not counted. The Filelayer library itself is not counted either:
-it is vendor code, the way the Supabase or AWS SDK is.
-
-| Implementation | Application lines | Infrastructure config | Relative |
-|---|---:|---:|---:|
-| Filelayer, the example | 133 | 0 | 1.0x |
-| Filelayer, wired as in production | 161 | 50 | |
-| Supabase | 569 | 0 | 4.3x |
-| Raw S3 | 708 | 122 | 5.3x |
-| Convex, not executed or compiled | 841 | 0 | 6.3x |
-| Vercel Blob, not executed or compiled | 884 | 21 | 6.6x |
-
-**Wired as in production, the median of the alternatives that ran is 699.5
-lines against Filelayer's 211, or 3.3x**, application and infrastructure lines
-together. That is the number to compare if you are comparing deployments. The
-example runs on an in-memory database and in-memory storage, and the
-alternatives are counted with their production wiring, so the same example is
-also counted wired as a deployment needs it: a pg pool, the schema applied once
-under a lock, `S3Storage`, and the IAM and bucket policy it needs. It runs end
-to end against PostgreSQL and an S3 store (`benchmark/production-wired/`).
-
-Against the example as it ships, the median is 638.5 application lines against
-133, or 4.8x. Both medians leave out Convex and Vercel Blob, which are listed
-for completeness: code that was never executed or compiled may not even work.
-
-**The library is not nothing.** Its code runs in your process and its schema in
-your database, so it is counted too, apart from the lines you write:
-
-| Implementation | Vendor lines in your process | Vendor lines in your database |
-|---|---:|---:|
-| Filelayer | 6,598 | 547 |
-| Raw S3 | 42,010 (the AWS SDK) | 0 |
-| Supabase, Convex, Vercel Blob | not measured | not measured |
-
-Non-blank, non-comment lines, the same method as above; `count-vendor.mjs`
-says what is included. Supabase's vendor code runs on its platform and its
-schemas are emulated here, and the other two never ran, so a number for them
-would be a guess.
-
-Every inclusion and exclusion is a rule in `benchmark/loc.manifest.json`, and a
-file that matches no rule fails the run.
 
 ### Security-sensitive decisions
 
@@ -113,8 +70,8 @@ Counted as kinds, and as the places in the code where each must be got right.
 | Vercel Blob, not executed or compiled | 22 | 36 |
 | Convex, not executed or compiled | 19 | 19 |
 
-Over the two alternatives that ran, the median is 3.1x the kinds and 5.3x the
-places.
+Over the two alternatives that ran, the average is about 3.1 times as many
+kinds and 5.3 times as many places.
 
 One rule for all five. A decision enforced in one helper is one place, however
 many call sites use the helper. A decision is dropped when the platform's own
@@ -140,6 +97,52 @@ The Convex and Vercel Blob counts come from their authors' own lists only. The
 attack suite added decisions to both executed alternatives that their authors
 had missed, and it cannot do that for code that does not run, so those two
 counts are probably low. That works against Filelayer and is left as it is.
+
+### Lines the developer writes
+
+Non-blank, non-comment application lines. Tests, tooling and the platform
+emulation are not counted. The Filelayer library itself is not counted either:
+it is vendor code, the way the Supabase or AWS SDK is.
+
+| Implementation | Application lines | Infrastructure config | Relative |
+|---|---:|---:|---:|
+| Filelayer, the example | 133 | 0 | 1.0x |
+| Filelayer, wired as in production | 161 | 50 | |
+| Supabase | 569 | 0 | 4.3x |
+| Raw S3 | 708 | 122 | 5.3x |
+| Convex, not executed or compiled | 841 | 0 | |
+| Vercel Blob, not executed or compiled | 884 | 21 | |
+
+**Wired as in production, the two alternatives that ran take about 3.3 times
+as many lines as Filelayer**: an average of 699.5 against 211, application and
+infrastructure lines together. That is the number to compare if you are comparing deployments. The
+example runs on an in-memory database and in-memory storage, and the
+alternatives are counted with their production wiring, so the same example is
+also counted wired as a deployment needs it: a pg pool, the schema applied once
+under a lock, `S3Storage`, and the IAM and bucket policy it needs. It runs end
+to end against PostgreSQL and an S3 store (`benchmark/production-wired/`).
+
+Against the example as it ships, the average of the two is 638.5 application
+lines against 133, about 4.8 times as many. Both figures leave out Convex and
+Vercel Blob, which are listed for completeness: code that was never executed or
+compiled may not even work.
+
+**The library is not nothing.** Its code runs in your process and its schema in
+your database, so it is counted too, apart from the lines you write:
+
+| Implementation | Vendor lines in your process | Vendor lines in your database |
+|---|---:|---:|
+| Filelayer | 6,598 | 547 |
+| Raw S3 | 42,010 (the AWS SDK) | 0 |
+| Supabase, Convex, Vercel Blob | not measured | not measured |
+
+Non-blank, non-comment lines, the same method as above; `count-vendor.mjs`
+says what is included. Supabase's vendor code runs on its platform and its
+schemas are emulated here, and the other two never ran, so a number for them
+would be a guess.
+
+Every inclusion and exclusion is a rule in `benchmark/loc.manifest.json`, and a
+file that matches no rule fails the run.
 
 ### The 26 attacks
 
@@ -169,7 +172,11 @@ bytes. So a revoked link keeps working for up to 30 seconds, and the audit
 records the issuing of a URL rather than a delivery. An Edge Function that
 streams the bytes would close both, at the cost of egress through the function;
 it was not built in the revision round, so these two results describe this
-implementation, not Supabase.
+implementation, not Supabase. The second partial is attack E2 working as
+defined: an implementation that redirects to a signed URL, rather than serving
+the bytes, can only record that a URL was issued, never whether it was used, so
+E2 scores any redirect to a signed URL as partial, whichever platform issues
+it.
 
 **The other 8 attacks are reported apart and never added into that
 comparison.** Most test a feature only some implementations have, such as
@@ -199,7 +206,7 @@ Independent attacks are welcome, as an issue or a pull request.
 From `npm install` to the first stored file, using the program printed in the
 quickstart that ships in the package: 4 lines of application code, no step that
 needs a person, and no account, credential or dashboard. On the machine that
-generated these results it took 4.6 seconds; seconds depend on the machine and
+generated these results it took 5.3 seconds; seconds depend on the machine and
 the network.
 
 ## Where the alternatives are better
