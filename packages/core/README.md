@@ -41,6 +41,10 @@ No account, no credential and no dashboard: `quickstart()` runs Postgres in
 process. The refusal is a `404`, so a stranger cannot tell the file exists, and
 the reason is in the audit trail, not in the response.
 
+Or try it with nothing to install: [a demo in the browser](https://stackblitz.com/github/filelayer/filelayer/tree/main/examples/in-the-browser?file=demo.mjs)
+uploads a file, is refused from another organization, revokes a share link and
+shows the audit trail that recorded both refusals.
+
 **The file layer for SaaS applications.** A customer's security review asks who
 opened a file and who was refused. A link you sent has to stop working now.
 [Someone asks to be erased from your logs](https://github.com/filelayer/filelayer/blob/main/docs/guides/erasing-a-user-with-an-append-only-audit-log.md).
