@@ -237,7 +237,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **749 tests across 163 suites**, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17 |
+| The suite | **752 tests across 164 suites**, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17 |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends: races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **26 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |

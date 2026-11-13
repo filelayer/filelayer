@@ -9,7 +9,7 @@ roles, share links that expire and can be revoked, lifecycle, and an audit trail
 that records denials.
 
 **What is tested is the authorization engine, and it is tested hard.** One
-function answers every access question. 749 tests across 163 suites, every
+function answers every access question. 752 tests across 164 suites, every
 commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the
 concurrency, audit retention and MCP server suites run against a real
 PostgreSQL 17. 26 adversarial attacks score zero breaches, and the same suite
@@ -29,13 +29,13 @@ real traffic.
 
 | | |
 |---|---|
-| Version | 0.35.3 — alpha |
+| Version | 0.35.4 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |
 | Load measured | First run 4 October 2026, `benchmark/load/RESULTS.md`. One machine, no network, no object store, seconds per cell |
 | Time to first stored file | Measured 17 October 2026, `benchmark/ttff/RESULTS.md`. From `npm install` of the **published** package to a stored byte, with a cold npm cache: **0 accounts, 0 credentials, 0 dashboards, 4 lines**. The program is asserted to appear verbatim in the quickstart that shipped in the tarball |
-| Tests | 749 across 163 suites, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17. The suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves |
+| Tests | 752 across 164 suites, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17. The suite also runs on Node 22, 24 and 26, where the suites needing credentials or two connections skip themselves |
 | Concurrency, against a real PostgreSQL with two backends | 8 tests, every commit |
 | Adversarial suite | 26 attacks, 0 breaches |
 | Runtime dependencies | **0** |

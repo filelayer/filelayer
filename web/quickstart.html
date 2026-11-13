@@ -52,7 +52,7 @@
     "name": "Filelayer",
     "alternateName": "@filelayer/core",
     "codeRepository": "https://github.com/filelayer/filelayer",
-    "softwareVersion": "0.35.3"
+    "softwareVersion": "0.35.4"
   },
   "author": {
     "@type": "Organization",
@@ -107,9 +107,9 @@
 <p><strong>Requirements:</strong> Node ≥ 22.18. Nothing else — no Docker, no Postgres daemon for development.</p>
 <pre><code class="lang-bash">npm install @filelayer/core</code></pre>
 <p>That pulls in nothing else: the package has <strong>no runtime dependencies</strong>. It talks to your Postgres through whatever driver you already use (<code>pg.Pool</code> works directly) and to your bucket over HTTP.</p>
-<p>The throwaway instance in the next block is the exception. <code>quickstart()</code> runs on PGlite, an embedded WebAssembly Postgres, which is declared as an <strong>optional peer dependency</strong> — a library whose premise is &quot;point it at your own Postgres&quot; should not put a second Postgres into every production install. Install it too if you want <code>quickstart()</code> or <code>createTestDb()</code>:</p>
+<p>The throwaway instance in the next block is the exception. <code>quickstart()</code> runs on PGlite, an embedded WebAssembly Postgres, which you install yourself: it is not a dependency, because a library whose premise is &quot;point it at your own Postgres&quot; should not put a second Postgres into every production install. Install it too if you want <code>quickstart()</code> or <code>createTestDb()</code>:</p>
 <pre><code class="lang-bash">npm install --save-dev &quot;@electric-sql/pglite@^0.3.11&quot;</code></pre>
-<p>Keep the version constraint. Filelayer supports the <strong>0.3.x</strong> line of PGlite — that is what <code>peerDependencies</code> declares and what the suite runs against — and <strong>0.5.x is not supported</strong>: the suite was run against 0.5.8 and does not pass, so the range was left alone. PGlite's <code>latest</code> on npm is a 0.5.x release, so a bare <code>npm install</code> of it can pick a version outside the range and npm will then refuse the install with <code>ERESOLVE</code>. The quotes are for your shell: <code>^</code> is a glob operator under <code>zsh</code> with <code>extendedglob</code> and an escape character in <code>cmd.exe</code>.</p>
+<p>Keep the version constraint. Filelayer supports the <strong>0.3.x</strong> line of PGlite — what the suite runs against — and <strong>0.5.x is not supported</strong>: the suite was run against 0.5.8 and does not pass. PGlite's <code>latest</code> on npm is a 0.5.x release, so a bare <code>npm install</code> of it installs an unsupported version. The install still succeeds, because PGlite is not a peer dependency; <code>quickstart()</code> and <code>createTestDb()</code> then stop with the error <code>pglite_unsupported_version</code>, whose message is the command above. The quotes are for your shell: <code>^</code> is a glob operator under <code>zsh</code> with <code>extendedglob</code> and an escape character in <code>cmd.exe</code>.</p>
 <p>Forget it and nothing breaks silently: <code>createTestDb()</code> throws an error naming the package and that exact command. Production code never reaches it — see §7.</p>
 <p>The tests import the TypeScript source directly and Node will not strip types from files under <code>node_modules</code>, so <code>node --test node_modules/@filelayer/core/test/</code> does not work. <strong>That is not a reason to clone us.</strong> Copying the package directory out to a scratch directory runs the same suite against <em>the bytes you were sent</em>, which is the only thing worth verifying, and the exact procedure is in <a href="https://github.com/filelayer/filelayer/blob/main/docs/VERIFY-WHAT-YOU-INSTALLED.md" rel="noopener">docs/VERIFY-WHAT-YOU-INSTALLED.md</a>: roughly 12 to 25 minutes measured on 2 vCPU machines, no account, no credentials, no database. CI runs that document's commands verbatim against a freshly packed tarball on every commit, so it cannot quietly stop working.</p>
 <p>Clone the repository if you want to <em>change</em> it, or to run the examples, which are driven by scripts in the repository root:</p>
@@ -546,7 +546,7 @@ catch (e) {
     <a href="/trust">Should you depend on this?</a>
   </p>
   <p class="fine">
-    Filelayer 0.35.3, alpha. Apache-2.0, with a patent grant.
+    Filelayer 0.35.4, alpha. Apache-2.0, with a patent grant.
     Copyright 2026 Technology Pro Bono S.L.
   </p>
 </footer>

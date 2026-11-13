@@ -69,21 +69,21 @@ Four details in there are load-bearing:
   agent had to rewrite the block by hand, which is the one thing this procedure
   must not require.
 - **PGlite is the only thing installed.** It runs PostgreSQL in-process, so the
-  suite needs no server. It is pinned to `0.3.x`; npm's `latest` is `0.5.x` and
-  installing that fails to resolve.
+  suite needs no server. It is pinned to `0.3.x`; npm's `latest` is `0.5.x`,
+  which the library refuses with `pglite_unsupported_version`.
 
 ## What you should see
 
 | | as a normal user | as root |
 |---|---|---|
-| tests | 749 | 749 |
-| pass | 714 | 713 |
+| tests | 752 | 752 |
+| pass | 717 | 716 |
 | fail | **0** | **0** |
 | skipped | 35 | 36 |
-| suites | 163 | 163 |
+| suites | 164 | 164 |
 
 The lines will look different depending on your Node version and whether you are
-piping the output: Node 22 writes `# tests 749`, Node 24 writes `ℹ tests 749`,
+piping the output: Node 22 writes `# tests 752`, Node 24 writes `ℹ tests 752`,
 and a terminal gets ticks and timings as well. The numbers are the same. Only
 the reporter changed, and CI reads both, because reading one of them is how this
 gate first reported a passing run as a failure.

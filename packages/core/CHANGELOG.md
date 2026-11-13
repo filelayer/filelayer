@@ -19,6 +19,69 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [0.35.4] — 2026-11-15
+
+`@filelayer/core` is a TypeScript library for the files your SaaS users upload:
+you tell it who the caller is, and it decides what they may do with a file,
+serves the bytes and writes the audit event, on your own Postgres and your own
+bucket. This patch makes the package installable in a project that already has
+PGlite 0.5.x, and corrects three silent decisions in the vault example. No
+schema change (still version 16). The library's behaviour changes in one place:
+`createTestDb()` and `Filelayer.quickstart()` refuse an unsupported PGlite with
+a named error instead of failing later.
+
+### Fixed — adding the package to a project with PGlite 0.5.x stops failing with ERESOLVE
+
+`@electric-sql/pglite` was an optional peer dependency at `^0.3.11`. npm
+enforces an optional peer's range once the peer is installed, and PGlite's
+`latest` is a 0.5.x release, so a project that had already run
+`npm install @electric-sql/pglite` could not add `@filelayer/core`: npm refused
+the whole tree with ERESOLVE, at the first contact. Installing both in one
+command happened to work, because npm then chose a 0.3.x PGlite.
+
+PGlite is no longer a peer dependency. The supported line is checked when
+PGlite is loaded: with a version outside 0.3.x, `createTestDb()` and
+`Filelayer.quickstart()` throw a `FilelayerError` with code
+`pglite_unsupported_version` (status 500), whose message is the command that
+fixes it:
+
+    npm install --save-dev "@electric-sql/pglite@^0.3.11"
+
+Production code is unaffected: it passes its own `pg.Pool` and never loads
+PGlite. A new release check, `check:pglite-install`, installs the packed
+tarball beside an unversioned PGlite in both orders, requires the install to
+succeed and `quickstart()` to refuse with that error and command, and requires
+the command to work. Its self-test shows the same install failing with
+ERESOLVE on 0.35.3.
+
+`FilelayerError` now carries `meaning` and `fix`, read from the error
+catalogue (`errors.json`), for every code.
+
+### Changed — the vault example decides three things correctly
+
+`examples/vault/server.ts` had three silent decisions, each counted against it
+in `benchmark/decisions.json`:
+
+- `POST /orgs` and `POST /actors` took no credential, so anyone who could reach
+  them could create a tenant or an identity. They now need the operator
+  credential `x-admin-token`, compared in constant time; `createVaultApp(db,
+  storage, { adminToken })` takes it, and with none configured both refuse.
+- A new org's owner was `ownerActorId` from the request body. It is now the
+  caller (`x-actor-id`), and a body naming someone else is ignored.
+- Request bodies were read whole with no limit. They are now capped, 64 KiB and
+  16 MiB for an upload's base64, and refused with 413 before they are held.
+
+`test/vault-example.test.ts` has three new checks for these, each seen failing
+against the previous example.
+
+### Changed — documentation since 0.35.3
+
+- `docs/MCP.md`: create the MCP server's organization and its first user once,
+  before the first start, with the script to do it.
+- README: how to run its first block, and the Next.js example's thirty checks.
+
+---
+
 ## [0.35.3] — 2026-11-14
 
 `@filelayer/core` is a TypeScript library for the files your SaaS users upload:
