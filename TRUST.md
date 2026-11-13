@@ -212,6 +212,22 @@ We will report against this list publicly, including when a number stays at zero
 
 ---
 
+## Who maintains this
+
+Jorge Urios, in Madrid, who builds and runs software products, is the one
+maintainer with commit rights: [github.com/jorgeurios](https://github.com/jorgeurios).
+
+Releases are published from CI, never from a laptop. The publish workflow uses
+npm trusted publishing, and every version on npm carries provenance that ties
+it to the commit and the workflow run that built it.
+
+If he disappears, nothing you run stops. The core library is and will remain
+Apache-2.0. It runs in your process, on your Postgres and your bucket, with no
+service of ours to depend on, so your files and your data stay where they are
+and you can fork the code. A second maintainer is item 5 on the list above.
+
+---
+
 ## How this is built
 
 Filelayer is built with the assistance of AI agents. All externally published

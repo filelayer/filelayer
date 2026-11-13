@@ -89,7 +89,8 @@ own.
 > and `llms.txt` are written so that you, or your coding agent, can integrate it
 > alone. Where it breaks, [open an issue](https://github.com/filelayer/filelayer/issues).
 > Free and open source, with no usage limits. You pay for support and reviews, see
-> [pricing](https://filelayer.dev/pricing).
+> [pricing](https://filelayer.dev/pricing). The core library is and will remain
+> Apache-2.0.
 > Alpha, and the numbers behind that word are all on one page:
 > [should you depend on this?](https://github.com/filelayer/filelayer/blob/main/TRUST.md) ·
 > [what it does not do](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) ·
