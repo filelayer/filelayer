@@ -37,8 +37,9 @@ const [refusal] = await fl.orgs.audit('acme', { as: 'alice', decision: 'deny' })
 console.log(refusal.summary);   // '<time> eve file.read deny:no_membership q3.txt @acme'
 ```
 
-No account, no credential and no dashboard: `quickstart()` runs Postgres in
-process. The refusal is a `404`, so a stranger cannot tell the file exists, and
+To run it: in an empty directory, `npm init -y`, the two installs above, save
+the block as `first.mjs`, then `node first.mjs`. No account, no credential and
+no dashboard: `quickstart()` runs Postgres in process. The refusal is a `404`, so a stranger cannot tell the file exists, and
 the reason is in the audit trail, not in the response.
 
 Or try it with nothing to install: [a demo in the browser](https://stackblitz.com/github/filelayer/filelayer/tree/main/examples/in-the-browser?file=demo.mjs)

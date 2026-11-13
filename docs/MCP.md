@@ -69,6 +69,39 @@ before the first start, from the project where `@filelayer/core` is installed:
 psql "$DATABASE_URL" -f node_modules/@filelayer/core/schema.sql
 ```
 
+**Then create the organization and its first user, once.** The server acts for
+`FILELAYER_AS` inside `FILELAYER_ORG`, and both have to exist in Filelayer
+before the first tool call: on an empty database every tool answers
+`not_found`, which is the same answer a stranger gets, and nothing else tells
+you why. The server never creates them itself, because a process that could
+create its own organization could make itself the owner of any of them. From
+the same project, with `pg` installed (`npm install pg`), save this as
+`setup-filelayer.mjs`:
+
+```js
+import pg from 'pg';
+import { Filelayer, FsStorage } from '@filelayer/core';
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const fl = new Filelayer(pool, new FsStorage(process.env.FILELAYER_DATA_DIR));
+await fl.orgs.create(process.env.FILELAYER_ORG, { owner: process.env.FILELAYER_AS });
+await pool.end();
+```
+
+and run it with the same values the client will use:
+
+```bash
+DATABASE_URL=postgres://... FILELAYER_AS=user_alice FILELAYER_ORG=org_acme \
+FILELAYER_DATA_DIR=/srv/filelayer-data node setup-filelayer.mjs
+```
+
+`FILELAYER_AS` becomes the owner of `FILELAYER_ORG`. Running it again with the
+same owner changes nothing. To give the server another user, add that user to
+the organization first, as the owner, with
+`fl.orgs.setRole(org, user, 'member', { as: owner })`, and start one server per
+user. In your application this is the same call your sign-up and invitation
+code already makes; the script is for a server you start before there is one.
+
 Then give the client this:
 
 ```json
