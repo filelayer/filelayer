@@ -35,10 +35,22 @@ variable. The network is used for npm and nothing else.
 a separate AI agent, told to follow its platform's documented best practice and
 to argue for that platform. Each one's directory has a `REPORT.md` with its
 sources, what it could not implement, and a section called "Where this approach
-is genuinely good". The Filelayer version is the `examples/vault/server.ts` that
-ships in the npm package. The attack suite was written by the same team that
-builds Filelayer. That is a conflict of interest, and the section on the
-attacks says what we did about it.
+is genuinely good". The brief they were built from and the agents' prompts were
+not kept; `benchmark/BRIEF.md` says so, quotes what survives of the brief in
+their reports, and publishes the prompts that do exist. The Filelayer version is
+the `examples/vault/server.ts` that ships in the npm package, and a second copy
+of it wired as in production is counted beside it. The attack suite was written
+by the same team that builds Filelayer. That is a conflict of interest, and the
+section on the attacks says what we did about it.
+
+**Every alternative had one revision round.** The library was fixed each time
+the attacks found a defect in it; the alternatives were frozen after one build.
+So on 13 November each executed alternative got one round against the attacks,
+at most 40 changed lines, done the way someone who knows the platform would do
+it, with the diff published in `benchmark/revisions/`. Raw S3 changed 39 lines,
+Supabase 8. Every result below is for the revised code. Convex and Vercel Blob
+have never run, so their code was not changed; their counts assume they were
+built the way their platforms document.
 
 ## Results
 
@@ -50,15 +62,39 @@ it is vendor code, the way the Supabase or AWS SDK is.
 
 | Implementation | Application lines | Infrastructure config | Relative |
 |---|---:|---:|---:|
-| Filelayer | 133 | 0 | 1.0x |
-| Supabase | 564 | 0 | 4.2x |
-| Raw S3 | 700 | 122 | 5.3x |
+| Filelayer, the example | 133 | 0 | 1.0x |
+| Filelayer, wired as in production | 161 | 50 | |
+| Supabase | 569 | 0 | 4.3x |
+| Raw S3 | 708 | 122 | 5.3x |
 | Convex, not executed or compiled | 841 | 0 | 6.3x |
 | Vercel Blob, not executed or compiled | 884 | 21 | 6.6x |
 
-The median is taken over the two alternatives that ran: 632 lines against 133,
-or 4.8x. Convex and Vercel Blob are listed for completeness and are left out of
-it, because code that was never executed or compiled may not even work.
+The median is taken over the two alternatives that ran: 638.5 lines against
+133, or 4.8x. Convex and Vercel Blob are listed for completeness and are left
+out of it, because code that was never executed or compiled may not even work.
+
+The example runs on an in-memory database and in-memory storage, and the
+alternatives are counted with their production wiring. So the same example is
+also counted wired as a deployment needs it: a pg pool, the schema applied once
+under a lock, `S3Storage`, and the IAM and bucket policy it needs. It runs end
+to end against PostgreSQL and an S3 store (`benchmark/production-wired/`).
+Application and infrastructure lines together, the median of the alternatives
+that ran is 699.5 against its 211, or **3.3x**. That is the number to compare
+if you are comparing deployments.
+
+**The library is not nothing.** Its code runs in your process and its schema in
+your database, so it is counted too, apart from the lines you write:
+
+| Implementation | Vendor lines in your process | Vendor lines in your database |
+|---|---:|---:|
+| Filelayer | 6,598 | 547 |
+| Raw S3 | 42,010 (the AWS SDK) | 0 |
+| Supabase, Convex, Vercel Blob | not measured | not measured |
+
+Non-blank, non-comment lines, the same method as above; `count-vendor.mjs`
+says what is included. Supabase's vendor code runs on its platform and its
+schemas are emulated here, and the other two never ran, so a number for them
+would be a guess.
 
 Every inclusion and exclusion is a rule in `benchmark/loc.manifest.json`, and a
 file that matches no rule fails the run.
@@ -71,17 +107,28 @@ Counted as kinds, and as the places in the code where each must be got right.
 
 | Implementation | Kinds | Places |
 |---|---:|---:|
-| Filelayer | 7 | 7 |
-| Supabase | 29 | 79 |
-| Raw S3 | 26 | 46 |
-| Vercel Blob, not executed or compiled | 22 | 61 |
-| Convex, not executed or compiled | 20 | 43 |
+| Filelayer | 8 | 9 |
+| Supabase | 26 | 64 |
+| Raw S3 | 24 | 32 |
+| Vercel Blob, not executed or compiled | 22 | 36 |
+| Convex, not executed or compiled | 19 | 19 |
 
-There is no median here on purpose. The places are being recounted under one
-rule for all five: a decision enforced in one helper counts as one place, and a
-decision the platform's own linter catches is dropped. Until that recount is
-done, read this table for its kinds and treat the places as provisional. One
-Filelayer decision is listed as arguable; counting it gives Filelayer 8 kinds.
+Over the two alternatives that ran, the median is 3.1x the kinds and 5.3x the
+places.
+
+One rule for all five. A decision enforced in one helper is one place, however
+many call sites use the helper. A decision is dropped when the platform's own
+linter flags the wrong choice, or when the safe choice is the platform's default
+and leaving it takes a deliberate act: then the wrong choice is not silent. That
+rule removed two decisions from Filelayer (a private bucket and bucket
+versioning, both defaults), the same defaults wherever an alternative counted
+them, the two Supabase decisions its database linter flags, and a repeated
+count wherever one helper carries the decision. Filelayer's count also gained three decisions its own
+example gets wrong: the routes that create organizations and actors take no
+identity, the new organization's owner is read from the request body, and the
+request body has no size limit. Every change is recorded in `decisions.json`
+on the decision itself, with its reason. One Filelayer decision is listed as
+arguable; counting it gives Filelayer 9 kinds.
 
 Two decisions that the first count in September held against Filelayer are no
 longer in it, because the library fixed them in 0.3.0: the audit chain could
@@ -106,26 +153,35 @@ can express.** None of the three was breached on them.
 | Implementation | Defended | Partial | Audit gap | Breach |
 |---|---:|---:|---:|---:|
 | Filelayer 0.35.2 | 18 of 18 | 0 | 0 | 0 |
-| Supabase | 15 of 18 | 2 | 1 | 0 |
-| Raw S3 | 17 of 18 | 0 | 1 | 0 |
+| Raw S3 | 18 of 18 | 0 | 0 | 0 |
+| Supabase | 16 of 18 | 2 | 0 | 0 |
 | Filelayer, earlier version (control) | 16 of 18 | 0 | 0 | 1 |
 
-An audit gap means nothing was disclosed or changed, but the application's own
-audit trail does not record the refusal. Supabase and raw S3 both have one, on
-the same attack: a refused cross-tenant read, and probes at documents that do
-not exist, leave no event in the application's audit trail. Gateway, storage or
-load balancer logs may hold them; the suite cannot read those and does not claim
-they are empty. Supabase's two partials are revocation, where the gateway refuses
-at once but a signed URL already issued stays valid for 30 seconds, and a byte
-delivery that is recorded as the issuing of a URL.
+Before the revision round, raw S3 and Supabase each had an audit gap on the same
+attack: a refused cross-tenant read, and probes at documents that do not exist,
+left no event in the application's own audit trail. Nothing was disclosed, and
+gateway or load balancer logs may have held them. A few lines closed it in both;
+the diffs are in `benchmark/revisions/`.
+
+Supabase's two partials are one design choice, labelled "as built": its share
+gateway redirects to a signed URL valid for 30 seconds instead of streaming the
+bytes. So a revoked link keeps working for up to 30 seconds, and the audit
+records the issuing of a URL rather than a delivery. An Edge Function that
+streams the bytes would close both, at the cost of egress through the function;
+it was not built in the revision round, so these two results describe this
+implementation, not Supabase.
 
 **The other 8 attacks are reported apart and never added into that
 comparison.** Most test a feature only some implementations have, such as
 per-file visibility inside a tenant, delegation or share listing; the rest
 depend on whether the application serves the bytes itself. Filelayer defends
-all 8. Raw S3 can express 3 of them: it defends 2 and is partial on the third, a
-hostile filename in the response headers. Supabase can express none.
-"Cannot express" is never counted as a pass.
+all 8. Raw S3 can express 4 of them and defends 3. On the fourth, HTML uploaded
+and opened on the signed-in read path, its presigned URL asks S3 to serve the
+file as an attachment, which real S3 does and the local store here does not
+implement: it is reported as "pass, not executed", not as a pass. Supabase can
+express none. "Cannot express" is never counted as a pass. One of the 8,
+escalation through delegation, is attempted as a direct SQL insert of a child
+grant, because the HTTP surface only creates read grants.
 
 **Why a perfect score is not the headline.** A suite that the implementation it
 was written alongside passes in full is exactly the suite a reader should

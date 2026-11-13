@@ -68,7 +68,7 @@ export function createStorage({ endpoint, region, bucket, accessKeyId, secretAcc
           Bucket: bucket,
           Key: key,
           ResponseContentDisposition: filename
-            ? `attachment; filename="${filename.replace(/"/g, '')}"`
+            ? `attachment; filename="${filename.replace(/["\r\n]/g, '')}"`
             : undefined,
           ResponseContentType: contentType,
         }),

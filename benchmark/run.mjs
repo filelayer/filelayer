@@ -14,6 +14,8 @@
  *      numbers are about what npm serves, not about this checkout.
  *   2. count-loc.mjs --published: application lines per implementation, one
  *      counter, rules in loc.manifest.json.
+ *   2b. count-vendor.mjs: vendor lines in your process or database, for the
+ *      implementations where they can be measured.
  *   3. count-decisions.mjs: security-sensitive decisions per implementation,
  *      summed from decisions.json.
  *   4. count-tiers.mjs --published: lines per tier, from the examples that ship
@@ -76,6 +78,7 @@ console.log(`\n@filelayer/core under test: ${version}, from npm`);
 
 const node = process.execPath;
 const loc = run('application lines of code', node, [join(HERE, 'count-loc.mjs'), '--published']);
+const vendor = run('vendor lines in your process or database', node, [join(HERE, 'count-vendor.mjs')]);
 const decisions = run('security-sensitive decisions', node, [join(HERE, 'count-decisions.mjs')]);
 const tiers = run('lines per tier', node, [join(HERE, 'count-tiers.mjs'), '--published']);
 // Exit 1 here means a comparison implementation was breached, which is a result.
@@ -111,6 +114,14 @@ const report = [
   '## Application lines of code',
   '',
   fence(loc),
+  '',
+  '## Vendor lines in your process or database',
+  '',
+  'Not added to the lines above: the developer does not write these. Shown because they run in your',
+  'process or your database, and leaving them out entirely would make the library look like nothing.',
+  'Method and exclusions: `count-vendor.mjs`.',
+  '',
+  vendor,
   '',
   '## Security-sensitive decisions',
   '',

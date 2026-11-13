@@ -60,9 +60,9 @@ const et = median(ran.map((r) => r.types));
 const es = median(ran.map((r) => r.sites));
 console.log(`| median, the ${ran.length} executed | ${(et / fl.types).toFixed(1)}x | ${(es / fl.sites).toFixed(1)}x |`);
 console.log(
-  '\nUNDER REVIEW: the site counts are being recounted under one rule for all five (a decision\n' +
-    'enforced in one helper is one site; decisions the platform\'s own linter catches are dropped).\n' +
-    'Until then, neither median above is a headline.',
+  '\nOne rule for all five (decisions.json $convention.oneRule): a decision enforced in one helper\n' +
+    'is one site, and a decision the platform\'s linter flags, or whose safe setting is the platform\n' +
+    'default, is dropped. The headline is the median over the executed alternatives.',
 );
 
 if (fl.arguable) {

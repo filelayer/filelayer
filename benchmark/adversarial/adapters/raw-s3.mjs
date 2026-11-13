@@ -139,10 +139,14 @@ export async function create() {
      */
     read: async ({ as, org, doc }) => {
       const r = await call('GET', `/orgs/${org}/documents/${doc}/download`, { as });
+      const presigned = r.json?.url ? new URL(r.json.url) : null;
       return {
         status: r.status,
         json: r.json,
         headers: null,
+        // What the URL tells S3 to send. Read from the URL the application
+        // issued, not assumed from its source.
+        presignedDisposition: presigned?.searchParams.get('response-content-disposition') ?? null,
         headersNote:
           'the in-app read issues a presigned URL rather than serving bytes. The application ' +
           'does request ResponseContentDisposition=attachment and ResponseContentType, which ' +

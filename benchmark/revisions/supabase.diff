@@ -1,0 +1,19 @@
+diff --git a/benchmark/baseline-supabase/src/app/vault.js b/benchmark/baseline-supabase/src/app/vault.js
+index 87822c4..fba366d 100644
+--- a/benchmark/baseline-supabase/src/app/vault.js
++++ b/benchmark/baseline-supabase/src/app/vault.js
+@@ -77,7 +77,13 @@ export async function listDocuments(sb, token, orgId) {
+ export async function downloadAsMember(sb, token, orgId, documentId) {
+   const r = await sb.asUser(token, (c) =>
+     c.query('select storage_path from public.documents where id=$1', [documentId]));
+-  if (!r.rows.length) { const e = new Error('not found'); e.status = 404; throw e; }
++  if (!r.rows.length) {
++    // RLS hides another tenant's row and a missing row alike; record the refusal.
++    const who = await sb.asUser(token, (c) => c.query('select (select auth.uid()) as uid'));
++    await audit(sb, orgId, who.rows[0].uid, 'user', 'access.denied',
++                { document_id: documentId }).catch(() => {});
++    const e = new Error('not found'); e.status = 404; throw e;
++  }
+   const bytes = await sb.downloadAuthenticated(token, BUCKET, r.rows[0].storage_path);
+   const who = await sb.asUser(token, (c) => c.query('select (select auth.uid()) as uid'));
+   await audit(sb, orgId, who.rows[0].uid, 'user', 'download',

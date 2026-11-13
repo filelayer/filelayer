@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "Same two statements as the raw-S3 baseline that apply here. Bytes are",
+    "served through the application, so there are no presigned GETs and the",
+    "signature-age statement has nothing to limit."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyInsecureTransport",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::vault-prod", "arn:aws:s3:::vault-prod/*"],
+      "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+    },
+    {
+      "Sid": "AllowOnlyTheVaultApplicationRole",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::vault-prod", "arn:aws:s3:::vault-prod/*"],
+      "Condition": {
+        "StringNotEquals": { "aws:PrincipalArn": "arn:aws:iam::ACCOUNT_ID:role/vault-app" }
+      }
+    }
+  ]
+}

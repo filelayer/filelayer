@@ -16,8 +16,8 @@ the suite cannot read those and does not claim they are empty. It is not a breac
 | Implementation | defended | partial | audit-gap | BREACH |
 |---|---:|---:|---:|---:|
 | filelayer | 18/18 | 0 | 0 | 0 |
-| supabase | 15/18 | 2 | 1 | 0 |
-| raw-s3 | 17/18 | 0 | 1 | 0 |
+| supabase | 16/18 | 2 | 0 | 0 |
+| raw-s3 | 18/18 | 0 | 0 | 0 |
 | filelayer-prerebuild (control) | 16/18 | 0 | 0 | 1 |
 
 | # | Attack | Severity | filelayer | supabase | raw-s3 | filelayer-prerebuild |
@@ -38,7 +38,7 @@ the suite cannot read those and does not claim they are empty. It is not a breac
 | D1 | self-promotion: a member sets their own role to admin | critical | PASS | PASS | PASS | PASS |
 | D2 | admin promotes themselves to owner | high | PASS | PASS | PASS | PASS |
 | D3 | outsider adds themselves to a tenant | critical | PASS | PASS | PASS | PASS |
-| E1 | refused reads are in the application's audit trail: one cross-tenant read, and probes at unknown ids | medium | PASS | GAP | GAP | PASS |
+| E1 | refused reads are in the application's audit trail: one cross-tenant read, and probes at unknown ids | medium | PASS | PASS | PASS | PASS |
 | E2 | a byte delivery is recorded as a delivery, not as a URL issuance | high | PASS | PART | PASS | PASS |
 
 ## The 8 attacks not every implementation can express
@@ -53,19 +53,21 @@ the bytes itself or redirects to a signed URL.
 | B3 | cache replay: is a revoked download replayable from a cache? | high | supabase | PASS | n/a | PASS | BREACH |
 | B7 | listing shares leaks the raw token | high | supabase, raw-s3 | PASS | n/a | n/a | PASS |
 | C2 | lifecycle oracle: an expired/held document distinguishable to a stranger | medium | supabase, raw-s3 | PASS | n/a | n/a | PASS |
-| D4 | escalation via delegation: pass on more authority than you hold | high | supabase, raw-s3 | PASS | n/a | n/a | n/a |
+| D4 | escalation via delegation, attempted as a direct SQL INSERT of a child grant (the HTTP surface mints read grants only) | high | supabase, raw-s3 | PASS | n/a | n/a | n/a |
 | F1 | stored XSS: user-uploaded HTML served renderable from our own origin | high | supabase | PASS | n/a | PASS | PART |
-| F3 | stored XSS on the AUTHENTICATED read path | high | supabase, raw-s3 | PASS | n/a | n/a | BREACH |
-| F2 | response splitting through a hostile filename | medium | supabase | PASS | n/a | PART | PART |
+| F3 | stored XSS on the AUTHENTICATED read path | high | supabase | PASS | n/a | PASS, not executed | BREACH |
+| F2 | response splitting through a hostile filename | medium | supabase | PASS | n/a | PASS | PART |
 
 ## Tallies over every attack each implementation can express
 
-| Implementation | defended | partial | audit-gap | BREACH | n/a |
-|---|---:|---:|---:|---:|---:|
-| filelayer | 26 | 0 | 0 | 0 | 0 |
-| supabase | 15 | 2 | 1 | 0 | 8 |
-| raw-s3 | 19 | 1 | 1 | 0 | 5 |
-| filelayer-prerebuild | 19 | 2 | 0 | 3 | 2 |
+| Implementation | defended | pass, not executed | partial | audit-gap | BREACH | n/a |
+|---|---:|---:|---:|---:|---:|---:|
+| filelayer | 26 | 0 | 0 | 0 | 0 | 0 |
+| supabase | 16 | 0 | 2 | 0 | 0 | 8 |
+| raw-s3 | 21 | 1 | 0 | 0 | 0 | 4 |
+| filelayer-prerebuild | 19 | 0 | 2 | 0 | 3 | 2 |
+
+"pass, not executed" means the implementation asks for the defence and the part that would prove it runs where this suite cannot: raw S3 F3 asks S3, through the presigned URL, to serve the file as an attachment. It is counted neither as defended nor as n/a.
 
 ## Not run
 
@@ -85,8 +87,7 @@ _(every attack defended)_
 - **B3 cache replay: is a revoked download replayable from a cache?** — `n/a`: this implementation hands out a URL rather than bytes; the response headers that govern caching are the object store's, not the application's
 - **B7 listing shares leaks the raw token** — `n/a`: no share-listing surface: 404
 - **C2 lifecycle oracle: an expired/held document distinguishable to a stranger** — `n/a`: this implementation has no file-level expiry
-- **D4 escalation via delegation: pass on more authority than you hold** — `n/a`: no delegation model: a share link is a row with no lineage and no "pass it on" operation. Recorded as n/a, not as a defence.
-- **E1 refused reads are in the application's audit trail: one cross-tenant read, and probes at unknown ids** — `audit-gap`: 0 event(s) for the cross-tenant read, 0 for 8 probes at unknown ids: the application's audit trail does not record refused reads
+- **D4 escalation via delegation, attempted as a direct SQL INSERT of a child grant (the HTTP surface mints read grants only)** — `n/a`: no delegation model: a share link is a row with no lineage and no "pass it on" operation. Recorded as n/a, not as a defence.
 - **E2 a byte delivery is recorded as a delivery, not as a URL issuance** — `partial`: an event exists, but the implementation issued a URL rather than serving bytes, so the log records that a URL was ISSUED and cannot record whether it was used
 - **F1 stored XSS: user-uploaded HTML served renderable from our own origin** — `n/a`: bytes are delivered by the object store, not the application
 - **F3 stored XSS on the AUTHENTICATED read path** — `n/a`: bytes are delivered by the object store, not the application
@@ -97,17 +98,15 @@ _(every attack defended)_
 - **A7 intra-tenant privilege: a member reads a document they were not given** — `n/a`: this implementation has no per-file visibility axis
 - **B7 listing shares leaks the raw token** — `n/a`: no share-listing surface: 404
 - **C2 lifecycle oracle: an expired/held document distinguishable to a stranger** — `n/a`: this implementation has no file-level expiry
-- **D4 escalation via delegation: pass on more authority than you hold** — `n/a`: this platform has no delegation model: a share link is an opaque token with no lineage, so there is no "pass on the authority you were given" operation to attack. Recorded as n/a, not as a defence.
-- **E1 refused reads are in the application's audit trail: one cross-tenant read, and probes at unknown ids** — `audit-gap`: 0 event(s) for the cross-tenant read, 0 for 8 probes at unknown ids: the application's audit trail does not record refused reads
-- **F3 stored XSS on the AUTHENTICATED read path** — `n/a`: the in-app read issues a presigned URL rather than serving bytes. The application does request ResponseContentDisposition=attachment and ResponseContentType, which real S3 honours; the local harness does not implement those overrides, so this cannot be executed here. Correct by code reading, unverified by execution.
-- **F2 response splitting through a hostile filename** — `partial`: no header was injected -- but only because the HTTP runtime refused to write the value. The application interpolated the filename unescaped, so every share download of that document now returns 500: an uploaded filename is a permanent denial of service against its own share links.
+- **D4 escalation via delegation, attempted as a direct SQL INSERT of a child grant (the HTTP surface mints read grants only)** — `n/a`: this platform has no delegation model: a share link is an opaque token with no lineage, so there is no "pass on the authority you were given" operation to attack. Recorded as n/a, not as a defence.
+- **F3 stored XSS on the AUTHENTICATED read path** — `pass-unexecuted`: the presigned URL the application issued asks S3 for Content-Disposition "attachment; filename="evil.html""; real S3 honours that override, the local store does not implement it, so it is not executed here
 
 ### filelayer-prerebuild
 
 - **A3 cross-tenant listing** — `n/a`: no list surface in this implementation
 - **B3 cache replay: is a revoked download replayable from a cache?** — `BREACH`: Cache-Control is "(absent)" -- a revoked link is replayable from the recipient's disk cache or an intermediary, which defeats immediate revocation
 - **C3 identity oracle: a forged (well-formed, unregistered) caller id** — `BREACH`: a forged identity produces 500 where a real stranger gets 404: an actor-existence oracle, and a 5xx usually means the denial was not recorded either
-- **D4 escalation via delegation: pass on more authority than you hold** — `n/a`: not part of the calibration; see the current adapter
+- **D4 escalation via delegation, attempted as a direct SQL INSERT of a child grant (the HTTP surface mints read grants only)** — `n/a`: not part of the calibration; see the current adapter
 - **F1 stored XSS: user-uploaded HTML served renderable from our own origin** — `partial`: attachment is set but nosniff is not
 - **F3 stored XSS on the AUTHENTICATED read path** — `BREACH`: the in-app read serves user HTML as text/html with Content-Disposition "(absent)": stored XSS in the app's own origin, with the victim's session attached
 - **F2 response splitting through a hostile filename** — `partial`: no header was injected -- but only because the HTTP runtime refused to write the value. The application interpolated the filename unescaped, so every share download of that document now returns 500: an uploaded filename is a permanent denial of service against its own share links.

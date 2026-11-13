@@ -1,0 +1,10 @@
+{
+  "name": "filelayer-production-variant",
+  "private": true,
+  "type": "module",
+  "description": "The Filelayer vault example wired as in production: pg pool, schema applied once, S3Storage. Counted like every other implementation.",
+  "dependencies": {
+    "@filelayer/core": "0.35.2",
+    "pg": "^8.16.3"
+  }
+}

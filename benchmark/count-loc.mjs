@@ -259,7 +259,7 @@ if (!asJson && targets.length > 1) {
   console.log('\n=== APPLICATION LOC (net), one counter, all implementations ===');
   const executed = (n) => MANIFEST.implementations[n]?.executed !== false;
   for (const [n, app, infra] of rows.sort((a, b) => a[1] - b[1])) {
-    const ratio = fl ? ` ${(app / fl).toFixed(1)}x` : '';
+    const ratio = fl && n !== 'filelayer-production' ? ` ${(app / fl).toFixed(1)}x` : '     ';
     const status = executed(n) ? '' : '   not executed, not compiled';
     console.log(`  ${n.padEnd(22)} app ${String(app).padStart(5)}   infra ${String(infra).padStart(4)}${ratio}${status}`);
   }
@@ -267,13 +267,29 @@ if (!asJson && targets.length > 1) {
   // been executed or compiled, so a median that includes them quotes code
   // nobody has seen work. They stay in the table above, labelled, and out of
   // this number.
-  const ran = rows.filter(([n]) => n !== 'filelayer' && executed(n)).map(([, app]) => app).sort((a, b) => a - b);
-  if (fl && ran.length) {
-    const m = ran.length % 2 ? ran[ran.length >> 1] : (ran[ran.length / 2 - 1] + ran[ran.length / 2]) / 2;
+  // filelayer-production is Filelayer, not an alternative: it is never in the
+  // median, and the median is also quoted against it, app and infra together,
+  // because that is the comparison a production deployment makes.
+  const own = (n) => n === 'filelayer' || n === 'filelayer-production';
+  const median = (xs) => {
+    const v = xs.slice().sort((a, b) => a - b);
+    return v.length % 2 ? v[v.length >> 1] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+  };
+  const alt = rows.filter(([n]) => !own(n) && executed(n));
+  if (fl && alt.length) {
+    const m = median(alt.map(([, app]) => app));
     console.log(
-      `\n  median over the ${ran.length} executed alternatives: ${m} vs ${fl} = ${(m / fl).toFixed(1)}x` +
+      `\n  median over the ${alt.length} executed alternatives: ${m} vs ${fl} = ${(m / fl).toFixed(1)}x` +
         ' (Convex and Vercel Blob excluded: never executed or compiled)',
     );
+    const prod = rows.find(([n]) => n === 'filelayer-production');
+    if (prod) {
+      const mt = median(alt.map(([, app, infra]) => app + infra));
+      const pt = prod[1] + prod[2];
+      console.log(
+        `  the same median, app + infra, against the production-wired Filelayer: ${mt} vs ${pt} = ${(mt / pt).toFixed(1)}x`,
+      );
+    }
   }
 }
 

@@ -37,12 +37,12 @@ function digest(prevHash, entry) {
 }
 
 /**
- * Appends one entry. MUST run inside a transaction that already holds a row
- * lock on orgs(id) — otherwise two concurrent writers read the same tip and
- * produce a forked chain. This serialisation requirement is invisible in the
- * type system and is exactly the kind of thing that survives code review.
+ * Appends one entry. Takes the row lock on orgs(id) itself, so two concurrent
+ * writers cannot read the same tip and fork the chain. `tx` must be a
+ * transaction, so the lock is held until the caller's write commits.
  */
 export async function appendAudit(tx, { orgId, actorKind, actorId, action, subjectType, subjectId, metadata = {} }) {
+  await tx.query('SELECT id FROM orgs WHERE id = $1 FOR UPDATE', [orgId]);
   const { rows: tip } = await tx.query(
     'SELECT org_seq, hash FROM audit_log WHERE org_id = $1 ORDER BY org_seq DESC LIMIT 1',
     [orgId]

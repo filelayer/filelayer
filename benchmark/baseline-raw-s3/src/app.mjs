@@ -10,16 +10,9 @@ import { DOWNLOAD_URL_TTL_SECONDS } from './storage.mjs';
 
 const id = (p) => `${p}_${crypto.randomBytes(12).toString('hex')}`;
 
-/**
- * Runs `fn` inside a transaction that holds a row lock on the org, so audit
- * chain appends are serialised. Every mutating route MUST go through this;
- * forgetting it forks the audit chain silently.
- */
-async function inOrgTx(db, orgId, fn) {
-  return db.transaction(async (tx) => {
-    await tx.query('SELECT id FROM orgs WHERE id = $1 FOR UPDATE', [orgId]);
-    return fn(tx);
-  });
+/** Runs `fn` in a transaction. appendAudit takes the org lock itself. */
+async function inOrgTx(db, _orgId, fn) {
+  return db.transaction(fn);
 }
 
 export function createApp({ db, storage, shareDelivery = 'proxy', baseUrl = 'http://localhost:3000' }) {
@@ -397,7 +390,7 @@ export function createApp({ db, storage, shareDelivery = 'proxy', baseUrl = 'htt
     res.set({
       'content-type': share.doc_content_type,
       'content-length': String(obj.size),
-      'content-disposition': `attachment; filename="${share.doc_name.replace(/"/g, '')}"`,
+      'content-disposition': `attachment; filename="${share.doc_name.replace(/["\r\n]/g, '')}"`,
       'x-content-type-options': 'nosniff',
       'cache-control': 'private, no-store',
     });
@@ -427,7 +420,19 @@ export function createApp({ db, storage, shareDelivery = 'proxy', baseUrl = 'htt
     res.json(await verifyChain(db, orgId));
   }));
 
-  app.use((err, _req, res, _next) => {
+  // A refused request inside an existing org goes into that org's audit trail:
+  // a cross-tenant read and a probe at an unknown id both land here.
+  app.use(async (err, req, res, _next) => {
+    const org = /^\/orgs\/([^/]+)\//.exec(req.path)?.[1];
+    if (err instanceof HttpError && [403, 404].includes(err.status) && req.userId && org) {
+      const { rows } = await db.query('SELECT 1 FROM orgs WHERE id = $1', [org]).catch(() => ({ rows: [] }));
+      if (rows.length) {
+        await inOrgTx(db, org, (tx) => appendAudit(tx, {
+          orgId: org, actorKind: 'user', actorId: req.userId, action: 'access.denied',
+          subjectType: 'request', subjectId: `${req.method} ${req.path}`, metadata: { status: err.status },
+        })).catch(() => {});
+      }
+    }
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.code });
     console.error(err);
     res.status(500).json({ error: 'internal' });

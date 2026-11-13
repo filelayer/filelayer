@@ -128,6 +128,13 @@
 # tools/build-guides.mjs. Owned by 03 Surfaces; README.md stays 02's, for
 # whoever clones.
 !/benchmark/PAGE.md
+# The vendor-lines counter, the production-wired Filelayer
+# variant and its smoke run, the revision round with its published diffs, and
+# what survives of the brief. Each is cited from PAGE.md, so each must open.
+!/benchmark/count-vendor.mjs
+!/benchmark/production-wired/
+!/benchmark/revisions/
+!/benchmark/BRIEF.md
 
 # --- dependencies ------------------------------------------------------------
 node_modules/

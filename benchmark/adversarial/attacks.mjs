@@ -50,6 +50,10 @@ const partial = (detail) => ({ verdict: 'partial', detail });
 // missing log line as two breaches.
 const auditGap = (detail) => ({ verdict: 'audit-gap', detail });
 const na = (detail) => ({ verdict: 'n/a', detail });
+// The defence is in what the implementation asks for, and the part that would
+// prove it runs somewhere this suite cannot reach (a real S3 honouring a
+// presigned response override). Not a pass, not n/a: reported apart.
+const unexecuted = (detail) => ({ verdict: 'pass-unexecuted', detail });
 
 /** A response is "success" if the implementation delivered or authorized it. */
 const succeeded = (r) => r.status >= 200 && r.status < 400;
@@ -401,7 +405,7 @@ export const ATTACKS = [
   },
   {
     id: 'D4',
-    name: 'escalation via delegation: pass on more authority than you hold',
+    name: 'escalation via delegation, attempted as a direct SQL INSERT of a child grant (the HTTP surface mints read grants only)',
     category: 'escalation',
     severity: 'high',
     requires: ['delegate'],
@@ -510,6 +514,12 @@ export const ATTACKS = [
       if (doc.unsupported) return na(doc.detail);
       const r = await impl.read({ w, as: w.alice, org: w.orgA, doc: doc.doc });
       if (!succeeded(r)) return na(`read failed: ${r.status}`);
+      if (!r.headers && (r.presignedDisposition ?? '').toLowerCase().startsWith('attachment')) {
+        return unexecuted(
+          `the presigned URL the application issued asks S3 for Content-Disposition "${r.presignedDisposition}"; ` +
+            'real S3 honours that override, the local store does not implement it, so it is not executed here',
+        );
+      }
       if (!r.headers) return na(r.headersNote ?? 'bytes are delivered by the object store, not the application');
       const cd = (r.headers['content-disposition'] ?? '').toLowerCase();
       const nosniff = (r.headers['x-content-type-options'] ?? '').toLowerCase() === 'nosniff';

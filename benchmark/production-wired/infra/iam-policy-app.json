@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "The credential S3Storage is handed. Its scope is the blast radius of",
+    "everything the library reads or writes (decision #6). Object actions on",
+    "one bucket, plus ListBucket for orphan collection."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "VaultObjects",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"],
+      "Resource": "arn:aws:s3:::vault-prod/*"
+    },
+    {
+      "Sid": "VaultListForOrphanCollection",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::vault-prod"
+    }
+  ]
+}

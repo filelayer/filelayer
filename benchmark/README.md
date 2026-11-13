@@ -38,6 +38,7 @@ verifies SigV4 signatures.
 | Measure | Script | What it counts |
 |---|---|---|
 | Application lines | `count-loc.mjs` | Non-blank, non-comment lines the developer writes, per implementation, with every inclusion and exclusion written down in `loc.manifest.json`. A file that matches no rule fails the run. |
+| Vendor lines | `count-vendor.mjs` | Lines of vendor code that run in your process or your database, where they can be measured: the Filelayer library and its schema, the AWS SDK. Not added to the application lines. |
 | Security-sensitive decisions | `count-decisions.mjs` | Points where the developer can choose an option that leaks or loses data and nothing reports it: no error, no failing test, no warning. Counted as kinds and as places, from `decisions.json`. |
 | Lines per tier | `count-tiers.mjs` | The four Filelayer examples, from a public avatar to the full workspace. |
 | Attacks | `adversarial/run.mjs` | 26 attacks, written once in `adversarial/attacks.mjs`, against every implementation that can be executed: over HTTP for Filelayer and raw S3, and as direct calls into the application's functions for Supabase, whose platform is emulated on PGlite. The headline table holds only the attacks every executed implementation can express. |
@@ -58,6 +59,22 @@ node benchmark/run.mjs --no-install
 
 `npm run adversarial` at the repository root runs the same attacks against the
 working tree instead, on every commit.
+
+## The production-wired Filelayer
+
+`production-wired/` is the published example with its demo boot (in-memory
+database and storage) replaced by what a deployment needs: a pg pool, the schema
+applied once under a lock, `S3Storage`, and the IAM and bucket policy. It is
+counted beside the example with the same rules, and
+`node benchmark/production-wired/smoke.mjs` runs it end to end against
+PostgreSQL and the SigV4-checking store, after checking that everything above
+its boot block is the published example unchanged.
+
+## The revision round and the brief
+
+`revisions/` holds the one revision round each executed alternative had, with
+its diff and a 40-line cap. `BRIEF.md` says what survives of the brief the
+alternatives were built from, and publishes the prompts that exist.
 
 ## What does not run
 

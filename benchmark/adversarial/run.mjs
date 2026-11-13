@@ -69,7 +69,7 @@ const NOT_RUN = [
   },
 ];
 
-const SYMBOL = { defended: 'PASS', BREACH: 'BREACH', partial: 'PART', 'audit-gap': 'GAP', 'n/a': 'n/a' };
+const SYMBOL = { defended: 'PASS', BREACH: 'BREACH', partial: 'PART', 'audit-gap': 'GAP', 'n/a': 'n/a', 'pass-unexecuted': 'PASS, not executed' };
 
 async function runOne(adapterMod, attack) {
   let impl;
@@ -124,6 +124,7 @@ const tally = (impl) => {
     breach: vs.filter((v) => v.verdict === 'BREACH').length,
     gap: vs.filter((v) => v.verdict === 'audit-gap').length,
     na: vs.filter((v) => v.verdict === 'n/a').length,
+    unexecuted: vs.filter((v) => v.verdict === 'pass-unexecuted').length,
     error: vs.filter((v) => v.verdict === 'error').length,
   };
 };
@@ -194,12 +195,18 @@ if (asMarkdown) {
   out.push('');
   out.push('## Tallies over every attack each implementation can express');
   out.push('');
-  out.push('| Implementation | defended | partial | audit-gap | BREACH | n/a |');
-  out.push('|---|---:|---:|---:|---:|---:|');
+  out.push('| Implementation | defended | pass, not executed | partial | audit-gap | BREACH | n/a |');
+  out.push('|---|---:|---:|---:|---:|---:|---:|');
   for (const n of names) {
     const t = tally(n);
-    out.push(`| ${n} | ${t.defended} | ${t.partial} | ${t.gap} | ${t.breach} | ${t.na} |`);
+    out.push(`| ${n} | ${t.defended} | ${t.unexecuted} | ${t.partial} | ${t.gap} | ${t.breach} | ${t.na} |`);
   }
+  out.push('');
+  out.push(
+    '"pass, not executed" means the implementation asks for the defence and the part that would prove it ' +
+      'runs where this suite cannot: raw S3 F3 asks S3, through the presigned URL, to serve the file as an ' +
+      'attachment. It is counted neither as defended nor as n/a.',
+  );
   out.push('');
   out.push('## Not run');
   out.push('');
@@ -226,7 +233,7 @@ if (asMarkdown) {
   for (const n of Object.keys(results)) {
     const t = tally(n);
     console.log(
-      `${n.padEnd(10)} defended=${t.defended} partial=${t.partial} audit-gap=${t.gap} BREACH=${t.breach} n/a=${t.na} error=${t.error}`,
+      `${n.padEnd(10)} defended=${t.defended} not-executed=${t.unexecuted} partial=${t.partial} audit-gap=${t.gap} BREACH=${t.breach} n/a=${t.na} error=${t.error}`,
     );
   }
   console.log('\nnot run (no executable form):');

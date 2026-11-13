@@ -19,6 +19,15 @@
       "excluded": []
     },
 
+    "filelayer-production": {
+      "root": "./production-wired",
+      "note": "the same example wired as in production: pg pool, schema applied once under a lock, S3Storage, and the IAM and bucket policy it needs; run end to end by smoke.mjs",
+      "app": [{ "glob": "server.ts", "why": "the published example, with the demo boot replaced by production wiring" }],
+      "infra": [{ "glob": "infra/*.json", "why": "IAM policy and bucket policy -- authored by the developer, as for raw S3" }],
+      "tooling": [{ "glob": "smoke.mjs", "why": "the end-to-end run of this variant" }],
+      "excluded": []
+    },
+
     "baseline-supabase": {
       "root": "./baseline-supabase",
       "note": "Supabase Storage + Postgres RLS; executed against PGlite",
