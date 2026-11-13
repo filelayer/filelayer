@@ -89,9 +89,13 @@ Those are the application's own routes; Filelayer does not ship them. Bound the
 size before reading the body — `file.size` is known without touching it — and
 do not pass the browser's `file.type` through: let Filelayer sniff the content
 type from the magic bytes, because a declared `text/html` served back inline is
-stored XSS against your own origin.
+stored XSS against your own origin. Take the org from the session, never from
+the form or the query string, and create orgs on purpose with
+`fl.orgs.create(id, { name, owner })` where your app creates a workspace; an
+upload is not the place to create one.
 
 ```ts
+const org = await currentOrg(req); // from your session, not from the request
 if (file.size > MAX_BYTES) return json({ error: 'payload_too_large' }, 413);
 const { id } = await fl.files.put(new Uint8Array(await file.arrayBuffer()), {
   org, owner: user, name: file.name,
@@ -105,6 +109,8 @@ and revoke in four files, with a `verify.mjs` that drives the exported route
 handlers directly. Read it rather than reconstructing it. CI runs it on every
 commit against a freshly packed tarball.
 
-Two lines in that example are not what a real project writes, and the example's
-README says so: the imports end in `.ts` (so Node can run them without a build
-step), and `currentUser()` reads a header, which is not authentication.
+Three things in that example are not what a real project writes, and the
+example's README says so: `currentUser()` reads a header, which is not
+authentication; `currentOrg()` returns the demo's one workspace, created in
+`getFilelayer()` because the demo has no sign-up; and the imports are relative,
+where your project would likely use `@/lib/filelayer`.

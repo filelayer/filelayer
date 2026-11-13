@@ -7,11 +7,11 @@ and an audit trail, and no HTTP plumbing of your own.
 app/[...filelayer]/route.ts        every byte Filelayer serves
 app/api/files/route.ts             POST an upload, GET a listing
 app/api/files/[id]/share/route.ts  share with a link or a user, and revoke
-lib/filelayer.ts                   one instance, and who is asking
+lib/filelayer.ts                   one instance, who is asking, and in which org
 ```
 
-Copy them into your project, replace `currentUser()` with your session, and
-replace `getFilelayer()`'s body with your own pool and bucket.
+Copy them into your project, replace `currentUser()` and `currentOrg()` with
+your session, and replace `getFilelayer()`'s body with your own pool and bucket.
 
 ---
 
@@ -50,7 +50,15 @@ return (await serve(req)) ?? new Response('Not found', { status: 404 });
 
 ---
 
-## Two decisions this example makes on purpose
+## Three decisions this example makes on purpose
+
+**The org comes from the session, and an upload never creates one.** The
+upload and list routes ask `currentOrg()`, which reads your session, never the
+form or the query string: an org the client names is a tenant the client
+chooses. Orgs are created on purpose with `fl.orgs.create(id, { name, owner })`,
+once, where your app creates a workspace; in this demo that is the setup in
+`getFilelayer()`, because there is no sign-up. A user who is not a member of
+the session's org is refused by Filelayer, not by these routes.
 
 **The client's IP address is yours to supply.** A `Request` has no socket, so
 the only candidate is a header, and a header is written by whoever spoke last.
@@ -81,7 +89,7 @@ From a clone of the repository:
 npm run verify:nextjs
 ```
 
-Twenty-eight checks, about forty seconds, no database and no server to start.
+Thirty checks, about forty seconds, no database and no server to start.
 The example uses `Filelayer.quickstart()`, which runs PostgreSQL in-process, and
 App Router handlers are plain functions, so the harness calls the exported
 `GET`, `POST`, `DELETE` and `HEAD` with real `Request` objects and reads real
@@ -98,17 +106,21 @@ Next.js install. What it does cover is every line of logic in these four files.
 
 ---
 
-## Two things to change before this is yours
+## Three things to change before this is yours
 
 1. **`currentUser()` reads a header.** `x-demo-user` is set by the client, which
    is not authentication. Replace it with your session — NextAuth, Clerk, a
    cookie you signed. Returning an id Filelayer has never seen **denies**; it
    never silently degrades to anonymous.
 
-2. **The imports end in `.ts`.** That is what lets Node run these files with no
-   build step and no Next.js, which is what makes CI able to check them. In a
-   real Next project you would write `@/lib/filelayer`. It is the only line in
-   each file that changes.
+2. **`currentOrg()` returns the demo's one workspace.** Replace it with the org
+   your session says the user is working in, and move the `orgs.create` call in
+   `getFilelayer()` to where your app creates a workspace.
+
+3. **The imports are relative** (`../../../lib/filelayer`), so these files run
+   unchanged in the CI harness and in a new create-next-app project. In your
+   project you would likely write `@/lib/filelayer`. It is the only line in each
+   file that changes.
 
 ---
 

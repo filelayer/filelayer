@@ -58,12 +58,15 @@ security, raw S3 presigned URLs, Convex and Vercel Blob, and every version that
 runs was attacked by one shared suite:
 
 - **18 of 18** for Filelayer on the 18 attacks every executed version can
-  express. The executed alternatives had no breaches on them either: Supabase
-  and raw S3 each had one audit gap, a refused read that left no event in the
-  application's audit trail, and Supabase had two partials.
-- **133 lines** of application code, against a median of 632 for the two
-  alternatives that ran: **4.8x**. Convex and Vercel Blob were neither executed
-  nor compiled, so they are left out of the median.
+  express, after each executed alternative had one revision round against the
+  suite, with its diff published. Raw S3 also defends 18 of 18; Supabase
+  defends 16, with two partials that come from redirecting shared downloads to
+  a 30-second signed URL. None had a breach.
+- **133 lines** of application code, against a median of 638.5 for the two
+  alternatives that ran: **4.8x**. Wired as in production, with its pool,
+  bucket and policies, Filelayer is 211 lines against 699.5: **3.3x**. Convex
+  and Vercel Blob were neither executed nor compiled, so they are left out of
+  both medians.
 
 The results, the method and where each alternative is better:
 **[filelayer.dev/one-feature-five-ways](https://filelayer.dev/one-feature-five-ways)**.

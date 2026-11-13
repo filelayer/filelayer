@@ -135,7 +135,7 @@ async function serveAndDrive(app) {
     for (let t = 0; ; t++) {
       if (t > 120) throw new Error(`next start did not answer within 60 s:\n${log}`);
       try {
-        await fetch(`${base}/api/files?org=x`);
+        await fetch(`${base}/api/files`);
         break;
       } catch {
         await new Promise((r) => setTimeout(r, 500));
@@ -146,7 +146,6 @@ async function serveAndDrive(app) {
     const expect = (name, ok, detail) => steps.push({ name, ok, detail });
 
     const form = new FormData();
-    form.set('org', 'acme');
     form.set('file', new File(['CONTRACT BODY'], 'contract.txt', { type: 'text/plain' }));
     const up = await fetch(`${base}/api/files`, { method: 'POST', headers: as('alice'), body: form });
     const upBody = await up.json().catch(() => ({}));

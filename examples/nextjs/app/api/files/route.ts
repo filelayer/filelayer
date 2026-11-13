@@ -9,7 +9,7 @@
  * PUT does not constrain the body.
  */
 
-import { getFilelayer, currentUser } from '../../../lib/filelayer';
+import { getFilelayer, currentUser, currentOrg } from '../../../lib/filelayer';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -17,11 +17,13 @@ export async function POST(req: Request): Promise<Response> {
   const user = await currentUser(req);
   if (!user) return json({ error: 'unauthenticated' }, 401);
 
+  // The org is the session's, not a form field: see currentOrg().
+  const org = await currentOrg(req);
+  if (!org) return json({ error: 'no org in the session' }, 403);
+
   const form = await req.formData();
   const file = form.get('file');
-  const org = String(form.get('org') ?? '');
   if (!(file instanceof File)) return json({ error: 'no file in the form' }, 400);
-  if (!org) return json({ error: 'no org' }, 400);
 
   // BOUNDED BEFORE IT IS READ. `file.size` is known without touching the body,
   // so an oversized upload is refused rather than buffered and then refused.
@@ -49,8 +51,8 @@ export async function GET(req: Request): Promise<Response> {
   const user = await currentUser(req);
   if (!user) return json({ error: 'unauthenticated' }, 401);
 
-  const org = new URL(req.url).searchParams.get('org');
-  if (!org) return json({ error: 'no org' }, 400);
+  const org = await currentOrg(req);
+  if (!org) return json({ error: 'no org in the session' }, 403);
 
   const fl = await getFilelayer();
   try {

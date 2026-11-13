@@ -21,7 +21,16 @@ export function getFilelayer(): Promise<Filelayer> {
   // Assigned before awaiting, so two requests arriving together share one
   // instance rather than racing to build two. Awaiting first and then
   // assigning is the version of this that looks correct and is not.
-  instance ??= Filelayer.quickstart({ baseUrl: process.env.BASE_URL ?? 'http://localhost:3000' });
+  instance ??= (async () => {
+    const fl = await Filelayer.quickstart({ baseUrl: process.env.BASE_URL ?? 'http://localhost:3000' });
+    // ORGS ARE CREATED ON PURPOSE. In your app this call belongs where a
+    // workspace is created (sign-up, "new team"), once, with its first owner.
+    // An upload never creates an org: the routes take the org from the session
+    // and Filelayer refuses a caller who is not a member of it. The demo has
+    // one workspace, created here because there is no sign-up to create it.
+    await fl.orgs.create('acme', { name: 'Acme', owner: 'alice' });
+    return fl;
+  })();
   return instance;
 }
 
@@ -41,4 +50,20 @@ export function getFilelayer(): Promise<Filelayer> {
  */
 export async function currentUser(req: Request): Promise<string | null> {
   return req.headers.get('x-demo-user');
+}
+
+/**
+ * WHICH ORG. Also from your session, never from the request.
+ *
+ * The organization the signed-in user is working in: Clerk's active
+ * organization, a claim in your JWT, a column on your user row. A route that
+ * reads the org from the form or the query string lets the client choose which
+ * tenant it writes into, and that choice is the first thing an attacker
+ * changes.
+ *
+ * The demo has one workspace, so every signed-in user is working in it, and
+ * Filelayer still refuses one who is not a member.
+ */
+export async function currentOrg(req: Request): Promise<string | null> {
+  return (await currentUser(req)) ? 'acme' : null;
 }

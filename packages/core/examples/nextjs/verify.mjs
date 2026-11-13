@@ -64,9 +64,9 @@ const ctx = (params) => ({ params: Promise.resolve(params) });
 // Upload
 // -----------------------------------------------------------------------------
 
-async function upload(user, org, name, body) {
+async function upload(user, name, body, extra = {}) {
   const form = new FormData();
-  form.set('org', org);
+  for (const [k, v] of Object.entries(extra)) form.set(k, v);
   form.set('file', new File([body], name, { type: 'text/plain' }));
   return files.POST(new Request(`${BASE}/api/files`, {
     method: 'POST',
@@ -78,7 +78,7 @@ async function upload(user, org, name, body) {
 const unauth = await files.POST(new Request(`${BASE}/api/files`, { method: 'POST' }));
 check('an unauthenticated upload is refused', unauth.status === 401, `status ${unauth.status}`);
 
-const created = await upload('alice', 'acme', 'contract.txt', 'CONTRACT BODY');
+const created = await upload('alice', 'contract.txt', 'CONTRACT BODY');
 const createdBody = await created.json();
 check('alice uploads', created.status === 201 && typeof createdBody.id === 'string',
   `status ${created.status}`);
@@ -86,6 +86,19 @@ check('the response carries the path the catch-all serves',
   createdBody.url === `/f/${createdBody.id}`, createdBody.url);
 
 const fileId = createdBody.id;
+
+// The org is the session's. A form field naming another org changes nothing,
+// and a signed-in user who is not a member of the session's org is refused by
+// Filelayer rather than handed a new org of their own.
+const named = await upload('alice', 'elsewhere.txt', 'X', { org: 'globex' });
+const namedId = (await named.json()).id;
+const inAcme = await files.GET(new Request(`${BASE}/api/files`, { headers: as('alice') }));
+const acmeIds = ((await inAcme.json()).files ?? []).map((f) => f.id);
+check('an org named in the form is ignored: the file lands in the session org',
+  named.status === 201 && acmeIds.includes(namedId), `status ${named.status}`);
+const outsider = await upload('mallory', 'squat.txt', 'X');
+check('a signed-in non-member cannot upload into the session org',
+  [403, 404].includes(outsider.status), `status ${outsider.status}`);
 
 // -----------------------------------------------------------------------------
 // Read, through the catch-all
@@ -215,7 +228,7 @@ check('bob cannot share a file he does not own', notOwner.status >= 400,
 // -----------------------------------------------------------------------------
 
 const listed = await files.GET(
-  new Request(`${BASE}/api/files?org=acme`, { headers: as('alice') }),
+  new Request(`${BASE}/api/files`, { headers: as('alice') }),
 );
 const page = await listed.json();
 check('alice lists her org\'s files', listed.status === 200 && Array.isArray(page.files ?? page),
