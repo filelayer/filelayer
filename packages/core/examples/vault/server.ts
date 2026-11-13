@@ -39,7 +39,7 @@
  *      of the request body.
  *
  * REVISION 4 (0.35.4). Three silent decisions a review found in this file,
- * counted against it in the benchmark and now made correctly here:
+ * counted as silent decisions in `benchmark/decisions.json`, now made correctly:
  *   5. `POST /orgs` and `POST /actors` need an operator credential
  *      (`x-admin-token`, compared in constant time). They took none, so anyone
  *      who could reach them could create a tenant or an identity.
