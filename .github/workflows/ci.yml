@@ -369,6 +369,12 @@ jobs:
       - name: Register density on the public surfaces
         run: npm run check:register
 
+      # The comparison page and the README quote benchmark/RESULTS.md in prose.
+      # A figure typed by hand, or a RESULTS.md the page was not brought up to,
+      # fails here. See tools/check-page-figures.mjs; it runs its own self-test.
+      - name: The comparison page quotes the run's figures
+        run: npm run check:page-figures
+
   # ---------------------------------------------------------------------------
   # IS THE PAGE THE WORLD READS THE PAGE WE THINK WE WROTE?
   #
