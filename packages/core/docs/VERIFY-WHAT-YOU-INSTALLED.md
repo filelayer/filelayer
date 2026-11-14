@@ -48,7 +48,7 @@ cd "$VERIFY"
 (cd "$PKG" && tar --exclude=./node_modules --exclude=./dist -cf - .) | tar -xf -
 
 printf '{"name":"filelayer-verify","private":true,"type":"module"}\n' > package.json
-npm install --no-save "@electric-sql/pglite@^0.3.11"
+npm install --no-save @electric-sql/pglite
 
 node --test 'test/*.test.ts'
 ```
@@ -69,8 +69,8 @@ Four details in there are load-bearing:
   agent had to rewrite the block by hand, which is the one thing this procedure
   must not require.
 - **PGlite is the only thing installed.** It runs PostgreSQL in-process, so the
-  suite needs no server. It is pinned to `0.3.x`; npm's `latest` is `0.5.x`,
-  which the library refuses with `pglite_unsupported_version`.
+  suite needs no server. npm's `latest` is a 0.5.x release; the library
+  supports `^0.3.11` and `^0.5.8`, and CI runs the suite on both lines.
 
 ## What you should see
 

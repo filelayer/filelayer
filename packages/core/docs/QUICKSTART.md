@@ -54,17 +54,15 @@ should not put a second Postgres into every production install. Install it too
 if you want `quickstart()` or `createTestDb()`:
 
 ```bash
-npm install --save-dev "@electric-sql/pglite@^0.3.11"
+npm install --save-dev @electric-sql/pglite
 ```
 
-Keep the version constraint. Filelayer supports the **0.3.x** line of PGlite —
-what the suite runs against — and **0.5.x is not supported**: the suite was run
-against 0.5.8 and does not pass. PGlite's `latest` on npm is a 0.5.x release, so
-a bare `npm install` of it installs an unsupported version. The install still
-succeeds, because PGlite is not a peer dependency; `quickstart()` and
-`createTestDb()` then stop with the error `pglite_unsupported_version`, whose
-message is the command above. The quotes are for your shell: `^` is a glob
-operator under `zsh` with `extendedglob` and an escape character in `cmd.exe`.
+Filelayer supports PGlite `^0.3.11` and `^0.5.8`, and npm's `latest` is inside
+that range, so the command needs no version. CI runs the whole suite on the 0.3
+line and on PGlite's latest. PGlite is not a peer dependency, so installing it
+never fails the tree; with a version outside the range, `quickstart()` and
+`createTestDb()` stop with the error `pglite_unsupported_version`, whose message
+is the command above.
 
 Forget it and nothing breaks silently: `createTestDb()` throws an error naming
 the package and that exact command. Production code never reaches it — see §7.

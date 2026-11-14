@@ -567,38 +567,34 @@ export async function schemaStatus(db: Queryable): Promise<SchemaStatus> {
 const PGLITE = '@electric-sql/pglite';
 
 /**
- * The install command a caller is handed, spelled out in full.
- *
- * The version constraint is not decoration. PGlite's `latest` on npm is a 0.5.x
- * release and this package declares `peerDependencies` of `^0.3.11`, so an
- * install with no constraint on it can land a version outside the declared
- * range -- at which point npm refuses the whole tree with ERESOLVE and the
- * developer is stuck one minute in, having typed what we told them to type.
- * That happened; it is the defect 0.4.1 fixes.
- *
- * The range is a literal rather than a template so that
- * `tools/check-install-commands.mjs` can read it out of this file and fail the
- * build if it ever stops matching `peerDependencies` in package.json. The two
- * are the same fact written in two places, and the check is what keeps them
- * one fact.
- *
- * The quotes are for the shell, not for npm: `^` is a glob operator under zsh
- * with `extendedglob`, and an escape character in cmd.exe.
+ * The install command a caller is handed, spelled out in full. No version: from
+ * 0.35.4 both PGlite lines that npm can hand out by default are supported, so
+ * the plain command is the right one. `tools/check-install-commands.mjs` fails
+ * the build if PGlite's `latest` on npm leaves the range below, which is when
+ * this command would stop being right.
  */
-const PGLITE_INSTALL = 'npm install --save-dev "@electric-sql/pglite@^0.3.11"';
+const PGLITE_INSTALL = 'npm install --save-dev @electric-sql/pglite';
 
 /**
- * THE SUPPORTED LINE, CHECKED WHEN PGLITE IS LOADED, NOT AT INSTALL.
+ * THE SUPPORTED RANGE, CHECKED WHEN PGLITE IS LOADED, NOT AT INSTALL:
+ * `^0.3.11 || ^0.5.8`, the same range `devDependencies` declares.
  *
- * Until 0.35.4 the range was a `peerDependencies` entry, optional. npm treats an
- * optional peer that IS installed as a constraint, so the first thing an agent
- * types, installing this package together with PGlite and no version, resolved
- * PGlite's `latest` (0.5.x), met `^0.3.11`, and stopped with ERESOLVE: no tree at all, at
- * the first contact. Production installs never need PGlite, so the peer entry
- * protected nobody. It is gone, and the same range is enforced here, at the one
- * moment it matters, with an error that names the command that fixes it.
+ * Until 0.35.4 it was `^0.3.11` as an optional `peerDependencies` entry. npm
+ * treats an optional peer that IS installed as a constraint, so a project that
+ * already had PGlite's `latest` (0.5.x) could not add this package: ERESOLVE,
+ * no tree at all, at the first contact. Production installs never need PGlite,
+ * so the peer entry protected nobody. It is gone; the whole suite passes on
+ * 0.5.8 and on 0.5.16, and CI runs it on PGlite's latest; and the range is
+ * enforced here, at the one moment it matters, with an error that names the
+ * command that fixes it. 0.4.x is outside it: never tested.
  */
-const PGLITE_SUPPORTED = /^0\.3\./;
+function pgliteSupported(version: string): boolean {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+  if (!m) return false;
+  const [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (major !== 0) return false;
+  return (minor === 3 && patch >= 11) || (minor === 5 && patch >= 8);
+}
 
 /** The installed PGlite's version, read from its own package.json. */
 function installedPgliteVersion(): string | null {
@@ -637,7 +633,7 @@ function isModuleNotFound(err: unknown, spec: string): boolean {
  * thing it is NOT is multi-process, which matters for exactly one test; see
  * test/security.test.ts, "atomic download cap", for what that weakens.
  *
- * REQUIRES `@electric-sql/pglite` 0.3.x, which you install yourself. Production code
+ * REQUIRES `@electric-sql/pglite` ^0.3.11 or ^0.5.8, which you install yourself. Production code
  * does not need it: hand `new Filelayer(...)` your own `pg.Pool`, or anything
  * else that satisfies `Queryable`, and this function is never reached.
  */
@@ -659,7 +655,7 @@ async function importPglite(): Promise<{
   // Checked before loading it: a version outside the supported line is said to
   // be one, with the fix, rather than surfacing as an unrelated failure later.
   const v = installedPgliteVersion();
-  if (v !== null && !PGLITE_SUPPORTED.test(v)) throw unsupported(v);
+  if (v !== null && !pgliteSupported(v)) throw unsupported(v);
   let loaded;
   try {
     const [mod, contrib] = await Promise.all([
@@ -674,11 +670,8 @@ async function importPglite(): Promise<{
         `\n` +
         `  ${PGLITE_INSTALL}\n` +
         `\n` +
-        `The version is part of the command. @filelayer/core supports the 0.3.x line\n` +
-        `of ${PGLITE}; 0.5.x is not supported, because the test suite does\n` +
-        `not pass against it. Installing without the constraint can resolve to a\n` +
-        `version outside the supported range, and npm then refuses the install with\n` +
-        `ERESOLVE rather than giving you a working tree.\n` +
+        `@filelayer/core supports ${PGLITE} ^0.3.11 and ^0.5.8; npm's latest is\n` +
+        `inside that, so the command needs no version.\n` +
         `\n` +
         `It is not a dependency of @filelayer/core, on purpose: it is an\n` +
         `embedded WASM PostgreSQL used by createTestDb() and Filelayer.quickstart()\n` +
@@ -703,7 +696,7 @@ function unsupported(version: string): FilelayerError {
   const e = new FilelayerError('pglite_unsupported_version', `installed ${PGLITE} ${version}`);
   e.message =
     `pglite_unsupported_version: ${PGLITE} ${version} is installed, and @filelayer/core ` +
-    `supports the 0.3.x line.\n\n  ${PGLITE_INSTALL}\n\n${e.fix}`;
+    `supports ^0.3.11 and ^0.5.8.\n\n  ${PGLITE_INSTALL}\n\n${e.fix}`;
   return e;
 }
 

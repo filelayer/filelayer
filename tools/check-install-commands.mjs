@@ -99,7 +99,13 @@ const CORE_PKG = 'packages/core/package.json';
 // peer is a constraint npm enforces, and it turned the first install into
 // ERESOLVE). The supported line is the range the package develops and tests
 // against, `devDependencies`, and src/db.ts refuses any other at runtime.
-const POLICY = [{ pkg: '@electric-sql/pglite', rangeFrom: 'devDependencies' }];
+// `bareOk`: from 0.35.4 the recommended command carries no version, because
+// npm's latest is inside the supported range. That is not taken on trust:
+// check:pglite-install installs the latest beside the tarball and runs it, and
+// the CI job "test on PGlite's latest" runs the whole suite on it and fails if
+// the latest leaves `^0.3.11 || ^0.5.8`. A written constraint must still fall
+// inside the declared range.
+const POLICY = [{ pkg: '@electric-sql/pglite', rangeFrom: 'devDependencies', bareOk: true }];
 
 /** The files that must contain the canonical command exactly. */
 const VERBATIM_IN = ['README.md', 'docs/QUICKSTART.md', 'packages/core/src/db.ts'];
@@ -143,12 +149,22 @@ export function rangeInterval(range) {
   return { min: v, max: [x, y, z + 1] }; // an exact pin
 }
 
+/**
+ * A range that may be a union, `A || B`, as a list of intervals, or null if any
+ * part cannot be parsed. From 0.35.4 the PGlite range is `^0.3.11 || ^0.5.8`.
+ */
+export function rangeIntervals(range) {
+  const parts = String(range).split('||').map((x) => x.trim());
+  const out = parts.map(rangeInterval);
+  return out.length && out.every(Boolean) ? out : null;
+}
+
 /** True when every version `a` admits is also admitted by `b`. */
 export function rangeSubset(a, b) {
-  const ia = rangeInterval(a);
-  const ib = rangeInterval(b);
+  const ia = rangeIntervals(a);
+  const ib = rangeIntervals(b);
   if (!ia || !ib) return false;
-  return cmp(ia.min, ib.min) >= 0 && cmp(ia.max, ib.max) <= 0;
+  return ia.every((x) => ib.some((y) => cmp(x.min, y.min) >= 0 && cmp(x.max, y.max) <= 0));
 }
 
 /** True when the two ranges admit exactly the same versions. */
@@ -159,9 +175,9 @@ export function rangeEquivalent(a, b) {
 /** True when a concrete version falls inside a range. */
 export function satisfies(version, range) {
   const v = parseVersion(version);
-  const i = rangeInterval(range);
-  if (!v || !i) return false;
-  return cmp(v, i.min) >= 0 && cmp(v, i.max) < 0;
+  const is = rangeIntervals(range);
+  if (!v || !is) return false;
+  return is.some((i) => cmp(v, i.min) >= 0 && cmp(v, i.max) < 0);
 }
 
 // -----------------------------------------------------------------------------
@@ -247,10 +263,13 @@ export function findInstallCommands(text, pkg) {
  * Classify one command the way the checker would, given the declared range.
  * `unpinned` | `wrong-range` | `unparseable-range` | `ok`.
  */
-export function classify(found, declaredRange) {
-  if (found.range === null) return 'unpinned';
-  if (!rangeInterval(found.range)) return 'unparseable-range';
-  return rangeEquivalent(found.range, declaredRange) ? 'ok' : 'wrong-range';
+export function classify(found, declaredRange, { bareOk = false } = {}) {
+  if (found.range === null) return bareOk ? 'ok' : 'unpinned';
+  if (!rangeIntervals(found.range)) return 'unparseable-range';
+  // A written constraint must admit only versions the declared range admits.
+  // From 0.35.4 the declared range is a union, so a command may pin one of its
+  // lines (`^0.5.8`) and still be right.
+  return rangeSubset(found.range, declaredRange) ? 'ok' : 'wrong-range';
 }
 
 /**
@@ -260,49 +279,56 @@ export function classify(found, declaredRange) {
  * contains an unpinned install command. Returns a list of failures; empty means
  * the detector behaved.
  */
-export function runNegativeControl(pkg, declaredRange) {
+export function runNegativeControl(pkg, declaredRange, { bareOk = false } = {}) {
   const P = pkg;
-  const interval = rangeInterval(declaredRange);
-  if (!interval) {
+  const BARE = bareOk ? 'ok' : 'unpinned';
+  const intervals = rangeIntervals(declaredRange);
+  if (!intervals) {
     return { failures: [`the declared range "${declaredRange}" is not one this check can parse`], checked: 0 };
   }
-  // The first version the declared range does NOT admit, as a caret range: for
-  // `^0.3.11` that is `^0.4.0`, which is exactly the mistake 0.4.0's unversioned
-  // command let a developer make.
+  const interval = { min: intervals[0].min, max: intervals[intervals.length - 1].max };
+  // The first version the declared range does NOT admit above it, as a caret
+  // range: for `^0.3.11 || ^0.5.8` that is `^0.6.0`.
   const above = '^' + interval.max.join('.');
+  // A version in the gap between two lines of a union, when there is one: for
+  // `^0.3.11 || ^0.5.8` that is `^0.4.0`, the line nobody tested.
+  const gap = intervals.length > 1 ? '^' + intervals[0].max.join('.') : null;
   // An exact pin one version below the floor, when there is one.
   const [x, y, z] = interval.min;
   const below = z > 0 ? `${x}.${y}.${z - 1}` : y > 0 ? `${x}.${y - 1}.0` : x > 0 ? `${x - 1}.0.0` : null;
 
   const cases = [
     // The exact command 0.4.0 shipped, in the four shapes it was written in.
-    { name: 'the 0.4.0 command, bare', text: `npm install --save-dev ${P}`, expect: 'unpinned' },
-    { name: 'bare, short flags', text: `npm i -D ${P}`, expect: 'unpinned' },
-    { name: 'bare, pnpm', text: `pnpm add -D ${P}`, expect: 'unpinned' },
-    { name: 'bare, yarn', text: `yarn add --dev ${P}`, expect: 'unpinned' },
-    { name: 'bare, bun', text: `bun add --dev ${P}`, expect: 'unpinned' },
+    // Bare commands are 'ok' only under a policy that allows them, because
+    // another gate proves npm's latest is inside the range (bareOk).
+    { name: 'the 0.4.0 command, bare', text: `npm install --save-dev ${P}`, expect: BARE },
+    { name: 'bare, short flags', text: `npm i -D ${P}`, expect: BARE },
+    { name: 'bare, pnpm', text: `pnpm add -D ${P}`, expect: BARE },
+    { name: 'bare, yarn', text: `yarn add --dev ${P}`, expect: BARE },
+    { name: 'bare, bun', text: `bun add --dev ${P}`, expect: BARE },
     {
       name: 'bare, inside a fenced block',
       text: '```bash\nnpm install --save-dev ' + P + '\n```',
-      expect: 'unpinned',
+      expect: BARE,
     },
     {
       name: 'bare, inside a sentence in backticks',
       text: 'Then run `npm install --save-dev ' + P + '` and you are done.',
-      expect: 'unpinned',
+      expect: BARE,
     },
     {
       name: 'bare, inside a JavaScript string literal',
       text: `const cmd = 'npm install --save-dev ${P}';`,
-      expect: 'unpinned',
+      expect: BARE,
     },
-    { name: 'bare, inside a YAML run: step', text: `        run: npm install -D ${P}`, expect: 'unpinned' },
+    { name: 'bare, inside a YAML run: step', text: `        run: npm install -D ${P}`, expect: BARE },
     // Pinned, but not where the manifest says. These two ranges are DERIVED
     // from the declared one rather than written down: a control with a
     // hard-coded "wrong" version stops being a control the day that version
     // becomes the right one, and it does so silently.
     { name: 'pinned above the declared range', text: `npm install -D "${P}@${above}"`, expect: 'wrong-range' },
     ...(below ? [{ name: 'pinned below the declared range', text: `npm install -D "${P}@${below}"`, expect: 'wrong-range' }] : []),
+    ...(gap ? [{ name: 'pinned to the untested line between the two', text: `npm install -D "${P}@${gap}"`, expect: 'wrong-range' }] : []),
     { name: 'pinned to a dist-tag, not a version', text: `npm install -D "${P}@latest"`, expect: 'unparseable-range' },
     // The correct command, in the shapes it is written in.
     { name: 'the corrected command', text: `npm install --save-dev "${P}@${declaredRange}"`, expect: 'ok' },
@@ -316,7 +342,7 @@ export function runNegativeControl(pkg, declaredRange) {
       failures.push(`${c.name}: expected 1 command, detector found ${found.length}`);
       continue;
     }
-    const got = classify(found[0], declaredRange);
+    const got = classify(found[0], declaredRange, { bareOk });
     if (got !== c.expect) failures.push(`${c.name}: expected "${c.expect}", detector said "${got}"`);
   }
 
@@ -404,7 +430,10 @@ function trackedTextFiles() {
 export function documentedInstallCommand(pkg = POLICY[0].pkg) {
   const text = readFileSync(join(ROOT, CANONICAL_SOURCE), 'utf8');
   const all = findInstallCommands(text, pkg);
-  const found = all.filter((f) => f.range !== null);
+  // Under a policy that allows the bare command (see POLICY), it is the
+  // canonical one; otherwise only a pinned command counts.
+  const bareOk = POLICY.find((e) => e.pkg === pkg)?.bareOk === true;
+  const found = all.filter((f) => bareOk || f.range !== null);
   if (found.length === 0) {
     const bare = all.filter((f) => f.range === null);
     throw new Error(
@@ -449,7 +478,11 @@ function main(argv) {
   let controlled = 0;
   for (const entry of POLICY) {
     const declared = declaredRangeFor(entry);
-    const { failures, checked } = runNegativeControl(entry.pkg, declared);
+    const { failures, checked } = runNegativeControl(entry.pkg, declared, { bareOk: entry.bareOk });
+    // And the control with bare commands NOT allowed, so the 'unpinned' path
+    // is exercised whatever the policy says.
+    const strict = runNegativeControl(entry.pkg, declared, { bareOk: false });
+    failures.push(...strict.failures);
     controlled += checked;
     if (failures.length) {
       console.error('\ncheck-install-commands: THE DETECTOR IS BROKEN\n');
@@ -473,7 +506,7 @@ function main(argv) {
       const text = readFileSync(join(ROOT, rel), 'utf8');
       if (!text.includes(entry.pkg)) continue;
       for (const found of findInstallCommands(text, entry.pkg)) {
-        const verdict = classify(found, declared);
+        const verdict = classify(found, declared, { bareOk: entry.bareOk });
         all.push({ rel, ...found, verdict, declared, pkg: entry.pkg });
         if (verdict === 'ok') continue;
         problems.push({
@@ -562,7 +595,7 @@ function main(argv) {
     const pinned = all.filter((f) => f.verdict === 'ok').length;
     console.log(
       `check-install-commands: clean. ${pinned} install command(s) in ${files.length} ` +
-        `tracked file(s), every one version-constrained to the declared range.`,
+        `tracked file(s), every one bare where the policy allows it or constrained within the declared range.`,
     );
     for (const entry of POLICY) {
       console.log(`  ${entry.pkg}  ${entry.rangeFrom} ${declaredRangeFor(entry)}`);

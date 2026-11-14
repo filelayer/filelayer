@@ -9,20 +9,21 @@
  * and PGlite's `latest` is a 0.5.x release. Measured with npm 10.9: installing
  * both in one command lets npm choose a 0.3.x PGlite and succeeds, but a
  * project that already has PGlite, which an install with no version makes
- * 0.5.x, then fails to add @filelayer/core with ERESOLVE: no tree at all,
- * at the first contact. 0.35.4 drops the peer and checks the version when PGlite
- * is loaded instead. This check holds all of it, from empty directories with a
- * new npm cache:
+ * 0.5.x, then fails to add @filelayer/core with ERESOLVE: no tree at all, at
+ * the first contact. 0.35.4 drops the peer, supports `^0.3.11 || ^0.5.8`, and
+ * checks the version when PGlite is loaded. This check holds all of it, from
+ * empty directories with a new npm cache:
  *
- *   1. both orders succeed with the packed tarball and PGlite unversioned: in
- *      one command, and PGlite first with the package added after;
- *   2. `Filelayer.quickstart()` then refuses with the FilelayerError
- *      `pglite_unsupported_version`, whose message carries the install command
- *      that fixes it, rather than failing somewhere later and stranger;
- *   3. with that command's version, `quickstart()` starts and stores a file.
+ *   1. PGlite's `latest`, installed first with no version and the packed
+ *      tarball added after, installs, and `quickstart()` starts and stores a
+ *      file; the same with both in one command;
+ *   2. a published PGlite outside the range installs too, and `quickstart()`
+ *      refuses it with the FilelayerError `pglite_unsupported_version`, whose
+ *      message carries the install command that fixes it;
+ *   3. that command, run in that project, makes `quickstart()` start.
  *
- * `--self-test` runs step 1 against @filelayer/core@0.35.3 from npm, which
- * still declares the peer, and requires the ERESOLVE. Needs the network for npm.
+ * `--self-test` adds @filelayer/core@0.35.3 from npm to a project with an
+ * unversioned PGlite and requires the ERESOLVE. Needs the network for npm.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -33,7 +34,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const CORE = join(ROOT, 'packages', 'core');
-const FIX = 'npm install --save-dev "@electric-sql/pglite@^0.3.11"';
+const FIX = 'npm install --save-dev @electric-sql/pglite';
+const OUT_OF_RANGE = '0.4.6'; // published, and outside ^0.3.11 || ^0.5.8
 const SELF_TEST = process.argv.includes('--self-test');
 
 const work = mkdtempSync(join(tmpdir(), 'filelayer-pglite-install-'));
@@ -106,46 +108,45 @@ const pack = spawnSync('npm', ['pack', '--pack-destination', work], { cwd: CORE,
 const tgz = readdirSync(work).find((f) => f.endsWith('.tgz'));
 if (pack.status !== 0 || !tgz) fail(`npm pack failed:\n${pack.stdout}${pack.stderr}`);
 const tarball = join(work, tgz);
+const versionIn = (dir) =>
+  JSON.parse(spawnSync('npm', ['ls', '@electric-sql/pglite', '--json'], { cwd: dir, env: cleanEnv(dir), encoding: 'utf8' }).stdout)
+    .dependencies?.['@electric-sql/pglite']?.version;
+const tail = (r) => `${r.stdout}${r.stderr}`.slice(-1500);
 
-// 1. The installs an agent types: PGlite first and the package after, and both
-// in one command.
-const plain = project('plain');
-const r0 = install(plain, ['@electric-sql/pglite']);
-if (r0.status !== 0) fail(`installing PGlite alone failed:\n${r0.stderr}`);
-const r1 = install(plain, [tarball]);
-if (r1.status !== 0) {
-  fail(`adding the tarball to a project with an unversioned PGlite failed (exit ${r1.status}):\n${`${r1.stdout}${r1.stderr}`.slice(-1500)}`);
-}
+// 1. PGlite's latest, in both orders: installs, starts, stores a file.
+const first = project('first');
+const r0 = install(first, ['@electric-sql/pglite']);
+if (r0.status !== 0) fail(`installing PGlite alone failed:\n${tail(r0)}`);
+const r1 = install(first, [tarball]);
+if (r1.status !== 0) fail(`adding the tarball to a project with an unversioned PGlite failed (exit ${r1.status}):\n${tail(r1)}`);
+const latest = versionIn(first);
+const s1 = startQuickstart(first);
+if (!s1.started) fail(`with PGlite's latest (${latest}), quickstart() did not start and store a file: ${JSON.stringify(s1)}`);
 const together = project('together');
 const r2 = install(together, [tarball, '@electric-sql/pglite']);
-if (r2.status !== 0) {
-  fail(`installing the tarball and an unversioned PGlite in one command failed (exit ${r2.status}):\n${`${r2.stdout}${r2.stderr}`.slice(-1500)}`);
-}
-const got = JSON.parse(
-  spawnSync('npm', ['ls', '@electric-sql/pglite', '--json'], { cwd: plain, env: cleanEnv(plain), encoding: 'utf8' }).stdout,
-).dependencies?.['@electric-sql/pglite']?.version;
+if (r2.status !== 0) fail(`the tarball and an unversioned PGlite in one command failed (exit ${r2.status}):\n${tail(r2)}`);
+const s2 = startQuickstart(together);
+if (!s2.started) fail(`installed together (PGlite ${versionIn(together)}), quickstart() did not start: ${JSON.stringify(s2)}`);
 
-// 2. What it says when started, if npm chose a version outside 0.3.x.
-const s1 = startQuickstart(plain);
-if (/^0\.3\./.test(got ?? '')) {
-  if (!s1.started) fail(`PGlite ${got} is in the supported line and quickstart() still failed: ${JSON.stringify(s1)}`);
-  console.log(`check-pglite-install: npm resolved PGlite ${got}, inside the supported line; step 2 has nothing to refuse.`);
-} else {
-  if (s1.started) fail(`quickstart() started on PGlite ${got}, outside the supported 0.3.x line`);
-  if (s1.code !== 'pglite_unsupported_version' || !String(s1.message).includes(FIX)) {
-    fail(`quickstart() on PGlite ${got} did not refuse with pglite_unsupported_version and the install command:\n${JSON.stringify(s1, null, 2)}`);
-  }
+// 2. A published PGlite outside the supported range: refused, with the fix.
+const outside = project('outside');
+const r3 = install(outside, [tarball, `@electric-sql/pglite@${OUT_OF_RANGE}`]);
+if (r3.status !== 0) fail(`installing the tarball beside PGlite ${OUT_OF_RANGE} failed (exit ${r3.status}):\n${tail(r3)}`);
+const s3 = startQuickstart(outside);
+if (s3.started) fail(`quickstart() started on PGlite ${OUT_OF_RANGE}, outside ^0.3.11 || ^0.5.8`);
+if (s3.code !== 'pglite_unsupported_version' || !String(s3.message).includes(FIX)) {
+  fail(`quickstart() on PGlite ${OUT_OF_RANGE} did not refuse with pglite_unsupported_version and the command:\n${JSON.stringify(s3, null, 2)}`);
 }
 
-// 3. The command the error gives works.
-const fixed = project('fixed');
-const r3 = install(fixed, [tarball, '@electric-sql/pglite@^0.3.11']);
-if (r3.status !== 0) fail(`the install the error recommends failed:\n${`${r3.stdout}${r3.stderr}`.slice(-1500)}`);
-const s3 = startQuickstart(fixed);
-if (!s3.started) fail(`with the recommended PGlite, quickstart() did not start: ${JSON.stringify(s3)}`);
+// 3. The command the error gives, run where the error was raised, works.
+const r4 = spawnSync('sh', ['-c', FIX + ' --no-audit --no-fund'], { cwd: outside, env: cleanEnv(outside), encoding: 'utf8' });
+if (r4.status !== 0) fail(`the command the error gives failed:\n${tail(r4)}`);
+const s4 = startQuickstart(outside);
+if (!s4.started) fail(`after the command the error gives (PGlite ${versionIn(outside)}), quickstart() did not start: ${JSON.stringify(s4)}`);
 
 console.log(
-  `check-pglite-install: clean. The tarball installs beside an unversioned PGlite in both orders (PGlite first: npm chose ${got}) with no ERESOLVE; ` +
-    `quickstart() refuses it with pglite_unsupported_version and the command that fixes it; with that command it starts and stores a file.`,
+  `check-pglite-install: clean. The tarball installs beside PGlite's latest (${latest}) in both orders with no ERESOLVE, ` +
+    `and quickstart() starts and stores a file; PGlite ${OUT_OF_RANGE} is refused with pglite_unsupported_version and the command, ` +
+    `and the command makes it start.`,
 );
 rmSync(work, { recursive: true, force: true });

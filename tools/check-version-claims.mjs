@@ -930,10 +930,9 @@ const DATING = [
  */
 const VERSION_SWEEP_EXCEPTIONS = [
   {
-    match: /pglite@[\^~]?\d|pglite\b[\s\S]{0,40}0\.\d+\.\d+|PGlite[\s\S]{0,60}0\.\d+\.\d+/,
-    why: "a DEPENDENCY's version, not ours. @electric-sql/pglite is pinned to 0.3.x and the "
-      + 'constraint is load-bearing: npm’s `latest` is 0.5.x and installing it makes the tree '
-      + 'refuse with ERESOLVE.',
+    match: /pglite@[\^~]?\d|pglite\b[\s\S]{0,40}0\.\d+\.\d+|PGlite[\s\S]{0,60}0\.\d+\.\d+|\^0\.3\.11`? (?:and|or) `?\^0\.5\.8/,
+    why: "a DEPENDENCY's version, not ours. @electric-sql/pglite is supported on ^0.3.11 "
+      + 'and ^0.5.8, and the runtime refuses anything else with pglite_unsupported_version.',
   },
   {
     match: /`0\.3\.0` through `0\.5\.3`|0\.3\.0.{0,12}through/,
@@ -1189,6 +1188,12 @@ const SWEEP_CONTROLS = [
     file: 'fixture.md',
     text: 'npm install --save-dev "@electric-sql/pglite@^0.3.11"',
     why: "a DEPENDENCY's version. Ours is not the only version on the page.",
+  },
+  {
+    hits: false,
+    file: 'fixture.md',
+    text: 'The library supports `^0.3.11` and `^0.5.8`, and CI runs the suite on both lines.',
+    why: "PGlite's supported range, written without naming PGlite on the same line.",
   },
   {
     hits: false,

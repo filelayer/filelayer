@@ -27,10 +27,9 @@
  * @filelayer/core, and from 0.35.4 not a peer either -- a library whose premise is
  * "point it at your own Postgres" should not put a second Postgres into every
  * production `node_modules`. So whoever prepares the consumer directory must
- * run `npm install --save-dev "@electric-sql/pglite@^0.3.11"` in it before
- * running this. The version constraint is required, not tidiness: pglite's
- * `latest` on npm is outside the supported 0.3.x line, and with it
- * `quickstart()` stops with `pglite_unsupported_version`.
+ * run `npm install --save-dev @electric-sql/pglite` in it before
+ * running this. npm's `latest` is inside the supported range, `^0.3.11` or
+ * `^0.5.8`; outside it `quickstart()` stops with `pglite_unsupported_version`.
  * See the `packaging` job in .github/workflows/ci.yml, which does exactly that
  * and says why. `tools/verify-release.mjs` proves the other half: that the
  * package installs, imports and runs the whole lifecycle WITHOUT pglite.
@@ -119,9 +118,8 @@ try {
 } catch {
   console.error(
     `\nverify-install: ${consumerDir} has no @electric-sql/pglite.\n\n` +
-      `  npm install --save-dev "@electric-sql/pglite@^0.3.11"\n\n` +
-      `Keep the version constraint: the supported line is 0.3.x, and pglite's\n` +
-      `\`latest\` on npm is outside it.\n\n` +
+      `  npm install --save-dev @electric-sql/pglite\n\n` +
+      `The supported range is ^0.3.11 or ^0.5.8; npm's \`latest\` is inside it.\n\n` +
       `This script drives Filelayer.quickstart(), which runs on an embedded WASM\n` +
       `Postgres. That package is not a dependency of @filelayer/core, on purpose:\n` +
       `a production install of this library ships no database at all.\n`,

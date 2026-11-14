@@ -25,34 +25,39 @@ library is entitled to know what has already moved underneath it.
 you tell it who the caller is, and it decides what they may do with a file,
 serves the bytes and writes the audit event, on your own Postgres and your own
 bucket. This patch makes the package installable in a project that already has
-PGlite 0.5.x, and corrects three silent decisions in the vault example. No
-schema change (still version 16). The library's behaviour changes in one place:
-`createTestDb()` and `Filelayer.quickstart()` refuse an unsupported PGlite with
-a named error instead of failing later.
+PGlite 0.5.x, adds PGlite 0.5.x to the supported versions, and corrects three
+silent decisions in the vault example. No schema change (still version 16). The
+library's behaviour changes in one place: `createTestDb()` and
+`Filelayer.quickstart()` refuse an unsupported PGlite with a named error instead
+of failing later.
 
-### Fixed — adding the package to a project with PGlite 0.5.x stops failing with ERESOLVE
+### Fixed — PGlite 0.5.x is supported, and adding the package beside it stops failing with ERESOLVE
 
 `@electric-sql/pglite` was an optional peer dependency at `^0.3.11`. npm
 enforces an optional peer's range once the peer is installed, and PGlite's
 `latest` is a 0.5.x release, so a project that had already installed PGlite
-with no version could not add `@filelayer/core`: npm refused
-the whole tree with ERESOLVE, at the first contact. Installing both in one
-command happened to work, because npm then chose a 0.3.x PGlite.
+with no version could not add `@filelayer/core`: npm refused the whole tree
+with ERESOLVE, at the first contact. Installing both in one command happened to
+work, because npm then chose a 0.3.x PGlite.
 
-PGlite is no longer a peer dependency. The supported line is checked when
-PGlite is loaded: with a version outside 0.3.x, `createTestDb()` and
-`Filelayer.quickstart()` throw a `FilelayerError` with code
-`pglite_unsupported_version` (status 500), whose message is the command that
-fixes it:
+PGlite is no longer a peer dependency, and the supported range is now
+`^0.3.11 || ^0.5.8`: the 0.3.x line as before, and the 0.5.x line that npm
+installs by default. The recommended install no longer needs a version:
 
-    npm install --save-dev "@electric-sql/pglite@^0.3.11"
+    npm install --save-dev @electric-sql/pglite
+
+The range is checked when PGlite is loaded. With a version outside it (0.4.x,
+for example), `createTestDb()` and `Filelayer.quickstart()` throw a
+`FilelayerError` with code `pglite_unsupported_version` (status 500), whose
+message names the installed version, the supported range and that command.
 
 Production code is unaffected: it passes its own `pg.Pool` and never loads
-PGlite. A new release check, `check:pglite-install`, installs the packed
-tarball beside an unversioned PGlite in both orders, requires the install to
-succeed and `quickstart()` to refuse with that error and command, and requires
-the command to work. Its self-test shows the same install failing with
-ERESOLVE on 0.35.3.
+PGlite. CI runs the whole suite a second time on PGlite's latest. A new release
+check, `check:pglite-install`, installs the packed tarball beside PGlite's
+latest in both orders and requires the install to succeed and a file to be
+stored, installs it beside 0.4.6 and requires the named error with the command,
+and requires the command to fix it. Its self-test shows the first install
+failing with ERESOLVE on 0.35.3.
 
 `FilelayerError` now carries `meaning` and `fix`, read from the error
 catalogue (`errors.json`), for every code.

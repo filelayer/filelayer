@@ -5,7 +5,7 @@ script that drives it the way a client does.
 
 ```bash
 npm install @filelayer/core @modelcontextprotocol/sdk zod
-npm install --save-dev "@electric-sql/pglite@^0.3.11"
+npm install --save-dev @electric-sql/pglite
 
 node --experimental-strip-types server.ts   # speaks the protocol on stdio
 node verify.mjs                             # spawns that and drives it: 27 checks
