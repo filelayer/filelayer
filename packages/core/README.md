@@ -305,7 +305,7 @@ apply to you:
 npm install @filelayer/core
 ```
 
-Requires **Node ≥ 22.18**. The package ships compiled JavaScript and type
+Requires **Node ≥ 22**. The package ships compiled JavaScript and type
 declarations in `dist/`; the TypeScript source and the full test suite are in
 the tarball as well, so every claim on this page is inspectable from what you
 installed.

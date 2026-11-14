@@ -104,7 +104,7 @@
 <li><a href="#10-what-filelayer-does-not-do">What Filelayer does not do</a></li></ol>
 <hr>
 <h2 id="0-install">0. Install</h2>
-<p><strong>Requirements:</strong> Node ≥ 22.18. Nothing else — no Docker, no Postgres daemon for development.</p>
+<p><strong>Requirements:</strong> Node ≥ 22. Nothing else — no Docker, no Postgres daemon for development.</p>
 <pre><code class="lang-bash">npm install @filelayer/core</code></pre>
 <p>That pulls in nothing else: the package has <strong>no runtime dependencies</strong>. It talks to your Postgres through whatever driver you already use (<code>pg.Pool</code> works directly) and to your bucket over HTTP.</p>
 <p>The throwaway instance in the next block is the exception. <code>quickstart()</code> runs on PGlite, an embedded WebAssembly Postgres, which you install yourself: it is not a dependency, because a library whose premise is &quot;point it at your own Postgres&quot; should not put a second Postgres into every production install. Install it too if you want <code>quickstart()</code> or <code>createTestDb()</code>:</p>

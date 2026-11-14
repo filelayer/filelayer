@@ -61,8 +61,9 @@ jobs:
   # ---------------------------------------------------------------------------
   # The suite, on every Node we claim to support.
   #
-  # `engines.node` is ">=22.18" because that is the first release whose type
-  # stripping the source relies on. 22.x is the floor; 24.x is current LTS. If
+  # The suite runs the TypeScript source with Node's type stripping, which needs
+  # 22.18, so 22.18 is the floor here. The compiled library's `engines` is
+  # ">=22.0"; the packaging job checks that on Node 22.0.0. 24.x is current LTS. If
   # a Node newer than the matrix breaks us, we want to find out from a user's
   # bug report at the latest, so `node-version-file` is deliberately not used.
   # ---------------------------------------------------------------------------
@@ -621,11 +622,10 @@ jobs:
       - name: Import it and use it
         run: node "$GITHUB_WORKSPACE/tools/verify-install.mjs" "$RUNNER_TEMP/consumer"
 
-      # THE LIBRARY ON THE OLDEST NODE 22. `engines` says >=22.18 because the
-      # repository's TypeScript examples and the benchmark run with Node's type
-      # stripping. Whether the compiled library needs it is a separate question,
-      # answered here: the same install, import and round trip on Node 22.0.0.
-      # Evidence for lowering `engines`, not the change itself.
+      # THE LIBRARY ON THE OLDEST NODE 22. `engines` says >=22.0. The
+      # repository's TypeScript examples and the benchmark need 22.18 for Node's
+      # type stripping; the compiled library does not, and this is the check:
+      # the same install, import and round trip on Node 22.0.0.
       - uses: actions/setup-node@v7
         with:
           node-version: '22.0.0'

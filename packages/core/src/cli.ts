@@ -540,14 +540,14 @@ async function credentialsFinding(): Promise<Finding> {
 }
 
 function nodeFinding(): Finding {
-  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
-  const ok = major > 22 || (major === 22 && minor >= 18);
+  const [major = 0] = process.versions.node.split('.').map(Number);
+  const ok = major >= 22;
   return ok
-    ? { name: 'Node', state: 'ok', detail: `${process.versions.node}, which is >= 22.18.` }
+    ? { name: 'Node', state: 'ok', detail: `${process.versions.node}, which is >= 22.0.` }
     : {
         name: 'Node',
         state: 'problem',
-        detail: `${process.versions.node}; this package requires >= 22.18.`,
+        detail: `${process.versions.node}; this package requires >= 22.0.`,
         fix: 'Upgrade Node. The engines field refuses the install, but a CI image can be older than the one that built your lockfile.',
       };
 }

@@ -62,6 +62,14 @@ failing with ERESOLVE on 0.35.3.
 `FilelayerError` now carries `meaning` and `fix`, read from the error
 catalogue (`errors.json`), for every code.
 
+### Changed — Node 22.0 and later
+
+`engines.node` is `>=22.0`, down from `>=22.18`. The compiled library never
+needed 22.18; that floor came from the repository's TypeScript examples, which
+run with Node's type stripping and still need it. CI installs the packed
+tarball on Node 22.0.0 and runs the same import and round trip as on the other
+versions. `npx filelayer doctor` checks for 22.0.
+
 ### Changed — the vault example decides three things correctly
 
 `examples/vault/server.ts` had three silent decisions, each counted against it

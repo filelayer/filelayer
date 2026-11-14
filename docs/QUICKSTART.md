@@ -36,7 +36,7 @@ with the test suite, the test suite is right and this page is a bug.
 
 ## 0. Install
 
-**Requirements:** Node ≥ 22.18. Nothing else — no Docker, no Postgres daemon for
+**Requirements:** Node ≥ 22. Nothing else — no Docker, no Postgres daemon for
 development.
 
 ```bash

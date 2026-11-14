@@ -125,7 +125,7 @@ shipping has a right to be angry about the order they were told things in.
 npm install @filelayer/core
 ```
 
-Requires Node >= 22.18 and PostgreSQL 15+. The schema is a file in the package:
+Requires Node >= 22 and PostgreSQL 15+. The schema is a file in the package:
 
 ```bash
 psql "$DATABASE_URL" -f node_modules/@filelayer/core/schema.sql

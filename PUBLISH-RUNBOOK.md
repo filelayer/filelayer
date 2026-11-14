@@ -539,7 +539,7 @@ live; check each by eye rather than trusting the cache:
   with `curl -sI 'https://img.shields.io/npm/v/@filelayer/core.svg'` and reload.
   It will resolve to `0.3.0` even though the version is behind the `alpha` tag.
 - **node** — `img.shields.io/node/v/@filelayer/core.svg`, reads `engines.node`
-  from the registry. Should show `>=22.18`.
+  from the registry. Should show `>=22.0`.
 - **license** — static, already live.
 
 Finally, confirm the two published documents the README links to are readable
