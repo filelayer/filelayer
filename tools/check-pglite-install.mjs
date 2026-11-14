@@ -8,8 +8,8 @@
  * `^0.3.11`. npm enforces an optional peer's range once the peer is installed,
  * and PGlite's `latest` is a 0.5.x release. Measured with npm 10.9: installing
  * both in one command lets npm choose a 0.3.x PGlite and succeeds, but a
- * project that already has PGlite, which `npm install @electric-sql/pglite`
- * makes 0.5.x, then fails to add @filelayer/core with ERESOLVE: no tree at all,
+ * project that already has PGlite, which an install with no version makes
+ * 0.5.x, then fails to add @filelayer/core with ERESOLVE: no tree at all,
  * at the first contact. 0.35.4 drops the peer and checks the version when PGlite
  * is loaded instead. This check holds all of it, from empty directories with a
  * new npm cache:

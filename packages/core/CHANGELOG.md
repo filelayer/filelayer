@@ -34,8 +34,8 @@ a named error instead of failing later.
 
 `@electric-sql/pglite` was an optional peer dependency at `^0.3.11`. npm
 enforces an optional peer's range once the peer is installed, and PGlite's
-`latest` is a 0.5.x release, so a project that had already run
-`npm install @electric-sql/pglite` could not add `@filelayer/core`: npm refused
+`latest` is a 0.5.x release, so a project that had already installed PGlite
+with no version could not add `@filelayer/core`: npm refused
 the whole tree with ERESOLVE, at the first contact. Installing both in one
 command happened to work, because npm then chose a 0.3.x PGlite.
 
