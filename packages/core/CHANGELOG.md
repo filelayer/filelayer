@@ -63,6 +63,15 @@ application that answers a client with `err.message` sends no more than it did:
 `reason` is for your logs, and in a response it would tell a stranger which of
 two indistinguishable 404s they got.
 
+### Added — `fl.close()`, so a quickstart script exits when it is done
+
+On PGlite 0.5.x any write leaves a timer of about ten seconds pending, so a
+script that ran `Filelayer.quickstart()` sat for ten seconds after its last
+line before the process exited: 13 s in all, against 2 s on PGlite 0.3.x
+(measured 2026-11-15). `await fl.close()` closes the database `quickstart()`
+created. On an instance built with your own `pg.Pool` it does nothing, because
+the pool is yours. The quickstart's program ends with it.
+
 ### Fixed — the MCP server reports this package's version
 
 `initialize` reported the version `1` whatever was installed. It now reports

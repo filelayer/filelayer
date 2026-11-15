@@ -109,6 +109,10 @@ const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });
 in-memory bytes. **Everything is lost when the process exits.** For a real
 deployment see §7 — it is three steps and they are not hidden.
 
+A script that should exit when it is done ends with `await fl.close()`, which
+closes the database `quickstart()` created. Without it, on PGlite 0.5.x the
+process waits about ten seconds after its last line. A server never needs it.
+
 ---
 
 ## 1. Tier 1 — a public file

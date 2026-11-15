@@ -567,6 +567,9 @@ export class Filelayer {
   /** The `upload()` ceiling. Null only when a caller explicitly disabled it. */
   private readonly maxUploadBytes: number | null;
 
+  /** Set only by `quickstart()`, which owns the database it created. */
+  #closeOwned: (() => Promise<void>) | null = null;
+
   constructor(db: Queryable, storage: StorageAdapter, opts: FilelayerOptions = {}) {
     checkConstructorArguments(db, storage, opts);
     this.db = db;
@@ -650,9 +653,31 @@ export class Filelayer {
     const { createTestDb } = await import('./db.ts');
     const { MemoryStorage } = await import('./storage.ts');
     const { db } = await createTestDb();
-    return new Filelayer(db, new MemoryStorage(), {
+    const fl = new Filelayer(db, new MemoryStorage(), {
       baseUrl: opts.baseUrl ?? 'http://localhost:3000',
     });
+    fl.#closeOwned = () => db.close();
+    return fl;
+  }
+
+  /**
+   * Release what this instance owns, so a script can exit when it is done.
+   *
+   * For an instance from `quickstart()` this closes the in-process PGlite it
+   * created. That matters on PGlite 0.5.x: after any write it keeps a timer of
+   * about ten seconds pending, so a script that never closed it sat for ten
+   * seconds after its last line before the process exited (measured
+   * 2026-11-15: 13 s against 2 s on 0.3.x). Added in 0.36.0.
+   *
+   * For an instance you constructed with your own `pg.Pool` it does nothing:
+   * the pool is yours, and other code may still be using it. End it yourself
+   * with `pool.end()`. Calling `close()` twice is harmless; using the instance
+   * after closing a quickstart database is not.
+   */
+  async close(): Promise<void> {
+    const close = this.#closeOwned;
+    this.#closeOwned = null;
+    if (close) await close();
   }
 
   /** Where public URLs are rooted. Read-only; set once at construction. */
