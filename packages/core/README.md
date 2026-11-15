@@ -11,6 +11,10 @@
      package: that one is relative, so a reader of an install opens the copy
      on disk. -->
 
+Per-file permissions, links you can take back, and an audit trail of every
+allowed and denied access, for the files your users upload. A Node library on
+your own Postgres and your own S3 or R2 bucket.
+
 A first file in an organization, and a refusal, in twelve lines:
 
 ```bash
