@@ -685,6 +685,10 @@ describe('external_id is scoped to the project, not global', () => {
    */
   it('two customers may both call their tenant "acme", and the second does not take over the first', async () => {
     const { a, b } = await twoProjects();
+    await a.orgs.create('acme', { owner: 'alice' });
+    // Since 0.36.0 put() no longer creates an org; B creates its own "acme",
+    // which is exactly the call a global external_id would have refused.
+    await b.orgs.create('acme', { owner: 'mallory' });
     const fileA = await a.files.put(bytes('A CONFIDENTIAL'), { org: 'acme', owner: 'alice' });
     const fileB = await b.files.put(bytes('B CONFIDENTIAL'), { org: 'acme', owner: 'mallory' });
 
@@ -711,6 +715,8 @@ describe('external_id is scoped to the project, not global', () => {
 
   it("the same user id in two customers' apps is two different people", async () => {
     const { a, b } = await twoProjects();
+    await a.orgs.create('acme', { owner: 'alice' });
+    await b.orgs.create('acme', { owner: 'alice' });
     await a.files.put(bytes('A doc'), { org: 'acme', owner: 'alice' });
     await b.files.put(bytes('B doc'), { org: 'acme', owner: 'alice' });
     const { rows } = await a.store.db.query<{ n: number }>(
@@ -721,6 +727,7 @@ describe('external_id is scoped to the project, not global', () => {
 
   it('a project-bound instance cannot read another project’s file even holding its UUID', async () => {
     const { a, b } = await twoProjects();
+    await a.orgs.create('acme', { owner: 'alice' });
     const fileA = await a.files.put(bytes('A CONFIDENTIAL'), { org: 'acme', owner: 'alice' });
     const aliceA = (
       await a.store.db.query<{ id: string }>(
@@ -745,6 +752,7 @@ describe('external_id is scoped to the project, not global', () => {
    */
   it('probing another project’s org id lands on the SYSTEM chain, not that tenant’s', async () => {
     const { a, b } = await twoProjects();
+    await a.orgs.create('acme', { owner: 'alice' });
     await a.files.put(bytes('A doc'), { org: 'acme', owner: 'alice' });
     const orgA = (
       await a.store.db.query<{ id: string }>(
@@ -768,6 +776,8 @@ describe('external_id is scoped to the project, not global', () => {
 
   it('the DATABASE refuses a cross-project membership and a cross-project grant subject', async () => {
     const { db, a, b } = await twoProjects();
+    await a.orgs.create('acme', { owner: 'alice' });
+    await b.orgs.create('acme', { owner: 'mallory' });
     await a.files.put(bytes('A doc'), { org: 'acme', owner: 'alice', public: true });
     await b.files.put(bytes('B doc'), { org: 'acme', owner: 'mallory' });
 
@@ -806,6 +816,8 @@ describe('external_id is scoped to the project, not global', () => {
 
   it('a file’s owner cannot be an identity from another project', async () => {
     const { db, a, b } = await twoProjects();
+    await a.orgs.create('acme', { owner: 'alice' });
+    await b.orgs.create('acme', { owner: 'mallory' });
     await a.files.put(bytes('A doc'), { org: 'acme', owner: 'alice' });
     await b.files.put(bytes('B doc'), { org: 'acme', owner: 'mallory' });
     const orgA = (

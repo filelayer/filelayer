@@ -166,9 +166,10 @@ stream.
 ### The trap that stops the first upload working
 
 In a **named org**, `fl.files.put({ org: 'acme', owner: 'newcomer' })` throws
-`forbidden` with reason `no_membership` unless one of three things is true:
-the owner is already a member of that org, the same call created the org, or
-it is the default workspace.
+`forbidden` with reason `no_membership` unless the owner is already a member
+of that org (or it is the default workspace). Since 0.36.0 an org that does not
+exist yet is `not_found` with reason `unknown_org`: create it first with
+`fl.orgs.create(org, { owner })`.
 
 This bites on the first upload of a real integration, where the org already
 exists and a user who has never uploaded before is doing it. The error says

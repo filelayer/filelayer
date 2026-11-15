@@ -568,6 +568,7 @@ export class Filelayer {
   private readonly maxUploadBytes: number | null;
 
   constructor(db: Queryable, storage: StorageAdapter, opts: FilelayerOptions = {}) {
+    checkConstructorArguments(db, storage, opts);
     this.db = db;
     this.storage = storage;
     this.opts = opts;
@@ -961,6 +962,7 @@ export class Filelayer {
     actorId: string,
     role: OrgRole,
   ): Promise<void> {
+    oneOf('role', role, ORG_ROLES);
     // IN A TRANSACTION, for the same reason `revoke()` is.
     //
     // This used to authorize (which WRITES the audit event) and then INSERT, as
@@ -1068,7 +1070,7 @@ export class Filelayer {
     if (expiresAt && retainUntil && retainUntil > expiresAt) {
       throw new FilelayerError('invalid_argument', 'retain_for_exceeds_expires_in');
     }
-    const visibility: FileVisibility = input.visibility ?? 'private';
+    const visibility: FileVisibility = oneOf('visibility', input.visibility ?? 'private', VISIBILITIES);
 
     // THE UPLOAD CEILING, enforced at the only three points where it can be.
     // See `FilelayerOptions.maxUploadBytes` for why this path had none while
@@ -1291,7 +1293,7 @@ export class Filelayer {
       throw new FilelayerError('invalid_argument', 'retain_for_exceeds_expires_in');
     }
     const uploadExpiresAt = new Date(now + cfg.ttlSeconds * 1000);
-    const visibility: FileVisibility = input.visibility ?? 'private';
+    const visibility: FileVisibility = oneOf('visibility', input.visibility ?? 'private', VISIBILITIES);
 
     // THE ROW IS COMMITTED BEFORE THE CREDENTIAL IS MINTED.
     //
@@ -2528,6 +2530,12 @@ export class Filelayer {
 
   async share(principal: Principal, fileId: string, input: ShareInput): Promise<ShareResult> {
     const capabilities = input.capabilities ?? (['read'] as Capability[]);
+    if (!Array.isArray(capabilities) || capabilities.length === 0) {
+      throw new FilelayerError('invalid_argument',
+        `capabilities must be a non-empty array of ${CAPABILITIES.join(', ')}.`,
+      );
+    }
+    for (const c of capabilities) oneOf('capabilities', c, CAPABILITIES);
 
     // TRIMMED HERE AND REFUSED IF EMPTY, rather than passed through for the
     // schema CHECK to reject. Two reasons: the CHECK requires a trimmed value,
@@ -3942,4 +3950,99 @@ function toFileRecord(r: Record<string, unknown>): FileRecord {
     retainUntil: r['retain_until'] ? new Date(r['retain_until'] as string) : null,
     createdAt: new Date(r['created_at'] as string),
   };
+}
+
+
+// -----------------------------------------------------------------------------
+// Constructor arguments
+// -----------------------------------------------------------------------------
+
+/** Every key `FilelayerOptions` has. An unknown key is refused, not ignored. */
+const OPTION_KEYS = ['baseUrl', 'projectId', 'redirectDelivery', 'directUpload', 'maxUploadBytes'] as const;
+
+/**
+ * THE MISTAKES A FIRST USER MAKES, NAMED BEFORE THEY BECOME A RAW TYPEERROR.
+ *
+ * Found 2026-11-11 by a cold first-user run against 0.35.2: `new Filelayer()`
+ * with no arguments, a connection string where the pool goes, and `baseUrl`
+ * without a scheme each failed later with a JavaScript error that named none of
+ * them, and a misspelled option (`baseURL`) was silently ignored, so links came
+ * back without a URL. Each is now `invalid_argument` at construction, and
+ * `reason` names the argument and the fix. Since 0.36.0.
+ */
+function checkConstructorArguments(db: unknown, storage: unknown, opts: unknown): void {
+  const kind = (v: unknown) => (v === null ? 'null' : Array.isArray(v) ? 'an array' : typeof v);
+  if (typeof db === 'string') {
+    throw new FilelayerError('invalid_argument',
+      'db is a string. Pass a pg.Pool, not a connection string: ' +
+        'new Filelayer(new pg.Pool({ connectionString }), storage, opts)',
+    );
+  }
+  if (db === null || typeof db !== 'object' || typeof (db as { query?: unknown }).query !== 'function') {
+    throw new FilelayerError('invalid_argument',
+      `db must be a pg.Pool (anything with query()), got ${kind(db)}. ` +
+        'new Filelayer(pool, storage, opts), or Filelayer.quickstart() for a throwaway instance.',
+    );
+  }
+  // Present and an object; the adapter's own shape (`provider`, its methods)
+  // is checked where it is used, as it was before.
+  if (storage === null || typeof storage !== 'object') {
+    throw new FilelayerError('invalid_argument',
+      `storage must be a storage adapter (new FsStorage(dir), new S3Storage({...}) or ` +
+        `new MemoryStorage()), got ${kind(storage)}.`,
+    );
+  }
+  if (opts === null || typeof opts !== 'object' || Array.isArray(opts)) {
+    throw new FilelayerError('invalid_argument', `opts must be an object, got ${kind(opts)}.`);
+  }
+  for (const key of Object.keys(opts)) {
+    if ((OPTION_KEYS as readonly string[]).includes(key)) continue;
+    const near = OPTION_KEYS.find((k) => k.toLowerCase() === key.toLowerCase());
+    throw new FilelayerError('invalid_argument',
+      `unknown option "${key}"` + (near ? `; did you mean "${near}"?` : '') +
+        ` The options are ${OPTION_KEYS.join(', ')}.`,
+    );
+  }
+  const baseUrl = (opts as { baseUrl?: unknown }).baseUrl;
+  if (baseUrl !== undefined) {
+    let ok = false;
+    if (typeof baseUrl === 'string' && /^https?:\/\//i.test(baseUrl)) {
+      try {
+        new URL(baseUrl);
+        ok = true;
+      } catch {
+        ok = false;
+      }
+    }
+    if (!ok) {
+      throw new FilelayerError('invalid_argument',
+        `baseUrl must be an absolute http(s) URL such as "https://app.example.com", got ` +
+          `${typeof baseUrl === 'string' ? JSON.stringify(baseUrl.slice(0, 80)) : kind(baseUrl)}.`,
+      );
+    }
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Enumerated arguments
+// -----------------------------------------------------------------------------
+
+const ORG_ROLES = ['viewer', 'member', 'admin', 'owner'] as const satisfies readonly OrgRole[];
+const VISIBILITIES = ['private', 'org'] as const satisfies readonly FileVisibility[];
+const CAPABILITIES = ['read', 'write', 'delete', 'share'] as const satisfies readonly Capability[];
+
+/**
+ * An enumerated argument outside its set is `invalid_argument` naming the
+ * field and the values, since 0.36.0. Before, `role: 'editor'` or
+ * `visibility: 'public'` reached the schema's CHECK constraint and came back
+ * as a raw SQLSTATE, or (where the engine compared before inserting) as a
+ * denial that read like a permission problem.
+ */
+function oneOf<T extends string>(field: string, value: unknown, allowed: readonly T[]): T {
+  if (typeof value === 'string' && (allowed as readonly string[]).includes(value)) return value as T;
+  throw new FilelayerError('invalid_argument',
+    `${field} must be one of ${allowed.join(', ')}, got ` +
+      `${typeof value === 'string' ? JSON.stringify(value.slice(0, 40)) : typeof value}.`,
+  );
 }

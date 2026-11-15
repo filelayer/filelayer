@@ -368,12 +368,11 @@ const server = createServer(async (req, res) => {
 
     // POST /orgs/:org        create a tenant, with the caller as its OWNER
     //
-    // DO THIS EXPLICITLY. `files.put({ org: 'acme' })` will create `acme` for
-    // you if it does not exist, and it joins you to it as a `member`. A member
-    // cannot read the audit log, cannot set roles, and gets the same `404` a
-    // stranger gets, so a tenant created as a side effect of an upload is a
-    // tenant you do not administer. The call below is the one that makes you
-    // its owner.
+    // THIS IS THE ONLY WAY A TENANT COMES INTO EXISTENCE. Since 0.36.0
+    // `files.put({ org: 'acme' })` into an org nobody created answers 404 with
+    // reason `unknown_org`; before that it created `acme` with no owner and
+    // joined the uploader as a `member`, a tenant nobody administered. The call
+    // below is the one that makes you its owner.
     if (req.method === 'POST' && seg[0] === 'orgs' && seg.length === 2) {
       if (!user) return json(res, 401, { error: 'no_session' });
       const org = await fl.orgs.create(seg[1]!, { owner: user });

@@ -628,6 +628,7 @@ describe('FsStorage', () => {
     const root = freshRoot();
     const { db } = await createTestDb();
     const fl = new Filelayer(db, new FsStorage(root), { baseUrl: 'http://x' });
+    await fl.orgs.create('acme', { owner: 'alice' });
     const f = await fl.files.put(bytes('CONTRACT'), { org: 'acme', owner: 'alice' });
 
     // A DIFFERENT adapter instance over the same directory, which is the

@@ -108,7 +108,11 @@ export interface PutOptions {
   owner?: string;
 
   // --- tier 3 ---------------------------------------------------------------
-  /** Your own tenant id. Auto-created on first use. Defaults to the workspace. */
+  /**
+   * Your own tenant id. Defaults to the workspace. Must already exist: create
+   * it with `orgs.create`, which names its owner. An unknown org throws
+   * `not_found` with reason `unknown_org` (since 0.36.0; it used to be created).
+   */
   org?: string;
   /** `private` (default) = owner + org admins. `org` = every member may read. */
   visibility?: FileVisibility;
@@ -443,6 +447,21 @@ class Identities {
   }
 }
 
+/**
+ * `{ as }` on a method that requires it, or `invalid_argument` naming the
+ * method. Found 2026-11-11 by a cold first-user run: `orgs.setRole(org, user,
+ * role)` with no options object was a raw "Cannot read properties of
+ * undefined (reading 'as')". Since 0.36.0.
+ */
+function requireAs(method: string, opts: unknown): string {
+  const as = opts !== null && typeof opts === 'object' ? (opts as { as?: unknown }).as : undefined;
+  if (typeof as === 'string' && as.length > 0) return as;
+  throw new FilelayerError('invalid_argument',
+    `${method} needs { as: <the acting user's id> }` +
+      (opts === undefined ? ', and no options object was passed.' : `, got as: ${typeof as}.`),
+  );
+}
+
 // -----------------------------------------------------------------------------
 // files.*
 // -----------------------------------------------------------------------------
@@ -463,17 +482,39 @@ export class FilesApi {
    * TIER 4: `+ expiresIn / retainFor / metadata`
    */
   async put(body: Uint8Array, opts: PutOptions = {}): Promise<PutResult> {
+    // A string body is the common slip (`put('hello')`), and it failed as a raw
+    // TypeError somewhere in sniffing or storage. Since 0.36.0 it is named.
+    if (!(body instanceof Uint8Array)) {
+      throw new FilelayerError('invalid_argument',
+        typeof body === 'string'
+          ? 'files.put body is a string. Pass bytes: new TextEncoder().encode(text), or a Buffer.'
+          : (body as unknown) instanceof ArrayBuffer
+            ? 'files.put body is an ArrayBuffer. Pass new Uint8Array(buffer).'
+            : `files.put body must be a Uint8Array or a Buffer, got ${(body as unknown) === null ? 'null' : typeof body}.`,
+      );
+    }
+    if (opts === null || typeof opts !== 'object') {
+      throw new FilelayerError('invalid_argument', `files.put options must be an object, got ${opts === null ? 'null' : typeof opts}.`);
+    }
     const contentType = opts.contentType ?? sniffContentType(body);
     const name = opts.name ?? 'file';
 
     // Resolve the tenant. Naming an org is what promotes you from tier 2 to
     // tier 3; not naming one puts you in the default workspace, which is a real
     // org with a real id, not a hole in the model.
+    //
+    // A NAMED ORG MUST ALREADY EXIST. Until 0.36.0 `put({ org })` created an
+    // unknown org on the spot, with no owner, and joined the uploader to it as
+    // a `member`. Nobody could then manage it (`setRole` found no owner), and
+    // an application that let users type the org name let the first uploader
+    // claim a name before the real customer's `orgs.create` (which then failed
+    // with org_exists). Found 2026-11-11 by a cold first-user run (D058). Orgs
+    // are created by `orgs.create`, which names the owner; `put` only resolves.
     const isDefaultWorkspace = opts.org === undefined;
     const system = await this.ids.actor(SYSTEM_ACTOR);
     const resolved = isDefaultWorkspace
       ? await this.ids.org(DEFAULT_WORKSPACE, { name: 'workspace', ownerActorId: system })
-      : await this.ids.org(opts.org!);
+      : { id: await this.ids.requireOrg(opts.org!), created: false };
     const orgId = resolved.id;
 
     // Resolve the owner. `owner:` auto-registers, because the developer is
@@ -493,8 +534,8 @@ export class FilesApi {
       // `addMember`, the verbose equivalent, denies that exact call. Found
       // 2026-10-02 by adversarial review.
       //
-      // Creating the tenant with this call still joins you to it, because then
-      // there is nobody whose tenant it was.
+      // `resolved.created` is true only for the default workspace's first
+      // upload; a named org is never created here (see above).
       const mayJoin =
         isDefaultWorkspace ||
         resolved.created ||
@@ -898,12 +939,12 @@ export class OrgsApi {
     role: OrgRole,
     opts: { as: string },
   ): Promise<void> {
-    const { orgId, actorId, principal } = await this.trio(org, user, opts.as);
+    const { orgId, actorId, principal } = await this.trio(org, user, requireAs('orgs.setRole', opts));
     await this.fl.addMember(principal, orgId, actorId, role);
   }
 
   async removeMember(org: string, user: string, opts: { as: string }): Promise<void> {
-    const { orgId, actorId, principal } = await this.trio(org, user, opts.as);
+    const { orgId, actorId, principal } = await this.trio(org, user, requireAs('orgs.removeMember', opts));
     await this.fl.removeMember(principal, orgId, actorId);
   }
 
@@ -946,7 +987,7 @@ export class OrgsApi {
     },
   ) {
     const orgId = await this.requireOrg(org);
-    const principal = await this.requirePrincipal(opts.as, opts);
+    const principal = await this.requirePrincipal(requireAs('orgs.audit', opts), opts);
     let actorId: string | undefined;
     if (opts.user !== undefined) {
       const found = await this.ids.findActorIncludingDeleted(opts.user);
@@ -972,7 +1013,7 @@ export class OrgsApi {
 
   async verifyAudit(org: string, opts: AsOption & { as: string }) {
     const orgId = await this.requireOrg(org);
-    return this.fl.verifyAuditChain(await this.requirePrincipal(opts.as, opts), orgId);
+    return this.fl.verifyAuditChain(await this.requirePrincipal(requireAs('orgs.verifyAudit', opts), opts), orgId);
   }
 
   private async trio(org: string, user: string, as: string) {
@@ -1070,7 +1111,7 @@ export class SharesApi {
   ): Promise<ShareResult & { secret: string }>;
   async create(fileId: string, opts: ShareOptions): Promise<ShareResult>;
   async create(fileId: string, opts: ShareOptions): Promise<ShareResult> {
-    const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.create', fileId);
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, requireAs('shares.create', opts), 'grant.create', fileId);
     if (opts.withUser && opts.withOrg) {
       throw new FilelayerError('ambiguous_subject', 'withUser_and_withOrg');
     }
@@ -1111,7 +1152,7 @@ export class SharesApi {
    * revoking a specific share link whose secret you handed out.
    */
   async revoke(grantId: string, opts: AsOption & { as: string }) {
-    const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.revoke');
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, requireAs('shares.revoke', opts), 'grant.revoke');
     return this.fl.revoke({ actorId, ...auditContext(opts) }, grantId);
   }
 
@@ -1133,7 +1174,7 @@ export class SharesApi {
     fileId: string,
     opts: AsOption & { as: string; user: string },
   ): Promise<{ revoked: number }> {
-    const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.revoke', fileId);
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, requireAs('shares.unshare', opts), 'grant.revoke', fileId);
     const target = await this.ids.findActor(opts.user);
     if (!target) return { revoked: 0 };
     const { revoked } = await this.fl.revokeFor({ actorId, ...auditContext(opts) }, fileId, {
@@ -1144,7 +1185,7 @@ export class SharesApi {
   }
 
   async list(fileId: string, opts: AsOption & { as: string }) {
-    const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'grant.list', fileId);
+    const actorId = await resolveActorOrDeny(this.fl, this.ids, requireAs('shares.list', opts), 'grant.list', fileId);
     return this.fl.listGrants({ actorId, ...auditContext(opts) }, fileId);
   }
 

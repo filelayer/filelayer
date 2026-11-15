@@ -91,9 +91,9 @@ writers and no `presignGet`, so redirect delivery is unavailable. Set
 `S3_ENDPOINT` and the other three `S3_*` variables to move to a bucket; nothing
 else in the file changes.
 
-**Creating a tenant.** `files.put({ org: 'acme' })` creates `acme` if it is
-missing and joins you as a **member**. A member cannot read the audit log or set
-roles, and gets the same `404` a stranger gets. `POST /orgs/:org` calls
-`fl.orgs.create(org, { owner })`, which is the call that makes you its owner. The
-verify script does that first, deliberately, because doing it the other way round
-is the mistake this example exists to stop you making.
+**Creating a tenant.** `POST /orgs/:org` calls `fl.orgs.create(org, { owner })`,
+which is the only call that creates a tenant, and makes you its owner. Since
+0.36.0 `files.put({ org: 'acme' })` into an org nobody created answers `404` with
+reason `unknown_org`. Before that it created `acme` with no owner and joined you
+as a **member**, who cannot read the audit log or set roles. The verify script
+creates the tenant first for that reason.

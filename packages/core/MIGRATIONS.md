@@ -1307,6 +1307,46 @@ If you never run a usage report, the table stays empty and costs nothing.
 
 ---
 
+### `0.35.x` → `0.36.0`: no schema change, and three behaviours you may notice
+
+#### What changed in the schema
+
+Nothing. The schema is still version 16 and there is no SQL to apply. Like the
+`0.34.0` section above, this one has no entry number, because entry numbers
+are schema versions.
+
+#### What you may have to change, if you upload into an org you never created
+
+`files.put({ org })` into an org that does not exist now throws `not_found`
+(404) with reason `unknown_org`, and writes nothing. Before `0.36.0` it created
+the org on the spot, with no owner, and made the uploader a `member` of it.
+Nobody could administer that org afterwards, and in an application that let a
+user type the org name, the first uploader took the name before the real
+customer's `orgs.create` could.
+
+Create each org once with `fl.orgs.create(org, { owner })`, which names its
+owner, before the first upload into it. `orgs.create` with the same owner is
+idempotent, so calling it where you provision a tenant is safe on a retry. The
+default workspace, used when `put` names no org, is unchanged.
+
+#### What you may have to change, if you construct `Filelayer` with a typo
+
+The constructor now refuses, with `invalid_argument`, what it used to accept or
+fail on later: no arguments, a connection string where the `pg.Pool` goes, a
+missing storage adapter, an option it does not know (`baseURL`, for example,
+which used to be ignored, so links came back without a URL), and a `baseUrl`
+that is not an absolute `http(s)` URL. `reason` names the argument.
+
+#### What else returns `invalid_argument` instead of another error
+
+A string body to `files.put`, a method that needs `{ as }` called without it,
+and a `role`, `visibility` or `capabilities` value outside its set. These used
+to surface as a raw `TypeError` or as the schema's CHECK constraint. Code that
+caught those by message should catch `FilelayerError` with
+`code === 'invalid_argument'`.
+
+---
+
 ## 4. What is not covered here
 
 - **Data migration between storage adapters.** Moving objects from one bucket to

@@ -19,6 +19,53 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [Unreleased]
+
+The fix release after the launch, planned as `0.36.0`: a minor bump, because
+one behaviour changes in a way a caller can depend on (see `MIGRATIONS.md`,
+"`0.35.x` → `0.36.0`"). No schema change (still version 16).
+
+### Changed — `put()` into an org nobody created is refused
+
+`files.put({ org })` into an org that does not exist throws `not_found` (404)
+with reason `unknown_org` and writes nothing, and the refusal is audited like
+any other unknown org. It used to create the org with no owner and make the
+uploader a `member`. Nobody could administer that org, and in an application
+that let users type the org name, the first uploader claimed it before the real
+customer. Found on 2026-11-11 by a cold first-user run against 0.35.2. Orgs are
+created by `orgs.create`, which names the owner.
+
+### Fixed — mistakes a first user makes are named, not raw errors
+
+`invalid_argument` (400), with `reason` naming the argument, for: `new
+Filelayer()` with no arguments, a connection string instead of a `pg.Pool`, a
+missing storage adapter, an unknown option (with the closest known name, so
+`baseURL` says "did you mean baseUrl"), a `baseUrl` without a scheme, a string
+body to `files.put`, a method that needs `{ as }` called without it, and a
+`role`, `visibility` or `capabilities` value outside its set. The misspelled
+option used to be ignored silently. The others came back as a raw `TypeError`
+or a CHECK-constraint error.
+
+### Fixed — `filelayer-mcp` checks its seed before it starts
+
+On a database where `FILELAYER_ORG` or `FILELAYER_AS` did not exist, or where
+the user was not a member, the server started and every tool answered
+`not_found`, the answer a stranger gets. It now exits with code 2 and says
+which one is missing and how to create it, or that the schema has not been
+applied. It still never creates its own org or user.
+
+### Fixed — the MCP server reports this package's version
+
+`initialize` reported the version `1` whatever was installed. It now reports
+the package version, so a client can tell which release it is talking to.
+
+### Documentation
+
+- The starter example's notes on creating a tenant describe the new
+  behaviour.
+
+---
+
 ## [0.35.4] — 2026-11-15
 
 `@filelayer/core` is a TypeScript library for the files your SaaS users upload:

@@ -1322,6 +1322,7 @@ describe('2026-10-03: a share link refuses anything beyond read, before the data
     // none and answered 500 to a 400. Both were measured against the starter.
     const { db } = await createTestDb();
     const fl = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://x' });
+    await fl.orgs.create('acme', { owner: 'alice' });
     const f = await fl.files.put(bytes('CONTRACT'), { org: 'acme', owner: 'alice' });
 
     for (const caps of [['read', 'delete'], ['delete'], ['write'], ['share'], ['read', 'share']]) {
@@ -1363,5 +1364,48 @@ describe('2026-10-03: a share link refuses anything beyond read, before the data
       capabilities: ['read', 'delete'],
     });
     assert.equal(toBob.secret, undefined, 'a named subject has no secret to hand out');
+  });
+});
+
+/**
+ * Found 2026-11-11 by a cold first-user run against 0.35.2 (D058). `put({ org })`
+ * created an org it had never seen, with no owner, and made the uploader a
+ * `member` of it. Nobody could manage that org afterwards (`setRole` found no
+ * owner), and in an application that let users type the org name, the first
+ * uploader claimed the name: the real customer's `orgs.create` then failed with
+ * org_exists. Since 0.36.0 an org exists only once `orgs.create` made it.
+ */
+describe('2026-11-11: put() into an org nobody created is refused, and creates nothing', () => {
+  it('throws not_found / unknown_org and writes no org, actor membership or file', async () => {
+    const { db } = await createTestDb();
+    const fl = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://x' });
+    const err = await fl.files
+      .put(bytes('CLAIM'), { org: 'acme', owner: 'mallory' })
+      .then(() => null, (e: unknown) => e as { code?: string; status?: number; reason?: string });
+    assert.ok(err, 'put() into an unknown org succeeded');
+    assert.equal(err.code, 'not_found');
+    assert.equal(err.status, 404);
+    assert.equal(err.reason, 'unknown_org');
+
+    const { rows } = await db.query<{ n: number }>(
+      `SELECT (SELECT count(*) FROM org WHERE external_id = 'acme')::int
+            + (SELECT count(*) FROM file)::int AS n`,
+    );
+    assert.equal(Number(rows[0]!.n), 0, 'the refused put left an org or a file behind');
+
+    // The name is still the real customer's to take.
+    await fl.orgs.create('acme', { owner: 'alice' });
+    await fl.files.put(bytes('MINE'), { org: 'acme', owner: 'alice' });
+  });
+
+  it('the refusal is audited, like any other unknown org', async () => {
+    const { db } = await createTestDb();
+    const fl = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://x' });
+    await rejects(() => fl.files.put(bytes('X'), { org: 'nobody' }), 404);
+    const { rows } = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_event
+        WHERE action = 'org.access' AND decision = 'deny' AND reason = 'unknown_org'`,
+    );
+    assert.equal(Number(rows[0]!.n), 1);
   });
 });

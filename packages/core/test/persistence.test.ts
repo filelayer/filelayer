@@ -301,18 +301,16 @@ describe('the mutation and the audit event that records it commit together', () 
     // at the metadata write, after a successful `storage.put()` -- rather than
     // relying on a defect to stage it.
     //
-    // A `visibility` outside the `file_visibility` enum is rejected by the
-    // INSERT itself (22P02), which is after `storage.put()` has already
-    // succeeded -- the ordering this test is about. It is reachable the way
-    // these things are reachable in practice: an untyped caller passing a string
-    // from a request body, since TypeScript does not survive the process
-    // boundary.
+    // A NUL byte in the name is rejected by the INSERT itself (Postgres text
+    // cannot hold 0x00), which is after `storage.put()` has already succeeded --
+    // the ordering this test is about. Until 0.36.0 the injection was a
+    // `visibility` outside its enum; that is now refused up front, before the
+    // bytes go out, as `retainFor > expiresIn` was in 0.7.0.
     await assert.rejects(() =>
       f.fl.upload({ actorId: f.alice }, f.org, {
-        name: 'doomed.txt',
+        name: 'doomed\u0000.txt',
         contentType: 'text/plain',
         body: bytes('data'),
-        visibility: 'public' as 'private',
       }),
     );
 
