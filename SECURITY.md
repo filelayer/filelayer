@@ -1,10 +1,10 @@
 # Security Policy
 
 Filelayer is an authorization product. A bug in the authorization engine is not
-a defect in a feature — it is a defect in the entire value proposition. We would
+a defect in a feature; it is a defect in the entire value proposition. We would
 rather hear about one from you than from a customer.
 
-## Status: developer preview
+## Status: alpha
 
 Read this before you decide how much to trust us.
 
@@ -13,16 +13,16 @@ Read this before you decide how much to trust us.
 - The authorization core is covered by a property suite and an adversarial
   suite, both of which run in CI on every change.
 - The S3/R2 storage adapter **runs against live Cloudflare R2 and live AWS S3 in
-  CI on every commit** — 12 tests each, a thirteenth on the nightly run — in
+  CI on every commit**: 12 tests each, a thirteenth on the nightly run, in
   addition to a local, signature-verifying S3 implementation. What is still
   unmeasured is load, and anything outside one region and one bucket
   configuration per provider.
 - The database schema may still change before 1.0.
 
-The complete, current list of things we know are missing or weak is the
-**Limitations** section of the [README](README.md). It is maintained as part of
-the release and is deliberately not duplicated here — a second copy would be a
-second thing to forget to update. If you are assessing risk, read that list
+The complete, current list of things we know are missing or weak is
+[`LIMITATIONS.md`](LIMITATIONS.md). It is maintained as part of the release and
+is deliberately not duplicated here: a second copy would be a second thing to
+forget to update. If you are assessing risk, read that list
 first: several items there are design trade-offs we made deliberately and would
 not treat as vulnerabilities.
 
@@ -34,10 +34,13 @@ Report it privately, by either route:
 
 - **GitHub Security Advisories** (preferred):
   <https://github.com/filelayer/filelayer/security/advisories/new>. This creates
-  a private thread with the maintainers and gives you a CVE path if one is
+  a private thread with the maintainer and gives you a CVE path if one is
   warranted.
 - **Email:** `security@filelayer.dev`. GitHub Security Advisories remain the
   preferred route.
+
+Filelayer has one maintainer, Jorge Urios; [`TRUST.md`](TRUST.md#who-maintains-this)
+says who he is and what happens if he stops. Reports reach him directly.
 
 We do not currently run a bug bounty and have no budget for one. We will say so
 plainly rather than imply a reward that does not exist.
@@ -47,7 +50,7 @@ plainly rather than imply a reward that does not exist.
 Whatever you have. A rough report beats no report. The ones we can act on
 fastest contain:
 
-1. The property you believe is broken — see the five security properties (P1–P5)
+1. The property you believe is broken: see the five security properties (P1 to P5)
    in the [README](README.md), if one of them applies.
 2. A minimal reproduction, ideally against `Filelayer.quickstart()`, which needs
    no infrastructure and runs in-process.
@@ -64,14 +67,14 @@ In scope, and taken seriously:
 - Any way to make a **revoked or expired** grant serve bytes.
 - Any way to exceed a download cap, an expiry, or a delegated grant's attenuated
   authority.
-- Any way to write, forge, suppress or break the audit chain — or to make an
+- Any way to write, forge, suppress or break the audit chain, or to make an
   allowed access **not** appear in it.
 - Response-header, content-type or content-disposition handling that lets stored
   content execute in the serving origin.
 
 Out of scope, because they are documented behaviour rather than defects:
 
-- Anything already named in the README's Limitations section — including the
+- Anything already named in [`LIMITATIONS.md`](LIMITATIONS.md), including the
   bounded revocation window on opt-in redirect delivery, and the fact that org
   admins and owners can read `private` files.
 - Denial of service through resource exhaustion. We do not ship rate limiting
@@ -81,7 +84,7 @@ Out of scope, because they are documented behaviour rather than defects:
   measurements in `ARCHITECTURE-PROGRESSIVE.md` can be reproduced and checked.
   They are in this repository on purpose, they are not shipped in any npm
   package, and nobody should deploy them. A defect in one of them is a finding
-  about that measurement, not about `@filelayer/core` — interesting to us, and
+  about that measurement, not about `@filelayer/core`: interesting to us, and
   best filed as a public issue rather than through this process.
 
 ## Our disclosure policy
@@ -102,7 +105,7 @@ We will:
 
 - keep your report private until an advisory is published;
 - publish a GitHub Security Advisory for every confirmed vulnerability, even if
-  the affected version had no known users — a quietly patched auth bug is how a
+  the affected version had no known users. A quietly patched auth bug is how a
   project teaches people not to trust its changelog;
 - record the finding in
   [`packages/core/CHANGELOG.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md), which already
@@ -116,21 +119,17 @@ failure on our side, and we will say so in the advisory.
 
 ## Supported versions
 
-Pre-1.0, only the latest `0.x` release receives fixes. There is no long-term
-support branch and no backporting. See
-[Versioning](README.md#versioning) in the README.
+Pre-1.0, only the latest minor release receives fixes, today `0.35.x`. Every
+earlier version is unsupported, and there is no long-term support branch and no
+backporting. See [Versioning](README.md#versioning) in the README.
 
 | Version | Supported |
 |---|---|
 | `0.35.x` | Yes |
-| `0.19.x` | No |
-| `0.18.x` | No |
-| `0.17.x` | No |
-| `0.12.x` | No |
-| `0.11.x` | No, **and `FsStorage` wrote world-readable bytes in it** |
-| `0.10.x` | No, **and the revocation defect below is in it** |
-| `0.9.x` | No |
-| `0.8.x` | No |
-| `0.7.x` | No |
-| `0.6.x` | No |
-| `0.5.x` and earlier | No, **and vulnerable**: `0.3.0` through `0.5.3` contain a remote unauthenticated denial of service and a tenant takeover, both fixed in `0.6.0`. See GHSA-835c-wg3v-pv7q and the [0.6.0 changelog entry](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md). Upgrade rather than patch. |
+| `0.34.x` and earlier | No |
+
+Earlier versions with known defects, so you know to upgrade rather than patch:
+
+- `0.10.x` and earlier: `shares.revoke(grantId)` could report success and leave a named user's access working. Fixed in `0.11.0`, see its [changelog entry](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md).
+- `0.11.x` and earlier: `FsStorage` wrote world-readable bytes. Fixed in `0.12.0`.
+- `0.3.0` through `0.5.3`: a remote unauthenticated denial of service and a tenant takeover, both fixed in `0.6.0`. See GHSA-835c-wg3v-pv7q and the [changelog entry](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md).
