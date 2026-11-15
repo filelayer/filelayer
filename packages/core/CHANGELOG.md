@@ -54,6 +54,15 @@ the user was not a member, the server started and every tool answered
 which one is missing and how to create it, or that the schema has not been
 applied. It still never creates its own org or user.
 
+### Fixed — a logged `FilelayerError` says why
+
+The first line of the stack, which is what `console.error(err)` and an uncaught
+throw print, now carries `reason`: `FilelayerError: not_found (unknown_org)`
+instead of `FilelayerError: not_found`. `message` stays the bare code, so an
+application that answers a client with `err.message` sends no more than it did:
+`reason` is for your logs, and in a response it would tell a stranger which of
+two indistinguishable 404s they got.
+
 ### Fixed — the MCP server reports this package's version
 
 `initialize` reported the version `1` whatever was installed. It now reports

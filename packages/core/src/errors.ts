@@ -271,6 +271,20 @@ export class FilelayerError extends Error {
     this.code = code;
     this.reason = reason;
     this.headers = headers;
+    // THE REASON IS IN THE STACK, NOT IN THE MESSAGE, since 0.36.0. A first user
+    // who logged the error saw `FilelayerError: not_found` and nothing about
+    // which lookup missed (found 2026-11-11). The stack is what `console.error`
+    // and an uncaught throw print, so the first line now reads
+    // `FilelayerError: not_found (unknown_org)`. `message` stays the bare code
+    // on purpose: an application that answers `{ error: err.message }` must not
+    // start sending `reason` to an untrusted caller, where it is an
+    // enumeration oracle (`unknown_org` and `no_membership` are both a 404 so
+    // that a stranger cannot tell them apart).
+    if (reason !== undefined && typeof this.stack === 'string') {
+      const nl = this.stack.indexOf('\n');
+      const head = `${this.name}: ${code} (${reason})`;
+      this.stack = nl === -1 ? head : head + this.stack.slice(nl);
+    }
   }
 
   /** What the code means, from the catalogue (`errors.json`). */

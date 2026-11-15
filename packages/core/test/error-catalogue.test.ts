@@ -140,3 +140,20 @@ describe('the codes a caller actually meets are the catalogued ones', () => {
     );
   });
 });
+
+describe('what a logged FilelayerError says', () => {
+  it('the stack names the reason, so a server log says which lookup missed', () => {
+    const e = new FilelayerError('not_found', 'unknown_org');
+    assert.equal(e.stack!.split('\n')[0], 'FilelayerError: not_found (unknown_org)');
+    assert.match(e.stack!, /\n\s+at /, 'the frames are kept');
+    const bare = new FilelayerError('not_found');
+    assert.equal(bare.stack!.split('\n')[0], 'FilelayerError: not_found');
+  });
+
+  it('the message stays the bare code, so echoing it to a client leaks no reason', () => {
+    const e = new FilelayerError('not_found', 'unknown_org');
+    assert.equal(e.message, 'not_found');
+    assert.equal(String(e), 'FilelayerError: not_found');
+    assert.ok(!JSON.stringify({ error: e.message }).includes('unknown_org'));
+  });
+});
