@@ -290,6 +290,11 @@ if (!asJson && targets.length > 1) {
   // median, and the median is also quoted against it, app and infra together,
   // because that is the comparison a production deployment makes.
   const own = (n) => n === 'filelayer' || n === 'filelayer-production';
+  // ONE WORD FOR THE CALCULATION, the one the pages use. Over the two
+  // executed alternatives the median is their average, and "average" is what
+  // a reader expects; with any other count the two differ and it says median.
+  const averageWord = (n) => (n === 2 ? 'average' : 'median');
+  const averageOf = (n) => (n === 2 ? 'average of the 2' : `median over the ${n}`);
   const median = (xs) => {
     const v = xs.slice().sort((a, b) => a - b);
     return v.length % 2 ? v[v.length >> 1] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
@@ -298,7 +303,7 @@ if (!asJson && targets.length > 1) {
   if (fl && alt.length) {
     const m = median(alt.map(([, app]) => app));
     console.log(
-      `\n  median over the ${alt.length} executed alternatives: ${m} vs ${fl} = ${(m / fl).toFixed(1)}x` +
+      `\n  ${averageOf(alt.length)} executed alternatives: ${m} vs ${fl} = ${(m / fl).toFixed(1)}x` +
         ' (Convex and Vercel Blob excluded: never executed or compiled)',
     );
     // SENSITIVITY: WITHOUT THE AUDIT CHAIN. Every alternative built a
@@ -318,7 +323,14 @@ if (!asJson && targets.length > 1) {
       const mt = median(alt.map(([, app, infra]) => app + infra));
       const pt = prod[1] + prod[2];
       console.log(
-        `  the same median, app + infra, against the production-wired Filelayer: ${mt} vs ${pt} = ${(mt / pt).toFixed(1)}x`,
+        `  the same ${averageWord(alt.length)}, app + infra, against the production-wired Filelayer: ${mt} vs ${pt} = ${(mt / pt).toFixed(1)}x`,
+      );
+      // The audit-chain sensitivity against production-wired too, not only
+      // against the example (cold review of 2026-11-15). Filelayer's own
+      // figure does not move: the chain is the library's, not app code.
+      const mtc = median(alt.map(([n, app, infra]) => app - chainNet(n) + infra));
+      console.log(
+        `  without the audit chain, app + infra, against the production-wired Filelayer (sensitivity): ${mtc} vs ${pt} = ${(mtc / pt).toFixed(1)}x`,
       );
     }
   }

@@ -58,7 +58,10 @@ const NOT_EXECUTED = new Set(['vercel-blob', 'convex']);
 const ran = others.filter((r) => !NOT_EXECUTED.has(r.name));
 const et = median(ran.map((r) => r.types));
 const es = median(ran.map((r) => r.sites));
-console.log(`| median, the ${ran.length} executed | ${(et / fl.types).toFixed(1)}x | ${(es / fl.sites).toFixed(1)}x |`);
+// One word for the calculation, the one the pages use: over two values the
+// median is their average.
+const averageWord = (n) => (n === 2 ? 'average' : 'median');
+console.log(`| ${averageWord(ran.length)}, the ${ran.length} executed | ${(et / fl.types).toFixed(1)}x | ${(es / fl.sites).toFixed(1)}x |`);
 // SENSITIVITY: WITHOUT THE AUDIT CHAIN. Whether the brief asked for a
 // tamper-evident chain is not known (BRIEF.md), and every alternative built
 // one. These are the medians with the decisions that exist only because of the
@@ -74,14 +77,31 @@ console.log(`| median, the ${ran.length} executed | ${(et / fl.types).toFixed(1)
   const si = median(alt.map((a) => a.sites));
   console.log(
     `\nWithout the audit chain (sensitivity): Filelayer ${f.types} types / ${f.sites} sites; ` +
-      `median of the ${alt.length} executed, ${(t / f.types).toFixed(1)}x on types and ${(si / f.sites).toFixed(1)}x on sites.`,
+      `${averageWord(alt.length)} of the ${alt.length} executed, ${(t / f.types).toFixed(1)}x on types and ${(si / f.sites).toFixed(1)}x on sites.`,
   );
+}
+// SENSITIVITY: SUPABASE #9 AS ONE SITE. One decision (each policy written FOR
+// the right command) is 19 of Supabase's sites, one per CREATE POLICY. Whether
+// that is nineteen places to get it right or one habit is the most contestable
+// slicing in the table (cold review of 2026-11-15), so here it is counted once.
+{
+  const sup = DATA['supabase'].decisions;
+  const nine = sup.find((d) => d.id === 9);
+  if (nine) {
+    const sites = (r) => (r.name === 'supabase' ? r.sites - nine.sites + 1 : r.sites);
+    const s1 = median(ran.map(sites));
+    console.log(
+      `\nSupabase #9 counted as one site (sensitivity): Supabase ${sup.length} types / ` +
+        `${sup.reduce((n, d) => n + d.sites, 0) - nine.sites + 1} sites; ` +
+        `${averageWord(ran.length)} of the ${ran.length} executed, ${(s1 / fl.sites).toFixed(1)}x on sites (types unchanged).`,
+    );
+  }
 }
 
 console.log(
   '\nOne rule for all five (decisions.json $convention.oneRule): a decision enforced in one helper\n' +
     'is one site, and a decision the platform\'s linter flags, or whose safe setting is the platform\n' +
-    'default, is dropped. The headline is the median over the executed alternatives.',
+    'default, is dropped. The headline is the average of the executed alternatives.',
 );
 
 if (fl.arguable) {

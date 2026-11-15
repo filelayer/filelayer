@@ -30,6 +30,12 @@ used for npm and for nothing else: the Supabase implementation runs on PGlite
 with the platform schema emulated, and the S3 one against a local store that
 verifies SigV4 signatures.
 
+So a reproduction leaves `benchmark/RESULTS.md` modified in your clone, and
+`git diff` shows what your machine measured differently. Expect the time to
+first file to differ, since seconds depend on the machine and the network:
+`npm run check:page-figures` accepts a time within 2x of the published one,
+and every other figure must match exactly.
+
 `node benchmark/run.mjs --print` measures and prints without writing.
 `--no-install` reuses the `node_modules` already in place.
 
@@ -70,10 +76,11 @@ counted beside the example with the same rules, and
 PostgreSQL and the SigV4-checking store, after checking that everything above
 its boot block is the published example unchanged.
 
-## The revision round and the brief
+## The revision rounds and the brief
 
-`revisions/` holds the one revision round each executed alternative had, with
-its diff and a 40-line cap. `BRIEF.md` says what survives of the brief the
+`revisions/` holds the revision rounds of the two executed alternatives (raw
+S3 one, Supabase two), with their diffs and a 40-line cap; its table is the one
+the pages quote. `BRIEF.md` says what survives of the brief the
 alternatives were built from, and publishes the prompts that exist.
 
 ## What does not run

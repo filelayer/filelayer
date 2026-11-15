@@ -1,4 +1,4 @@
-# The revision round, 2026-11-13
+# The revision rounds, 13 and 14 November 2026
 
 A review of this benchmark on 2026-11-03 found that it compared a library
 iterated for months against alternatives frozen after one build: every defect
@@ -6,11 +6,24 @@ the shared attack suite found in Filelayer became a library fix, and every
 defect it found in an alternative became a decision counted against it. This
 round gives each alternative the same treatment once.
 
+## The figures
+
+One table, read by `tools/check-page-figures.mjs`, which also recounts the
+changed lines of application code from the two diffs (the `app` globs in
+`../loc.manifest.json`) and fails if this table, the diffs or the pages
+disagree:
+
+| Alternative | Rounds | Changed lines of application code |
+|---|---:|---:|
+| Raw S3 | 1 | 39 |
+| Supabase | 2 | 24 |
+
 ## The rule
 
-One round per alternative, against the attack suite, at most **40 changed
-lines** (added plus removed, comments included), done the way someone who knows
-the platform would do it. The diff is published here, so anyone can read every
+A round per alternative, against the attack suite, at most **40 changed
+lines** of application code in all (added plus removed, comments included),
+done the way someone who knows the platform would do it. Supabase had a second
+round on 14 November, inside the same cap; see below. The diff is published here, so anyone can read every
 line or revert it. The results in `../RESULTS.md` and
 `../adversarial/RESULTS.md` are for the revised code.
 
@@ -29,7 +42,10 @@ their own, and a better revision is welcome as an issue.
 On the attacks every executed implementation can express: one audit-gap before,
 **none after**; raw S3 defends all 21. The baseline's own 9 tests still pass.
 
-## Supabase: `supabase.diff`, 24 changed lines of application code
+## Supabase: `supabase.diff`, two rounds, 24 changed lines of application code
+
+8 of the 24 are the first round (13 November, `src/app/vault.js`), 16 the
+second (14 November, `src/app/share.js`).
 
 The diff also holds 11 lines of the platform emulation (the service-key
 download the gateway now calls, which Supabase Storage provides) and the

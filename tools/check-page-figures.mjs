@@ -17,9 +17,17 @@
  * Whitespace is normalised before comparing, so a reflowed paragraph passes.
  * Nothing else is: the phrase has to be there.
  *
+ * ONE FIGURE IS A RANGE, NOT A PHRASE: the time to first file. Seconds depend
+ * on the machine and the network, so an exact match made this check fail for
+ * anyone who reproduced the benchmark correctly (a cold reproduction on
+ * 2026-11-15 measured 4.2 s against the page's 5.3 s). The page's seconds must
+ * be within TTFF_FACTOR of the run's, either way: a reproduction passes, and a
+ * hand edit to a different order of magnitude does not.
+ *
  * --self-test changes one figure at a time in a copy of each page and asserts
  * that the check fails for every one of them, so a pattern that matches
- * nothing cannot pass silently.
+ * nothing cannot pass silently. For the time it also moves the page outside
+ * the range in both directions, and moves the run inside it.
  */
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -28,6 +36,56 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 const norm = (s) => s.replace(/\s+/g, ' ');
+
+/**
+ * THE REVISION ROUNDS, ONE FIGURE EACH. benchmark/revisions/README.md holds a
+ * table of rounds and changed lines of application code per executed
+ * alternative. The lines are recounted here from the diffs, over the `app`
+ * globs of benchmark/loc.manifest.json, so the table cannot drift from the
+ * diffs; the pages must then quote the table. Added 2026-11-15, when a cold
+ * review found "one revision round" and "Supabase 8" on the pages while the
+ * diffs held two Supabase rounds and 24 lines.
+ */
+const REVISED = [
+  { label: 'Raw S3', impl: 'baseline-raw-s3', diff: 'benchmark/revisions/raw-s3.diff' },
+  { label: 'Supabase', impl: 'baseline-supabase', diff: 'benchmark/revisions/supabase.diff' },
+];
+
+function globRegex(root, glob) {
+  const base = join('benchmark', root).replace(/\\/g, '/');
+  const body = glob
+    .split('/')
+    .map((part) => (part === '**' ? '.*' : part.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*')))
+    .join('/');
+  return new RegExp(`^${base}/${body.replace(/\/\.\*$/, '(/.*)?')}$`);
+}
+
+function revisionFigures(readme, readFile) {
+  const manifest = JSON.parse(readFile('benchmark/loc.manifest.json'));
+  const out = {};
+  for (const r of REVISED) {
+    const m = new RegExp(`^\\| ${r.label} \\| (\\d+) \\| (\\d+) \\|`, 'm').exec(readme);
+    if (!m) throw new Error(`benchmark/revisions/README.md: no row for ${r.label} in the figures table`);
+    const impl = manifest.implementations[r.impl];
+    const root = impl.root.replace(/^\.\//, '');
+    const app = impl.app.map((a) => globRegex(root, a.glob));
+    let file = null;
+    let lines = 0;
+    for (const l of readFile(r.diff).split('\n')) {
+      if (l.startsWith('diff --git ')) {
+        file = l.split(' ')[3].replace(/^b\//, '');
+        continue;
+      }
+      if (l.startsWith('+++') || l.startsWith('---')) continue;
+      if ((l.startsWith('+') || l.startsWith('-')) && file && app.some((re) => re.test(file))) lines++;
+    }
+    out[r.label] = { rounds: Number(m[1]), lines: Number(m[2]), counted: lines };
+  }
+  return out;
+}
+
+const WORDS = ['no', 'one', 'two', 'three', 'four'];
+const rounds = (n) => `${WORDS[n] ?? n} ${n === 1 ? 'round' : 'rounds'}`;
 
 function figures(results) {
   const one = (re, what) => {
@@ -40,14 +98,14 @@ function figures(results) {
     const m = one(new RegExp(`^\\s+${name}\\s+app\\s+(\\d+)\\s+infra\\s+(\\d+)`, 'm'), `the lines of ${name}`);
     return { app: m[1], infra: m[2] };
   };
-  const median = one(/median over the 2 executed alternatives: ([\d.]+) vs (\d+) = ([\d.]+)x/, 'the line median');
+  const median = one(/average of the 2 executed alternatives: ([\d.]+) vs (\d+) = ([\d.]+)x/, 'the line median');
   const prod = one(/against the production-wired Filelayer: ([\d.]+) vs (\d+) = ([\d.]+)x/, 'the production median');
   const vendor = (name) => one(new RegExp(`^\\| ${name} \\| ([\\d,]+) \\| ([\\d,]+) \\|`, 'm'), `the vendor lines of ${name}`);
   const dec = (name) => {
     const m = one(new RegExp(`^\\| ${name}\\s+\\|\\s+(\\d+) \\|\\s+(\\d+) \\|`, 'm'), `the decisions of ${name}`);
     return { types: m[1], sites: m[2] };
   };
-  const decMedian = one(/^\| median, the 2 executed \| ([\d.]+)x \| ([\d.]+)x \|/m, 'the decisions median');
+  const decMedian = one(/^\| average, the 2 executed \| ([\d.]+)x \| ([\d.]+)x \|/m, 'the decisions median');
   const arguable = one(/Counting all of them gives Filelayer (\d+) types/, 'the arguable count');
   // The size of the shared attack set is read, not assumed: it was 18 until
   // 0.35.4 and 21 from it.
@@ -61,6 +119,7 @@ function figures(results) {
   const ttff = one(/TOTAL, install to stored byte\s+([\d.]+)s/, 'the time to first file')[1];
   return {
     version, ttff, shared,
+    rev: revisionFigures(read('benchmark/revisions/README.md'), read),
     noChain: { x: noChain[3], types: noChainDec[1], sites: noChainDec[2] },
     fl: loc('filelayer'), prod: loc('filelayer-production'), sup: loc('baseline-supabase'), s3: loc('baseline-raw-s3'),
     cx: loc('baseline-convex'), vb: loc('baseline-vercel-blob'),
@@ -100,10 +159,17 @@ function expectations(f) {
     [`average of the two is ${f.median.exec} application lines against ${f.median.fl}, about ${f.median.x} times as many`, 'the example average'],
     [`| Filelayer | ${f.vfl[1]} | ${f.vfl[2]} |`, 'Filelayer vendor lines'],
     [`| Raw S3 | ${f.vs3[1]} (the AWS SDK) | ${f.vs3[2]} |`, 'raw S3 vendor lines'],
-    [`it took ${f.ttff} seconds`, 'the time to first file'],
     [`about ${f.noChain.x} times as many lines against the example, and ${f.noChain.types} and ${f.noChain.sites} times as many kinds and places`, 'the sensitivity without the audit chain'],
   ];
   if (f.thirtySeconds) page.push(['30 seconds', "Supabase's 30-second window, which RESULTS.md names"]);
+  {
+    const s3 = f.rev['Raw S3'];
+    const sup = f.rev['Supabase'];
+    page.push([
+      `Raw S3 changed ${s3.lines} lines in ${rounds(s3.rounds)}, Supabase ${sup.lines} in ${rounds(sup.rounds)}`,
+      'the revision rounds and their lines, from benchmark/revisions/README.md',
+    ]);
+  }
   const readme = [
     [`${f.dsup.types} and ${f.ds3.types} against Filelayer's ${f.dfl.types}`, 'decision kinds'],
     [`About ${f.decMedian.types} times as many kinds`, 'the decisions average'],
@@ -136,8 +202,36 @@ function absent(f) {
   return { 'benchmark/PAGE.md': gone, 'README.md': gone, 'web/index.html': gone };
 }
 
+/** How far the page's seconds may be from the run's, as a factor either way. */
+const TTFF_FACTOR = 2;
+const TTFF_ON_PAGE = /it took ([\d.]+) seconds/;
+
+function ttffProblem(texts, f) {
+  const m = TTFF_ON_PAGE.exec(norm(texts['benchmark/PAGE.md']));
+  if (!m) return 'benchmark/PAGE.md: the time to first file. Expected "it took <seconds> seconds".';
+  const page = Number(m[1]);
+  const run = Number(f.ttff);
+  if (page >= run / TTFF_FACTOR && page <= run * TTFF_FACTOR) return null;
+  return `benchmark/PAGE.md: the time to first file. The page says ${m[1]} s and this run measured ` +
+    `${f.ttff} s; seconds vary by machine, but not by more than ${TTFF_FACTOR}x either way.`;
+}
+
 function check(texts, f) {
   const problems = [];
+  for (const [label, r] of Object.entries(f.rev)) {
+    if (r.lines !== r.counted) {
+      problems.push(`benchmark/revisions/README.md: ${label} says ${r.lines} changed lines of application code; its diff has ${r.counted}.`);
+    }
+  }
+  if (Object.values(f.rev).some((r) => r.rounds !== 1)) {
+    for (const file of ['benchmark/PAGE.md', 'README.md', 'web/index.html']) {
+      if (/\bone revision round\b|\bhad one revision round\b|After one revision round/i.test(norm(texts[file]))) {
+        problems.push(`${file}: says "one revision round", and benchmark/revisions/README.md records ${Object.entries(f.rev).map(([l, r]) => `${l} ${r.rounds}`).join(', ')}.`);
+      }
+    }
+  }
+  const t = ttffProblem(texts, f);
+  if (t) problems.push(t);
   for (const [file, list] of Object.entries(absent(f))) {
     const body = norm(texts[file]);
     for (const [phrase, what] of list) {
@@ -173,6 +267,23 @@ if (process.argv.includes('--self-test')) {
       tried++;
       if (check(mutated, f).length === 0) { bad++; console.error(`  self-test FAILED: ${file}, ${what}: a changed figure passed`); }
     }
+  }
+  // The time: outside the range either way must fail; a different machine
+  // inside it must pass.
+  const run = Number(f.ttff);
+  const withPage = (secs) => ({
+    ...texts,
+    'benchmark/PAGE.md': norm(texts['benchmark/PAGE.md']).replace(TTFF_ON_PAGE, `it took ${secs} seconds`),
+  });
+  for (const secs of [(run * TTFF_FACTOR * 1.1).toFixed(1), (run / TTFF_FACTOR / 1.1).toFixed(1)]) {
+    tried++;
+    if (!ttffProblem(withPage(secs), f)) { bad++; console.error(`  self-test FAILED: a time of ${secs} s passed against ${run} s`); }
+  }
+  // A stranger's run 20% faster than this one, against a page that quotes this one.
+  tried++;
+  if (ttffProblem(withPage(run.toFixed(1)), { ...f, ttff: String((run * 0.8).toFixed(1)) })) {
+    bad++;
+    console.error('  self-test FAILED: a reproduction 20% faster than the published run was refused');
   }
   if (bad || tried === 0) process.exit(1);
   console.log(`check-page-figures --self-test: ${tried} figure(s) changed one at a time, every one refused.`);

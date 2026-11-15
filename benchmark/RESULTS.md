@@ -117,9 +117,10 @@ APPLICATION LOC: gross 1267  net 841   (+ infra net 0)
   baseline-convex        app   841   infra    0 5.4x   not executed, not compiled
   baseline-vercel-blob   app   884   infra   16 5.6x   not executed, not compiled
 
-  median over the 2 executed alternatives: 638.5 vs 157 = 4.1x (Convex and Vercel Blob excluded: never executed or compiled)
+  average of the 2 executed alternatives: 638.5 vs 157 = 4.1x (Convex and Vercel Blob excluded: never executed or compiled)
   without the audit chain (sensitivity): 553.5 vs 157 = 3.5x
-  the same median, app + infra, against the production-wired Filelayer: 681.5 vs 233 = 2.9x
+  the same average, app + infra, against the production-wired Filelayer: 681.5 vs 233 = 2.9x
+  without the audit chain, app + infra, against the production-wired Filelayer (sensitivity): 596.5 vs 233 = 2.6x
 ```
 
 ## Vendor lines in your process or database
@@ -159,13 +160,15 @@ REDUCTION vs Filelayer
 | vercel-blob  | 2.8x | 3.6x |
 | convex       | 2.4x | 1.9x |
 | median, all four (two never executed or compiled) | 2.9x | 3.4x |
-| median, the 2 executed | 3.1x | 4.0x |
+| average, the 2 executed | 3.1x | 4.0x |
 
-Without the audit chain (sensitivity): Filelayer 8 types / 10 sites; median of the 2 executed, 2.9x on types and 3.9x on sites.
+Without the audit chain (sensitivity): Filelayer 8 types / 10 sites; average of the 2 executed, 2.9x on types and 3.9x on sites.
+
+Supabase #9 counted as one site (sensitivity): Supabase 25 types / 31 sites; average of the 2 executed, 3.1x on sites (types unchanged).
 
 One rule for all five (decisions.json $convention.oneRule): a decision enforced in one helper
 is one site, and a decision the platform's linter flags, or whose safe setting is the platform
-default, is dropped. The headline is the median over the executed alternatives.
+default, is dropped. The headline is the average of the executed alternatives.
 
 Sensitivity: 1 Filelayer decision(s) are listed as arguable (see decisions.json).
 Counting all of them gives Filelayer 9 types, median reduction 2.6x on types and 3.8x on sites.
@@ -250,13 +253,13 @@ the bytes itself or redirects to a signed URL.
 ```
 time to first file, from the registry
 
-  npm init -y   (not counted: scaffolding)                0.4s
+  npm init -y   (not counted: scaffolding)                0.6s
   npm install @filelayer/core                             1.5s
-  npm install --save-dev "@electric-sql/pglite@^0.3.11"    1.2s
+  npm install --save-dev @electric-sql/pglite             1.1s
   every program line found in the shipped page              3
-  node --experimental-strip-types app.ts                  2.5s
+  node --experimental-strip-types app.ts                 13.1s
 
-  TOTAL, install to stored byte                           5.3s
+  TOTAL, install to stored byte                          15.8s
   steps requiring a human                                   0
   lines of application code                                 4
   accounts, credentials, dashboards                         0
