@@ -49,13 +49,16 @@ function figures(results) {
   };
   const decMedian = one(/^\| median, the 2 executed \| ([\d.]+)x \| ([\d.]+)x \|/m, 'the decisions median');
   const arguable = one(/Counting all of them gives Filelayer (\d+) types/, 'the arguable count');
+  // The size of the shared attack set is read, not assumed: it was 18 until
+  // 0.35.4 and 21 from it.
+  const shared = one(/^### The (\d+) attacks every executed implementation can express/m, 'the shared attack count')[1];
   const atk = (name) => {
-    const m = one(new RegExp(`^\\| ${name} \\| (\\d+)\\/18 \\| (\\d+) \\| (\\d+) \\| (\\d+) \\|`, 'm'), `the attacks of ${name}`);
+    const m = one(new RegExp(`^\\| ${name} \\| (\\d+)\\/${shared} \\| (\\d+) \\| (\\d+) \\| (\\d+) \\|`, 'm'), `the attacks of ${name}`);
     return { defended: m[1], partial: m[2], gap: m[3], breach: m[4] };
   };
   const ttff = one(/TOTAL, install to stored byte\s+([\d.]+)s/, 'the time to first file')[1];
   return {
-    version, ttff,
+    version, ttff, shared,
     fl: loc('filelayer'), prod: loc('filelayer-production'), sup: loc('baseline-supabase'), s3: loc('baseline-raw-s3'),
     cx: loc('baseline-convex'), vb: loc('baseline-vercel-blob'),
     median: { exec: median[1], fl: median[2], x: median[3] },
@@ -73,10 +76,10 @@ function figures(results) {
 function expectations(f) {
   const page = [
     [`\`@filelayer/core\` ${f.version} from npm`, 'the measured version, in the table of implementations'],
-    [`| Filelayer ${f.version} | ${f.afl.defended} of 18 | ${f.afl.partial} | ${f.afl.breach} |`, 'Filelayer on the 18 attacks'],
-    [`| Raw S3 | ${f.as3.defended} of 18 | ${f.as3.partial} | ${f.as3.breach} |`, 'raw S3 on the 18 attacks'],
-    [`| Supabase, as built | ${f.asup.defended} of 18 | ${f.asup.partial} | ${f.asup.breach} |`, 'Supabase on the 18 attacks'],
-    [`| Filelayer, earlier version (control) | ${f.actl.defended} of 18 | ${f.actl.partial} | ${f.actl.breach} |`, 'the control on the 18 attacks'],
+    [`| Filelayer ${f.version} | ${f.afl.defended} of ${f.shared} | ${f.afl.partial} | ${f.afl.breach} |`, 'Filelayer on the shared attacks'],
+    [`| Raw S3 | ${f.as3.defended} of ${f.shared} | ${f.as3.partial} | ${f.as3.breach} |`, 'raw S3 on the shared attacks'],
+    [`| Supabase, as built | ${f.asup.defended} of ${f.shared} | ${f.asup.partial} | ${f.asup.breach} |`, 'Supabase on the shared attacks'],
+    [`| Filelayer, earlier version (control) | ${f.actl.defended} of ${f.shared} | ${f.actl.partial} | ${f.actl.breach} |`, 'the control on the shared attacks'],
     [`| Filelayer | ${f.dfl.types} | ${f.dfl.sites} |`, 'Filelayer decisions'],
     [`| Supabase | ${f.dsup.types} | ${f.dsup.sites} |`, 'Supabase decisions'],
     [`| Raw S3 | ${f.ds3.types} | ${f.ds3.sites} |`, 'raw S3 decisions'],
@@ -101,8 +104,8 @@ function expectations(f) {
     [`${f.dsup.types} and ${f.ds3.types} against Filelayer's ${f.dfl.types}`, 'decision kinds'],
     [`About ${f.decMedian.types} times as many kinds`, 'the decisions average'],
     [`about ${f.decMedian.sites} times as many places`, 'the places average'],
-    [`**${f.afl.defended} of 18** for Filelayer`, 'Filelayer on the 18 attacks'],
-    [`Raw S3 also defends ${f.as3.defended} of 18; Supabase defends ${f.asup.defended}`, 'raw S3 and Supabase on the 18 attacks'],
+    [`**${f.afl.defended} of ${f.shared}** for Filelayer`, 'Filelayer on the shared attacks'],
+    [`Raw S3 also defends ${f.as3.defended} of ${f.shared}; Supabase defends ${f.asup.defended}`, 'raw S3 and Supabase on the shared attacks'],
     [`About ${f.prodMedian.x} times as many lines`, 'the production-wired ratio'],
     [`an average of ${f.prodMedian.exec} lines of application and infrastructure code against Filelayer's ${f.prodMedian.fl}`, 'the production-wired average'],
     [`${f.median.fl} lines, it is about ${f.median.x} times as many`, 'the example ratio'],
@@ -113,7 +116,7 @@ function expectations(f) {
     [`<span class="v">about ${f.decMedian.types} times as many</span>`, 'the decisions ratio'],
     [`averaged ${f.prodMedian.exec} lines against Filelayer's ${f.prodMedian.fl}`, 'the production-wired average'],
     [`${f.dsup.types} and ${f.ds3.types} kinds of security-sensitive decision against its ${f.dfl.types}`, 'decision kinds'],
-    [`raw S3 defended all ${f.as3.defended} shared attacks`, 'raw S3 on the 18 attacks'],
+    [`raw S3 defended all ${f.as3.defended} shared attacks`, 'raw S3 on the shared attacks'],
   ];
   return { 'benchmark/PAGE.md': page, 'README.md': readme, 'web/index.html': home };
 }
