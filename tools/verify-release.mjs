@@ -198,13 +198,14 @@ assert.ok(
 );
 assert.match(failure.message, /@electric-sql\/pglite/, 'the error does not name the package');
 // The command in the error must be the command in README.md, character for
-// character, and it must carry a version. 0.4.0's carried none, which is how a
-// developer following it could land outside the declared peer range.
+// character. Since 0.35.4 it carries no version: npm's latest is inside the
+// supported range, and phase 2 installs with this exact command and fails
+// unless the version it gets satisfies that range.
 const DOCUMENTED = ${JSON.stringify(DOC_INSTALL)};
 assert.match(
   DOCUMENTED,
-  /@\^?\d+\.\d+\.\d+/,
-  'the documented install command carries no version constraint: ' + DOCUMENTED,
+  /^npm install --save-dev "?@electric-sql\/pglite(@[^\s"]+)?"?$/,
+  'the documented install command is not an install of @electric-sql/pglite: ' + DOCUMENTED,
 );
 assert.ok(
   failure.message.includes(DOCUMENTED),
@@ -596,8 +597,8 @@ const installedVersion = JSON.parse(readFileSync(installedManifest, 'utf8')).ver
 if (!satisfies(installedVersion, PGLITE_RANGE)) {
   die(
     'the documented install command',
-    'it installed ' + PGLITE + '@' + installedVersion + ', which is outside the peer\n' +
-      'range this package declares (' + PGLITE_RANGE + '). The command and the manifest\n' +
+    'it installed ' + PGLITE + '@' + installedVersion + ', which is outside the\n' +
+      'supported range this package declares (' + PGLITE_RANGE + '). The command and the manifest\n' +
       'disagree, and the developer following the command is the one who finds out.',
   );
 }
@@ -652,7 +653,7 @@ reverseInstall(
   [tarball],
   'npm install @filelayer/core on top of the documented pglite install\n\n' +
     'This is ERESOLVE: the version the documented command installs is not one the\n' +
-    'declared peer range admits. It is the defect 0.4.1 fixed, and a developer\n' +
+    'declared range admits. It is the defect 0.4.1 fixed, and a developer\n' +
     'whose project already uses pglite hits it on their first command.',
 );
 console.log(' ok  (no dependency-resolution error)');

@@ -128,7 +128,9 @@ jobs:
           npm ci
           npm install --no-save --no-audit --no-fund @electric-sql/pglite
           node -e '
-            const v = require("@electric-sql/pglite/package.json").version;
+            const fs = require("node:fs");
+            // 0.5.x does not export ./package.json, so read the file itself.
+            const v = JSON.parse(fs.readFileSync("node_modules/@electric-sql/pglite/package.json", "utf8")).version;
             const [ma, mi, pa] = v.split(".").map(Number);
             const ok = ma === 0 && ((mi === 3 && pa >= 11) || (mi === 5 && pa >= 8));
             console.log(`PGlite ${v}, ${ok ? "inside" : "OUTSIDE"} ^0.3.11 || ^0.5.8`);
