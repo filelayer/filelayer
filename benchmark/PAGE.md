@@ -25,7 +25,7 @@ variable. The network is used for npm and nothing else.
 
 | Implementation | Built with | Ran? |
 |---|---|---|
-| Filelayer | `@filelayer/core` 0.35.2 from npm, on PostgreSQL | Yes |
+| Filelayer | `@filelayer/core` 0.35.4 from npm, on PostgreSQL | Yes |
 | Supabase | Supabase Storage and Postgres row-level security | Yes: real RLS policies on PostgreSQL (PGlite), with the platform schema emulated |
 | Raw S3 | S3 or R2 presigned URLs and Postgres | Yes: against a local store that verifies SigV4 signatures |
 | Convex | Convex and its R2 component | No, not executed and not compiled: it needs a live Convex deployment and an R2 bucket |
@@ -64,14 +64,14 @@ Counted as kinds, and as the places in the code where each must be got right.
 
 | Implementation | Kinds | Places |
 |---|---:|---:|
-| Filelayer | 8 | 9 |
-| Supabase | 26 | 64 |
+| Filelayer | 8 | 10 |
+| Supabase | 25 | 49 |
 | Raw S3 | 24 | 32 |
 | Vercel Blob, not executed or compiled | 22 | 36 |
 | Convex, not executed or compiled | 19 | 19 |
 
 Over the two alternatives that ran, the average is about 3.1 times as many
-kinds and 5.3 times as many places.
+kinds and 4.0 times as many places.
 
 One rule for all five. A decision enforced in one helper is one place, however
 many call sites use the helper. A decision is dropped when the platform's own
@@ -106,15 +106,15 @@ it is vendor code, the way the Supabase or AWS SDK is.
 
 | Implementation | Application lines | Infrastructure config | Relative |
 |---|---:|---:|---:|
-| Filelayer, the example | 133 | 0 | 1.0x |
-| Filelayer, wired as in production | 161 | 50 | |
-| Supabase | 569 | 0 | 4.3x |
-| Raw S3 | 708 | 122 | 5.3x |
+| Filelayer, the example | 157 | 0 | 1.0x |
+| Filelayer, wired as in production | 193 | 40 | |
+| Supabase | 569 | 0 | 3.6x |
+| Raw S3 | 708 | 86 | 4.5x |
 | Convex, not executed or compiled | 841 | 0 | |
-| Vercel Blob, not executed or compiled | 884 | 21 | |
+| Vercel Blob, not executed or compiled | 884 | 16 | |
 
-**Wired as in production, the two alternatives that ran take about 3.3 times
-as many lines as Filelayer**: an average of 699.5 against 211, application and
+**Wired as in production, the two alternatives that ran take about 2.9 times
+as many lines as Filelayer**: an average of 681.5 against 233, application and
 infrastructure lines together. That is the number to compare if you are comparing deployments. The
 example runs on an in-memory database and in-memory storage, and the
 alternatives are counted with their production wiring, so the same example is
@@ -123,16 +123,21 @@ under a lock, `S3Storage`, and the IAM and bucket policy it needs. It runs end
 to end against PostgreSQL and an S3 store (`benchmark/production-wired/`).
 
 Against the example as it ships, the average of the two is 638.5 application
-lines against 133, about 4.8 times as many. Both figures leave out Convex and
+lines against 157, about 4.1 times as many. Both figures leave out Convex and
 Vercel Blob, which are listed for completeness: code that was never executed or
 compiled may not even work.
+
+Filelayer's audit log is hash-chained, and neither alternative chains its log.
+Leaving the chain out of both alternatives' counts, as a check on how much of
+the gap it explains, still gives about 3.5 times as many lines against the
+example, and 2.9 and 3.9 times as many kinds and places of decision.
 
 **The library is not nothing.** Its code runs in your process and its schema in
 your database, so it is counted too, apart from the lines you write:
 
 | Implementation | Vendor lines in your process | Vendor lines in your database |
 |---|---:|---:|
-| Filelayer | 6,598 | 547 |
+| Filelayer | 6,653 | 547 |
 | Raw S3 | 42,010 (the AWS SDK) | 0 |
 | Supabase, Convex, Vercel Blob | not measured | not measured |
 
@@ -150,15 +155,15 @@ Written once, in `benchmark/adversarial/attacks.mjs`. They run over HTTP against
 Filelayer and raw S3, and as direct calls into the application's functions for
 Supabase, whose platform is emulated.
 
-**The comparison uses only the 18 attacks that every executed implementation
-can express.** None of the three was breached on them.
+**The comparison uses only the 21 attacks that every executed implementation
+can express.** All three defend every one of them.
 
 | Implementation | Defended | Partial | Breach |
 |---|---:|---:|---:|
-| Filelayer 0.35.2 | 18 of 18 | 0 | 0 |
-| Raw S3 | 18 of 18 | 0 | 0 |
-| Supabase, as built | 16 of 18 | 2 | 0 |
-| Filelayer, earlier version (control) | 16 of 18 | 0 | 1 |
+| Filelayer 0.35.4 | 21 of 21 | 0 | 0 |
+| Raw S3 | 21 of 21 | 0 | 0 |
+| Supabase, as built | 21 of 21 | 0 | 0 |
+| Filelayer, earlier version (control) | 16 of 21 | 2 | 2 |
 
 Before the revision round, neither raw S3 nor Supabase recorded a refused
 cross-tenant read, or probes at documents that do not exist, in the
@@ -166,27 +171,22 @@ application's own audit trail. Nothing was disclosed, and gateway or load
 balancer logs may have held them. A few lines closed it in both; the diffs are
 in `benchmark/revisions/`.
 
-Supabase's two partials are one design choice, labelled "as built": its share
-gateway redirects to a signed URL valid for 30 seconds instead of streaming the
-bytes. So a revoked link keeps working for up to 30 seconds, and the audit
-records the issuing of a URL rather than a delivery. An Edge Function that
-streams the bytes would close both, at the cost of egress through the function;
-it was not built in the revision round, so these two results describe this
-implementation, not Supabase. The second partial is attack E2 working as
-defined: an implementation that redirects to a signed URL, rather than serving
-the bytes, can only record that a URL was issued, never whether it was used, so
-E2 scores any redirect to a signed URL as partial, whichever platform issues
-it.
+Supabase's share gateway was also revised. It first redirected to a short-lived
+signed URL, so a revoked link kept working until that URL expired and the audit
+recorded the issuing of a URL rather than a delivery. It now streams the
+bytes with the service key, as an Edge Function would, which costs egress
+through the function. The redirect remains as an option in the code, and its
+own measurements still run; it is not the version compared here.
 
-**The other 8 attacks are reported apart and never added into that
-comparison.** Most test a feature only some implementations have, such as
-per-file visibility inside a tenant, delegation or share listing; the rest
-depend on whether the application serves the bytes itself. Filelayer defends
-all 8. Raw S3 can express 4 of them and defends 3. On the fourth, HTML uploaded
-and opened on the signed-in read path, its presigned URL asks S3 to serve the
-file as an attachment, which real S3 does and the local store here does not
-implement: it is reported as "pass, not executed", not as a pass. Supabase can
-express none. "Cannot express" is never counted as a pass. One of the 8,
+**The other 5 attacks are reported apart and never added into that
+comparison.** Four test a feature only Filelayer has here: per-file visibility
+inside a tenant, share listing, lifecycle states and delegation. The fifth
+depends on whether the application serves the bytes itself. Filelayer defends
+all 5. Raw S3 can express only the fifth, HTML uploaded and opened on the
+signed-in read path: its presigned URL asks S3 to serve the file as an
+attachment, which real S3 does and the local store here does not implement, so
+it is reported as "pass, not executed", not as a pass. Supabase can express
+none. "Cannot express" is never counted as a pass. One of the 5,
 escalation through delegation, is attempted as a direct SQL insert of a child
 grant, because the HTTP surface only creates read grants.
 
@@ -194,10 +194,9 @@ grant, because the HTTP surface only creates read grants.
 was written alongside passes in full is exactly the suite a reader should
 distrust. So it is also run against an earlier version of Filelayer's own
 example, from before its delivery and authorization were rebuilt, on the same
-library. That version is breached 3 times: a forged but well-formed caller id
-treated as real, among the 18, and among the other 8, a revoked download
-replayable from a cache and user-uploaded HTML rendered on the authenticated read
-path. The suite finds real defects in Filelayer's own code, which is the best
+library. That version is breached 3 times: among the 21, a forged but well-formed caller
+id treated as real and a revoked download replayable from a cache, and among
+the other 5, user-uploaded HTML rendered on the authenticated read path. The suite finds real defects in Filelayer's own code, which is the best
 evidence we have that it is not shaped around it. It is still our suite.
 Independent attacks are welcome, as an issue or a pull request.
 

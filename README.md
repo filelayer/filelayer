@@ -60,17 +60,17 @@ runs was attacked by one shared suite:
 
 - **About 3.1 times as many kinds of security-sensitive decision** in the two
   alternatives that ran, places where a wrong choice leaks data and nothing
-  reports it: 26 and 24 against Filelayer's 8, and about 5.3 times as many
+  reports it: 25 and 24 against Filelayer's 8, and about 4.0 times as many
   places to get them right.
-- **18 of 18** for Filelayer on the 18 attacks every executed version can
+- **21 of 21** for Filelayer on the 21 attacks every executed version can
   express, after each executed alternative had one revision round against the
-  suite, with its diff published. Raw S3 also defends 18 of 18; Supabase
-  defends 16, with two partials, as built: it redirects shared downloads to a
-  30-second signed URL. None had a breach.
-- **About 3.3 times as many lines** in the two alternatives that ran, wired as
-  in production: an average of 699.5 lines of application and infrastructure
-  code against Filelayer's 211, with its pool, bucket and policies. Against our
-  example as it ships, 133 lines, it is about 4.8 times as many. Convex and
+  suite, with its diff published. Raw S3 also defends 21 of 21; Supabase
+  defends 21 of 21. The hand-written versions can be made safe; the difference
+  is how much code that takes.
+- **About 2.9 times as many lines** in the two alternatives that ran, wired as
+  in production: an average of 681.5 lines of application and infrastructure
+  code against Filelayer's 233, with its pool, bucket and policies. Against our
+  example as it ships, 157 lines, it is about 4.1 times as many. Convex and
   Vercel Blob were neither executed nor compiled, so they are left out of every
   figure.
 

@@ -56,9 +56,12 @@ function figures(results) {
     const m = one(new RegExp(`^\\| ${name} \\| (\\d+)\\/${shared} \\| (\\d+) \\| (\\d+) \\| (\\d+) \\|`, 'm'), `the attacks of ${name}`);
     return { defended: m[1], partial: m[2], gap: m[3], breach: m[4] };
   };
+  const noChain = one(/without the audit chain \(sensitivity\): ([\d.]+) vs (\d+) = ([\d.]+)x/, 'the line sensitivity without the audit chain');
+  const noChainDec = one(/Without the audit chain \(sensitivity\):.*?([\d.]+)x on types and ([\d.]+)x on sites/, 'the decision sensitivity without the audit chain');
   const ttff = one(/TOTAL, install to stored byte\s+([\d.]+)s/, 'the time to first file')[1];
   return {
     version, ttff, shared,
+    noChain: { x: noChain[3], types: noChainDec[1], sites: noChainDec[2] },
     fl: loc('filelayer'), prod: loc('filelayer-production'), sup: loc('baseline-supabase'), s3: loc('baseline-raw-s3'),
     cx: loc('baseline-convex'), vb: loc('baseline-vercel-blob'),
     median: { exec: median[1], fl: median[2], x: median[3] },
@@ -98,6 +101,7 @@ function expectations(f) {
     [`| Filelayer | ${f.vfl[1]} | ${f.vfl[2]} |`, 'Filelayer vendor lines'],
     [`| Raw S3 | ${f.vs3[1]} (the AWS SDK) | ${f.vs3[2]} |`, 'raw S3 vendor lines'],
     [`it took ${f.ttff} seconds`, 'the time to first file'],
+    [`about ${f.noChain.x} times as many lines against the example, and ${f.noChain.types} and ${f.noChain.sites} times as many kinds and places`, 'the sensitivity without the audit chain'],
   ];
   if (f.thirtySeconds) page.push(['30 seconds', "Supabase's 30-second window, which RESULTS.md names"]);
   const readme = [
@@ -116,13 +120,30 @@ function expectations(f) {
     [`<span class="v">about ${f.decMedian.types} times as many</span>`, 'the decisions ratio'],
     [`averaged ${f.prodMedian.exec} lines against Filelayer's ${f.prodMedian.fl}`, 'the production-wired average'],
     [`${f.dsup.types} and ${f.ds3.types} kinds of security-sensitive decision against its ${f.dfl.types}`, 'decision kinds'],
-    [`raw S3 defended all ${f.as3.defended} shared attacks`, 'raw S3 on the shared attacks'],
+    f.as3.defended === f.asup.defended
+      ? [`raw S3 and Supabase defended all ${f.as3.defended} shared attacks`, 'raw S3 and Supabase on the shared attacks']
+      : [`raw S3 and Supabase scored ${f.as3.defended} and ${f.asup.defended}`, 'raw S3 and Supabase on the shared attacks, which RESULTS.md now gives apart'],
   ];
   return { 'benchmark/PAGE.md': page, 'README.md': readme, 'web/index.html': home };
 }
 
+// Wording a run no longer supports. Supabase's 30-second window was a property
+// of its redirecting share gateway; once RESULTS.md stops naming it, neither
+// the page nor the README may.
+function absent(f) {
+  if (f.thirtySeconds) return {};
+  const gone = [['30 seconds', "Supabase's 30-second window, which RESULTS.md no longer names"], ['30-second', "Supabase's 30-second window, which RESULTS.md no longer names"]];
+  return { 'benchmark/PAGE.md': gone, 'README.md': gone, 'web/index.html': gone };
+}
+
 function check(texts, f) {
   const problems = [];
+  for (const [file, list] of Object.entries(absent(f))) {
+    const body = norm(texts[file]);
+    for (const [phrase, what] of list) {
+      if (body.includes(norm(phrase))) problems.push(`${file}: ${what}. Remove:\n      ${phrase}`);
+    }
+  }
   for (const [file, list] of Object.entries(expectations(f))) {
     const body = norm(texts[file]);
     for (const [phrase, what] of list) {
