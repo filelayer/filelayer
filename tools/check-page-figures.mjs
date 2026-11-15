@@ -98,14 +98,18 @@ function figures(results) {
     const m = one(new RegExp(`^\\s+${name}\\s+app\\s+(\\d+)\\s+infra\\s+(\\d+)`, 'm'), `the lines of ${name}`);
     return { app: m[1], infra: m[2] };
   };
-  const median = one(/average of the 2 executed alternatives: ([\d.]+) vs (\d+) = ([\d.]+)x/, 'the line median');
+  // The word the run uses for the middle of the two executed alternatives,
+  // median or average, is the word the page uses (M-03-63, M-03-64).
+  const median = one(/(median|average) (?:over|of) the 2 executed alternatives: ([\d.]+) vs (\d+) = ([\d.]+)x/, 'the line median').slice(1);
   const prod = one(/against the production-wired Filelayer: ([\d.]+) vs (\d+) = ([\d.]+)x/, 'the production median');
   const vendor = (name) => one(new RegExp(`^\\| ${name} \\| ([\\d,]+) \\| ([\\d,]+) \\|`, 'm'), `the vendor lines of ${name}`);
   const dec = (name) => {
     const m = one(new RegExp(`^\\| ${name}\\s+\\|\\s+(\\d+) \\|\\s+(\\d+) \\|`, 'm'), `the decisions of ${name}`);
     return { types: m[1], sites: m[2] };
   };
-  const decMedian = one(/^\| average, the 2 executed \| ([\d.]+)x \| ([\d.]+)x \|/m, 'the decisions median');
+  const decMedian = one(/^\| (?:median|average), the 2 executed \| ([\d.]+)x \| ([\d.]+)x \|/m, 'the decisions median');
+  const noChainProd = one(/without the audit chain, app \+ infra, against the production-wired Filelayer \(sensitivity\): ([\d.]+) vs (\d+) = ([\d.]+)x/, 'the production-wired sensitivity without the audit chain');
+  const sup9 = one(/Supabase #9 counted as one site \(sensitivity\): Supabase (\d+) types \/ (\d+) sites; .*?([\d.]+)x on sites/, 'the Supabase #9 sensitivity');
   const arguable = one(/Counting all of them gives Filelayer (\d+) types/, 'the arguable count');
   // The size of the shared attack set is read, not assumed: it was 18 until
   // 0.35.4 and 21 from it.
@@ -123,7 +127,10 @@ function figures(results) {
     noChain: { x: noChain[3], types: noChainDec[1], sites: noChainDec[2] },
     fl: loc('filelayer'), prod: loc('filelayer-production'), sup: loc('baseline-supabase'), s3: loc('baseline-raw-s3'),
     cx: loc('baseline-convex'), vb: loc('baseline-vercel-blob'),
+    word: median[0],
     median: { exec: median[1], fl: median[2], x: median[3] },
+    noChainProd: { exec: noChainProd[1], fl: noChainProd[2], x: noChainProd[3] },
+    sup9: { types: sup9[1], sites: sup9[2], x: sup9[3] },
     prodMedian: { exec: prod[1], fl: prod[2], x: prod[3] },
     vfl: vendor('filelayer'), vs3: vendor('raw-s3'),
     dfl: dec('filelayer'), dsup: dec('supabase'), ds3: dec('raw-s3'), dvb: dec('vercel-blob'), dcx: dec('convex'),
@@ -140,7 +147,7 @@ function expectations(f) {
     [`\`@filelayer/core\` ${f.version} from npm`, 'the measured version, in the table of implementations'],
     [`| Filelayer ${f.version} | ${f.afl.defended} of ${f.shared} | ${f.afl.partial} | ${f.afl.breach} |`, 'Filelayer on the shared attacks'],
     [`| Raw S3 | ${f.as3.defended} of ${f.shared} | ${f.as3.partial} | ${f.as3.breach} |`, 'raw S3 on the shared attacks'],
-    [`| Supabase, as built | ${f.asup.defended} of ${f.shared} | ${f.asup.partial} | ${f.asup.breach} |`, 'Supabase on the shared attacks'],
+    [`| Supabase | ${f.asup.defended} of ${f.shared} | ${f.asup.partial} | ${f.asup.breach} |`, 'Supabase on the shared attacks'],
     [`| Filelayer, earlier version (control) | ${f.actl.defended} of ${f.shared} | ${f.actl.partial} | ${f.actl.breach} |`, 'the control on the shared attacks'],
     [`| Filelayer | ${f.dfl.types} | ${f.dfl.sites} |`, 'Filelayer decisions'],
     [`| Supabase | ${f.dsup.types} | ${f.dsup.sites} |`, 'Supabase decisions'],
@@ -155,8 +162,11 @@ function expectations(f) {
     [`| Raw S3 | ${f.s3.app} | ${f.s3.infra} |`, 'raw S3 lines'],
     [`| Convex, not executed or compiled | ${f.cx.app} | ${f.cx.infra} |`, 'Convex lines'],
     [`| Vercel Blob, not executed or compiled | ${f.vb.app} | ${f.vb.infra} |`, 'Vercel Blob lines'],
-    [`about ${f.prodMedian.x} times as many lines as Filelayer**: an average of ${f.prodMedian.exec} against ${f.prodMedian.fl}`, 'the production-wired average'],
-    [`average of the two is ${f.median.exec} application lines against ${f.median.fl}, about ${f.median.x} times as many`, 'the example average'],
+    [`about ${f.prodMedian.x} times as many lines as Filelayer**: an ${f.word} of ${f.prodMedian.exec} against ${f.prodMedian.fl}`.replace('an median', 'a median'), 'the production-wired average'],
+    [`${f.word} of the two is ${f.median.exec} application lines against ${f.median.fl}, about ${f.median.x} times as many`, 'the example average'],
+    [`the ${f.word} is about ${f.decMedian.types} times as many`, 'the word the run uses for the decisions'],
+    [`about ${f.noChainProd.x} times as many lines against Filelayer wired as in production`, 'the production-wired sensitivity without the audit chain'],
+    [`Supabase has ${f.sup9.sites} places instead of ${f.dsup.sites}, and the ${f.word} for places is about ${f.sup9.x} times as many`, 'the Supabase #9 sensitivity'],
     [`| Filelayer | ${f.vfl[1]} | ${f.vfl[2]} |`, 'Filelayer vendor lines'],
     [`| Raw S3 | ${f.vs3[1]} (the AWS SDK) | ${f.vs3[2]} |`, 'raw S3 vendor lines'],
     [`about ${f.noChain.x} times as many lines against the example, and ${f.noChain.types} and ${f.noChain.sites} times as many kinds and places`, 'the sensitivity without the audit chain'],
@@ -177,14 +187,15 @@ function expectations(f) {
     [`**${f.afl.defended} of ${f.shared}** for Filelayer`, 'Filelayer on the shared attacks'],
     [`Raw S3 also defends ${f.as3.defended} of ${f.shared}; Supabase defends ${f.asup.defended}`, 'raw S3 and Supabase on the shared attacks'],
     [`About ${f.prodMedian.x} times as many lines`, 'the production-wired ratio'],
-    [`an average of ${f.prodMedian.exec} lines of application and infrastructure code against Filelayer's ${f.prodMedian.fl}`, 'the production-wired average'],
+    [`${f.prodTotals} lines of application and infrastructure code against Filelayer's ${f.prodMedian.fl}`, 'the production-wired lines of each alternative'],
+    [`(raw S3 in ${rounds(f.rev['Raw S3'].rounds)}, Supabase in ${rounds(f.rev['Supabase'].rounds)})`, 'the revision rounds, from benchmark/revisions/README.md'],
     [`${f.median.fl} lines, it is about ${f.median.x} times as many`, 'the example ratio'],
   ];
   // The homepage states the argument with the same figures (14 November 2026).
   const home = [
     [`<span class="v">about ${f.prodMedian.x} times as many</span>`, 'the production-wired ratio'],
     [`<span class="v">about ${f.decMedian.types} times as many</span>`, 'the decisions ratio'],
-    [`averaged ${f.prodMedian.exec} lines against Filelayer's ${f.prodMedian.fl}`, 'the production-wired average'],
+    [`took ${f.prodTotals} lines against Filelayer's ${f.prodMedian.fl}`, 'the production-wired lines of each alternative'],
     [`${f.dsup.types} and ${f.ds3.types} kinds of security-sensitive decision against its ${f.dfl.types}`, 'decision kinds'],
     f.as3.defended === f.asup.defended
       ? [`raw S3 and Supabase defended all ${f.as3.defended} shared attacks`, 'raw S3 and Supabase on the shared attacks']
@@ -197,8 +208,9 @@ function expectations(f) {
 // of its redirecting share gateway; once RESULTS.md stops naming it, neither
 // the page nor the README may.
 function absent(f) {
-  if (f.thirtySeconds) return {};
-  const gone = [['30 seconds', "Supabase's 30-second window, which RESULTS.md no longer names"], ['30-second', "Supabase's 30-second window, which RESULTS.md no longer names"]];
+  const always = [['Supabase, as built', 'the "as built" label, which the revised Supabase no longer carries']];
+  if (f.thirtySeconds) return { 'benchmark/PAGE.md': always, 'README.md': always, 'web/index.html': always };
+  const gone = [...always, ['30 seconds', "Supabase's 30-second window, which RESULTS.md no longer names"], ['30-second', "Supabase's 30-second window, which RESULTS.md no longer names"]];
   return { 'benchmark/PAGE.md': gone, 'README.md': gone, 'web/index.html': gone };
 }
 
@@ -249,6 +261,17 @@ function check(texts, f) {
 
 const results = read('benchmark/RESULTS.md');
 const f = figures(results);
+{
+  // The two production-wired totals the middle figure is taken over, so the
+  // README and the homepage state them rather than a word for their middle.
+  const s3 = Number(f.s3.app) + Number(f.s3.infra);
+  const sup = Number(f.sup.app) + Number(f.sup.infra);
+  if ((s3 + sup) / 2 !== Number(f.prodMedian.exec)) {
+    console.error(`check-page-figures: RESULTS.md gives ${f.prodMedian.exec} for the two production-wired alternatives, but raw S3 (${s3}) and Supabase (${sup}) average ${(s3 + sup) / 2}.`);
+    process.exit(1);
+  }
+  f.prodTotals = `${s3} and ${sup}`;
+}
 const texts = { 'benchmark/PAGE.md': read('benchmark/PAGE.md'), 'README.md': read('README.md'), 'web/index.html': read('web/index.html') };
 
 if (process.argv.includes('--self-test')) {

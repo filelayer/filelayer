@@ -45,12 +45,16 @@ of it wired as in production is counted beside it. The attack suite was written
 by the same team that builds Filelayer. That is a conflict of interest, and the
 section on the attacks says what we did about it.
 
-**Each of the two alternatives that ran had one revision round.** The library was fixed each time
-the attacks found a defect in it; the alternatives were frozen after one build.
-So on 13 November each executed alternative got one round against the attacks,
-at most 40 changed lines, done the way someone who knows the platform would do
-it, with the diff published in `benchmark/revisions/`. Raw S3 changed 39 lines,
-Supabase 8. Every result below is for the revised code. Convex and Vercel Blob
+**The two alternatives that ran were revised against the attacks.** The library
+was fixed each time the attacks found a defect in it; the alternatives were
+frozen after one build. So on 13 November each executed alternative got a round
+against the attacks, at most 40 changed lines of application code, done the way
+someone who knows the platform would do it. Supabase got a second change on
+14 November, after a later review: its share gateway streams the bytes instead
+of redirecting to a signed URL. Raw S3 changed 39 lines in one round, Supabase
+24 in two rounds, all of them application code; Supabase's diff also holds 11
+lines of the platform emulation. Every diff is published in `benchmark/revisions/`, and every result
+below is for the revised code. Convex and Vercel Blob
 have never run, so their code was not changed; their counts assume they were
 built the way their platforms document.
 
@@ -80,12 +84,17 @@ and leaving it takes a deliberate act: then the wrong choice is not silent. That
 rule removed two decisions from Filelayer (a private bucket and bucket
 versioning, both defaults), the same defaults wherever an alternative counted
 them, the two Supabase decisions its database linter flags, and a repeated
-count wherever one helper carries the decision. Filelayer's count also gained three decisions its own
-example gets wrong: the routes that create organizations and actors take no
-identity, the new organization's owner is read from the request body, and the
-request body has no size limit. Every change is recorded in `decisions.json`
+count wherever one helper carries the decision. Filelayer's count also gained
+three decisions its own example has to get right: the routes that create
+organizations and actors must check an operator credential, the new
+organization's owner must be the caller and not a name from the request body,
+and the request body needs a size limit. The example got all three wrong until
+0.35.4, and gets them right since. Every change is recorded in `decisions.json`
 on the decision itself, with its reason. One Filelayer decision is listed as
-arguable; counting it gives Filelayer 9 kinds.
+arguable; counting it gives Filelayer 9 kinds. On the other side, one Supabase
+decision, writing every row-level security policy for the right command, carries
+19 of its places, one per policy. Counted as a single place, Supabase has 31 places instead of 49, and the average for places is about 3.1 times as many,
+against 4.0.
 
 Two decisions that the first count in September held against Filelayer are no
 longer in it, because the library fixed them in 0.3.0: the audit chain could
@@ -130,7 +139,8 @@ compiled may not even work.
 Filelayer's audit log is hash-chained, and neither alternative chains its log.
 Leaving the chain out of both alternatives' counts, as a check on how much of
 the gap it explains, still gives about 3.5 times as many lines against the
-example, and 2.9 and 3.9 times as many kinds and places of decision.
+example, and 2.9 and 3.9 times as many kinds and places of decision. Wired as in
+production, it gives about 2.6 times as many lines against Filelayer wired as in production.
 
 **The library is not nothing.** Its code runs in your process and its schema in
 your database, so it is counted too, apart from the lines you write:
@@ -162,10 +172,10 @@ can express.** All three defend every one of them.
 |---|---:|---:|---:|
 | Filelayer 0.35.4 | 21 of 21 | 0 | 0 |
 | Raw S3 | 21 of 21 | 0 | 0 |
-| Supabase, as built | 21 of 21 | 0 | 0 |
+| Supabase | 21 of 21 | 0 | 0 |
 | Filelayer, earlier version (control) | 16 of 21 | 2 | 2 |
 
-Before the revision round, neither raw S3 nor Supabase recorded a refused
+Before the revisions, neither raw S3 nor Supabase recorded a refused
 cross-tenant read, or probes at documents that do not exist, in the
 application's own audit trail. Nothing was disclosed, and gateway or load
 balancer logs may have held them. A few lines closed it in both; the diffs are
@@ -204,9 +214,9 @@ Independent attacks are welcome, as an issue or a pull request.
 
 From `npm install` to the first stored file, using the program printed in the
 quickstart that ships in the package: 4 lines of application code, no step that
-needs a person, and no account, credential or dashboard. On the machine that
-generated these results it took 5.3 seconds; seconds depend on the machine and
-the network.
+needs a person, and no account, credential or dashboard. It takes a few
+seconds on a laptop: on the machine that generated these results it took 5.3
+seconds, and the time depends on the machine and the network.
 
 ## Where the alternatives are better
 

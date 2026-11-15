@@ -63,13 +63,13 @@ runs was attacked by one shared suite:
   reports it: 25 and 24 against Filelayer's 8, and about 4.0 times as many
   places to get them right.
 - **21 of 21** for Filelayer on the 21 attacks every executed version can
-  express, after each executed alternative had one revision round against the
-  suite, with its diff published. Raw S3 also defends 21 of 21; Supabase
+  express, after the executed alternatives were revised against the suite
+  (raw S3 in one round, Supabase in two rounds), with every diff published. Raw S3 also defends 21 of 21; Supabase
   defends 21 of 21. The hand-written versions can be made safe; the difference
   is how much code that takes.
 - **About 2.9 times as many lines** in the two alternatives that ran, wired as
-  in production: an average of 681.5 lines of application and infrastructure
-  code against Filelayer's 233, with its pool, bucket and policies. Against our
+  in production: 794 and 569 lines of application and infrastructure code
+  against Filelayer's 233, with its pool, bucket and policies. Against our
   example as it ships, 157 lines, it is about 4.1 times as many. Convex and
   Vercel Blob were neither executed nor compiled, so they are left out of every
   figure.

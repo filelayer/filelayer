@@ -24,8 +24,8 @@ node benchmark/run.mjs
 ```
 
 That one command installs what it needs with `npm ci`, runs every measurement
-below and writes `benchmark/RESULTS.md` and `benchmark/adversarial/RESULTS.md`.
-It needs no account, no credential and no environment variable. The network is
+below and rewrites `benchmark/RESULTS.md` and `benchmark/adversarial/RESULTS.md`
+in your clone (`--print`, below, writes nothing). It needs no account, no credential and no environment variable. The network is
 used for npm and for nothing else: the Supabase implementation runs on PGlite
 with the platform schema emulated, and the S3 one against a local store that
 verifies SigV4 signatures.
