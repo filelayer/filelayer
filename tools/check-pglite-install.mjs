@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const CORE = join(ROOT, 'packages', 'core');
-const FIX = 'npm install --save-dev @electric-sql/pglite';
+const FIX = 'npm install --save-dev "@electric-sql/pglite@^0.3.11"';
 const OUT_OF_RANGE = '0.4.6'; // published, and outside ^0.3.11 || ^0.5.8
 const SELF_TEST = process.argv.includes('--self-test');
 

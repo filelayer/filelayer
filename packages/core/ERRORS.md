@@ -178,7 +178,7 @@ Something failed that is not one of the above. This is the only code here that m
 
 createTestDb() or Filelayer.quickstart() found an @electric-sql/pglite outside the range this library supports, ^0.3.11 or ^0.5.8.
 
-**Fix.** Install a supported version: npm install --save-dev @electric-sql/pglite (its latest is supported). Production code does not need PGlite at all; pass your own pg.Pool to new Filelayer().
+**Fix.** Install a supported version: npm install --save-dev @electric-sql/pglite@^0.3.11 (0.5.8 and later 0.5.x work too). Production code does not need PGlite at all; pass your own pg.Pool to new Filelayer().
 
 ### `redirect_bad_ttl` — 500
 

@@ -15,7 +15,7 @@ A first file in an organization, and a refusal, in twelve lines:
 
 ```bash
 npm install @filelayer/core
-npm install --save-dev @electric-sql/pglite
+npm install --save-dev "@electric-sql/pglite@^0.3.11"
 ```
 
 ```ts
@@ -318,12 +318,11 @@ which you install yourself so that it never lands in a production
 otherwise. `createTestDb()` will tell you, by name, if you need it:
 
 ```bash
-npm install --save-dev @electric-sql/pglite
+npm install --save-dev "@electric-sql/pglite@^0.3.11"
 ```
 
-Filelayer supports PGlite `^0.3.11` and `^0.5.8`. npm's `latest` is inside
-that, so the command needs no version; CI runs the whole suite on the 0.3 line
-and on PGlite's latest. PGlite is not a peer dependency, so installing it never
+Filelayer supports PGlite `^0.3.11` and `^0.5.8`, and CI runs the whole suite on
+the 0.3 line and on PGlite's latest. The command pins the 0.3 line: 0.5.x works; in 0.35.x a script that uses `quickstart()` waits about 10 s on exit with 0.5.x, fixed in the next release. PGlite is not a peer dependency, so installing it never
 fails the tree. With a version outside the range, `quickstart()` and
 `createTestDb()` stop with the error `pglite_unsupported_version`, which gives
 the command above.

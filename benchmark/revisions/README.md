@@ -3,8 +3,8 @@
 A review of this benchmark on 2026-11-03 found that it compared a library
 iterated for months against alternatives frozen after one build: every defect
 the shared attack suite found in Filelayer became a library fix, and every
-defect it found in an alternative became a decision counted against it. This
-round gives each alternative the same treatment once.
+defect it found in an alternative became a decision counted against it. The
+rounds give each alternative the same treatment.
 
 ## The figures
 
@@ -20,10 +20,11 @@ disagree:
 
 ## The rule
 
-A round per alternative, against the attack suite, at most **40 changed
-lines** of application code in all (added plus removed, comments included),
-done the way someone who knows the platform would do it. Supabase had a second
-round on 14 November, inside the same cap; see below. The diff is published here, so anyone can read every
+Rounds against the attack suite, at most **40 changed lines** of application
+code per alternative across all of its rounds (added plus removed, comments
+included), done the way someone who knows the platform would do it. Raw S3 had
+one round, on 13 November; Supabase had two, on 13 and 14 November, inside the
+same cap. See the table above and the sections below. The diff is published here, so anyone can read every
 line or revert it. The results in `../RESULTS.md` and
 `../adversarial/RESULTS.md` are for the revised code.
 

@@ -68,7 +68,7 @@ const PRINT_ONLY = process.argv.includes('--print');
  */
 const STEPS = [
   { what: 'npm install @filelayer/core', human: false },
-  { what: 'npm install --save-dev @electric-sql/pglite', human: false },
+  { what: 'npm install --save-dev "@electric-sql/pglite@^0.3.11"', human: false },
   { what: 'write the program the page shows', human: false },
   { what: 'node --experimental-strip-types app.ts', human: false },
 ];
@@ -148,8 +148,8 @@ console.log('time to first file, from the registry\n');
 npm(['init', '-y'], '   (not counted: scaffolding)');
 
 const tInstall = npm(['install', '@filelayer/core']);
-// The quickstart's command, which since 0.35.4 carries no version.
-const tPglite = npm(['install', '--save-dev', '@electric-sql/pglite']);
+// The quickstart's command, version included (see README).
+const tPglite = npm(['install', '--save-dev', '@electric-sql/pglite@^0.3.11']);
 
 // --- rule 2: the program is the page's, not mine -----------------------------
 
@@ -215,7 +215,7 @@ node benchmark/ttff/measure.mjs
 | | |
 |---|---|
 | \`npm install @filelayer/core\`, cold cache | ${seconds(tInstall)}s |
-| \`npm install --save-dev @electric-sql/pglite\` | ${seconds(tPglite)}s |
+| \`npm install --save-dev "@electric-sql/pglite@^0.3.11"\` | ${seconds(tPglite)}s |
 | first run, including starting an embedded PostgreSQL | ${seconds(tRun)}s |
 | **total, install to stored byte** | **${seconds(total)}s** |
 | lines of application code | ${loc} |

@@ -461,9 +461,9 @@ npm install @filelayer/core@alpha
 
 # The round trip below and the smoke script after it both go through
 # Filelayer.quickstart(), which runs on PGlite. PGlite is not a dependency, so
-# the install above deliberately did not bring it: ask for it. npm's latest is
-# inside the supported range, ^0.3.11 or ^0.5.8.
-npm install --save-dev @electric-sql/pglite
+# the install above deliberately did not bring it: ask for it, with the version
+# the README gives. The supported range is ^0.3.11 or ^0.5.8.
+npm install --save-dev "@electric-sql/pglite@^0.3.11"
 
 # The package imports by bare specifier, its types and schema.sql resolve, and
 # one full round trip through the real authorization engine succeeds.

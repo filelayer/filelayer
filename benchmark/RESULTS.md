@@ -253,13 +253,13 @@ the bytes itself or redirects to a signed URL.
 ```
 time to first file, from the registry
 
-  npm init -y   (not counted: scaffolding)                0.6s
-  npm install @filelayer/core                             1.5s
-  npm install --save-dev @electric-sql/pglite             1.1s
+  npm init -y   (not counted: scaffolding)                0.5s
+  npm install @filelayer/core                             1.4s
+  npm install --save-dev "@electric-sql/pglite@^0.3.11"    1.3s
   every program line found in the shipped page              3
-  node --experimental-strip-types app.ts                 13.1s
+  node --experimental-strip-types app.ts                  2.5s
 
-  TOTAL, install to stored byte                          15.8s
+  TOTAL, install to stored byte                           5.2s
   steps requiring a human                                   0
   lines of application code                                 4
   accounts, credentials, dashboards                         0

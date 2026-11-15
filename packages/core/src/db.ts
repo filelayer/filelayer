@@ -573,7 +573,7 @@ const PGLITE = '@electric-sql/pglite';
  * the build if PGlite's `latest` on npm leaves the range below, which is when
  * this command would stop being right.
  */
-const PGLITE_INSTALL = 'npm install --save-dev @electric-sql/pglite';
+const PGLITE_INSTALL = 'npm install --save-dev "@electric-sql/pglite@^0.3.11"';
 
 /**
  * THE SUPPORTED RANGE, CHECKED WHEN PGLITE IS LOADED, NOT AT INSTALL:
