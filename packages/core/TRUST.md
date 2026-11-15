@@ -1,8 +1,7 @@
 # Should you depend on this?
 
 Here are the numbers to answer that in two minutes, including the ones that are
-zero. No page you can reach from here will tell you something this one leaves
-out.
+zero.
 
 Filelayer is a file layer for SaaS applications: files with owners, orgs and
 roles, share links that expire and can be revoked, lifecycle, and an audit trail
@@ -241,8 +240,8 @@ release are reviewed and approved by a human before they are published.
 
 ## Using it anyway
 
-If you want to try it, the honest framing is: this is a good design that has not
-met production. Reasonable ways to engage, roughly in order of exposure:
+If you want to try it, the honest framing is: a design that has been attacked on
+purpose and has not met production. Reasonable ways to engage, roughly in order of exposure:
 
 - **Read the schema.** `schema.sql` states eight security properties. Some are
   write-side integrity constraints that bind every writer — take the composite

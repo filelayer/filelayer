@@ -355,7 +355,7 @@ They are the same two routes with the same behaviour. `deliveryFetch` returns
 `null` for a request it does not own, so a catch-all route can fall through to
 the rest of your application instead of swallowing it.
 
-**Mounting the wrong one is the most common integration failure we see.** A
+**Mounting the wrong one is the easiest integration mistake to make.** A
 `node:http` handler in an App Router route exports a function with the wrong
 shape. In a Next 16 project with TypeScript, `next build` reports it as a type
 error in the route file; without type checking, the symptom is a request that
@@ -430,9 +430,7 @@ entries, eleven of which carry forward SQL; the other two schema changes predate
 the oldest tag in the repository and cannot be verified against an earlier
 schema. Budget an upgrade against that file rather than against this paragraph.
 Every figure in this paragraph is derived from `migrations/manifest.json` by
-`check:versions`, which fails the build if any of them drifts, because these
-numbers were last corrected by hand at `0.15.0` and had drifted again by
-`0.33.0`.
+`check:versions`, which fails the build if any of them drifts.
 
 **Which version a database is at is readable off the database.**
 `schemaStatus(db)` reports where a database is, what this build expects, and
@@ -514,4 +512,4 @@ embedded anywhere in this repository.
 Bugs, questions and "this document is wrong" reports go to
 [GitHub Issues](https://github.com/filelayer/filelayer/issues). A report that
 the product does not do what this README says is the most valuable thing you can
-send us, and every one so far has been fixed the same day.
+send us.
