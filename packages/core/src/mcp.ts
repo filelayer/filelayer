@@ -73,6 +73,9 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ERROR_CODES, FilelayerError, type ErrorCode } from './errors.ts';
 import type { Filelayer } from './filelayer.ts';
 
@@ -204,6 +207,23 @@ async function loadPeers() {
   return { McpServer: mcp.McpServer, z: zod.z };
 }
 
+/**
+ * This package's version, as the MCP server reports it in `initialize`. It was
+ * the constant '1' until 0.36.0, so a client could not tell which release it
+ * was talking to. Read the way `filelayer --version` reads it: from the
+ * package.json beside `src/` and `dist/`, and 'unknown' rather than a made-up
+ * value when that file is missing or has no version.
+ */
+export const MCP_SERVER_VERSION: string = (() => {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const v = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')).version;
+    return typeof v === 'string' && v.length > 0 ? v : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+})();
+
 export async function filelayerMcpServer(
   fl: Filelayer,
   opts: FilelayerMcpOptions,
@@ -229,7 +249,7 @@ export async function filelayerMcpServer(
   const ctx = { as, userAgent: agentLabel } as const;
 
   const { McpServer, z } = await loadPeers();
-  const server = new McpServer({ name: opts.name ?? 'filelayer', version: '1' });
+  const server = new McpServer({ name: opts.name ?? 'filelayer', version: MCP_SERVER_VERSION });
 
   server.registerTool(
     'list_files',

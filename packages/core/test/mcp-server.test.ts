@@ -151,6 +151,40 @@ describe('filelayer-mcp: a client launching it', async () => {
     ? false
     : 'needs a real PostgreSQL: this server builds a pg.Pool, and PGlite is not a server';
 
+  it('refuses to start on an unseeded database, and says how to seed it', { skip }, async () => {
+    // Without this check it started, and every tool answered not_found: the
+    // answer a stranger gets, with nothing saying why.
+    const { createRealDb } = await import('./real-postgres.ts');
+    const { Filelayer } = await import('../src/index.ts');
+    const { FsStorage } = await import('../src/storage.ts');
+    const db = await createRealDb();
+    const dir = scratch();
+    const url = (db.pool as unknown as { options?: { connectionString?: string } }).options
+      ?.connectionString;
+    assert.ok(typeof url === 'string', 'could not recover the database URL from the pool');
+    const env = { DATABASE_URL: url, FILELAYER_DATA_DIR: dir, FILELAYER_AS: 'user_alice', FILELAYER_ORG: 'org_acme' };
+    try {
+      const noOrg = await start(env);
+      assert.equal(noOrg.status, 2, noOrg.out);
+      assert.match(noOrg.out, /FILELAYER_ORG names an organization that does not exist: org_acme/);
+      assert.match(noOrg.out, /orgs\.create\(process\.env\.FILELAYER_ORG/, 'it does not say how to seed');
+
+      const fl = new Filelayer(db.pool as never, new FsStorage(dir));
+      await fl.orgs.create('org_acme', { owner: 'user_bob' });
+      const noUser = await start(env);
+      assert.equal(noUser.status, 2, noUser.out);
+      assert.match(noUser.out, /FILELAYER_AS names a user that does not exist: user_alice/);
+
+      await fl.ids.ensureActor('user_alice');
+      const notMember = await start(env);
+      assert.equal(notMember.status, 2, notMember.out);
+      assert.match(notMember.out, /user_alice is not a member of org_acme/);
+      assert.match(notMember.out, /orgs\.setRole/);
+    } finally {
+      await db.close();
+    }
+  });
+
   it('comes up over stdio and answers a tool call', { skip }, async () => {
     const { createRealDb } = await import('./real-postgres.ts');
     const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');

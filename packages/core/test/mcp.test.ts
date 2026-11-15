@@ -28,6 +28,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { Filelayer } from '../src/index.ts';
@@ -124,6 +125,14 @@ const everything = {
 } as const;
 
 describe('the MCP server', () => {
+  it('reports this package\'s version in initialize, not a constant', { skip: SKIP }, async () => {
+    // It was the literal '1' until 0.36.0.
+    const { fl } = await world();
+    const client = await connect(filelayerMcpServer(fl, everything));
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    assert.deepEqual(client.getServerVersion(), { name: 'filelayer', version: pkg.version });
+  });
+
   it('advertises no way for a tool call to choose the subject', { skip: SKIP }, async () => {
     const { fl } = await world();
     const client = await connect(filelayerMcpServer(fl, everything));

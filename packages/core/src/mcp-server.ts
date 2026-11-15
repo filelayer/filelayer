@@ -179,6 +179,42 @@ const fl = new Filelayer(pool, storage, {
   ...(process.env['FILELAYER_BASE_URL'] ? { baseUrl: process.env['FILELAYER_BASE_URL'] } : {}),
 });
 
+// THE SEED, CHECKED BEFORE THE FIRST TOOL CALL. On an unseeded database every
+// tool answers `not_found`, the same answer a stranger gets, so a server that
+// started anyway would look broken for a reason nothing names. This only reads:
+// the server never creates its own organization or user (docs/MCP.md says why).
+const SETUP = [
+  'Create them once, before the first start: docs/MCP.md in the package,',
+  '  "Then create the organization and its first user", has the script.',
+  '  In short, from a project with @filelayer/core and pg installed:',
+  `    await fl.orgs.create(process.env.FILELAYER_ORG, { owner: process.env.FILELAYER_AS });`,
+];
+let seed: { orgId: string | null; actorId: string | null };
+try {
+  seed = { orgId: await fl.ids.orgId(ORG), actorId: await fl.ids.actorId(AS) };
+} catch (e) {
+  fail([
+    `the Filelayer tables could not be read: ${String((e as Error).message).slice(0, 160)}`,
+    '',
+    'Apply the schema once, from the project where @filelayer/core is installed:',
+    '    psql "$DATABASE_URL" -f node_modules/@filelayer/core/schema.sql',
+  ]);
+}
+if (seed.orgId === null) {
+  fail([`FILELAYER_ORG names an organization that does not exist: ${ORG}`, '', ...SETUP]);
+}
+if (seed.actorId === null) {
+  fail([`FILELAYER_AS names a user that does not exist: ${AS}`, '', ...SETUP]);
+}
+if ((await fl.store.getMembership(seed.orgId, seed.actorId)) === null) {
+  fail([
+    `${AS} is not a member of ${ORG}, so every tool would answer not_found.`,
+    '',
+    'Add the user to the organization, as its owner or an admin:',
+    `    await fl.orgs.setRole(process.env.FILELAYER_ORG, '${AS}', 'member', { as: '<the owner>' });`,
+  ]);
+}
+
 const server = await filelayerMcpServer(fl, {
   as: AS,
   org: ORG,
