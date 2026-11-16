@@ -101,6 +101,9 @@ Coordinated disclosure. Concretely, what we commit to:
 If we are going to miss one of these, we will tell you before it passes rather
 than after.
 
+Advisories are published to everyone at the same time, on GitHub Security
+Advisories. No plan, paid or not, receives them earlier.
+
 We will:
 
 - keep your report private until an advisory is published;

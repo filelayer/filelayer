@@ -13,8 +13,9 @@ keeps working exactly as before.
 
 ## 1. What each plan includes
 
-Every paid service is delivered in writing: email, written reviews and security
-advisories. No plan includes calls or meetings.
+Every paid service is delivered in writing: email and written reviews. No plan
+includes calls or meetings. Security advisories are published to everyone at
+the same time, on GitHub Security Advisories, and no plan receives them earlier.
 
 **Team**, US$99 a month per organization, for small teams that want answers by
 email:
@@ -25,9 +26,8 @@ email:
 - Priority on defects you report in the library: they are looked at before
   defects reported by people without a plan. Priority is about order. It is not
   a promise that a defect will be fixed, or by when.
-- Security advisories sent to the address you nominate before they are
-  disclosed publicly. You agree to keep an advisory confidential, and to use it
-  only to protect your own deployments, until it is disclosed publicly.
+- Direct help, by email, applying a security fix to your deployment once its
+  advisory is published.
 
 **Business**, US$299 a month per organization, for products with sensitive data
 or customers' security reviews:
