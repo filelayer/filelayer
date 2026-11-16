@@ -215,7 +215,7 @@ Independent attacks are welcome, as an issue or a pull request.
 From `npm install` to the first stored file, using the program printed in the
 quickstart that ships in the package: 4 lines of application code, no step that
 needs a person, and no account, credential or dashboard. It takes a few
-seconds on a laptop: on the machine that generated these results it took 5.3
+seconds on a laptop: on the machine that generated these results it took 5.2
 seconds, and the time depends on the machine and the network.
 
 ## Where the alternatives are better
