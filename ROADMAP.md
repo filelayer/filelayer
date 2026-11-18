@@ -104,12 +104,18 @@ person running this in production.
   pre-authorizes, so the cost is mostly in joining them and in aborting
   abandoned uploads, whose parts S3 bills until something does. Revisited when a
   prospect's users upload large files.
+- **Cloudflare Workers, Deno and Bun: not supported yet.** On 18 November 2026
+  the published package did not run in Cloudflare Workers: the bundler cannot
+  resolve the optional PGlite import, and with PGlite installed the Worker
+  fails at load on `fileURLToPath(import.meta.url)` in `dist/db.js`. Deno and
+  Bun have never been run in CI. None of the three is claimed until a CI job
+  runs it.
 - **An independent security review.** Costs money, deferred to January 2027.
   Nothing in this repository has been audited by anyone outside it, and
   `TRUST.md` says so in the one place a reader will look for it.
 - **The agent-facing surfaces.** In `0.18.0` the one that was blocking closed:
-  the delivery routes now have a `Request`/`Response` form, so Next.js, Hono,
-  Workers, Deno and Bun can mount them. The others listed here have shipped
+  the delivery routes now have a `Request`/`Response` form, so Next.js and
+  other frameworks on Node can mount them. The others listed here have shipped
   since, and stay listed so the history is readable:
   - ~~An MCP server~~: **shipped.** `filelayer-mcp`, a stdio server you run
     yourself, and `@filelayer/core/mcp` to build one in code. One process acts

@@ -212,7 +212,7 @@ check it rather than assuming the revoke was enough.
 This is where integrations break, so read the file that matches the runtime
 before writing the route:
 
-- **Next.js App Router, Hono, Cloudflare Workers, Deno, Bun** —
+- **Next.js App Router, Hono on Node** (Cloudflare Workers is not supported yet; Deno and Bun are not tested):
   [`references/whatwg-runtimes.md`](references/whatwg-runtimes.md).
   The short version: the `deliveryHandler(fl)` that most of the documentation
   shows is a `node:http` handler and **cannot be mounted in any of these**. Use
@@ -357,7 +357,7 @@ Read the one that matches the task; do not read all of them.
 
 | File | When |
 |---|---|
-| [`references/whatwg-runtimes.md`](references/whatwg-runtimes.md) | Next.js App Router, Hono, Workers, Deno, Bun |
+| [`references/whatwg-runtimes.md`](references/whatwg-runtimes.md) | Next.js App Router, Hono on Node |
 | [`references/node-http.md`](references/node-http.md) | Express, Fastify, `node:http` |
 | [`references/range-and-media.md`](references/range-and-media.md) | Video, audio, PDFs: byte ranges, inline disposition, seeking |
 | [`references/sharing-and-links.md`](references/sharing-and-links.md) | Expiring links, passwords, download caps, revocation |

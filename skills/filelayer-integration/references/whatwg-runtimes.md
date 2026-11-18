@@ -1,8 +1,11 @@
-# Next.js App Router, Hono, Workers, Deno, Bun
+# Next.js App Router and Hono, on Node
+
+Cloudflare Workers is not supported yet: the library does not bundle for
+workerd. Deno and Bun are not run in CI, so they are not claimed either.
 
 ## The thing to get right first
 
-**`deliveryHandler(fl)` cannot be mounted in any of these.** It is a
+**`deliveryHandler(fl)` cannot be mounted in either.** It is a
 `node:http` handler: it takes `(req, res)` and writes to a `ServerResponse`.
 These runtimes hand you a `Request` and want a `Response` back. The two are not
 the same shape, and most of Filelayer's documentation shows the `node:http`

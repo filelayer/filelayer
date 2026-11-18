@@ -363,6 +363,13 @@ jobs:
       - name: Every guide's samples run against the published package
         run: npm run check:guides-published
 
+      # A runtime named beside the ones that work reads as a support claim.
+      # Cloudflare Workers, Deno and Bun were named for weeks and none had
+      # ever been run; the package did not even load in workerd. Named only
+      # with a disclaimer until a job here runs it.
+      - name: No runtime is claimed without a CI job that runs it
+        run: npm run check:runtime-claims
+
       # The local usage report is the one output meant to leave an adopter's
       # machine, by their hand. Its schema must stay closed, its import graph
       # must contain no socket library, and it must build and validate with

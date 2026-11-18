@@ -697,9 +697,11 @@ console.log(response.status, response.headers.get('content-range')); // 206 byte
   undetectable by every HTTP client, so it is not a mistake the API lets you
   make.
 
-### Next.js App Router, Hono, Workers, Deno, Bun
+### Next.js App Router, Hono and other `Request` frameworks on Node
 
-**`deliveryHandler(fl)` cannot be mounted on any of those.** It is a
+Cloudflare Workers is not supported yet (the library does not bundle for workerd), and Deno and Bun are not run in CI, so neither is claimed; both are tracked in [ROADMAP](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md).
+
+**`deliveryHandler(fl)` cannot be mounted on them.** It is a
 `node:http` handler: it takes `(req, res)` and writes to a `ServerResponse`.
 An App Router route handler is `(Request) => Response`, and the two are not the
 same shape. That sentence is here because its absence cost a reader a morning.

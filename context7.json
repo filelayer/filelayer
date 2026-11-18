@@ -2,7 +2,12 @@
   "$schema": "https://context7.com/schema/context7.json",
   "projectTitle": "Filelayer",
   "description": "A Node library for the files your users upload to a SaaS: per-file permissions per user and organization role, share links that expire and can be revoked, and an audit trail of every allowed and denied access, on your own Postgres and S3 or R2 bucket.",
-  "folders": ["docs", "examples", "skills", "packages/core"],
+  "folders": [
+    "docs",
+    "examples",
+    "skills",
+    "packages/core"
+  ],
   "excludeFolders": [
     "packages/core/docs",
     "packages/core/examples",
@@ -14,13 +19,15 @@
     "packages/core/migrations",
     "node_modules"
   ],
-  "excludeFiles": ["CHANGELOG.md"],
+  "excludeFiles": [
+    "CHANGELOG.md"
+  ],
   "rules": [
     "Pass the caller's own id as `as` on every call, taken from your session, never from the request body.",
     "Keep the bucket private. Filelayer decides who may be given a file; a public bucket answers anyone.",
     "Apply node_modules/@filelayer/core/schema.sql once, before the first start, under a lock if several processes boot.",
     "A refusal is a 404 with code not_found, so a stranger cannot tell the file exists. The reason is in the audit trail.",
-    "Mount deliveryFetch for runtimes that hand you a Request (Next.js App Router, Hono, Workers) and deliveryHandler for node:http, Express, Fastify and Koa.",
+    "Mount deliveryFetch for frameworks that hand you a Request (Next.js App Router, Hono on Node) and deliveryHandler for node:http, Express, Fastify and Koa. Cloudflare Workers is not supported yet.",
     "Mirror organization membership from your auth provider on its membership events with orgs.create and orgs.setRole."
   ]
 }

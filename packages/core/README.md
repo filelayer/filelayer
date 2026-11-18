@@ -349,11 +349,13 @@ preference:
 | | |
 |---|---|
 | `deliveryHandler(fl, opts?)` | Returns `(req: IncomingMessage, res: ServerResponse) => Promise<void>`. Node's own HTTP server, and Express, Fastify and Koa, which hand you those objects. |
-| `deliveryFetch(fl, opts?)` | Returns `(req: Request) => Promise<Response \| null>`. Next.js App Router, Hono, Cloudflare Workers, Deno and Bun, which hand you a `Request` and want a `Response` back. |
+| `deliveryFetch(fl, opts?)` | Returns `(req: Request) => Promise<Response \| null>`. Next.js App Router, and other frameworks on Node such as Hono, which hand you a `Request` and want a `Response` back. |
 
 They are the same two routes with the same behaviour. `deliveryFetch` returns
 `null` for a request it does not own, so a catch-all route can fall through to
 the rest of your application instead of swallowing it.
+
+Cloudflare Workers is not supported yet (the library does not bundle for workerd), and Deno and Bun are not run in CI, so neither is claimed; both are tracked in [ROADMAP](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md).
 
 **Mounting the wrong one is the easiest integration mistake to make.** A
 `node:http` handler in an App Router route exports a function with the wrong

@@ -24,7 +24,7 @@ are different shapes. The README shows both side by side, and this example uses
 `deliveryFetch`.
 
 `deliveryFetch(fl, opts)` is the same two routes for `Request`/`Response`
-runtimes — App Router, Hono, Workers, Deno, Bun. It is not a thin wrapper
+runtimes on Node: App Router, Hono. It is not a thin wrapper
 around `toResponse()`: what it carries is everything *around* the response.
 
 | | hand-written | `deliveryFetch` |
