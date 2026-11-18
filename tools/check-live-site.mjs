@@ -80,19 +80,15 @@ const extractors = [
   },
   {
     name: 'trust table version',
-    re: /Version<\/span><span class="v">([\d.]+)\s*(?:&mdash;|—)\s*alpha/,
+    // "0.35.4, alpha" since the em dashes left the home (2026-11-15); the
+    // dash forms stay so an older page is still read.
+    re: /Version<\/span><span class="v">([\d.]+)\s*(?:&mdash;|—|,)\s*alpha/,
     want: (c) => c.version,
   },
-  {
-    name: 'tarball test count',
-    re: /([\d,]+)\s+tests across [\d,]+ suites travel with the package/,
-    want: (c) => String(c.tests),
-  },
-  {
-    name: 'tarball suite count',
-    re: /[\d,]+\s+tests across ([\d,]+) suites travel with the package/,
-    want: (c) => String(c.suites),
-  },
+  // THE "TRAVEL WITH THE PACKAGE" SENTENCE IS GONE from the home since it was
+  // halved (eb194e6, 2026-11-14); its two extractors went with it on
+  // 2026-11-18, when they had failed the nightly run for two days. The counts
+  // are still read from the table below, which the home still publishes.
   {
     name: 'trust table test count',
     re: /every commit<\/span><span class="v">([\d,]+) across [\d,]+ suites/,
