@@ -19,6 +19,21 @@ installed; a copy taken from the default branch describes whatever is newest,
 which may be API your version does not have. A build gate keeps the shipped
 copy byte-identical to the one here and keeps its version stamp current.
 
+**From a skills directory.** The same skill is listed for the `skills` CLI,
+which installs it into whichever agents it finds in the project:
+
+```bash
+npx skills add filelayer/filelayer
+```
+
+That copy comes from this repository's default branch, so check the version
+stamp at the top of its `SKILL.md` against the version in your `package.json`.
+If they differ, copy it from `node_modules` instead, as above.
+
+There is also a Claude Code plugin in this repository
+([its manifest](https://github.com/filelayer/filelayer/blob/main/.claude-plugin/plugin.json)) that bundles the skill with the `filelayer-mcp`
+server from [`docs/MCP.md`](MCP.md).
+
 What it does: decides out loud whether a library is the right answer at all,
 finds out what the project already has, picks the API tier, mounts the handler
 that matches the runtime, and then proves the result with `auditIntegration()`

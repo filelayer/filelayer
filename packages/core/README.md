@@ -402,7 +402,7 @@ on disk.
 |---|---|
 | Which storage adapter, and making the bucket private | [QUICKSTART §7](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) |
 | Checking a deployment from a terminal (`filelayer doctor`) | [`docs/CLI.md`](https://github.com/filelayer/filelayer/blob/main/docs/CLI.md) |
-| The Agent Skill, if an agent is doing the integration | [`docs/AGENT-SKILL.md`](https://github.com/filelayer/filelayer/blob/main/docs/AGENT-SKILL.md) |
+| The Agent Skill, if an agent is doing the integration: copy it from `node_modules`, or `npx skills add filelayer/filelayer` | [`docs/AGENT-SKILL.md`](https://github.com/filelayer/filelayer/blob/main/docs/AGENT-SKILL.md) |
 | Browser → bucket upload, with your server out of the path | [`docs/DIRECT-UPLOAD.md`](https://github.com/filelayer/filelayer/blob/main/docs/DIRECT-UPLOAD.md) |
 | An MCP server, so an agent can operate files | [`docs/MCP.md`](https://github.com/filelayer/filelayer/blob/main/docs/MCP.md) |
 | The 29 error codes, and `FilelayerError` | [QUICKSTART §9](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md) · [`ERRORS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/ERRORS.md) |

@@ -36,6 +36,12 @@
 # allow-list refuses anything new at the top level, which is the design
 # working and also exactly how it got missed.
 !/server.json
+# The agent-directory manifests: `.mcp.json` (the same filelayer-mcp command
+# as server.json, read by MCP clients and directories) and the Claude Code
+# plugin manifest. `check:registry` holds both to the documented command and
+# to the package version.
+!/.mcp.json
+!/.claude-plugin/
 !/skills/
 
 !/examples/

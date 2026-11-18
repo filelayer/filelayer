@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "filelayer": {
+      "command": "npx",
+      "args": ["-y", "-p", "@filelayer/core", "-p", "pg", "-p", "@modelcontextprotocol/sdk", "-p", "zod", "filelayer-mcp"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL:-}",
+        "FILELAYER_AS": "${FILELAYER_AS:-}",
+        "FILELAYER_ORG": "${FILELAYER_ORG:-}",
+        "FILELAYER_DATA_DIR": "${FILELAYER_DATA_DIR:-}",
+        "S3_ENDPOINT": "${S3_ENDPOINT:-}",
+        "S3_BUCKET": "${S3_BUCKET:-}",
+        "S3_REGION": "${S3_REGION:-auto}",
+        "S3_ACCESS_KEY_ID": "${S3_ACCESS_KEY_ID:-}",
+        "S3_SECRET_ACCESS_KEY": "${S3_SECRET_ACCESS_KEY:-}"
+      }
+    }
+  }
+}

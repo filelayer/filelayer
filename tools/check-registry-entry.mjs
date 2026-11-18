@@ -228,6 +228,62 @@ if (undocumented.length > 0) {
   );
 }
 
+// --- the directory manifests: .mcp.json and .claude-plugin/plugin.json ------
+//
+// Added 18 November 2026 for the agent directories (cursor.directory reads a
+// root `.mcp.json`; a Claude Code plugin reads `.claude-plugin/plugin.json`).
+// They restate the same command and the same version as the registry entry, so
+// they are held to the same documented configuration rather than being a third
+// guess at it.
+const mcpJson = read('.mcp.json');
+const mcpServer = mcpJson?.mcpServers?.filelayer;
+if (!mcpServer) {
+  fail('.mcp.json has no mcpServers.filelayer', 'A client reading the file finds nothing to start.');
+} else {
+  const cfg = documentedClientConfig();
+  if (mcpServer.command !== 'npx') {
+    fail(`.mcp.json command is ${JSON.stringify(mcpServer.command)}`, 'The documented configuration is an `npx` invocation.');
+  }
+  if (cfg.args && JSON.stringify(mcpServer.args) !== JSON.stringify(cfg.args)) {
+    fail(
+      `.mcp.json and ${cfg.where} would run different commands`,
+      `${cfg.where}: ${cfg.args.join(' ')}\n        .mcp.json: ${(mcpServer.args ?? []).join(' ')}`,
+    );
+  }
+  const documented = (npmPkg?.environmentVariables ?? []).map((v) => v.name);
+  const passed = Object.keys(mcpServer.env ?? {});
+  for (const name of ['DATABASE_URL', 'FILELAYER_AS', 'FILELAYER_ORG']) {
+    if (!passed.includes(name)) fail(`.mcp.json does not pass ${name}`, 'The server refuses to start without it.');
+  }
+  for (const name of passed) {
+    if (!documented.includes(name)) fail(`.mcp.json passes ${name}, which server.json does not document`, 'Every variable a client is asked for should be in the registry entry too.');
+  }
+  for (const [name, value] of Object.entries(mcpServer.env ?? {})) {
+    // A literal value would be a credential or a person committed to the
+    // repository. Only references to the caller's own environment belong here.
+    if (!/^\$\{[A-Z0-9_]+(:-[^}]*)?\}$/.test(String(value))) {
+      fail(`.mcp.json sets ${name} to a literal value`, 'Pass it through from the environment, as `${' + name + ':-}`.');
+    }
+  }
+}
+const plugin = read('.claude-plugin/plugin.json');
+if (plugin.version !== pkg.version) {
+  fail(`.claude-plugin/plugin.json version is ${plugin.version}, and this package is ${pkg.version}`, 'A plugin naming another version describes a different release than its skill does.');
+}
+if (plugin.mcpServers !== './.mcp.json') {
+  fail('.claude-plugin/plugin.json does not point mcpServers at ./.mcp.json', 'The plugin would start a server other than the one checked above.');
+}
+for (const dir of plugin.skills ?? []) {
+  try {
+    readFileSync(join(ROOT, dir, 'SKILL.md'), 'utf8');
+  } catch {
+    fail(`.claude-plugin/plugin.json lists ${dir}, which has no SKILL.md`, 'The plugin would install nothing for that entry.');
+  }
+}
+if (!(plugin.skills ?? []).includes('./skills/filelayer-integration')) {
+  fail('.claude-plugin/plugin.json does not include ./skills/filelayer-integration', 'That is the skill the plugin exists to install.');
+}
+
 if (failures > 0) {
   console.error(`\ncheck-registry-entry: ${failures} failure(s).`);
   process.exit(1);
@@ -235,5 +291,5 @@ if (failures > 0) {
 console.log(
   `check-registry-entry: clean. server.json describes ${pkg.name}@${pkg.version} as ` +
     `${server.name}, with ${env.size} documented variable(s) and the same argv ` +
-    `${documentedClientConfig().where ?? 'the documentation'} prints.`,
+    `${documentedClientConfig().where ?? 'the documentation'} prints, as do .mcp.json and the plugin manifest.`,
 );
