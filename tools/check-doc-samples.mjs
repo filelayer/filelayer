@@ -42,14 +42,68 @@
  *       already in the documents; this makes it load-bearing.
  */
 
-import { readFileSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..');
-const OUT = join(ROOT, '.doccheck');
-const CORE_SRC = join(ROOT, 'packages/core/src/index.ts');
+
+// -----------------------------------------------------------------------------
+// --published: THE GUIDES AGAINST WHAT NPM SERVES, not against this checkout.
+// -----------------------------------------------------------------------------
+//
+//     node tools/check-doc-samples.mjs --published          # the version in package.json
+//     node tools/check-doc-samples.mjs --published=0.33.0   # any published version
+//
+// Added 18 November 2026 (D060, amended 15 November: guide code is checked in
+// CI against the published tarball, as the homepage snippet is). The default
+// mode below rewrites `@filelayer/core` to this checkout's source, so a guide
+// that calls API newer than the release a reader installs passes here and
+// fails for them. In this mode the guides' samples are generated into an empty
+// directory where `@filelayer/core@<version>` is installed FROM THE REGISTRY,
+// and import it by its published name, so they resolve the way a reader's do.
+//
+// A version that is not published yet is a release being prepared: there is
+// no tarball to ask, and the run says UNPUBLISHED and passes, the same rule as
+// check-guide-api.mjs. Only the guides are run in this mode; the README and the
+// docs pages stay on the checkout, where check:published and the suite cover
+// the installed package.
+const PUBLISHED_ARG = process.argv.find((a) => a === '--published' || a.startsWith('--published='));
+const PUBLISHED = PUBLISHED_ARG
+  ? PUBLISHED_ARG.includes('=')
+    ? PUBLISHED_ARG.split('=')[1]
+    : JSON.parse(readFileSync(join(ROOT, 'packages/core/package.json'), 'utf8')).version
+  : null;
+
+let OUT = join(ROOT, '.doccheck');
+let CORE_SRC = join(ROOT, 'packages/core/src/index.ts');
+
+if (PUBLISHED) {
+  const view = spawnSync('npm', ['view', `@filelayer/core@${PUBLISHED}`, 'version'], { encoding: 'utf8' });
+  if (view.status !== 0 || view.stdout.trim() !== PUBLISHED) {
+    console.log(
+      `check-doc-samples --published: UNPUBLISHED. @filelayer/core@${PUBLISHED} is not on the registry, ` +
+        'so this is a release being prepared and there is no tarball to run the guides against. ' +
+        'check:docs runs them against the checkout.',
+    );
+    process.exit(0);
+  }
+  OUT = mkdtempSync(join(tmpdir(), 'filelayer-guides-'));
+  writeFileSync(join(OUT, 'package.json'), JSON.stringify({ name: 'guides', private: true, type: 'module' }));
+  // PGlite as the documentation tells a reader to install it.
+  const install = spawnSync(
+    'npm',
+    ['install', '--no-audit', '--no-fund', '--silent', `@filelayer/core@${PUBLISHED}`, '@electric-sql/pglite@^0.3.11'],
+    { cwd: OUT, encoding: 'utf8' },
+  );
+  if (install.status !== 0) {
+    console.error(`check-doc-samples --published: npm install of @filelayer/core@${PUBLISHED} failed\n${install.stderr}`);
+    process.exit(1);
+  }
+  CORE_SRC = '@filelayer/core';
+}
 
 // The guides answer a question somebody actually asks, and the reason they are
 // worth more than a blog post on the same subject is that the code in them runs
@@ -91,7 +145,7 @@ const TOP_DOCS = readdirSync(join(ROOT, 'docs'))
   .sort()
   .map((f) => `docs/${f}`);
 
-const DOCS = ['README.md', ...TOP_DOCS, ...GUIDES];
+const DOCS = PUBLISHED ? GUIDES : ['README.md', ...TOP_DOCS, ...GUIDES];
 
 // -----------------------------------------------------------------------------
 // Parse
@@ -199,8 +253,10 @@ function hoistImports(code, imports) {
 // -----------------------------------------------------------------------------
 // Build + run
 // -----------------------------------------------------------------------------
-rmSync(OUT, { recursive: true, force: true });
-mkdirSync(OUT, { recursive: true });
+if (!PUBLISHED) {
+  rmSync(OUT, { recursive: true, force: true });
+  mkdirSync(OUT, { recursive: true });
+}
 
 let failed = 0;
 const summary = [];
@@ -261,7 +317,7 @@ console.log('OK ${doc}');
 
   const r = spawnSync(process.execPath, ['--experimental-strip-types', file], {
     encoding: 'utf8',
-    cwd: ROOT,
+    cwd: PUBLISHED ? OUT : ROOT,
   });
 
   const ran = samples.length - skipped.length;
@@ -283,8 +339,9 @@ console.log('OK ${doc}');
   for (const s of skipped) summary.push(`      skipped ${doc}:${s.line} — ${s.skip}`);
 }
 
-console.log('\ncheck-doc-samples:');
+console.log(PUBLISHED ? `\ncheck-doc-samples --published (@filelayer/core@${PUBLISHED} from the registry):` : '\ncheck-doc-samples:');
 for (const s of summary) console.log('  ' + s);
 console.log('');
 
+if (PUBLISHED) rmSync(OUT, { recursive: true, force: true });
 process.exit(failed === 0 ? 0 : 1);

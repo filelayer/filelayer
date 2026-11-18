@@ -355,6 +355,14 @@ jobs:
           npm run build
           npm run check:guide-api
 
+      # check:guide-api compares the NAMES a page calls with the published
+      # declarations; this RUNS each guide's samples against the published
+      # tarball, installed from the registry into an empty directory (D060,
+      # amended 15 Nov 2026). An unpublished version, a release being
+      # prepared, is reported as UNPUBLISHED and passes.
+      - name: Every guide's samples run against the published package
+        run: npm run check:guides-published
+
       # The local usage report is the one output meant to leave an adopter's
       # machine, by their hand. Its schema must stay closed, its import graph
       # must contain no socket library, and it must build and validate with
