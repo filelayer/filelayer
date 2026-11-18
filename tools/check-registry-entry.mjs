@@ -26,7 +26,7 @@
  * thing the README does -- two documents, one claim.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -282,6 +282,24 @@ for (const dir of plugin.skills ?? []) {
 }
 if (!(plugin.skills ?? []).includes('./skills/filelayer-integration')) {
   fail('.claude-plugin/plugin.json does not include ./skills/filelayer-integration', 'That is the skill the plugin exists to install.');
+}
+
+// --- context7.json ----------------------------------------------------------
+//
+// Context7 (context7.com) indexes the folders this file names. Its documented
+// limits are 100 characters for the title and 500 for the description, and a
+// folder that does not exist is silently not indexed, so both are checked here.
+const c7 = read('context7.json');
+if (typeof c7.projectTitle !== 'string' || c7.projectTitle.length < 1 || c7.projectTitle.length > 100) {
+  fail('context7.json projectTitle is missing or over 100 characters', 'Context7 rejects it and keeps the generated one.');
+}
+if (typeof c7.description !== 'string' || c7.description.length < 1 || c7.description.length > 500) {
+  fail('context7.json description is missing or over 500 characters', 'Context7 rejects it and keeps the generated one.');
+}
+for (const dir of [...(c7.folders ?? []), ...(c7.excludeFolders ?? []).filter((d) => d !== 'node_modules')]) {
+  if (!existsSync(join(ROOT, dir))) {
+    fail(`context7.json names ${dir}, which does not exist`, 'A folder that is not there is not indexed and not excluded, and nothing says so.');
+  }
 }
 
 if (failures > 0) {

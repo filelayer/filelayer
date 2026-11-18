@@ -42,6 +42,8 @@
 # to the package version.
 !/.mcp.json
 !/.claude-plugin/
+# Context7's index configuration: which documentation folders it reads.
+!/context7.json
 !/skills/
 
 !/examples/
