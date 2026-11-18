@@ -370,6 +370,12 @@ jobs:
       - name: No runtime is claimed without a CI job that runs it
         run: npm run check:runtime-claims
 
+      # claude-plugin/ is what the Claude plugin directory scans: the skill's
+      # .md and .json files, the manifest without mcpServers, and the icon.
+      # It is generated, so a hand edit or a skill change not copied over fails.
+      - name: The plugin directory's copy matches the skill
+        run: npm run check:plugin-folder
+
       # The local usage report is the one output meant to leave an adopter's
       # machine, by their hand. Its schema must stay closed, its import graph
       # must contain no socket library, and it must build and validate with

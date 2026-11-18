@@ -42,6 +42,10 @@
 # to the package version.
 !/.mcp.json
 !/.claude-plugin/
+# The copy for the Claude plugin directory, which scans the whole folder it is
+# given: the manifest without mcpServers, the icon and the skill's .md and
+# .json files only. tools/plugin-folder.mjs keeps it identical to its sources.
+!/claude-plugin/
 # Context7's index configuration: which documentation folders it reads.
 !/context7.json
 !/skills/

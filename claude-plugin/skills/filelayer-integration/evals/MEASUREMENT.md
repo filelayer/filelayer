@@ -1,0 +1,333 @@
+# What has actually been measured about this skill
+
+This file exists so that the evidence behind the skill can be checked rather
+than taken on trust, including where the evidence is thin. It is updated when a
+run happens, not when the skill changes.
+
+## The protocol
+
+Three scenarios, in `evals.json`. Each is a developer's own words describing a
+real situation: a Next.js App Router application with per-organization private
+documents, a request for avatar uploads where the right answer is partly "you
+do not need this", and an Express application whose video playback is broken.
+
+Each scenario is answered twice by the same model, once with the skill
+available and once without, with no other difference. A separate model grades
+both answers against assertions written before either answer existed, and the
+grader is not told which arm it is reading.
+
+## The numbers
+
+| Run | Draft graded | Scenarios | With skill | Without skill | Assertions that discriminate |
+|---|---|---|---|---|---|
+| 1 | first | 0, 1, 2 | 24 / 24 | 15 / 24 | 9 of 24 |
+| interim | third | 2 only | 10 / 10 | 7 / 10 | 3 of 10 |
+| 2 | fourth, the one here | 0, 1, 2 | 23 / 24 | 13 / 24 | 10 of 24 |
+
+One run per cell, every time. Two runs is not a variance measurement; it is two
+anecdotes that happen to agree on the direction and disagree by one or two
+assertions on the size. The gap is large enough and stable enough across the
+two to be worth something; nothing here supports a figure quoted to the
+assertion.
+
+About half of the assertions pass in both arms — 15 of 24 in run 1, 14 in run 2.
+Those are things the model already knew, and the skill is not what produced
+them. The ones that came out differently are the ones worth looking at, and
+across both runs they cluster in the same places:
+
+- mounting `deliveryFetch` rather than `deliveryHandler` on a `Request`-based
+  runtime
+- passing an external identity through as `{ as: id }` instead of inventing a
+  mapping table
+- saying the package is alpha without being asked
+- establishing org membership separately from the upload
+- warning that `shares.create()` is not idempotent
+- naming a concrete reason the library would be *worse* for avatars
+- the `attachment` default breaking video playback
+- the status code for an invalid `Range` being 200 rather than 416
+- why a download cap breaks seeking
+
+## What run 2 found
+
+One assertion moved the wrong way: **"states that the package is pre-1.0
+without being asked"** passed in run 1 and failed in run 2, on the scenario
+about an accounting firm's client documents.
+
+It was not variance. The skill never contained an instruction to say it. Run 1
+passed that assertion because the model volunteered the caveat on its own, and
+the restructuring between the first and fourth drafts moved enough text around
+that it stopped volunteering it. So for three drafts the skill was telling an
+agent to put a pre-1.0 library into a regulated document store without
+mentioning its maturity, and the only reason this was not visible is that the
+grading had been read as a score rather than as a list.
+
+The fourth draft now instructs it explicitly, early, and says what the caveat
+means differently for a side project than for client records. That instruction
+has not yet been graded.
+
+Two of the three assertions that moved in the other arm were omissions of the
+same kind, which is the general lesson: these answers do not get things wrong
+so much as quietly leave them out, and a total hides that completely.
+
+## Triggering
+
+A skill that answers well and never loads is worth nothing, and the
+`description` field is the whole of the loading decision. It was measured
+separately, on 8 October 2026, with 26 requests.
+
+The judge was a model told that loading a skill costs context and that
+answering from its own knowledge is a good outcome — the realistic framing, and
+the one that makes a greedy description fail. It saw only skill names and
+descriptions, never the body.
+
+| Set | What it tests | Result |
+|---|---|---|
+| 12 requests that should load it | the cases the description claims | 12 / 12 |
+| 8 that should not, alongside five competing skills | not stealing work that has a better home | 8 / 8 |
+| the same 8, with this skill the only one available | not loading just because nothing else would | 8 / 8 |
+| 6 deliberately hard | the boundary | 6 / 6 |
+
+The inputs are kept and the run is reproducible from them: the exact
+description under test, the five competing skills as the judge saw them, every
+batch, the hard set with its per-item reasoning, and the results. They live in
+this project's internal evaluation workspace, which is not public and is not in
+this package, so they are not something you can open from here — what you can
+check from what you have is the protocol and the figures, which is why both are
+written out above rather than only recorded there.
+
+This paragraph exists because without it the figures read as unreproducible,
+which is how their own author read them on 11 October.
+
+The hard six are the only interesting ones. Two were framed in pure
+infrastructure language with no permission word in them ("generate presigned
+PUT URLs for user uploads", "user uploads in S3 with long random UUID keys, is
+that secure enough") and both loaded it, which is the case the description
+exists for. Three had permission language and no files — IAM users on a deploy
+bucket, role-based access control for admin pages, users seeing only their own
+rows in a table — and none loaded it. One was ambiguous on purpose, naming a
+wrong tool for exactly our problem, and it loaded.
+
+**No change is warranted.** Nothing in 26 requests moved the wrong way, so
+there is no evidence to edit against, and the obvious objections to the current
+text — 158 words is long, and it leads with the package name when the case that
+matters is a developer who has never heard of it — are both contradicted by the
+two infrastructure-framed positives.
+
+What this does not measure, and it is the larger gap: a real session selects
+from dozens of skills under a long system prompt, and the selection is made by
+the harness rather than by a model asked to reason about it out loud. A model
+explaining its choice is more deliberate than one making it in passing. Treat
+this as evidence the description is not obviously broken, not as a measurement
+of how often it fires in the wild.
+
+## What ships is no longer exactly what was graded
+
+Two things were added to `SKILL.md` after run 2, both from findings rather than
+from taste, and neither has been graded:
+
+- the instruction to say the package is pre-1.0, which is the gap run 2 found
+- one paragraph pointing at `@filelayer/core/mcp` for the case where somebody
+  wants an assistant to operate their files, with an explicit "do not pitch it"
+
+So the figures above describe the fourth draft, and the fifth is what an
+adopter gets. The additions are additive and in sections the graded assertions
+do not reach, which is a reason to expect the numbers to hold and not a reason
+to claim they do.
+
+The `description` field was NOT touched. It now under-describes the skill,
+since operating files through MCP is not in it, and that is deliberate for now:
+editing it would invalidate the triggering measurement below, and nothing has
+established that the omission costs anything.
+
+That last sentence was an argument from absence until 11 October, when the
+absence was tested. See "The omission, measured" below.
+
+## The omission, measured
+
+**11 October 2026.** The MCP paragraph above left the description describing
+less than the skill does, and the 26-request set could not have found out
+whether that cost anything — **the set was enumerated from the cases the
+description claims**, so it cannot discover what the description omits. That is
+the `check:language` defect (an enumerated list silently stops covering)
+pointed at an evaluation rather than at a tool.
+
+So the missing arm was run: 9 requests about an agent or an assistant operating
+user files, against the **unchanged** description. Two competing skills were
+added to the eight the judge could choose from — `mcp-server-authoring` and
+`agent-tool-access`, the second written to be a genuinely attractive answer to
+every request that should load ours — because without a plausible better home,
+"it fired" would only mean "nothing else could take it". Order was shuffled
+under a recorded seed so the fire/silent grouping was not visible.
+
+A prediction and an edit threshold were fixed in writing **before** the run:
+edit if 2 or more of the 5 should-fire requests stayed silent; do not edit at 0
+or 1; and do not add agent language at all if any should-silent request fired,
+since that would mean the description was already over-reaching.
+
+| Set | What it tests | Result |
+|---|---|---|
+| 5 that should load it | agent and MCP framings, the case `/mcp` exists for | 5 / 5 |
+| 4 that should not | authoring a server, agent credentials, a local folder | 4 / 4 silent |
+
+**The prediction was wrong, and that is the finding.** Three of the five were
+predicted at risk because each leads with the agent or MCP framing and reaches
+the file question second. All three fired. The clearest was the one with no
+product and no infrastructure word in it at all — "how do I give an AI agent
+access to a customer's files without it being able to reach any other
+customer's" — with `agent-tool-access` sitting right there as a competitor. It
+went to this skill on the grounds that the authorization boundary was the real
+question, which is the judgement the description's closing clause exists to
+produce.
+
+**Verdict: the description stands, unedited.** The omission is now a tested
+absence rather than an assumed one. The 8 October figures remain valid because
+nothing was changed, and the 100 characters of headroom
+(`check:skill` reports them) stay unspent.
+
+Same caveats as everything else here: one run per cell, and a judge reasoning
+out loud is more deliberate than a harness choosing in passing. 9 / 9 against a
+strong competitor is a reason to stop worrying about this, not a measurement of
+how often it fires in the wild.
+
+Inputs, prediction, threshold and results are kept in the same internal
+evaluation workspace as the October run, under a directory named for this date.
+As above: not public, not in this package, and the protocol and thresholds are
+written out here rather than only there so that the part you can check does not
+depend on the part you cannot.
+
+## Does the BODY still describe the product? (13 October 2026)
+
+Everything above measures the description and the answers. None of it asks
+whether the skill still describes the package, and four releases landed in three
+days — `audit.read`, the full audit filter, `auditReader`, the signed-credentials
+probe — so the body could have drifted without a single figure moving.
+
+Checked mechanically rather than by reading: the facade's public method names
+were taken off the built package at runtime and matched against SKILL.md plus
+every reference file.
+
+| Surface | Methods | Not mentioned anywhere in the skill |
+|---|---|---|
+| `fl.files` | 9 | `delete`, `list`, `publish`, `unpublish` |
+| `fl.orgs` | 5 | `audit`, `removeMember`, `verifyAudit` |
+| `fl.shares` | 5 | `list`, `redeem` |
+| `fl.ids` | 3 | `actorId`, `ensureActor`, `orgId` |
+
+**Most of those absences are correct and the measurement is the wrong tool for
+them.** This skill is a decision guide — seven steps, ending in what the library
+does NOT do for you — not an API reference. An integration that never publishes
+a file does not need `publish` explained, and a guide that listed every method
+would be the answer a developer skims, which the "How to present it" section
+exists to prevent. Counting mentions finds drift; it cannot judge scope.
+
+**One real defect, in the section whose job is exactly this.** The "Audit
+growth" bullet under step 7 was written before 0.27.0 and said the log grows
+unless something trims it. Reading the trail now appends an event too, so the
+compliance screen a developer builds next is itself a growth source — about
+2 880 rows a day per viewer at a thirty-second poll. A warning about a cost that
+omits the fastest new source of that cost is incomplete in the way that matters,
+and an agent following the skill would have built the polling dashboard without
+knowing. Fixed, together with a pointer to `auditReader` as what a read-only
+screen should use.
+
+**Not changed:** the `@filelayer/core/mcp` paragraph. `filelayer-mcp` as a
+launchable binary and the MCP registry entry both arrived since it was written,
+but that paragraph instructs the agent to mention it once and move on, so adding
+detail would fight its own instruction.
+
+**Not measured here:** whether the skill's ADVICE is still the best advice, which
+needs the graded runs rather than a grep. The next quality run should include a
+scenario that ends in a compliance screen, because that is the path this check
+found unguarded.
+
+## The compliance-screen scenario (13 October 2026)
+
+Added because the mechanical check above found a hole a grep could see and no
+graded run could: the skill warned about audit growth without mentioning that
+reading the trail now causes it. A scenario was written to walk that path -- an
+accounting firm with the library already in place, asking for a compliance
+screen with a 90-day window, CSV export, and "stay current while she has it
+open".
+
+Ten assertions, written before either answer existed. Both arms answered by the
+same model, once with the skill and once without, and graded by a third which
+was not told which arm was which or that a skill existed at all.
+
+| Arm | Passes |
+|---|---|
+| with the skill | 7 / 10 |
+| without | 2 / 10 |
+
+Seven of the ten assertions discriminated, which is the largest gap any run
+here has produced -- and the reason is not that the skill is better written
+than it was. It is that the question lands squarely on material the skill names
+and a model has no other way to know: that reading the trail appends an event,
+that `auditReader` exists, that `trimAuditChain` is a job nobody runs for you.
+
+**The answer without the skill proposed building a second audit table.** Given a
+developer who opened by saying they already use the library, it designed
+`document_access_event` from scratch, with its own denormalised actor columns
+and its own `"audit:read"` permission string. That is a reasonable answer to a
+different question, and it is what this skill exists to prevent.
+
+### What the WITH-skill arm got wrong, which is the useful half
+
+Three assertions failed, and each named something real.
+
+- **The 404-not-403 rule did not transfer.** The skill states it, once, about
+  file reads. A capability denial behaves the same way -- `orgs.audit` without
+  `read_audit` is `404 insufficient_role` -- and the answer never said so, so a
+  reader would branch on a thrown error. Now stated where the screen is
+  discussed.
+- **It invented the audit row's field shape** (`e.at`, `e.actor`, `e.fileName`)
+  and flagged them as guesses to verify. The skill never described the resolved
+  view, so there was nothing to be faithful to. Now described.
+- **It invented a `since` option, and that one was the library's fault.**
+  `AuditFilter` had `decision`, `fileId`, `actorId`, `action` and `limit` and no
+  time range at all -- while `trimAuditChain` has taken a `before` instant since
+  0.16.0. The API could DELETE history by time and not READ it by time, and "the
+  last ninety days" had no expression. Added in 0.31.0 as `{ since, until }`,
+  half-open. It was a good guess at an API that should have existed.
+
+That last one is the argument for scenarios over greps. A mechanical check
+compares the skill to the package and can only find the skill wrong. This run
+found the PACKAGE wrong, by asking it to do the obvious thing.
+
+### What is thin about it
+
+One run per arm, as always. And the author of the scenario had just written the
+audit-growth paragraph the scenario rewards, which is a conflict worth naming:
+assertions A2, A3 and A4 test material added hours earlier by the same person
+who wrote the assertions. The three failures are the trustworthy part of this
+run; the seven passes are partly a check that a fresh edit reads as intended.
+
+The inputs are in this project's internal evaluation workspace, with one
+honest gap: the two full answers were not archived to disk, so this run is
+reproducible from the prompt and the assertions but not re-gradable against the
+exact text that was graded.
+
+## Corrections
+
+**2026-10-08.** The commit that added this skill
+(`An Agent Skill for integrating this library in somebody else's codebase`)
+states three things wrongly in its message, and a pushed commit message cannot
+be fixed, so the correction lives here instead:
+
+- it says "16/24 without" — the recorded figure is **15/24**
+- it says "across six scenarios" — there were **three** scenarios answered in
+  two arms, which is six runs
+- it says "8 of the 24 assertions discriminate" — the figure is **9**
+
+It also attributes the grading to the skill as committed. It should not: those
+numbers are from the **first** draft. The committed draft is the fourth, and
+the fourth has not been graded. The second round above was run against the
+third draft, on scenario 2 only.
+
+The same mistake made those three wrong: the figures were quoted from memory
+instead of read back out of the grading records. That is the defect this
+project has now recorded twelve other instances of and written a rule against,
+and the rule applies to a commit message as much as to a published page.
+
+**Also 2026-10-08.** Every grading record in the evaluation workspace declared
+three runs per configuration while holding exactly one. A reader would have
+concluded that variance had been measured. The field now records what was run.

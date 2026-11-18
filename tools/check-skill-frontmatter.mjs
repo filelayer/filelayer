@@ -149,7 +149,24 @@ for (const dir of dirs) {
       );
       continue;
     }
-    const [, key, value] = kv;
+    const [, key, rawValue] = kv;
+    // A YAML plain scalar cannot contain ": " or " #", nor start with one of
+    // YAML's indicator characters: a strict loader rejects it or reads a
+    // different value, and the skill directory's validator warns about it.
+    // Found 18 Nov 2026, when the description gained a colon. Quote it.
+    let value = rawValue.trim();
+    if (value.startsWith('"')) {
+      try {
+        value = JSON.parse(value);
+      } catch {
+        fail(`skills/${dir}: \`${key}\` opens a double-quoted string that does not close cleanly`, JSON.stringify(rawValue.slice(0, 80)));
+      }
+    } else if (/: |\s#/.test(value) || /^[&*!|>'%@`{}\[\],?-]/.test(value)) {
+      fail(
+        `skills/${dir}: \`${key}\` is an unquoted YAML value that contains ": ", " #" or starts with an indicator`,
+        'Put it in double quotes. A strict YAML loader refuses it or reads something else.',
+      );
+    }
     if (fields.has(key)) {
       fail(
         `skills/${dir}: frontmatter defines \`${key}\` twice`,
@@ -157,7 +174,7 @@ for (const dir of dirs) {
           '        someone will keep editing with no effect.',
       );
     }
-    fields.set(key, value.trim());
+    fields.set(key, value);
     if (!KNOWN.has(key)) {
       fail(
         `skills/${dir}: unknown frontmatter key \`${key}\``,

@@ -77,7 +77,8 @@
     "**/skills/*/SKILL.md",
     "**/skills/*/references/*.md",
     "**/skills/*/evals/*.md",
-    "**/skills/*/evals/*.json"
+    "**/skills/*/evals/*.json",
+    "claude-plugin/README.md"
   ],
   "includeNote": [
     "`include` is the surface a stranger reads: everything in the npm tarball,",
@@ -128,6 +129,12 @@
       "term": "ambiguous-auditor",
       "lineContains": "share a specific document with an external auditor",
       "why": "The shipped copy of the line above; check:copies keeps the two byte-identical."
+    },
+    {
+      "file": "claude-plugin/skills/filelayer-integration/evals/evals.json",
+      "term": "ambiguous-auditor",
+      "lineContains": "share a specific document with an external auditor",
+      "why": "The Claude plugin directory's copy of the line above; check:plugin-folder keeps it byte-identical."
     }
   ],
   "notScanned": [
