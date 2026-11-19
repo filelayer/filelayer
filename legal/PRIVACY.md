@@ -6,6 +6,13 @@ not cover the files your applications store with the Filelayer library: the
 library runs on your own database and your own storage bucket, and we never
 receive that data.
 
+The library, the Agent Skill, the Claude Code plugin and the `filelayer-mcp`
+server run on your own machines and infrastructure. They do not collect, store
+or send any data to us. The only network requests they make go to the S3 or R2
+endpoint you configure, with the credentials you give them, which are used for
+your own bucket and nothing else; starting the server with `npx` also downloads
+the package from the npm registry.
+
 
 ## 1. Who is responsible
 
