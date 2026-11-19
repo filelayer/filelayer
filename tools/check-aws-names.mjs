@@ -68,10 +68,23 @@ export function check(files, s3Known) {
   return problems;
 }
 
+// A red caused by the network must not read like a misspelt name: 15 s per
+// attempt, one retry, and then a message that says which it was.
 async function s3Reference() {
-  const res = await fetch(S3_REFERENCE);
-  if (!res.ok) throw new Error(`${S3_REFERENCE} answered ${res.status}`);
-  const d = await res.json();
+  let last;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch(S3_REFERENCE, { signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) throw new Error(`answered ${res.status}`);
+      return toSet(await res.json());
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw new Error(`AWS reference unreachable (${S3_REFERENCE}, 2 attempts of 15 s): ${last?.message ?? last}`);
+}
+
+function toSet(d) {
   return new Set([
     ...d.Actions.map((a) => `s3:${a.Name}`.toLowerCase()),
     ...d.ConditionKeys.map((c) => c.Name.toLowerCase()),
@@ -82,7 +95,7 @@ let s3Known;
 try {
   s3Known = await s3Reference();
 } catch (e) {
-  console.error(`check-aws-names: could not read AWS's service reference: ${e.message}\n  This check needs the network; it does not fall back to a list of its own.`);
+  console.error(`check-aws-names: ${e.message}\n  This is a network failure, not a misspelt name. The check needs AWS's reference and does not fall back to a list of its own.`);
   process.exit(2);
 }
 
