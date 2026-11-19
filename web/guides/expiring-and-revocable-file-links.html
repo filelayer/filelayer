@@ -102,7 +102,7 @@
 <tbody><tr><td>Delete the object</td><td>Kills the file, for everyone, permanently</td></tr>
 <tr><td>Change the bucket policy to deny</td><td>Affects every caller the policy matches</td></tr>
 <tr><td>Deactivate the signing credential</td><td>Invalidates <strong>every URL that credential ever signed</strong></td></tr>
-<tr><td>Add an <code>aws:signatureAge</code> condition</td><td>Expires links by age across the bucket; still not per-link</td></tr></tbody>
+<tr><td>Add an <code>s3:signatureAge</code> condition</td><td>Expires links by age across the bucket; still not per-link</td></tr></tbody>
 </table></div>
 <p>AWS states it plainly: a presigned URL expires when the credential used to create it is revoked, deleted or deactivated — which is the whole credential, not the one link.</p>
 <p>Two more things that surprise people, both worth knowing before you design around presigned URLs:</p>

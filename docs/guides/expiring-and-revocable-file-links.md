@@ -40,7 +40,7 @@ early are:
 | Delete the object | Kills the file, for everyone, permanently |
 | Change the bucket policy to deny | Affects every caller the policy matches |
 | Deactivate the signing credential | Invalidates **every URL that credential ever signed** |
-| Add an `aws:signatureAge` condition | Expires links by age across the bucket; still not per-link |
+| Add an `s3:signatureAge` condition | Expires links by age across the bucket; still not per-link |
 
 AWS states it plainly: a presigned URL expires when the credential used to
 create it is revoked, deleted or deactivated — which is the whole credential,
