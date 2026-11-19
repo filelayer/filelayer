@@ -14,8 +14,9 @@ from `node_modules/@filelayer/core/skills/` instead.
 
 The skill, the library and its MCP server run on your own machines and
 infrastructure. They do not collect, store or send any data to Filelayer. The
-only network requests they make go to the S3 or R2 endpoint you configure, and
-the S3 credentials you set are used for your own bucket and nothing else.
+only network connections they make are to the Postgres database and the S3 or
+R2 endpoint you configure, and the credentials you set are used for your own
+database and bucket and nothing else.
 
 The library is Apache-2.0: https://github.com/filelayer/filelayer. This folder is
 generated from the repository's `skills/filelayer-integration` by

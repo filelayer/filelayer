@@ -376,6 +376,12 @@ jobs:
       - name: The plugin directory's copy matches the skill
         run: npm run check:plugin-folder
 
+      # legal/PRIVACY.md says the library talks only to the database and the
+      # bucket you configure. This holds it to that: no network module, and
+      # every fetch traced back to the configured S3 endpoint.
+      - name: The library sends nothing anywhere but your database and bucket
+        run: npm run check:no-phone-home
+
       # The local usage report is the one output meant to leave an adopter's
       # machine, by their hand. Its schema must stay closed, its import graph
       # must contain no socket library, and it must build and validate with
