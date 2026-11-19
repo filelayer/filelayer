@@ -382,6 +382,12 @@ jobs:
       - name: The library sends nothing anywhere but your database and bucket
         run: npm run check:no-phone-home
 
+      # A guide told readers to add `aws:signatureAge`; the key is
+      # `s3:signatureAge`. Every s3: and aws: name on a public page is checked
+      # against AWS's own service reference and global key list.
+      - name: Every AWS action and condition key on a public page exists
+        run: npm run check:aws-names
+
       # The local usage report is the one output meant to leave an adopter's
       # machine, by their hand. Its schema must stay closed, its import graph
       # must contain no socket library, and it must build and validate with
