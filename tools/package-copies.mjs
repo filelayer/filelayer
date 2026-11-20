@@ -259,6 +259,16 @@ export const COPIES = [
     versionStamp: null,
   },
   {
+    file: 'docs/guides/soc2-file-access-evidence.md',
+    why: 'the guide to what a SOC 2 auditor asks about file access, and which records answer it.',
+    versionStamp: null,
+  },
+  {
+    file: 'docs/guides/soc2-file-access-evidence.proof.mjs',
+    why: 'the script that runs the guide and prints the audit lines it quotes.',
+    versionStamp: null,
+  },
+  {
     file: 'docs/guides/background-jobs-for-user-files.md',
     why:
       'the eighth guide: the operational half of a file feature, where every ' +

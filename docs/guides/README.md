@@ -126,6 +126,17 @@ than failing.
 
 → [`erasing-a-user-with-an-append-only-audit-log.proof.mjs`](erasing-a-user-with-an-append-only-audit-log.proof.mjs)
 
+### [SOC 2 and file access: what to show a compliance auditor](soc2-file-access-evidence.md)
+
+The Trust Services Criteria behind the questions (CC6.1, CC6.2, CC6.3, CC7.2),
+what a compliance auditor samples for each, and which records answer them: refused reads
+with their reason, grants and removals with the person who made them, and a
+chain that shows the log was not edited. It also says what no library gives
+you: **neither Filelayer nor an application that uses it is SOC 2 compliant
+because of it**, and access that bypasses the library is recorded by nothing.
+
+→ [`soc2-file-access-evidence.proof.mjs`](soc2-file-access-evidence.proof.mjs)
+
 ### [What background jobs does a file feature need, and did they run?](background-jobs-for-user-files.md)
 
 Four jobs. Writing them is a morning; the problem is that **every one of them
@@ -158,6 +169,7 @@ node docs/guides/revoking-delegated-access.proof.mjs
 node docs/guides/tamper-evident-file-audit.proof.mjs
 node docs/guides/background-jobs-for-user-files.proof.mjs
 node docs/guides/erasing-a-user-with-an-append-only-audit-log.proof.mjs
+node docs/guides/soc2-file-access-evidence.proof.mjs
 ```
 
 The last one needs no PostgreSQL server at all: it runs the database in-process

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: docs/guides/soc2-file-access-evidence.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>SOC 2 and file access: what to show a compliance auditor · Filelayer</title>
+<meta name="description" content="A SOC 2 report does not certify a library, and nothing on this page makes an application compliant. Using Filelayer does not make your application SOC 2 compliant, and Filelayer is not…">
+
+<link rel="canonical" href="https://filelayer.dev/guides/soc2-file-access-evidence">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/guides/soc2-file-access-evidence">
+<meta property="og:title" content="SOC 2 and file access: what to show a compliance auditor">
+<meta property="og:description" content="A SOC 2 report does not certify a library, and nothing on this page makes an application compliant. Using Filelayer does not make your application SOC 2 compliant, and Filelayer is not…">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer: the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SOC 2 and file access: what to show a compliance auditor">
+<meta name="twitter:description" content="A SOC 2 report does not certify a library, and nothing on this page makes an application compliant. Using Filelayer does not make your application SOC 2 compliant, and Filelayer is not…">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "SOC 2 and file access: what to show a compliance auditor",
+  "description": "A SOC 2 report does not certify a library, and nothing on this page makes an application compliant. Using Filelayer does not make your application SOC 2 compliant, and Filelayer is not…",
+  "url": "https://filelayer.dev/guides/soc2-file-access-evidence",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.35.4"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Technology Pro Bono S.L."
+  },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/quickstart">Quickstart</a>
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>SOC 2 and file access: what to show a compliance auditor</h1>
+<p>A SOC 2 report does not certify a library, and nothing on this page makes an application compliant. Using Filelayer does not make your application SOC 2 compliant, and Filelayer is not SOC 2 compliant itself: it is a library you run, not a service with a report. What it can do is produce evidence, and that is what this page is about: which questions about file access a compliance auditor asks, and which records you can hand over in answer.</p>
+<p>The questions come from the AICPA Trust Services Criteria. The criteria are fixed; the controls that meet them are written by each organization, and the compliance auditor tests how those controls are designed and whether they operate. So the mapping below is from a criterion to the evidence a control of yours can point at. It is not a list of controls you get for free.</p>
+<hr>
+<h2 id="the-short-answer">The short answer</h2>
+<div class="table-scroll"><table>
+<thead><tr><th>Criterion, in plain words</th><th>What the compliance auditor asks for</th><th>What Filelayer records</th></tr></thead>
+<tbody><tr><td><strong>CC6.1</strong> Access to data is restricted by logical access security</td><td>Show that a user can reach only the files they are allowed to</td><td>One authorization function decides every read; a refused read is a <code>404</code> and an audit event with its reason</td></tr>
+<tr><td><strong>CC6.2</strong> Users are registered and authorized before they get access</td><td>Show who was given access, by whom, and when</td><td><code>member.add</code> and <code>grant.create</code> events, with the person who acted and, for a role change, <code>fromRole</code> and <code>toRole</code></td></tr>
+<tr><td><strong>CC6.3</strong> Access is changed and removed based on documented requests</td><td>Show that removed access is actually gone</td><td><code>member.remove</code> and <code>grant.revoke</code> events, and the next read by that person refused with <code>grant_revoked</code></td></tr>
+<tr><td><strong>CC7.2</strong> The system is monitored for anomalies</td><td>Show refused attempts, not only successful ones</td><td>Every denial is an event: <code>no_membership</code>, <code>insufficient_role</code>, <code>grant_revoked</code>, and others</td></tr>
+<tr><td>Evidence integrity, asked under several criteria</td><td>Show that the log was not edited</td><td>A hash chain per organization, and <code>verifyAudit()</code> that replays it</td></tr></tbody>
+</table></div>
+<hr>
+<h2 id="access-is-decided-in-one-place-and-refusals-are-recorded">Access is decided in one place, and refusals are recorded</h2>
+<p>The usual answer to &quot;how do you restrict access to customer files?&quot; is a list of route handlers, each with its own check. A compliance auditor has to take the list on trust, because a route that forgot its check looks exactly like one that did not need it.</p>
+<p>Filelayer answers every access question with one function, and writes the decision to the audit trail in the same transaction as the decision. That includes the refusals:</p>
+<pre><code class="lang-ts">import { Filelayer } from '@filelayer/core';
+const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });
+
+await fl.orgs.create('acme', { owner: 'alice' });
+await fl.orgs.setRole('acme', 'bob', 'member', { as: 'alice' });
+await fl.orgs.create('globex', { owner: 'eve' });
+const { id } = await fl.files.put(new TextEncoder().encode('payroll'), {
+  org: 'acme', owner: 'alice', name: 'payroll.csv',
+});
+
+await fl.files.get(id, { as: 'bob' }).catch((e) =&gt; e.status);   // 404: private, and bob is only a member
+await fl.files.get(id, { as: 'eve' }).catch((e) =&gt; e.status);   // 404: another tenant</code></pre>
+<p>The audit trail for <code>acme</code> then reads, one line per decision (as printed by <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/soc2-file-access-evidence.proof.mjs" rel="noopener"><code>soc2-file-access-evidence.proof.mjs</code></a>, which runs this page's code):</p>
+<pre><code class="lang-text">alice member.bootstrap allow @acme
+alice member.add allow @acme
+alice file.create allow payroll.csv @acme
+bob file.read deny:insufficient_role payroll.csv @acme
+eve file.read deny:no_membership payroll.csv @acme</code></pre>
+<p>The caller gets a <code>404</code> in both refusals, so a stranger cannot learn that the file exists. The reason is in the trail, where the compliance auditor reads it.</p>
+<hr>
+<h2 id="granting-and-removing-access-leaves-a-record-of-both">Granting and removing access leaves a record of both</h2>
+<p>CC6.2 and CC6.3 are about the lifecycle of access: who was given it, on what authority, and whether it was taken away when it should have been. The evidence a compliance auditor samples is usually a request in a ticket and the change it caused. The trail gives you the second half, with the person who made the change:</p>
+<pre><code class="lang-ts">await fl.shares.create(id, { as: 'alice', withUser: 'bob', expiresIn: 3600 });
+await fl.files.get(id, { as: 'bob' });                            // allowed, while the grant lives
+await fl.shares.unshare(id, { as: 'alice', user: 'bob' });
+await fl.files.get(id, { as: 'bob' }).catch((e) =&gt; e.status);    // 404, on the next request
+await fl.orgs.removeMember('acme', 'bob', { as: 'alice' });</code></pre>
+<pre><code class="lang-text">alice file.share allow payroll.csv @acme
+alice grant.create allow payroll.csv @acme
+bob file.read allow payroll.csv @acme
+alice file.share allow payroll.csv @acme
+alice file.share allow payroll.csv @acme
+alice grant.revoke allow payroll.csv @acme
+bob file.read deny:grant_revoked payroll.csv @acme
+alice member.remove allow @acme</code></pre>
+<p><code>file.share</code> is the check that alice may share the file, made on every sharing call; <code>grant.create</code> and <code>grant.revoke</code> are the changes themselves. The last two lines matter most to a CC6.3 test. The removal is recorded, and the first attempt after it is recorded as refused, with the reason. A membership event also carries <code>fromRole</code>, <code>toRole</code> and the person changed in its <code>context</code>, so a role change can be sampled without a second system.</p>
+<p>Grants can carry an expiry, and a link can carry a download cap. Both are enforced on every request, so an access review can rely on an expired grant being inert rather than on someone remembering to remove it.</p>
+<hr>
+<h2 id="showing-that-the-record-was-not-edited">Showing that the record was not edited</h2>
+<p>A compliance auditor who receives an export of a log table will ask how you know nobody changed it. A table that anyone with database access can <code>UPDATE</code> has no answer. Filelayer chains each event to the previous one by hash, per organization, and <code>verifyAudit()</code> replays the chain:</p>
+<pre><code class="lang-ts">const result = await fl.orgs.verifyAudit('acme', { as: 'alice' });
+// { valid: true, attestedGaps: 0, trims: [], seals: [], ... }</code></pre>
+<p>An edited, inserted or reordered event breaks the replay. Removal of the most recent events is a different case, and it is the one limit to state in your control description: see <a href="/guides/tamper-evident-file-audit">How do I prove who accessed a file?</a> for what the chain detects, what seals add, and what neither can.</p>
+<p>Reading the trail is itself a decision and is itself recorded (<code>audit.read</code>). Only an organization's admins and owners can read it.</p>
+<hr>
+<h2 id="retention-and-erasure-inside-a-retained-log">Retention, and erasure inside a retained log</h2>
+<p>A retention period is a control you write; the trail has to be able to keep to it. <code>runMaintenance()</code> runs <code>audit_trim</code> for events past your retention period, and a trim is recorded in the chain, so <code>verifyAudit()</code> reports it rather than reporting a break. Erasing one person's events, when a privacy request requires it, leaves an attested gap that verification counts: see <a href="/guides/erasing-a-user-with-an-append-only-audit-log">How do I delete a user's data when my audit log is append-only?</a>.</p>
+<hr>
+<h2 id="checking-your-own-integration-not-ours">Checking your own integration, not ours</h2>
+<p>Evidence from a library's test suite says the library works. A compliance auditor tests your system. <code>auditIntegration()</code> takes callbacks written against your own routes and checks, against your running application, that an owner can read their file, that a stranger is refused with a <code>404</code>, that an anonymous caller is refused, and that an identity your application has never seen is refused rather than treated as anonymous. Its report is something you can keep with your control evidence.</p>
+<hr>
+<h2 id="what-this-does-not-give-you">What this does not give you</h2>
+<ul><li><strong>Compliance.</strong> Neither Filelayer nor an application that uses it is SOC 2 compliant because of it. Compliance is the opinion a compliance auditor gives about your controls, across far more than file access.</li>
+<li><strong>A record of access that bypasses the library.</strong> Filelayer decides for calls made through it. A direct <code>SELECT</code> against its tables, or a read straight from the bucket, is checked by nothing and recorded by nothing. Your database and bucket access controls are separate controls, and your bucket must be private.</li>
+<li><strong>Authentication.</strong> Filelayer is told who the caller is. Whether that is true is your identity provider's control.</li>
+<li><strong>An independent review.</strong> Nobody outside the project has reviewed Filelayer's authorization engine or its audit chain. The trust page says so.</li></ul>
+<hr>
+<h2 id="related">Related</h2>
+<ul><li><a href="/guides/tamper-evident-file-audit">How do I prove who accessed a file?</a>: the hash chain, its limits, and retention</li>
+<li><a href="/guides/expiring-and-revocable-file-links">How do I make a file link that expires, and that I can take back?</a></li>
+<li><a href="/guides/multi-tenant-file-access">How do I do multi-tenant file access control?</a></li></ul>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/soc2-file-access-evidence.md" rel="noopener"><code>docs/guides/soc2-file-access-evidence.md</code></a>
+    in a public repository. The TypeScript on this page is executed by CI on every commit; a sample that stops working fails the build.
+  </p>
+  <p>
+    <a href="/quickstart">Quickstart</a> ·
+    <a href="/guides/">All guides</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="/trust">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.35.4, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

@@ -122,6 +122,9 @@
 <p>Every published answer is about rows — encrypt per subject and destroy the key, blank the personal columns. <strong>None is about files</strong>, where the bytes live outside the database and what you reconcile is a log of access to them.</p>
 <p>Measured: an append-only rule makes a tenant with any audit history <strong>undeletable</strong>, and the same rule with <code>WHERE true</code> deletes fine and leaves orphans — which is what identifies the real mechanism. Removing one person's scattered events takes one checkpoint per contiguous run, and blanking the personal columns is detected as tampering, which is the property working rather than failing.</p>
 <p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/erasing-a-user-with-an-append-only-audit-log.proof.mjs" rel="noopener"><code>erasing-a-user-with-an-append-only-audit-log.proof.mjs</code></a></p>
+<h3 id="soc-2-and-file-access-what-to-show-a-compliance-auditorsoc2-file-access-evidencemd"><a href="/guides/soc2-file-access-evidence">SOC 2 and file access: what to show a compliance auditor</a></h3>
+<p>The Trust Services Criteria behind the questions (CC6.1, CC6.2, CC6.3, CC7.2), what a compliance auditor samples for each, and which records answer them: refused reads with their reason, grants and removals with the person who made them, and a chain that shows the log was not edited. It also says what no library gives you: <strong>neither Filelayer nor an application that uses it is SOC 2 compliant because of it</strong>, and access that bypasses the library is recorded by nothing.</p>
+<p>→ <a href="https://github.com/filelayer/filelayer/blob/main/docs/guides/soc2-file-access-evidence.proof.mjs" rel="noopener"><code>soc2-file-access-evidence.proof.mjs</code></a></p>
 <h3 id="what-background-jobs-does-a-file-feature-need-and-did-they-runbackground-jobs-for-user-filesmd"><a href="/guides/background-jobs-for-user-files">What background jobs does a file feature need, and did they run?</a></h3>
 <p>Four jobs. Writing them is a morning; the problem is that <strong>every one of them produces an absence as its output</strong>, so a job that silently stopped running looks exactly like a job with nothing to do.</p>
 <p>Measured: the collector that deletes a file the user <em>just finished uploading</em>, and the one-statement claim that closes it; six weeks of dry runs that look green on every dashboard while nothing is ever swept; and the alerting query that silently drops the worst case — the job that has never run at all, hidden for free by three-valued logic.</p>
@@ -137,7 +140,8 @@ node docs/guides/serving-private-files.proof.mjs
 node docs/guides/revoking-delegated-access.proof.mjs
 node docs/guides/tamper-evident-file-audit.proof.mjs
 node docs/guides/background-jobs-for-user-files.proof.mjs
-node docs/guides/erasing-a-user-with-an-append-only-audit-log.proof.mjs</code></pre>
+node docs/guides/erasing-a-user-with-an-append-only-audit-log.proof.mjs
+node docs/guides/soc2-file-access-evidence.proof.mjs</code></pre>
 <p>The last one needs no PostgreSQL server at all: it runs the database in-process and takes about five seconds.</p>
 <p>Each prints what it measured and exits non-zero if any number fails to reproduce. Re-run them before believing any of this.</p>
 <hr>
