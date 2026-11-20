@@ -276,7 +276,7 @@ Three assertions failed, and each named something real.
 
 - **The 404-not-403 rule did not transfer.** The skill states it, once, about
   file reads. A capability denial behaves the same way -- `orgs.audit` without
-  `read_audit` is `404 insufficient_role` -- and the answer never said so, so a
+  `read_audit` is 404 `not_found`, with reason `insufficient_role` -- and the answer never said so, so a
   reader would branch on a thrown error. Now stated where the screen is
   discussed.
 - **It invented the audit row's field shape** (`e.at`, `e.actor`, `e.fileName`)

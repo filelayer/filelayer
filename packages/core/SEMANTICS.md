@@ -791,7 +791,8 @@ operation.
 
 **`403` is narrower than "the caller has standing", and the row above is the one
 people get wrong.** A plain `member` of an org who calls `setRole` or `audit` has
-standing in that org and still receives `404 insufficient_role`, the same answer a
+standing in that org and still receives 404 `not_found`, with reason
+`insufficient_role`, the same answer a
 stranger receives. `403` is for a caller who DOES hold the capability and is
 asking for something the rules forbid anyway: promoting above their own role,
 touching someone who outranks them, removing the last owner, or widening a
