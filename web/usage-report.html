@@ -113,6 +113,7 @@
 <p>From code, the same report is <code>buildUsageReport(db, { week })</code>, where <code>db</code> is your <code>pg.Pool</code>, your PGlite instance, or anything else you hand to <code>new Filelayer()</code>. <code>validateUsageReport(report)</code> returns the list of ways a value differs from the schema (empty when it matches). Here on a throwaway PGlite instance:</p>
 <pre><code class="lang-ts">import { buildUsageReport, validateUsageReport, isoWeekOf } from '@filelayer/core';
 
+await fl.orgs.create('acme', { owner: 'ana' });
 await fl.files.put(new TextEncoder().encode('hello'), { org: 'acme', owner: 'ana' });
 
 const report = await buildUsageReport(fl.store.db, { week: isoWeekOf(new Date()) });
