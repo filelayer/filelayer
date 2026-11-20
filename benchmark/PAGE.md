@@ -25,7 +25,7 @@ variable. The network is used for npm and nothing else.
 
 | Implementation | Built with | Ran? |
 |---|---|---|
-| Filelayer | `@filelayer/core` 0.35.4 from npm, on PostgreSQL | Yes |
+| Filelayer | `@filelayer/core` 0.36.0 from npm, on PostgreSQL | Yes |
 | Supabase | Supabase Storage and Postgres row-level security | Yes: real RLS policies on PostgreSQL (PGlite), with the platform schema emulated |
 | Raw S3 | S3 or R2 presigned URLs and Postgres | Yes: against a local store that verifies SigV4 signatures |
 | Convex | Convex and its R2 component | No, not executed and not compiled: it needs a live Convex deployment and an R2 bucket |
@@ -147,7 +147,7 @@ your database, so it is counted too, apart from the lines you write:
 
 | Implementation | Vendor lines in your process | Vendor lines in your database |
 |---|---:|---:|
-| Filelayer | 6,653 | 547 |
+| Filelayer | 6,788 | 547 |
 | Raw S3 | 42,010 (the AWS SDK) | 0 |
 | Supabase, Convex, Vercel Blob | not measured | not measured |
 
@@ -170,7 +170,7 @@ can express.** All three defend every one of them.
 
 | Implementation | Defended | Partial | Breach |
 |---|---:|---:|---:|
-| Filelayer 0.35.4 | 21 of 21 | 0 | 0 |
+| Filelayer 0.36.0 | 21 of 21 | 0 | 0 |
 | Raw S3 | 21 of 21 | 0 | 0 |
 | Supabase | 21 of 21 | 0 | 0 |
 | Filelayer, earlier version (control) | 16 of 21 | 2 | 2 |
@@ -215,7 +215,7 @@ Independent attacks are welcome, as an issue or a pull request.
 From `npm install` to the first stored file, using the program printed in the
 quickstart that ships in the package: 4 lines of application code, no step that
 needs a person, and no account, credential or dashboard. It takes a few
-seconds on a laptop: on the machine that generated these results it took 5.2
+seconds on a laptop: on the machine that generated these results it took 4.6
 seconds, and the time depends on the machine and the network.
 
 ## Where the alternatives are better
