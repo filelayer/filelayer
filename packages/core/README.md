@@ -114,7 +114,8 @@ const { url } = await fl.files.put(bytes, { public: true });
 const { id } = await fl.files.put(bytes, { owner: 'user_123' });
 const file  = await fl.files.get(id, { as: 'user_123' });
 
-// Multi-tenant, role-controlled
+// Multi-tenant, role-controlled: create the org once, then upload into it
+await fl.orgs.create('acme', { owner: 'user_123' });
 await fl.files.put(bytes, { org: 'acme', owner: 'user_123' });
 
 // Shared with an expiry, a password and a download cap, and revocable
