@@ -121,6 +121,11 @@ const CLAIMS = [
     probe: { kind: 'ships', file: 'dist/simple.js', text: '{ id: await this.ids.requireOrg(opts.org), created: false }' },
     note: 'put() refuses an unknown org, in the integration skill.',
   },
+  {
+    match: 'before it starts: since 0.36.0 the server checks them at startup and exits',
+    probe: { kind: 'ships', file: 'dist/mcp-server.js', text: 'FILELAYER_ORG names an organization that does not exist' },
+    note: 'filelayer-mcp refuses to start unseeded, in docs/MCP.md.',
+  },
   // -------------------------------------------------------------------------
   // THE SIX THAT THE WIDENED SURFACE LIST FOUND, 15 October 2026.
   //

@@ -145,8 +145,25 @@ async function database() {
   await c.connect();
   await c.query(readFileSync(join(CORE, 'schema.sql'), 'utf8'));
   await c.end();
+  // The documentation's second step: create the organization and its first
+  // user once, with the call docs/MCP.md's setup-filelayer.mjs makes. Since
+  // 0.36.0 the server refuses to start without them (it used to start and
+  // answer not_found to every tool), so a launch on an unseeded database is
+  // no longer the documented procedure. Built code from this checkout, the
+  // same as the tarball being tested.
+  const { Pool } = requireFromCore('pg');
+  const { Filelayer, MemoryStorage } = await import(pathToFileURL(join(CORE, 'dist', 'index.js')).href);
+  const pool = new Pool({ connectionString: u.toString() });
+  try {
+    await new Filelayer(pool, new MemoryStorage()).orgs.create(SEED.org, { owner: SEED.as });
+  } finally {
+    await pool.end();
+  }
   return u.toString();
 }
+
+/** The organization and user the documented configuration names. */
+const SEED = { as: 'user_alice', org: 'org_acme' };
 
 // --- the args ------------------------------------------------------------------
 /**
@@ -190,8 +207,8 @@ function launch(args, databaseUrl, label) {
     npm_config_fund: 'false',
     npm_config_audit: 'false',
     DATABASE_URL: databaseUrl,
-    FILELAYER_AS: 'user_alice',
-    FILELAYER_ORG: 'org_acme',
+    FILELAYER_AS: SEED.as,
+    FILELAYER_ORG: SEED.org,
     FILELAYER_DATA_DIR: data,
   });
 

@@ -71,9 +71,10 @@ psql "$DATABASE_URL" -f node_modules/@filelayer/core/schema.sql
 
 **Then create the organization and its first user, once.** The server acts for
 `FILELAYER_AS` inside `FILELAYER_ORG`, and both have to exist in Filelayer
-before the first tool call: on an empty database every tool answers
-`not_found`, which is the same answer a stranger gets, and nothing else tells
-you why. The server never creates them itself, because a process that could
+before it starts: since 0.36.0 the server checks them at startup and exits
+with code 2, naming what is missing and pointing here. (Before, it started and
+every tool answered `not_found`, the answer a stranger gets.) The server never
+creates them itself, because a process that could
 create its own organization could make itself the owner of any of them. From
 the same project, with `pg` installed (`npm install pg`), save this as
 `setup-filelayer.mjs`:
