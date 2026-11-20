@@ -2,12 +2,12 @@
 
 **Does the Filelayer primitive scale DOWN as well as up?**
 
-Current as of `@filelayer/core` **0.35.4**. Everything below is measured against
+Current as of `@filelayer/core` **0.36.0**. Everything below is measured against
 code in this repository, from the repository root. Reproduce with:
 
 ```bash
 npm run bootstrap                  # npm ci in packages/core
-npm test                     # 752 tests, 0 failures
+npm test                     # 772 tests, 0 failures
 npm run dev:fracture               # the four §2 experiments
 npm run loc:tiers                  # LOC per tier (§4.2)
 node benchmark/count-loc.mjs       # LOC for the full-vault implementations
@@ -15,7 +15,7 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **752 / 752 passing** across 164 suites:
+**Test status.** `npm test` is **772 / 772 passing** across 169 suites:
 
 | Suite | Tests |
 |---|---|
@@ -28,14 +28,14 @@ npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 | `test/identity-bridge.test.ts` — your identifiers reach the whole API | 17 |
 | `test/audit-resolution.test.ts` — the trail reads back in your words, and verification pages | 16 |
 | `test/schema-version.test.ts` — which version a database is at, and that asking changes nothing | 16 |
-| `test/mcp.test.ts` — the MCP server as a privilege boundary | 9 |
+| `test/mcp.test.ts` — the MCP server as a privilege boundary | 10 |
 | `test/cli.test.ts` — the CLI, spawned: refused credentials, exit codes, the bucket probe | 17 |
-| `test/mcp-server.test.ts` — the launchable MCP server, started by a client | 6 |
+| `test/mcp-server.test.ts` — the launchable MCP server, started by a client | 7 |
 | `test/audit-context.test.ts` — an agent's reads are distinguishable from a person's | 5 |
-| everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 332 |
-| **total** | **752** |
+| everything else — authorization, delivery, listing, persistence, storage, semantics, the vault example | 350 |
+| **total** | **772** |
 
-Eight of the 752 are the contention tests, which need a real PostgreSQL with
+Eight of the 772 are the contention tests, which need a real PostgreSQL with
 two backends. CI provides one, so all 526 run there; on a machine without one
 they skip and you will see **397 passing, 8 skipped**. Two further suites — the
 live S3 ones — skip unless the five `FILELAYER_TEST_S3_*` variables are set.
@@ -422,7 +422,7 @@ the developer to decide who may read a file, at any tier.
 
 Written by the people who built it. This section is meant to be quoted against
 Filelayer, and it is kept current on purpose: every item below was re-checked
-against `0.35.4`.
+against `0.36.0`.
 
 1. **Public, high-volume, cacheable media — avatars, marketing images, product
    photos, anything a CDN should serve.** The default byte path proxies every

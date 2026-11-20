@@ -19,11 +19,11 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
-## [Unreleased]
+## [0.36.0] — 2026-11-20
 
-The fix release after the launch, planned as `0.36.0`: a minor bump, because
-one behaviour changes in a way a caller can depend on (see `MIGRATIONS.md`,
-"`0.35.x` → `0.36.0`"). No schema change (still version 16).
+The fix release after the launch. A minor bump, because one behaviour changes
+in a way a caller can depend on (see `MIGRATIONS.md`, "`0.35.x` → `0.36.0`").
+No schema change (still version 16).
 
 ### Changed — `put()` into an org nobody created is refused
 

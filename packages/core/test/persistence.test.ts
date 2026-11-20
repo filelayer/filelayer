@@ -1131,6 +1131,13 @@ describe('every public method that names a resource also names a principal', () 
       // them is, and this test fired the moment it was added, which is the
       // guard doing its job.
       'runMaintenance',
+      // `close()` (0.36.0) names no resource and reads or writes nothing: it
+      // closes the database `quickstart()` created and does nothing on an
+      // instance built with your own pool. Like the jobs, it is an operator
+      // call with nobody to authorize, and it must never be reachable from a
+      // request handler, because a request that could call it could stop the
+      // process's database.
+      'close',
     ]);
     const PRINCIPAL_FIRST = new Set([
       'upload', 'read', 'readStream', 'stat', 'listFiles', 'delete',

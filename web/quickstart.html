@@ -52,7 +52,7 @@
     "name": "Filelayer",
     "alternateName": "@filelayer/core",
     "codeRepository": "https://github.com/filelayer/filelayer",
-    "softwareVersion": "0.35.4"
+    "softwareVersion": "0.36.0"
   },
   "author": {
     "@type": "Organization",
@@ -109,7 +109,7 @@
 <p>That pulls in nothing else: the package has <strong>no runtime dependencies</strong>. It talks to your Postgres through whatever driver you already use (<code>pg.Pool</code> works directly) and to your bucket over HTTP.</p>
 <p>The throwaway instance in the next block is the exception. <code>quickstart()</code> runs on PGlite, an embedded WebAssembly Postgres, which you install yourself: it is not a dependency, because a library whose premise is &quot;point it at your own Postgres&quot; should not put a second Postgres into every production install. Install it too if you want <code>quickstart()</code> or <code>createTestDb()</code>:</p>
 <pre><code class="lang-bash">npm install --save-dev &quot;@electric-sql/pglite@^0.3.11&quot;</code></pre>
-<p>Filelayer supports PGlite <code>^0.3.11</code> and <code>^0.5.8</code>, and CI runs the whole suite on the 0.3 line and on PGlite's latest. The command pins the 0.3 line: 0.5.x works; in 0.35.x a script that uses <code>quickstart()</code> waits about 10 s on exit with 0.5.x, fixed in the next release. PGlite is not a peer dependency, so installing it never fails the tree; with a version outside the range, <code>quickstart()</code> and <code>createTestDb()</code> stop with the error <code>pglite_unsupported_version</code>, whose message is the command above.</p>
+<p>Filelayer supports PGlite <code>^0.3.11</code> and <code>^0.5.8</code>, and CI runs the whole suite on the 0.3 line and on PGlite's latest. The command pins the 0.3 line: 0.5.x works too; with it, a script that uses <code>quickstart()</code> ends with <code>await fl.close()</code>, or it waits about 10 s on exit (<a href="https://github.com/electric-sql/pglite/issues/1232" rel="noopener">electric-sql/pglite#1232</a>). PGlite is not a peer dependency, so installing it never fails the tree; with a version outside the range, <code>quickstart()</code> and <code>createTestDb()</code> stop with the error <code>pglite_unsupported_version</code>, whose message is the command above.</p>
 <p>Forget it and nothing breaks silently: <code>createTestDb()</code> throws an error naming the package and that exact command. Production code never reaches it — see §7.</p>
 <p>The tests import the TypeScript source directly and Node will not strip types from files under <code>node_modules</code>, so <code>node --test node_modules/@filelayer/core/test/</code> does not work. <strong>That is not a reason to clone us.</strong> Copying the package directory out to a scratch directory runs the same suite against <em>the bytes you were sent</em>, which is the only thing worth verifying, and the exact procedure is in <a href="https://github.com/filelayer/filelayer/blob/main/docs/VERIFY-WHAT-YOU-INSTALLED.md" rel="noopener">docs/VERIFY-WHAT-YOU-INSTALLED.md</a>: roughly 12 to 25 minutes measured on 2 vCPU machines, no account, no credentials, no database. CI runs that document's commands verbatim against a freshly packed tarball on every commit, so it cannot quietly stop working.</p>
 <p>Clone the repository if you want to <em>change</em> it, or to run the examples, which are driven by scripts in the repository root:</p>
@@ -119,6 +119,7 @@ npm run example:tier1</code></pre>
 <p>A throwaway instance, for a first run and for tests:</p>
 <pre><code class="lang-ts">const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });</code></pre>
 <p><code>quickstart()</code> uses PGlite (PostgreSQL compiled to WebAssembly, in-process) and in-memory bytes. <strong>Everything is lost when the process exits.</strong> For a real deployment see §7 — it is three steps and they are not hidden.</p>
+<p>A script that should exit when it is done ends with <code>await fl.close()</code>, which closes the database <code>quickstart()</code> created. Without it, on PGlite 0.5.x the process waits about ten seconds after its last line. A server never needs it.</p>
 <hr>
 <h2 id="1-tier-1--a-public-file">1. Tier 1 — a public file</h2>
 <p><strong>New concepts: none.</strong></p>
@@ -547,7 +548,7 @@ catch (e) {
     <a href="/trust">Should you depend on this?</a>
   </p>
   <p class="fine">
-    Filelayer 0.35.4, alpha. Apache-2.0, with a patent grant.
+    Filelayer 0.36.0, alpha. Apache-2.0, with a patent grant.
     Copyright 2026 Technology Pro Bono S.L.
   </p>
 </footer>

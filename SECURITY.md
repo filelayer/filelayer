@@ -8,7 +8,7 @@ rather hear about one from you than from a customer.
 
 Read this before you decide how much to trust us.
 
-- Filelayer is **pre-1.0 (`0.35.4`) and has never been run in production by
+- Filelayer is **pre-1.0 (`0.36.0`) and has never been run in production by
   anyone**, including us.
 - The authorization core is covered by a property suite and an adversarial
   suite, both of which run in CI on every change.
@@ -122,13 +122,13 @@ failure on our side, and we will say so in the advisory.
 
 ## Supported versions
 
-Pre-1.0, only the latest minor release receives fixes, today `0.35.x`. Every
+Pre-1.0, only the latest minor release receives fixes, today `0.36.x`. Every
 earlier version is unsupported, and there is no long-term support branch and no
 backporting. See [Versioning](README.md#versioning) in the README.
 
 | Version | Supported |
 |---|---|
-| `0.35.x` | Yes |
+| `0.36.x` | Yes |
 | `0.34.x` and earlier | No |
 
 Earlier versions with known defects, so you know to upgrade rather than patch:

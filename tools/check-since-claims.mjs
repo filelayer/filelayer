@@ -107,6 +107,21 @@ const SINCE = /\b[Ss]ince\s+`?(\d+\.\d+\.\d+)`?/g;
  */
 const CLAIMS = [
   // -------------------------------------------------------------------------
+  // 0.36.0, 20 November 2026: put() into an org nobody created is refused.
+  // The probe is the line that makes it true: the named org is resolved with
+  // `requireOrg`, which throws `unknown_org`, where 0.35.x created it.
+  // -------------------------------------------------------------------------
+  {
+    match: 'Since 0.36.0 `put({ org })` into an org nobody created is',
+    probe: { kind: 'ships', file: 'dist/simple.js', text: '{ id: await this.ids.requireOrg(opts.org), created: false }' },
+    note: 'put() refuses an unknown org, in llms.txt.',
+  },
+  {
+    match: 'of that org (or it is the default workspace). Since 0.36.0 an org that does not',
+    probe: { kind: 'ships', file: 'dist/simple.js', text: '{ id: await this.ids.requireOrg(opts.org), created: false }' },
+    note: 'put() refuses an unknown org, in the integration skill.',
+  },
+  // -------------------------------------------------------------------------
   // THE SIX THAT THE WIDENED SURFACE LIST FOUND, 15 October 2026.
   //
   // All six are dated claims on surfaces this gate was not pointed at, so none

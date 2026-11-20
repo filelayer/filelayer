@@ -241,7 +241,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **752 tests across 164 suites**, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17 |
+| The suite | **772 tests across 169 suites**, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17 |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends: races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **26 attacks, 0 breaches.** Also run against an earlier revision of this library known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -326,7 +326,7 @@ npm install --save-dev "@electric-sql/pglite@^0.3.11"
 ```
 
 Filelayer supports PGlite `^0.3.11` and `^0.5.8`, and CI runs the whole suite on
-the 0.3 line and on PGlite's latest. The command pins the 0.3 line: 0.5.x works; in 0.35.x a script that uses `quickstart()` waits about 10 s on exit with 0.5.x, fixed in the next release. PGlite is not a peer dependency, so installing it never
+the 0.3 line and on PGlite's latest. The command pins the 0.3 line: 0.5.x works too; with it, a script that uses `quickstart()` ends with `await fl.close()`, or it waits about 10 s on exit ([electric-sql/pglite#1232](https://github.com/electric-sql/pglite/issues/1232)). PGlite is not a peer dependency, so installing it never
 fails the tree. With a version outside the range, `quickstart()` and
 `createTestDb()` stop with the error `pglite_unsupported_version`, which gives
 the command above.
