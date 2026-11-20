@@ -11,7 +11,7 @@
   },
 
   "filelayer": {
-    "artifact": "examples/vault/server.ts as shipped in @filelayer/core 0.35.4 (re-checked 2026-11-15; September: post-rebuild working tree)",
+    "artifact": "examples/vault/server.ts as shipped in @filelayer/core 0.36.0 (re-checked 2026-11-20; September: post-rebuild working tree)",
     "decisions": [
       { "id": 1, "d": "How the caller's identity is established", "sites": 1, "where": "currentActor(), server.ts" },
       { "id": 2, "d": "Where the one-time share secret is delivered", "sites": 1, "where": "the POST /files/:id/shares response" },

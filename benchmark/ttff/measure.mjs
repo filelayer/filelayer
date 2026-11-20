@@ -84,6 +84,9 @@ const PROGRAM = [
   { quote: "import { Filelayer } from '@filelayer/core';" },
   { quote: "const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });" },
   { quote: 'const { id, url } = await fl.files.put(avatarBytes, { public: true });' },
+  // Since 0.36.0 the page says a script that should exit ends with this; the
+  // run is a script, and its time includes exiting.
+  { quote: 'await fl.close()' },
 ];
 
 const ASSEMBLED = [
@@ -96,6 +99,7 @@ const ASSEMBLED = [
   '',
   'if (!id || !url) throw new Error("ttff: put() returned no id or no url");',
   'console.log(`TTFF_OK ${id} ${url}`);',
+  'await fl.close();',
 ].join('\n');
 
 const seconds = (ms) => Math.round(ms / 100) / 10;
