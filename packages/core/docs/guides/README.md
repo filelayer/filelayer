@@ -126,7 +126,7 @@ than failing.
 
 → [`erasing-a-user-with-an-append-only-audit-log.proof.mjs`](erasing-a-user-with-an-append-only-audit-log.proof.mjs)
 
-### [SOC 2 and file access: what to show a compliance auditor](soc2-file-access-evidence.md)
+### [What does a SOC 2 compliance auditor ask about file access?](soc2-file-access-evidence.md)
 
 The Trust Services Criteria behind the questions (CC6.1, CC6.2, CC6.3, CC7.2),
 what a compliance auditor samples for each, and which records answer them: refused reads

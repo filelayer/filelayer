@@ -1,4 +1,4 @@
-# SOC 2 and file access: what to show a compliance auditor
+# What does a SOC 2 compliance auditor ask about file access?
 
 
 A SOC 2 report does not certify a library, and nothing on this page makes an
