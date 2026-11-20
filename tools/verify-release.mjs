@@ -71,9 +71,9 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { documentedInstallCommand, shellWords, satisfies } from './check-install-commands.mjs';
 
@@ -464,10 +464,20 @@ console.log('\nverify-release: ` +
 console.log('verify-release: the empty-directory test\n');
 
 // --- pack --------------------------------------------------------------------
-process.stdout.write('   pack packages/core .............................');
+// FILELAYER_VERIFY_TARBALL names a tarball to test instead of packing this
+// tree: the one npm serves, downloaded after a release, so the published
+// bytes are the ones that go through every phase below.
+const GIVEN_TARBALL = process.env.FILELAYER_VERIFY_TARBALL;
+process.stdout.write(GIVEN_TARBALL
+  ? '   the given tarball ..............................'
+  : '   pack packages/core .............................');
 const packDir = mkdtempSync(join(tmpdir(), 'filelayer-pack-'));
-const packed = run('npm', ['pack', '--pack-destination', packDir, '--silent'], { cwd: CORE });
-if (packed.status !== 0) die('pack', packed.stderr || packed.stdout);
+if (GIVEN_TARBALL) {
+  copyFileSync(GIVEN_TARBALL, join(packDir, basename(GIVEN_TARBALL)));
+} else {
+  const packed = run('npm', ['pack', '--pack-destination', packDir, '--silent'], { cwd: CORE });
+  if (packed.status !== 0) die('pack', packed.stderr || packed.stdout);
+}
 const tarballName = readdirSync(packDir).find((f) => f.endsWith('.tgz'));
 if (!tarballName) die('pack', 'npm pack produced no tarball in ' + packDir);
 const tarball = join(packDir, tarballName);
