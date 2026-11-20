@@ -82,6 +82,7 @@ const fl = await Filelayer.quickstart({ baseUrl: 'http://localhost:3000' });
 ```ts
 import { buildUsageReport, validateUsageReport, isoWeekOf } from '@filelayer/core';
 
+await fl.orgs.create('acme', { owner: 'ana' });
 await fl.files.put(new TextEncoder().encode('hello'), { org: 'acme', owner: 'ana' });
 
 const report = await buildUsageReport(fl.store.db, { week: isoWeekOf(new Date()) });
