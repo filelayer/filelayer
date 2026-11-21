@@ -1364,8 +1364,9 @@ grant revokes only its own subtree; a group grant has many holders, and the
 rule was not applied to that case. See `SEMANTICS.md` §7c.
 
 What still works: a holder revokes what they issued and anything delegated
-from it, and an admin or owner of the file's org, or the file's owner, revokes
-any grant on the file, the group grant included. If your application lets a
+from it; anyone renounces a grant that names them; and an admin or owner of the
+file's org, or the file's owner, revokes any grant on the file, the group grant
+included. If your application lets a
 member revoke a colleague's link, do it as an admin or owner.
 
 ---
