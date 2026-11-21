@@ -35,9 +35,10 @@ function files(p) {
 }
 
 export function fingerprint() {
-  // The attacks written after the freeze (hidden/late/*.mjs) are added after
-  // this fingerprint is committed, by design; their README is fixed with it.
-  const list = ROOTS.flatMap(files).filter((f) => !/^hidden\/late\/.*\.mjs$/.test(f)).sort();
+  // The attacks written after the freeze (hidden/late/*.mjs, the top level
+  // only: the loader reads nothing else) are added after this fingerprint is
+  // committed, by design; their README, and anything in a subfolder, is fixed.
+  const list = ROOTS.flatMap(files).filter((f) => !/^hidden\/late\/[^/]+\.mjs$/.test(f)).sort();
   list.push('../adversarial/attacks.mjs');
   const lines = list.map((f) => `${createHash('sha256').update(readFileSync(join(BENCH, f))).digest('hex')}  ${f}`);
   const all = createHash('sha256').update(lines.join('\n')).digest('hex');

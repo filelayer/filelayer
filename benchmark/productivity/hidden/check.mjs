@@ -9,6 +9,10 @@
  *
  * --task 2 adds the checks of the requirement change; the task-1 battery and
  * the attacks still run, because everything that worked must keep working.
+ * --late scores ONLY the attacks written after the freeze (late/), apart
+ * from everything else; use it with its own --json file. It never runs, and
+ * never writes, the primary checks.
+ *
  * --task 3 adds the check for the seeded bug. With --seed, the seeded
  * reference is started first on the same database and bucket and builds the
  * world T3-01 checks, so the snapshot is scored on data uploaded while the
@@ -63,7 +67,13 @@ try {
   } else {
     const out = { implementation: dir, task };
     let seed = null;
-    if (task === 3 && seedDir) {
+    if (late) {
+      // The late attacks alone, against the snapshot, on an empty database.
+      server = await startServer(dir, envH.env, { log: (s) => log.push(s) });
+      out.late = await runLateAttacks(() => client(server.baseUrl, server.adminToken));
+      console.log(`late attacks: ${out.late.defended}/${out.late.of} defended`);
+      write(out);
+    } else if (task === 3 && seedDir) {
       const ref = await startServer(seedDir, envH.env);
       try {
         seed = await seedTask3(client(ref.baseUrl, ref.adminToken));
@@ -72,7 +82,7 @@ try {
       }
       out.seeded = true;
     }
-    try {
+    if (!late) try {
       server = await startServer(dir, envH.env, { log: (s) => log.push(s) });
     } catch (e) {
       // The snapshot did not come up: the agent's failure, scored as zero.
@@ -88,7 +98,7 @@ try {
       console.log('the snapshot did not start: every check failed, 0 attacks defended');
       write(out);
     }
-    if (server) {
+    if (server && !late) {
       const make = () => client(server.baseUrl, server.adminToken);
       if (only !== 'attacks') {
         out.functional = await runFunctional(make);
@@ -109,12 +119,6 @@ try {
         for (const r of out.security.results) {
           if (verbose || (r.scored && r.verdict !== 'defended')) console.log(`  ${r.scored ? '' : '(not scored) '}${r.id} ${r.verdict}: ${r.detail}`);
         }
-      }
-      if (late) {
-        // Written after the freeze, by someone who has not seen the library;
-        // reported apart, never part of the 21 or of "both".
-        out.late = await runLateAttacks(make);
-        console.log(`late attacks: ${out.late.defended}/${out.late.of} defended`);
       }
       if (out.functional && out.security) {
         out.both = out.functional.allPassed && out.security.allDefended;

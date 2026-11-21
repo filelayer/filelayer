@@ -3,7 +3,17 @@
  * SCORE THE SNAPSHOTS OF A PHASE.
  *
  *   node score.mjs --runs ../runs/pilot [--only <run id>] [--proxy container|host]
- *                  [--upstream http://host:port] [--extra-ca file] [--jobs N]
+ *                  [--upstream http://host:port] [--extra-ca file] [--jobs N] [--late] [--unfrozen]
+ *
+ * It refuses to score unless the benchmark files match FINGERPRINT.txt, and
+ * writes the fingerprint into every score.json. --unfrozen is for
+ * rehearsals before the freeze; its scores say so (frozen: false), and
+ * analyze.mjs refuses them unless it is told --unfrozen as well.
+ *
+ * A score.json is written once: a task already scored is left as it is,
+ * unless its score is a scorer failure. --late scores only the attacks
+ * written after the freeze, into late-score.json, and never touches
+ * score.json.
  *
  * --jobs N scores N runs at once, each in a process of its own with
  * networks and containers of its own.
@@ -19,9 +29,10 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fingerprint } from './fingerprint.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH = resolve(HERE, '..');
@@ -53,6 +64,9 @@ function scoreOne(app, task, out, arm) {
   const gw = docker(['network', 'inspect', name, '-f', '{{(index .IPAM.Config 0).Gateway}}']).stdout.trim();
   const started = [];
   let proxyChild = null;
+  // The scorer's own egress log, one per attempt (cold review, I6).
+  const egressLog = join(out, late ? 'late-egress.jsonl' : 'score-egress.jsonl');
+  rmSync(egressLog, { force: true });
   try {
     docker(['run', '-d', '--name', `${name}-pg`, '--network', name, '--network-alias', 'postgres',
       '-e', 'POSTGRES_PASSWORD=postgres', cfg.images.postgres]);
@@ -66,12 +80,12 @@ function scoreOne(app, task, out, arm) {
     const allow = join(HERE, 'allowlist-score.txt');
     if (proxyMode === 'host') {
       proxyChild = spawn(process.execPath, [join(HERE, 'egress-proxy.mjs'), '--port', '3129', '--listen', gw, '--allow', allow,
-        ...(upstream ? ['--upstream', upstream] : [])], { stdio: 'ignore' });
+        '--log', egressLog, ...(upstream ? ['--upstream', upstream] : [])], { stdio: 'ignore' });
       proxyUrl = `http://${gw}:3129`;
     } else {
       docker(['run', '-d', '--name', `${name}-proxy`, '--network', name, '--network-alias', 'egress',
-        '-v', `${join(HERE, 'egress-proxy.mjs')}:/proxy.mjs:ro`, '-v', `${allow}:/allow.txt:ro`, cfg.images.node,
-        'node', '/proxy.mjs', '--port', '3129', '--allow', '/allow.txt']);
+        '-v', `${join(HERE, 'egress-proxy.mjs')}:/proxy.mjs:ro`, '-v', `${allow}:/allow.txt:ro`, '-v', `${out}:/log`,
+        cfg.images.node, 'node', '/proxy.mjs', '--port', '3129', '--allow', '/allow.txt', '--log', `/log/${basename(egressLog)}`]);
       started.push(`${name}-proxy`);
       docker(['network', 'connect', 'bridge', `${name}-proxy`]);
       proxyUrl = 'http://egress:3129';
@@ -79,6 +93,8 @@ function scoreOne(app, task, out, arm) {
     const ca = extraCa ? ['-v', `${extraCa}:/etc/prodbench-ca.crt:ro`, '-e', 'NODE_EXTRA_CA_CERTS=/etc/prodbench-ca.crt',
       '-e', 'npm_config_cafile=/etc/prodbench-ca.crt'] : [];
     const installSecs = cfg.scoring.installMinutes * 60;
+    const result = late ? '/out/late-score.json' : '/out/score.json';
+    const seed = `${arm === 'a' ? 'a-filelayer' : 'b-own'}-t3-bug`;
     // check.mjs starts the snapshot with PATH and HOME and the contract's
     // variables only, so the proxy settings below reach npm install and
     // nothing the snapshot runs afterwards.
@@ -86,18 +102,18 @@ function scoreOne(app, task, out, arm) {
       'set -u',
       'cp -r /snapshot /tmp/app',
       'cd /tmp/app',
-      // An install that fails on the network is retried once, and if it fails
-      // again it is the scorer's failure, not the agent's. Any other failure to
-      // install is the agent's: the contract says npm install must work.
-      `NET='ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|ECONNREFUSED|socket hang up|E50[0-9]|E429|network'`,
-      `install() { timeout ${installSecs} npm install --no-audit --no-fund >/out/install.log 2>&1; }`,
-      'if ! install; then',
-      '  if grep -Eq "$NET" /out/install.log; then sleep 20; rm -rf node_modules; if ! install; then',
-      `    if grep -Eq "$NET" /out/install.log; then echo '{"scorerError":"install_network"}' > /out/score.json; else echo '{"installFailed":true}' > /out/score.json; fi; exit 0; fi`,
-      `  else echo '{"installFailed":true}' > /out/score.json; exit 0; fi`,
-      'fi',
+      // The contract's first step. Its exit code goes to a file; score.mjs
+      // decides from the scorer's egress log whose failure it was.
+      `timeout ${installSecs} npm install --no-audit --no-fund >/out/install.log 2>&1; echo $? > /out/install.exit`,
+      '[ "$(cat /out/install.exit)" = 0 ] || exit 0',
+      // Task 3's seeded reference, installed here from its own package-lock
+      // (fingerprinted), not taken from the scoring machine (cold review, N5).
+      ...(task === 3 && !late ? [
+        `cp -r /bench/reference/${seed} /tmp/seed && rm -rf /tmp/seed/node_modules && cd /tmp/seed`,
+        `if ! timeout ${installSecs} npm ci --no-audit --no-fund >/out/seed-install.log 2>&1; then echo '{"scorerError":"seed_install"}' > ${result}; exit 0; fi`,
+      ] : []),
       'cd /bench',
-      `node hidden/check.mjs /tmp/app --task ${task} ${task === 3 ? `--seed /bench/reference/${arm === 'a' ? 'a-filelayer' : 'b-own'}-t3-bug ` : ''}${late ? '--late ' : ''}--json /out/score.json > /out/check.log 2>&1; echo "exit $?" >> /out/check.log`,
+      `node hidden/check.mjs /tmp/app --task ${task} ${task === 3 && !late ? '--seed /tmp/seed ' : ''}${late ? '--late ' : ''}--json ${result} > /out/${late ? 'late-' : ''}check.log 2>&1; echo "exit $?" >> /out/${late ? 'late-' : ''}check.log`,
     ].join('\n');
     docker(['run', '--rm', '--name', `${name}-scorer`, '--network', name, '--cpus', '2', '--memory', '4g',
       '-u', 'node',
@@ -111,6 +127,37 @@ function scoreOne(app, task, out, arm) {
     for (const c of started) docker(['rm', '-f', c], true);
     proxyChild?.kill('SIGTERM');
     docker(['network', 'rm', name], true);
+  }
+}
+
+/**
+ * Whose failure is a failed `npm install`? The scorer's, only when the npm
+ * registry itself could not be reached: a connection error to
+ * registry.npmjs.org in the scorer's egress log, or a 5xx or 429 from it in
+ * npm's log. Any other failure is the agent's, including a dependency that
+ * reaches a host the scorer does not allow (allowlist-score.txt): declared in
+ * PREREG.md, the same for both arms (cold review, I6).
+ */
+function installVerdict(out) {
+  const exit = readFileSync(join(out, 'install.exit'), 'utf8').trim();
+  if (exit === '0') return { ok: true };
+  const log = existsSync(join(out, 'install.log')) ? readFileSync(join(out, 'install.log'), 'utf8') : '';
+  const egress = existsSync(join(out, 'score-egress.jsonl'))
+    ? readFileSync(join(out, 'score-egress.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+  const registryDown = egress.some((e) => e.host === 'registry.npmjs.org' && e.error) ||
+    /(E50[0-9]|E429)[\s\S]{0,300}registry\.npmjs\.org|registry\.npmjs\.org[\s\S]{0,300}(E50[0-9]|E429)/.test(log);
+  const refused = [...new Set(egress.filter((e) => e.allowed === false).map((e) => e.host))];
+  return { ok: false, network: registryDown, refused, exit };
+}
+
+const FP = fingerprint();
+const unfrozen = args.includes('--unfrozen');
+if (!unfrozen) {
+  // Score only with exactly the checks PREREG.md fixed (cold review, B3).
+  const committed = existsSync(join(BENCH, 'FINGERPRINT.txt')) ? readFileSync(join(BENCH, 'FINGERPRINT.txt'), 'utf8') : '';
+  if (committed !== FP.text) {
+    console.error('The benchmark files differ from FINGERPRINT.txt: not scoring. A rehearsal is --unfrozen.');
+    process.exit(2);
   }
 }
 
@@ -135,31 +182,54 @@ if (jobs > 1 && !only) {
 
 for (const d of readdirSync(runsDir, { withFileTypes: true })) {
   if (!d.isDirectory() || (only && d.name !== only)) continue;
+  if (!existsSync(join(runsDir, d.name, 'run.json'))) continue;
+  const arm = JSON.parse(readFileSync(join(runsDir, d.name, 'run.json'), 'utf8')).arm;
   for (const task of [1, 2, 3]) {
     const dir = join(runsDir, d.name, `task${task}`);
     const app = join(dir, 'app');
-    if (!existsSync(join(app, 'package.json'))) {
-      if (existsSync(dir)) writeFileSync(join(dir, 'score.json'), JSON.stringify({ noProject: true }));
-      continue;
-    }
-    // The scorer runs as the image's `node` user; it must be able to write here.
-    spawnSync('chmod', ['a+rwx', dir]);
-    const arm = JSON.parse(readFileSync(join(runsDir, d.name, 'run.json'), 'utf8')).arm;
+    const file = join(dir, late ? 'late-score.json' : 'score.json');
     const read = () => {
       try {
-        return JSON.parse(readFileSync(join(dir, 'score.json'), 'utf8'));
+        return JSON.parse(readFileSync(file, 'utf8'));
       } catch {
         return { scorerError: 'no_result' };
       }
     };
-    scoreOne(app, task, dir, arm);
-    let s = read();
-    // A failure of the scorer says nothing about the agent: score again, once.
-    if (s.scorerError) {
-      console.log(`${d.name} task ${task}: scorer error (${s.scorerError}), scoring again`);
+    // A score is written once. Only a scorer failure is scored again.
+    if (existsSync(file) && !read().scorerError) {
+      console.log(`${d.name} task ${task}: already scored, left as it is`);
+      continue;
+    }
+    if (!existsSync(join(app, 'package.json'))) {
+      if (existsSync(dir) && !late) writeFileSync(file, JSON.stringify({ noProject: true, fingerprint: FP.all, frozen: !unfrozen }));
+      continue;
+    }
+    // The scorer runs as the image's `node` user; it must be able to write here.
+    spawnSync('chmod', ['a+rwx', dir]);
+    let s;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      rmSync(file, { force: true });
       scoreOne(app, task, dir, arm);
-      s = { ...read(), scorerRetried: true };
-      writeFileSync(join(dir, 'score.json'), JSON.stringify(s, null, 2));
+      const inst = installVerdict(dir);
+      if (!inst.ok) {
+        s = inst.network
+          ? { scorerError: 'install_network', detail: 'the npm registry could not be reached' }
+          : { installFailed: true, refusedHosts: inst.refused };
+        if (!late) writeFileSync(file, JSON.stringify(s, null, 2));
+      } else {
+        s = read();
+      }
+      // A failure of the scorer says nothing about the agent: score again, once.
+      if (!s.scorerError) break;
+      console.log(`${d.name} task ${task}: scorer error (${s.scorerError})${attempt === 1 ? ', scoring again' : ''}`);
+      if (attempt === 1) spawnSync('sleep', ['20']);
+      else s.scorerRetried = true;
+    }
+    s = { ...s, fingerprint: FP.all, frozen: !unfrozen };
+    if (!late || !s.installFailed) writeFileSync(file, JSON.stringify(s, null, 2));
+    if (late) {
+      console.log(`${d.name} task ${task}: late attacks ${s.late ? `${s.late.defended}/${s.late.of}` : `not scored (${s.scorerError ?? (s.installFailed ? 'npm install failed' : 'no result')})`}`);
+      continue;
     }
     const f = s.functional ? `${s.functional.passed}/${s.functional.of}` : '-';
     const extra = s[`task${task}`] ? ` + task ${task} ${s[`task${task}`].passed}/${s[`task${task}`].of}` : '';

@@ -16,10 +16,17 @@ an array of:
       id: 'L1',                      // unique, L1, L2, ...
       name: 'one line',
       severity: 'critical' | 'high' | 'medium' | 'low',
+      async control(impl, w) {       // REQUIRED: null when the legitimate
+        ...                          // twin of the attack works, else why not
+      },
       async run(impl, w) {           // returns one of the verdicts below
         ...
       },
     }
+
+An attack without `control` is not run (`error`); one whose control fails
+is not defended (`control_failed`). An attack that passes by refusing
+everything proves nothing, so the control is not optional.
 
 `impl` is the same adapter the shared attacks use (`../attacks-adapter.mjs`):
 `read`, `list`, `del`, `share`, `redeem`, `revoke`, `expireShare`,
@@ -35,8 +42,11 @@ shared attacks.
 `impl.client` is the raw HTTP client (`call(method, path, { as, body,
 headers })`) for anything the adapter does not cover.
 
-**How they run.** `node check.mjs <dir> --late` runs them after the shared
-attacks and writes them to `score.json` as `late`; `harness/score.mjs --late`
-does it for a whole phase from the snapshots, so they can be added after the
-runs. Each late attack has a positive control of its own if it can pass by
-refusing everything.
+**How they run.** `node check.mjs <dir> --late --json late-score.json` runs
+them alone; `harness/score.mjs --late` does it for a whole phase from the
+snapshots, so they can be added after the runs. Their results go to
+`late-score.json` and nowhere else: they never run with, rewrite or replace
+the primary `score.json`. A file that fails to load is one `error` and the
+other files still run. Only `*.mjs` files at the top of this folder are
+loaded; they are outside the fingerprint, and anything else here is inside
+it.

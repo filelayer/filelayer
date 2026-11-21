@@ -158,21 +158,42 @@ export async function runAttacks(makeClient) {
 
 /**
  * The attacks written after the freeze (late/README.md), scored apart from the
- * 21. Every *.mjs in late/ that exports ATTACKS; each attack in a fresh world.
+ * 21 and written only to their own file (late-score.json): nothing here can
+ * touch the primary score (cold review, B3). Every *.mjs at the top of late/
+ * that exports ATTACKS; each attack in a fresh world.
+ *
+ * A file that fails to load is one result, `error`, and the others still run.
+ * An attack must bring its own positive control, `control(impl, w)`, which
+ * returns null when the legitimate twin of the attack works and a reason when
+ * it does not; without one the attack is not run (`error`), and a failed
+ * control scores it as not defended (`control_failed`).
  */
 export async function runLateAttacks(makeClient) {
   const { readdirSync } = await import('node:fs');
   const { fileURLToPath, pathToFileURL } = await import('node:url');
   const dir = fileURLToPath(new URL('./late/', import.meta.url));
-  const files = readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort();
+  const files = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith('.mjs')).map((e) => e.name).sort();
   const results = [];
   for (const f of files) {
-    const { ATTACKS: late = [] } = await import(pathToFileURL(dir + f).href);
+    let late;
+    try {
+      ({ ATTACKS: late = [] } = await import(pathToFileURL(dir + f).href));
+    } catch (e) {
+      results.push({ id: null, file: f, verdict: 'error', detail: `the file did not load: ${String(e?.message ?? e).slice(0, 300)}` });
+      continue;
+    }
     for (const a of late) {
       let verdict;
       try {
-        const impl = await adapterFor(makeClient());
-        verdict = await a.run(impl, impl.w);
+        if (typeof a.control !== 'function') {
+          verdict = { verdict: 'error', detail: 'no positive control: a late attack must bring control(impl, w)' };
+        } else {
+          const impl = await adapterFor(makeClient());
+          const control = await a.control(impl, impl.w);
+          verdict = control
+            ? { verdict: 'control_failed', detail: `positive control failed, so the refusal proves nothing: ${control}` }
+            : await a.run(impl, impl.w);
+        }
       } catch (e) {
         verdict = { verdict: 'error', detail: String(e?.message ?? e).slice(0, 300) };
       }
