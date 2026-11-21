@@ -61,6 +61,18 @@ container:
 
 ## The environment
 
+Each session is started the same way in both arms:
+
+    claude -p --model <model> --output-format stream-json --verbose
+           --dangerously-skip-permissions --no-session-persistence
+           --max-budget-usd <task budget> --disallowedTools WebSearch
+
+with the prompt on standard input, as the unprivileged user `agent`, in
+`/work/app`. Permissions are skipped because nobody is there to grant them;
+the container and its network are the boundary. Telemetry, error reporting
+and the autoupdater are off. The wall clock and the turn limit are enforced
+by the harness, which stops the session when either is reached.
+
 Every run gets a new internal Docker network with no route out, a new
 PostgreSQL and a new S3 emulator on it, and an egress proxy as its only way
 out, to the hosts of `harness/allowlist.txt`. Every connection attempt,
@@ -147,15 +159,29 @@ inconclusive, and the report will say so.
 
 ## Money
 
-The approved ceiling is $500, and it is a ceiling, not a target. The pilot
-stops when it reaches $100. Before each run the harness adds up what the
-phase has spent; it starts no run once the phase's cap is reached and gives no
-session a budget beyond what remains. After the pilot, if its measured cost
-per run times 40 exceeds what remains of the ceiling, the full phase does not
-start without a new approval.
+The approved ceiling is $500, and it is a ceiling, not a target. The pilot's
+cap is $100; the full phase's is $400. Before each run the harness adds up what
+the phase has spent, and starts the run only if what remains covers the full
+budgets of its three tasks ($27). So no session is ever given a budget cut
+short by the cap, which would stop it for a reason unrelated to the agent;
+the phase stops instead. After the pilot, if its measured cost per run times 40
+exceeds what remains of the ceiling, the full phase does not start without a
+new approval.
 
-Expected cost, not measured: about $5 per run with Opus and $2.50 with Sonnet
-(three tasks), so about $30 for the pilot, $75 in a high scenario.
+Expected cost of the pilot, estimated, not measured:
+
+| | Per run (three tasks) | 4 runs |
+|---|---|---|
+| Opus 5.5, central | about $5.00 | about $20 |
+| Sonnet 5.5, central | about $2.50 | about $10 |
+| Pilot, central | | **about $30** |
+| Pilot, high (2.5 times) | | **about $75** |
+| Pilot, at the limits | $27 a run | stopped by the $100 cap after 3 runs |
+
+The central case assumes, per run, 3 million tokens read from the cache, 0.4
+million written to it or uncached, and 0.12 million of output, at the prices of
+`harness/config.json`. The pilot exists to replace these assumptions with
+measurements.
 
 ## Publication
 

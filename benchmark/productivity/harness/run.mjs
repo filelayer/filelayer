@@ -27,9 +27,11 @@
  * it never appears in an argument list, a log or a file. --dry-run uses
  * fake-claude.mjs instead of Claude Code and needs no key.
  *
- * Money: before each run the phase's spend so far is read from the results;
- * the run is not started once the phase cap of config.json is reached, and no
- * session is given a budget beyond what remains of it.
+ * Money: before each run the phase's spend so far is read from the results.
+ * A run starts only if what remains of the phase cap covers the full budgets
+ * of its three tasks, so no session ever gets a budget cut short by the cap
+ * (which would stop it for a reason that has nothing to do with the agent).
+ * Otherwise the phase stops there.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -363,8 +365,11 @@ async function runOne(run) {
 buildImages();
 for (const run of plan.runs) {
   if (only && run.id !== only) continue;
-  if (spentSoFar() >= cfg.phaseCapUsd[plan.phase]) {
-    console.log(`phase cap of $${cfg.phaseCapUsd[plan.phase]} reached: ${run.id} and the rest are not run`);
+  const runBudget = Object.values(cfg.tasks).reduce((s, t) => s + t.maxBudgetUsd, 0);
+  const left = cfg.phaseCapUsd[plan.phase] - spentSoFar();
+  if (left < runBudget) {
+    console.log(`$${left.toFixed(2)} left of the phase cap of $${cfg.phaseCapUsd[plan.phase]}, less than a run's ` +
+      `$${runBudget} of budgets: ${run.id} and the rest are not run`);
     break;
   }
   await runOne(run);
