@@ -39,7 +39,7 @@ moto (`pip install "moto[server]"`).
     node hidden/check.mjs reference/a-filelayer --task 3 --seed reference/a-filelayer-t3-bug
     node hidden/mutants.mjs
     node hidden/mutants.mjs --task 2
-    node --test harness/stats.test.mjs
+    node --test harness/stats.test.mjs harness/rules.test.mjs
 
 ## Rehearse
 
@@ -49,8 +49,8 @@ starts it and runs the smoke test. It costs nothing and needs no key.
 
     node harness/plan.mjs pilot > /tmp/rehearsal/plan.json
     node harness/run.mjs --plan /tmp/rehearsal/plan.json --dry-run
-    node harness/score.mjs --runs /tmp/rehearsal --jobs 4
-    node harness/analyze.mjs --runs /tmp/rehearsal
+    node harness/score.mjs --runs /tmp/rehearsal --jobs 4 --unfrozen
+    node harness/analyze.mjs --runs /tmp/rehearsal --unfrozen
     node harness/report.mjs --runs /tmp/rehearsal --include-dry
 
 On a machine whose own way out is a proxy, add `--proxy host --upstream
@@ -69,7 +69,10 @@ An invalid run (the infrastructure failed; `analyze.mjs` says which and why)
 is replaced once: `node harness/plan.mjs --extend runs/pilot/plan.json`, then
 `run.mjs` on the same plan again.
 
-`run.mjs` refuses to start when any file differs from `FINGERPRINT.txt`, so a
-run uses exactly what PREREG.md fixed. It stops a phase at its spending cap
-(`harness/config.json`). A run already recorded is skipped, so an interrupted
-phase resumes where it stopped.
+`run.mjs` and `score.mjs` refuse to start when any file differs from
+`FINGERPRINT.txt`, so a run is made and scored with exactly what PREREG.md
+fixed, and `analyze.mjs` refuses a score that does not carry that
+fingerprint. `run.mjs` stops a phase at its spending cap
+(`harness/config.json`). Started again after it died, it removes what the
+earlier harness left, records the run it was in the middle of as invalid
+(with its spend), and carries on with the next run.

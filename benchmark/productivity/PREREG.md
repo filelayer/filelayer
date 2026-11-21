@@ -66,11 +66,13 @@ from a known state, so no task inherits the success or failure of another:
    `prompts/task3-bug.md`. An approximation of debugging, with the bug known
    in advance. The bug is of the same kind in both arms, a missing role check
    on share creation, but the seed is not the same size: one line in arm B,
-   two changes in arm A (the route's check and a grant's floor). The fix that
-   works is the same line in both. A fix that only narrows the grant in arm A
-   leaves the documents uploaded while the bug was live exposed, and the
-   scoring catches it: the snapshot is scored on a database where the seeded
-   reference uploaded documents first (`reference/SEEDED-BUG.md`).
+   two changes in arm A (the route's check and a grant's floor). Restoring the
+   route's check fixes both arms, and it is one line in each; it is not the
+   only fix, and no fix is required to look like it: the scoring judges a fix
+   by what it does. A fix that only narrows the grant in arm A leaves the
+   documents uploaded while the bug was live exposed, and the scoring catches
+   it: the snapshot is scored on a database where the seeded reference
+   uploaded documents first (`reference/SEEDED-BUG.md`).
 
 ## The environment
 
@@ -86,7 +88,19 @@ the container and its network are the boundary. Telemetry, error reporting
 and the autoupdater are off. The wall clock and the turn limit are enforced
 by the harness, which stops the session when either is reached; a turn is one
 API response, counted once per message id. Claude Code checks the budget after
-each turn, so a session can exceed its budget by up to one turn.
+each turn, so a session can exceed its budget by up to one turn. Claude Code
+runs in its own session and process group inside the container (`setsid`), so
+stopping it stops everything it started.
+
+A run is never resumed or run twice. `run.json` is written with `state:
+started` before the first session and again before and after every session,
+naming the session in flight; each session's stream has a file of its own,
+never overwritten. If the harness dies, the next harness first removes every
+container, network and proxy the earlier one left (and checks they are gone),
+then closes each run that did not finish: the spend of the session in flight
+is read from its stream and counted, and the run is invalid
+(`harness_interrupted`). A harness stopped by a signal takes its containers
+down with it.
 
 Every run gets a new internal Docker network with no route out, a new
 PostgreSQL and a new S3 emulator on it, and an egress proxy as its only way
@@ -98,8 +112,23 @@ Scoring happens afterwards, from the snapshot of `/work/app` taken at the end
 of each task, in a different container that the agent never touched: new
 PostgreSQL and S3, `npm install`, then `npm start` and the hidden checks over
 HTTP. The snapshot sees only the contract's environment variables. For task
-3, the run's seeded reference is started first on the same database and
-bucket and uploads the documents T3-01 checks.
+3, the run's seeded reference is installed in the scorer from its own
+`package-lock.json` (fingerprinted), started first on the same database and
+bucket, and uploads the documents T3-01 checks.
+
+The scorer reaches one host, `registry.npmjs.org` (`harness/allowlist-score.txt`),
+through a proxy whose log is kept with the score. A failed `npm install` is
+the scorer's failure only when that registry could not be reached (a
+connection error to it in the scorer's log, or a 5xx or 429 from it); it is
+then scored once more. Any other failure to install is the agent's, including
+a dependency that fetches from another host while installing: the contract
+says `npm install` must work, and the rule is the same for both arms.
+
+The scorer refuses to score unless the benchmark files match
+`FINGERPRINT.txt`, and writes the fingerprint into every `score.json`;
+`analyze.mjs` refuses any score without it, or with another one, and any
+valid task that has no score (an unscored task is not a zero). A score is
+written once; only a scorer failure is scored again.
 
 ## What is measured
 
@@ -121,8 +150,9 @@ observed.
 | Dependencies | `package.json` of the snapshot | observed |
 | Functional | every hidden functional check of the task passes (for tasks 2 and 3, the task's checks and the whole task-1 battery) | observed |
 | Security | the number of the 21 shared attacks defended. A1-A4 count as defended only if their positive control passes first (the legitimate twin of the attack works), so refusing everything defends nothing. A project that is missing, does not install or does not start defends 0 | observed |
-| Late attacks | attacks written after the freeze by someone who has not seen Filelayer (`hidden/late/`), defended out of those that apply. Reported apart; never part of the 21, H2 or "both" | observed |
-| Reads of `examples/vault` | tool calls, of any kind (Read, Grep, Glob, a shell command), that touch the package's `examples/vault`; other examples counted apart | observed |
+| Late attacks | attacks written after the freeze by someone who has not seen Filelayer (`hidden/late/`), each with its own positive control, defended out of those that apply. Scored separately into `late-score.json`, which nothing else reads or writes; never part of the 21, H2 or "both" | observed |
+| Reads of `examples/vault` | tool calls that ask for vault in the package's examples (a path, pattern or glob of Read, Grep or Glob taken together, or a shell command, with the directory an earlier `cd` left it in), or whose result lists a file under `examples/vault`; other examples counted apart (`harness/classify.mjs`, tested on the reads a cold review planted) | observed |
+| Egress errors | every connection error to an allowed host during a session, by host and arm, whether or not it invalidates | observed |
 | Documentation read | characters of the results of WebFetch, and of Read, Grep, Glob and shell reads of files under `node_modules`, divided by 4 | estimated |
 
 A task is **complete** in a block only if the session finished within its
@@ -197,24 +227,39 @@ task:
 
 | The record shows | Read from |
 |---|---|
-| The session ended because the API failed: an error result whose text is an API failure (5xx, 429, overloaded, a connection error), or no result and such a failure on stderr. A budget stop is not one | the session's stream and stderr |
-| An allowed host could not be reached during the session | the egress log, by time, inside the session's window |
-| The scorer failed: its PostgreSQL or S3 failed before or after the scoring, its checks threw, or `npm install` failed on the network twice. Each is scored once more before it counts | `score.json` |
-| The harness failed, or was stopped during the run | `run.json` |
+| The API failed (5xx, 429, overloaded, a timeout, a connection error, 401 or 403, an exhausted key), whatever stopped the session: read from Claude Code's stderr, and from the final result's text only when the result is an error and the text is an error message, never from what the agent wrote. A budget or turn stop is not one | the session's stderr and result (`harness/classify.mjs`) |
+| An allowed host failed persistently during the session: no successful connection to it in the session's window, or errors for at least 5 minutes in a row with no success between them. A single error that a retry got past is recorded and does not invalidate | the egress log, by time, inside the session's window |
+| The scorer failed: its PostgreSQL or S3 failed before or after the scoring, its checks threw, the npm registry could not be reached (see above), or the seeded reference did not install. Each is scored once more before it counts | `score.json` |
+| The harness could not take the snapshot | `run.json` (`snapshotOk: false`) |
+| The harness failed, before the first task or during any, or was stopped during the run | `run.json` |
+| A task was skipped because the phase cap could not cover its budget | `run.json` |
+
+An exhausted or refused API key (out of credit, or 401 or 403) stops the
+phase: every run after it would fail the same way, and those would be zeros
+the agent did not earn.
 
 A snapshot that is missing, does not install for a reason other than the
 network, or does not start, is the agent's failure and scores zero; it is not
 invalid. Any invalid task makes its whole run invalid. An invalid run is
 published with its reason, counts in no figure, and is replaced once by a run
 of the same arm and model appended at the end of the order (`plan.mjs
---extend`); a replacement that is itself invalid is not replaced again. A
-harness stopped during a run leaves that run invalid rather than resuming it,
-and its spend stays counted.
+--extend`); a replacement that is itself invalid is not replaced again.
+Replacements run after the planned order, so they do not alternate with the
+other arm the way the planned runs do; any drift in the API during the phase
+falls on them unevenly. Declared, not corrected; the report lists which runs
+are replacements.
 
-Two things are checked in the pilot's records before the full phase, and
-anything found is a deviation: which hosts Claude Code itself calls (its
-WebFetch tool in particular), from the egress log; and whether a session the
-harness stops leaves a usable stream.
+Checked in the pilot's records before the full phase, against Claude Code
+2.1.330 itself; anything found is a deviation, fixed and frozen again before
+the full phase:
+
+- which hosts Claude Code calls (its WebFetch tool in particular), from the
+  egress log;
+- whether the usage on each stream line is per response or cumulative, which
+  decides whether the per-message-id sum of `harness/usage.mjs` is right;
+- the actual `is_error`, `subtype` and stderr texts of an API error, a budget
+  stop and a turn stop, against the patterns of `harness/classify.mjs`;
+- whether a session the harness stops leaves a usable stream.
 
 ## Money
 
@@ -222,10 +267,12 @@ The approved ceiling is $500, and it is a ceiling, not a target. The pilot's
 cap is $100; the full phase's is $400. Before each run the harness adds up what
 the phase has spent, counting for each task the larger of Claude Code's own
 figure and the estimate from the stream, so a session that was stopped or died
-is counted too. It starts the run only if what remains covers the full budgets
-of its three tasks ($27), so no session is ever given a budget cut short by
-the cap, which would stop it for a reason unrelated to the agent; the phase
-stops instead. After the pilot, if its measured cost per run times 40 exceeds
+is counted too. Every task has its own fixed budget ($15, $6, $6), never what
+is left of the run. A run starts only if what remains of the cap covers the
+sum of the three ($27); if overruns of earlier tasks (up to one turn each)
+then leave less than a task's budget, that task is skipped and the run is
+invalid and replaced, rather than run with a smaller budget. An overrun is
+paid out of what the cap leaves over, not out of the next task. After the pilot, if its measured cost per run times 40 exceeds
 what remains of the ceiling, the full phase does not start without a new
 approval.
 
@@ -264,12 +311,13 @@ benchmark with their own API key (`README.md`).
 | Task 2's reason for a revocation cannot be stored by Filelayer; arm A needs a table of its own | against Filelayer | declared |
 | Filelayer's documentation is written for agents | Filelayer | part of what is measured; documentation read is reported separately |
 | Arm A reads only the documentation inside the package; filelayer.dev is not reachable. A real agent could also read the live site (guides, comparison pages), and this benchmark does not measure what that adds or costs | either | declared as a limitation; the package's copy is what is frozen, by the tarball's integrity hash |
+| The package's own documentation sends arm A to filelayer.dev 13 times (4 in `README.md`, 4 in `llms.txt`, 5 in `docs/` and `skills/`), and those links do not open; arm B's documentation sites are reachable | against Filelayer | declared; a failed attempt is in the egress log, so its cost in tokens and time is in the run's figures |
 | The models know S3 from training and Filelayer not | against Filelayer | the real situation; reported without correction |
 | Arm A is told to use Filelayer; a real user would have to choose it | Filelayer | this measures implementation, not selection; selection is measured by the discovery gates |
 | The library's own code is not counted as lines | Filelayer | its size is reported next to arm A's lines |
 | Checks the agent does not see | neutral | the same smoke test for both arms |
 | Model randomness | neutral | 10 runs per cell, random interleaved order, intervals |
-| The seeded bug is one line in arm B and two changes in arm A, and arm A has two places to see it | either | the fix that works is the same line in both; a partial fix in arm A fails on documents uploaded while the bug was live |
+| The seeded bug is one line in arm B and two changes in arm A, and arm A has two places to see it | either | restoring the route's check fixes both, one line in each; any fix is judged by its effect, and a partial fix in arm A fails on documents uploaded while the bug was live |
 | The S3 emulator is not S3 | either | the same emulator for both arms; moto accepts what the AWS SDKs send by default |
 | Publishing only what is favourable | Filelayer | this preregistration, and publication of every run |
 
