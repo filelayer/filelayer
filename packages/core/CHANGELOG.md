@@ -19,6 +19,47 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [Unreleased]
+
+A patch release with one authorization fix. No schema change (still version
+16) and no change to the API.
+
+### Fixed (security) — holders of one group grant could revoke each other's links
+
+**Scope.** Grants whose subject is a group (`org` or `role`) and that carry
+`share`. Grants to one actor, links, and role-derived authority are unchanged.
+
+**What happened.** Revoking needs `share`. Authority that comes from a grant
+was limited in `0.2.0`, before the first published release, to that grant's own
+subtree, so that holding `share` did not mean holding revoke over every grant
+on the file. The rule assumes one holder per grant. A group grant has every member of the group as a holder, all
+with the same authority, so every member's links were in every other member's
+subtree, and the group grant was the root of each. Any holder of a group grant
+could therefore revoke the links a colleague had issued through it, and could
+revoke the group grant itself, ending the group's access for everyone in it.
+
+**Impact.** Denial of service among the members of one group: a link stopped
+working, or the group lost access, because a colleague revoked it. Nothing was
+disclosed and no access was gained. Nobody outside the group could do it.
+
+**Now.** A holder of a group grant revokes only grants on a chain they issued:
+a grant they issued, and anything delegated from it. The group grant itself is
+revoked by role-derived authority (admin or owner of the file's org, or the
+file's owner), the only authority that can issue one. A refusal is `not_found`
+(404) with reason `foreign_grant`, audited as a denied `grant.revoke` with
+`context.viaGroupGrant: true`. See `SEMANTICS.md` §7c.
+
+**Behaviour change.** A member who revoked a colleague's link, or the group
+grant, through a group grant is now refused. Code that relied on that should
+revoke as an admin or owner instead.
+
+**Found** on 2026-11-21 by the productivity benchmark's arm A reference, which
+had to restrict revocation to a link's creator in its own code. Asserted for
+both `org` and `role` subjects, and for a chain below one, in
+`test/regression.test.ts`.
+
+---
+
 ## [0.36.0] — 2026-11-20
 
 The fix release after the launch. A minor bump, because one behaviour changes

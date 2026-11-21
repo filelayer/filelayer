@@ -345,6 +345,32 @@ columns as well as on INSERT, so a delegated grant cannot be widened by a later
 `UPDATE` either. Every case in the table above is asserted through both paths in
 `test/group-subjects.test.ts`.
 
+### 7c. Revocation — whose grants a holder may revoke
+
+Revoking needs `share` on the file, and which grants it reaches depends on where
+that `share` came from:
+
+| the revoker's `share` came from | they may revoke |
+|---|---|
+| an **org role** (admin/owner of the file's org, or the file's owner) | every grant on the file |
+| a grant to **one actor** (them) | that grant, and every grant delegated from it |
+| a **group** grant (`org` or `role`) | only grants on a chain they issued: a grant they issued, and anything delegated from it. Not the group grant itself |
+
+**Why groups differ.** A grant to one actor has one holder, so "the grant and
+its subtree" is exactly the authority that person was given. A group grant has
+every member of the group as a holder, all with the same authority. Read the
+one-actor rule over it and every member's links sit in every other member's
+subtree, and the group grant is the root of each: any member could revoke a
+colleague's links, or end the group's access for everyone. Before `0.36.1` that
+is what happened. A holder of a group grant now revokes along the chain of
+issuers, and the group grant is revoked by role-derived authority, which is the
+only authority that can issue one (7b).
+
+A refusal is `not_found` (404) with reason `foreign_grant`, audited as a denied
+`grant.revoke` with the grant the authority came from in `context.viaGrantId`
+(and `context.viaGroupGrant: true` for a group grant). Asserted in
+`test/regression.test.ts`.
+
 ---
 
 ## 8. The tenant and project boundaries

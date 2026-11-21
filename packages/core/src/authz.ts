@@ -338,6 +338,13 @@ export interface AuthzDeps {
   findGrantBySecret(secretHash: string): Promise<GrantRow | null>;
   /** Is `grantId` the same grant as, or delegated from, `ancestorId`? */
   isDescendantOf(ancestorId: string, grantId: string): Promise<boolean>;
+  /** The subject type of a grant, live or not; null when there is no such grant. */
+  grantSubjectType(grantId: string): Promise<GrantSubjectType | null>;
+  /**
+   * Did `actorId` issue `grantId`, or any grant on its chain strictly below
+   * `ancestorId`? False when `grantId` does not descend from `ancestorId`.
+   */
+  issuedOnChainBelow(ancestorId: string, grantId: string, actorId: string): Promise<boolean>;
   getAnonymousGrant(fileId: string): Promise<GrantRow | null>;
   /**
    * The set form of the decision. Given a predicate DERIVED from the same
@@ -1203,6 +1210,21 @@ export async function authorizeShare(
  *     carries revoke over every grant on the file, as before;
  *   - authority from a GRANT carries revoke only over that grant's own subtree,
  *     which is exactly the authority it was given.
+ *
+ * A GROUP grant (subject `org` or `role`) needed one more rule, found by the
+ * productivity benchmark's arm A reference on 21 November 2026. The subtree
+ * rule assumes one holder per grant; a group grant has every member of the
+ * group as a holder, all holding the same authority. So every member's links
+ * were in every other member's "own" subtree, and the group grant itself was
+ * the root of each: any member could revoke a colleague's link, or the group's
+ * access for everyone. For authority that comes from a group grant:
+ *
+ *   - the group grant itself is not revocable through it; role-derived
+ *     authority revokes it, the only authority that can issue one (I6);
+ *   - a grant below it is revocable only by whoever issued it or one of the
+ *     grants between it and the group grant: the chain of issuers.
+ *
+ * Grants to one actor are unchanged.
  */
 export async function authorizeRevoke(
   deps: AuthzDeps,
@@ -1213,7 +1235,18 @@ export async function authorizeRevoke(
   if (!resolved.decision.allow) return resolved.decision;
 
   const via = resolved.decision.grantId ?? null;
-  if (via === null || grant.id === via || (await deps.isDescendantOf(via, grant.id))) {
+  if (via === null) return resolved.decision;
+  const viaType = await deps.grantSubjectType(via);
+  const group = viaType === 'org' || viaType === 'role';
+  if (!group && (grant.id === via || (await deps.isDescendantOf(via, grant.id)))) {
+    return resolved.decision;
+  }
+  if (
+    group &&
+    grant.id !== via &&
+    principal.actorId &&
+    (await deps.issuedOnChainBelow(via, grant.id, principal.actorId))
+  ) {
     return resolved.decision;
   }
 
@@ -1226,7 +1259,7 @@ export async function authorizeRevoke(
     fileId: grant.fileId,
     grantId: grant.id,
     ...(principal.ip !== undefined ? { ip: principal.ip } : {}),
-    context: { viaGrantId: via },
+    context: { viaGrantId: via, ...(group ? { viaGroupGrant: true } : {}) },
   });
   return { allow: false, reason: 'foreign_grant' };
 }

@@ -600,6 +600,65 @@ describe('holding `share` does not confer revoke over other people’s grants', 
     await w.fl.revoke(P(admin), link.grantId);
     await rejects(() => w.fl.redeem(link.secret!), 404);
   });
+  // Found by the productivity benchmark's arm A reference (2026-11-21). The
+  // subtree rule assumes one holder per grant. A grant to a group (`org` or
+  // `role`) has many: every member holds the same authority, so every member's
+  // links sit in every other member's "own" subtree, and the group grant itself
+  // is the root of each of them.
+  for (const kind of ['role', 'org'] as const) {
+    it(`holders of one GROUP grant (${kind}) cannot revoke each other’s links, or the group grant`, async () => {
+      const w = await world();
+      const ana = await w.actor(`grp-${kind}-ana`, 'member');
+      const ben = await w.actor(`grp-${kind}-ben`, 'member');
+      const group = await w.fl.share(P(w.owner), w.file.id, {
+        subject: kind === 'role' ? { type: 'role', orgId: w.org, minRole: 'member' } : { type: 'org', orgId: w.org },
+        capabilities: ['read', 'share'],
+      });
+      const anasLink = await w.fl.share(P(ana), w.file.id, { subject: { type: 'link' } });
+
+      // Ben shares through the same grant; Ana's link is not his to revoke.
+      await rejects(() => w.fl.revoke(P(ben), anasLink.grantId), 404);
+      assert.equal(text((await w.fl.redeem(anasLink.secret!)).body), 'SECRET', 'Ana’s link still works');
+      // Nor may one holder end the group's access for everyone.
+      await rejects(() => w.fl.revoke(P(ben), group.grantId), 404);
+      assert.equal(text((await w.fl.read(P(ana), w.file.id)).body), 'SECRET', 'the group grant still works');
+
+      // Ana still revokes her own link, and the owner anything.
+      await w.fl.revoke(P(ana), anasLink.grantId);
+      await rejects(() => w.fl.redeem(anasLink.secret!), 404);
+      await w.fl.revoke(P(w.owner), group.grantId);
+      await rejects(() => w.fl.read(P(ben), w.file.id), 404);
+
+      const log = await w.fl.store.listAudit(w.org, { decision: 'deny' });
+      assert.ok(log.filter((e) => e.action === 'grant.revoke' && e.reason === 'foreign_grant').length >= 2);
+    });
+  }
+
+  it('below a group grant, revoke follows the chain of issuers', async () => {
+    const w = await world();
+    const ana = await w.actor('chain-ana', 'member');
+    const ben = await w.actor('chain-ben', 'member');
+    const carl = await w.actor('chain-carl');
+    await w.fl.share(P(w.owner), w.file.id, {
+      subject: { type: 'role', orgId: w.org, minRole: 'member' },
+      capabilities: ['read', 'share'],
+    });
+    // Ana passes her authority on to Carl, who issues a link.
+    const toCarl = await w.fl.share(P(ana), w.file.id, {
+      subject: { type: 'actor', actorId: carl },
+      capabilities: ['read', 'share'],
+    });
+    const carlsLink = await w.fl.share(P(carl), w.file.id, { subject: { type: 'link' } });
+
+    // Ben issued nothing on that chain.
+    await rejects(() => w.fl.revoke(P(ben), carlsLink.grantId), 404);
+    await rejects(() => w.fl.revoke(P(ben), toCarl.grantId), 404);
+    // Ana issued the grant the link descends from.
+    await w.fl.revoke(P(ana), carlsLink.grantId);
+    await rejects(() => w.fl.redeem(carlsLink.secret!), 404);
+    await w.fl.revoke(P(ana), toCarl.grantId);
+    await rejects(() => w.fl.read(P(carl), w.file.id), 404);
+  });
 });
 
 // =============================================================================

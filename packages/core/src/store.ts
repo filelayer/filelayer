@@ -743,6 +743,31 @@ export class PostgresStore implements AuthzDeps {
     return rows.length > 0;
   }
 
+  async grantSubjectType(grantId: string): Promise<GrantSubjectType | null> {
+    if (!isUuid(grantId)) return null;
+    const { rows } = await this.db.query<{ subject_type: GrantSubjectType }>(
+      `SELECT subject_type FROM file_grant WHERE id = $1`,
+      [grantId],
+    );
+    return rows[0]?.subject_type ?? null;
+  }
+
+  async issuedOnChainBelow(ancestorId: string, grantId: string, actorId: string): Promise<boolean> {
+    if (!isUuid(ancestorId) || !isUuid(grantId) || !isUuid(actorId)) return false;
+    // The chain from `grantId` up to, and not including, `ancestorId`. Empty
+    // when `ancestorId` is not on the chain, so the answer is false.
+    const { rows } = await this.db.query(
+      `WITH chain AS (SELECT id, depth FROM grant_ancestry($1)),
+            top AS (SELECT depth FROM chain WHERE id = $2)
+       SELECT 1
+         FROM chain c JOIN file_grant g ON g.id = c.id, top
+        WHERE c.depth < top.depth AND g.created_by = $3
+        LIMIT 1`,
+      [grantId, ancestorId, actorId],
+    );
+    return rows.length > 0;
+  }
+
   /** live_grant only. */
   async getAnonymousGrant(fileId: string): Promise<GrantRow | null> {
     if (!isUuid(fileId)) return null;
