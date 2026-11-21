@@ -20,16 +20,33 @@ its own. Removing only the route's check would leave no bug to find, so the
 seed also widens that grant to `minRole: 'viewer'`. The application then
 behaves exactly as arm B's does.
 
-## The fix
+## The fix, and what the scoring makes of it
 
-The smallest fix is the same line in both arms: put the route's role check
-back. In arm A, narrowing the grant again is a second way to fix it for new
-uploads, but not for documents already uploaded under the wide grant, which
-keep it. Both kinds of fix pass the hidden check of task 3 (T3-01), which
-uploads fresh documents.
+The seed is not symmetric, and the scoring is built so that it does not have
+to be. In arm B the bug is one missing line. In arm A it is two changes: the
+route's check and the grant's floor.
+
+- **Putting the route's role check back** fixes both arms, for every document.
+  It is one line in each.
+- **In arm A, narrowing the grant again** looks like a fix and is not one: it
+  protects documents uploaded from then on, and every document uploaded while
+  the bug was live keeps the wide grant.
+
+So the database a task-3 snapshot is scored on is not empty. Before the
+snapshot starts, the scorer starts the run's own seeded reference on the same
+database and bucket and builds a world with it (`hidden/task3.mjs`,
+`seedTask3`). T3-01 then checks a viewer against those documents, uploaded
+while the bug was live, as well as against fresh ones. A fix that only narrows
+the grant fails it.
+
+Arm A has two places where the bug can be seen and arm B one. That is
+declared in PREREG.md as a difference between the arms, not corrected.
 
 ## How it was checked
 
 - Both seeded folders fail F16 and T3-01, and pass everything else.
-- Both healthy references pass all of it.
+- Both healthy references pass all of it, scored on a database seeded by
+  their own seeded reference.
 - Arm A's seeded folder with only the route's line restored passes all of it.
+- Arm A's seeded folder with only the grant narrowed fails T3-01 on a document
+  uploaded while the bug was live, and passes the rest.

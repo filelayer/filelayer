@@ -32,7 +32,7 @@
       "wallMinutes": 25,
       "maxTurns": 100,
       "maxBudgetUsd": 6,
-      "start": "task1"
+      "start": "reference"
     },
     "3": {
       "prompt": "task3-bug.md",

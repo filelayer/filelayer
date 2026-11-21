@@ -6,10 +6,12 @@ api.anthropic.com
 # Packages.
 registry.npmjs.org
 www.npmjs.com
-# Documentation. The arm A line names filelayer.dev; the rest is what an
-# implementation in either arm is likely to read. GitHub is not on the list:
-# the repository holds this benchmark's hidden checks.
-filelayer.dev
+# Documentation that either arm is likely to read. Filelayer's own is the one
+# in the package (README.md, docs/, llms.txt, skills/), frozen by the pinned
+# tarball's integrity hash. filelayer.dev is not on the list: it is a live
+# site outside the fingerprint, and its comparison page describes which of the
+# shared attacks catch which defects. GitHub is not on the list either: the
+# repository holds this benchmark's hidden checks.
 nodejs.org
 developer.mozilla.org
 www.postgresql.org

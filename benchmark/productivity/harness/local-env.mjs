@@ -120,6 +120,31 @@ export async function startEnv() {
   };
 }
 
+/**
+ * Are the services themselves up? Asked by the scorer before and after a
+ * snapshot is scored, so that a PostgreSQL or moto that failed is recorded as
+ * the scorer's failure (the task is invalid) and never as the agent's.
+ */
+export async function probeEnv(env) {
+  const { default: pg } = await import(requireCore.resolve('pg'));
+  const db = new pg.Client({ connectionString: env.DATABASE_URL, connectionTimeoutMillis: 10_000 });
+  try {
+    await db.connect();
+    await db.query('SELECT 1');
+  } catch (e) {
+    return `postgres: ${e.message}`;
+  } finally {
+    await db.end().catch(() => {});
+  }
+  try {
+    const r = await fetch(`${env.S3_ENDPOINT}/${env.S3_BUCKET}`, { signal: AbortSignal.timeout(10_000) });
+    if (r.status !== 200) return `s3: the bucket answered ${r.status}`;
+  } catch (e) {
+    return `s3: ${e.message}`;
+  }
+  return null;
+}
+
 /** Start the implementation in `dir` with `npm start`; resolves once /health answers. */
 export async function startServer(dir, env, { log = () => {} } = {}) {
   const port = await freePort();

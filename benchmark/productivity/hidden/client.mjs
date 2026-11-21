@@ -3,6 +3,7 @@
  * It speaks only HTTP: nothing here knows how an implementation stores
  * anything, so the same checks run unchanged against both arms.
  */
+import { randomBytes, randomUUID } from 'node:crypto';
 
 export function client(baseUrl, adminToken) {
   async function call(method, path, { as, body, headers = {} } = {}) {
@@ -34,6 +35,25 @@ export function client(baseUrl, adminToken) {
 }
 
 const b64 = (s) => Buffer.from(s).toString('base64');
+
+/**
+ * An id that does not exist, in the same shape as a real one of this
+ * implementation: a UUID for a UUID, the same prefix and length for
+ * `doc_<hex>`, a large number for a number, otherwise the same characters'
+ * classes. A missing id that is shaped differently from the real ones can be
+ * refused for being malformed, which would test the parser rather than the
+ * existence oracle (cold review: the ghosts used to copy arm B's format).
+ */
+export function ghostLike(id) {
+  const s = String(id);
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return randomUUID();
+  const m = s.match(/^(.*[_-])([0-9a-f]+)$/i);
+  if (m) return m[1] + randomBytes(m[2].length).toString('hex').slice(0, m[2].length);
+  if (/^\d+$/.test(s)) return String(Number(s) + 1_000_000_007);
+  const pick = (set) => set[randomBytes(1)[0] % set.length];
+  return s.replace(/[0-9]/g, () => pick('0123456789')).replace(/[a-z]/g, () => pick('abcdefghijklmnopqrstuvwxyz'))
+    .replace(/[A-Z]/g, () => pick('ABCDEFGHIJKLMNOPQRSTUVWXYZ'));
+}
 
 /**
  * Two orgs. Acme (orgA): alice owner, adam admin, mallory member, vera viewer.
@@ -74,8 +94,11 @@ export async function buildWorld(c) {
   w.docA2 = await w.upload(w.alice, w.orgA, 'a2.txt', 'text/plain', 'DOC-A2-MARKER');
   w.docA2Marker = 'DOC-A2-MARKER';
   w.ghostUser = `usr_${'0'.repeat(24)}`;
-  w.ghostDoc = `doc_${'0'.repeat(24)}`;
-  w.ghostDocs = Array.from({ length: 8 }, (_, i) => `doc_ghost${String(i).padStart(19, '0')}`);
+  // Missing ids shaped like this implementation's real ones, and one of the
+  // other common shape, so F14 sees both.
+  w.ghostDoc = ghostLike(w.docA);
+  w.ghostDocs = Array.from({ length: 8 }, () => ghostLike(w.docA));
+  w.ghostDocOtherShape = /^[0-9a-f]{8}-/i.test(String(w.docA)) ? `doc_${'0'.repeat(24)}` : '00000000-0000-4000-8000-000000000000';
   w.docAPrivate = null; // the contract has no per-document visibility
   w.docAExpired = null; // the contract has no document expiry
   return w;

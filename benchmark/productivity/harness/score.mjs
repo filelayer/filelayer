@@ -33,6 +33,7 @@ const only = arg('--only');
 const proxyMode = arg('--proxy', 'container');
 const upstream = arg('--upstream');
 const extraCa = arg('--extra-ca') ? resolve(arg('--extra-ca')) : null;
+const late = args.includes('--late');
 const cfg = JSON.parse(readFileSync(join(HERE, 'config.json'), 'utf8'));
 
 if (!existsSync(join(BENCH, 'node_modules', 'pg'))) {
@@ -46,7 +47,7 @@ const docker = (argv, allowFail = false) => {
   return r;
 };
 
-function scoreOne(app, task, out) {
+function scoreOne(app, task, out, arm) {
   const name = `pbs-${randomBytes(4).toString('hex')}`;
   docker(['network', 'create', '--internal', name]);
   const gw = docker(['network', 'inspect', name, '-f', '{{(index .IPAM.Config 0).Gateway}}']).stdout.trim();
@@ -85,9 +86,18 @@ function scoreOne(app, task, out) {
       'set -u',
       'cp -r /snapshot /tmp/app',
       'cd /tmp/app',
-      `if ! timeout ${installSecs} npm install --no-audit --no-fund >/out/install.log 2>&1; then echo '{"installFailed":true}' > /out/score.json; exit 0; fi`,
+      // An install that fails on the network is retried once, and if it fails
+      // again it is the scorer's failure, not the agent's. Any other failure to
+      // install is the agent's: the contract says npm install must work.
+      `NET='ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|ECONNREFUSED|socket hang up|E50[0-9]|E429|network'`,
+      `install() { timeout ${installSecs} npm install --no-audit --no-fund >/out/install.log 2>&1; }`,
+      'if ! install; then',
+      '  if grep -Eq "$NET" /out/install.log; then sleep 20; rm -rf node_modules; if ! install; then',
+      `    if grep -Eq "$NET" /out/install.log; then echo '{"scorerError":"install_network"}' > /out/score.json; else echo '{"installFailed":true}' > /out/score.json; fi; exit 0; fi`,
+      `  else echo '{"installFailed":true}' > /out/score.json; exit 0; fi`,
+      'fi',
       'cd /bench',
-      `node hidden/check.mjs /tmp/app --task ${task} --json /out/score.json > /out/check.log 2>&1; echo "exit $?" >> /out/check.log`,
+      `node hidden/check.mjs /tmp/app --task ${task} ${task === 3 ? `--seed /bench/reference/${arm === 'a' ? 'a-filelayer' : 'b-own'}-t3-bug ` : ''}${late ? '--late ' : ''}--json /out/score.json > /out/check.log 2>&1; echo "exit $?" >> /out/check.log`,
     ].join('\n');
     docker(['run', '--rm', '--name', `${name}-scorer`, '--network', name, '--cpus', '2', '--memory', '4g',
       '-u', 'node',
@@ -134,11 +144,26 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
     }
     // The scorer runs as the image's `node` user; it must be able to write here.
     spawnSync('chmod', ['a+rwx', dir]);
-    scoreOne(app, task, dir);
-    const s = JSON.parse(readFileSync(join(dir, 'score.json'), 'utf8'));
+    const arm = JSON.parse(readFileSync(join(runsDir, d.name, 'run.json'), 'utf8')).arm;
+    const read = () => {
+      try {
+        return JSON.parse(readFileSync(join(dir, 'score.json'), 'utf8'));
+      } catch {
+        return { scorerError: 'no_result' };
+      }
+    };
+    scoreOne(app, task, dir, arm);
+    let s = read();
+    // A failure of the scorer says nothing about the agent: score again, once.
+    if (s.scorerError) {
+      console.log(`${d.name} task ${task}: scorer error (${s.scorerError}), scoring again`);
+      scoreOne(app, task, dir, arm);
+      s = { ...read(), scorerRetried: true };
+      writeFileSync(join(dir, 'score.json'), JSON.stringify(s, null, 2));
+    }
     const f = s.functional ? `${s.functional.passed}/${s.functional.of}` : '-';
     const extra = s[`task${task}`] ? ` + task ${task} ${s[`task${task}`].passed}/${s[`task${task}`].of}` : '';
     const a = s.security ? `${s.security.defended}/${s.security.of}` : '-';
-    console.log(`${d.name} task ${task}: ${s.installFailed ? 'npm install failed' : `functional ${f}${extra}, attacks ${a}, both ${s.both ? 'yes' : 'no'}`}`);
+    console.log(`${d.name} task ${task}: ${s.scorerError ? `SCORER ERROR (${s.scorerError}), the task is invalid` : s.installFailed ? 'npm install failed' : s.serverFailed ? 'the snapshot did not start' : `functional ${f}${extra}, attacks ${a}, both ${s.both ? 'yes' : 'no'}`}`);
   }
 }

@@ -39,6 +39,7 @@ export async function adapterFor(c) {
   const shareDoc = new Map(); // shareId -> { org, doc, expiresAt }
   const impl = {
     w,
+    client: c,
     singleBackend: true,
     read: ({ as, org, doc }) => c.call('GET', `/orgs/${org}/documents/${doc}`, { as }),
     list: async ({ as, org }) => {
@@ -99,6 +100,37 @@ export async function adapterFor(c) {
   return impl;
 }
 
+/**
+ * POSITIVE CONTROLS. A1-A4 count any refusal as defended, so an implementation
+ * that refused everything would defend them all (cold review). Before each, the
+ * legitimate twin of the attack must work: the owner reads, lists or deletes
+ * her own documents, and the attacker works in her own org. A failed control
+ * scores the attack as not defended (`control_failed`). The shared attacks
+ * themselves are unchanged.
+ */
+const CONTROLS = {
+  async A1(impl, w) {
+    const r = await impl.read({ w, as: w.alice, org: w.orgA, doc: w.docA });
+    if (r.status !== 200 || r.text !== 'DOC-A-SECRET') return `the owner cannot read her document (status ${r.status})`;
+    const own = await impl.list({ w, as: w.eve, org: w.orgB });
+    if (own.status !== 200) return `the attacker cannot list her own org (status ${own.status})`;
+    return null;
+  },
+  async A3(impl, w) {
+    const r = await impl.list({ w, as: w.alice, org: w.orgA });
+    if (r.status !== 200 || !(r.ids ?? []).includes(w.docA)) return `the owner's listing does not hold her document (status ${r.status})`;
+    return null;
+  },
+  async A4(impl, w) {
+    const r = await impl.del({ w, as: w.alice, org: w.orgA, doc: w.docA2 });
+    if (r.status < 200 || r.status >= 300) return `the owner cannot delete her own document (status ${r.status})`;
+    const gone = await impl.read({ w, as: w.alice, org: w.orgA, doc: w.docA2 });
+    if (gone.status !== 404) return `a deleted document still answers ${gone.status}`;
+    return null;
+  },
+};
+CONTROLS.A2 = CONTROLS.A1;
+
 /** Run every attack in a fresh world each, against a running implementation. */
 export async function runAttacks(makeClient) {
   const results = [];
@@ -106,7 +138,10 @@ export async function runAttacks(makeClient) {
     let verdict;
     try {
       const impl = await adapterFor(makeClient());
-      verdict = await a.run(impl, impl.w);
+      const control = CONTROLS[a.id] ? await CONTROLS[a.id](impl, impl.w) : null;
+      verdict = control
+        ? { verdict: 'control_failed', detail: `positive control failed, so the refusal proves nothing: ${control}` }
+        : await a.run(impl, impl.w);
     } catch (e) {
       verdict = { verdict: 'error', detail: String(e?.message ?? e).slice(0, 300) };
     }
@@ -119,4 +154,31 @@ export async function runAttacks(makeClient) {
     of: scored.length,
     allDefended: scored.every((r) => r.verdict === 'defended'),
   };
+}
+
+/**
+ * The attacks written after the freeze (late/README.md), scored apart from the
+ * 21. Every *.mjs in late/ that exports ATTACKS; each attack in a fresh world.
+ */
+export async function runLateAttacks(makeClient) {
+  const { readdirSync } = await import('node:fs');
+  const { fileURLToPath, pathToFileURL } = await import('node:url');
+  const dir = fileURLToPath(new URL('./late/', import.meta.url));
+  const files = readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort();
+  const results = [];
+  for (const f of files) {
+    const { ATTACKS: late = [] } = await import(pathToFileURL(dir + f).href);
+    for (const a of late) {
+      let verdict;
+      try {
+        const impl = await adapterFor(makeClient());
+        verdict = await a.run(impl, impl.w);
+      } catch (e) {
+        verdict = { verdict: 'error', detail: String(e?.message ?? e).slice(0, 300) };
+      }
+      results.push({ id: a.id, name: a.name, severity: a.severity, file: f, ...verdict });
+    }
+  }
+  const counted = results.filter((r) => r.verdict !== 'n/a');
+  return { results, defended: counted.filter((r) => r.verdict === 'defended').length, of: counted.length };
 }

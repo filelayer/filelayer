@@ -13,7 +13,7 @@ question, the hypotheses and how each is decided are in
 | `prompts/` | The prompt: the common part, one line per arm, one file per task |
 | `smoke/` | The smoke test the agent can see and run |
 | `reference/` | One implementation per arm (`a-filelayer`, `b-own`), the same after task 2 (`*-t2`), and the seeded bug of task 3 (`*-t3-bug`, see `SEEDED-BUG.md`) |
-| `hidden/` | The checks the agent never sees: 29 functional, 8 for task 2, 1 for task 3, the 21 shared attacks from `../adversarial/`, and the mutants that show each check can fail |
+| `hidden/` | The checks the agent never sees: 29 functional, 8 for task 2, 1 for task 3, the 21 shared attacks from `../adversarial/` with positive controls, the mutants that show each check can fail, and `late/` for the attacks written after the freeze |
 | `harness/` | Running the runs, scoring them, and the report |
 | `runs/` | The record of every run, once there are runs |
 
@@ -35,9 +35,11 @@ moto (`pip install "moto[server]"`).
     node hidden/check.mjs reference/a-filelayer
     node hidden/check.mjs reference/b-own-t2 --task 2
     node hidden/check.mjs reference/a-filelayer-t2 --task 2
-    node hidden/check.mjs reference/b-own --task 3
+    node hidden/check.mjs reference/b-own --task 3 --seed reference/b-own-t3-bug
+    node hidden/check.mjs reference/a-filelayer --task 3 --seed reference/a-filelayer-t3-bug
     node hidden/mutants.mjs
     node hidden/mutants.mjs --task 2
+    node --test harness/stats.test.mjs
 
 ## Rehearse
 
@@ -62,6 +64,10 @@ and `score.mjs`.
     node harness/score.mjs --runs runs/pilot --jobs 4
     node harness/analyze.mjs --runs runs/pilot
     node harness/report.mjs --runs runs/pilot
+
+An invalid run (the infrastructure failed; `analyze.mjs` says which and why)
+is replaced once: `node harness/plan.mjs --extend runs/pilot/plan.json`, then
+`run.mjs` on the same plan again.
 
 `run.mjs` refuses to start when any file differs from `FINGERPRINT.txt`, so a
 run uses exactly what PREREG.md fixed. It stops a phase at its spending cap

@@ -7,8 +7,37 @@
  * the API's speed or behaviour during the phase falls on both arms alike.
  *
  *   node plan.mjs pilot|full > ../runs/<phase>/plan.json
+ *   node plan.mjs --extend ../runs/<phase>/plan.json   (rewrites it in place)
+ *
+ * --extend appends one replacement for every run analyze.mjs found invalid,
+ * of the same arm and model, at the end of the order. Each invalid run is
+ * replaced once: a replacement that is itself invalid is not replaced again.
+ * Run it after analyze.mjs, then run.mjs again on the same plan.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+if (process.argv[2] === '--extend') {
+  const file = process.argv[3];
+  const p = JSON.parse(readFileSync(file, 'utf8'));
+  const dir = dirname(file);
+  const replaced = new Set(p.runs.filter((r) => r.replaces).map((r) => r.replaces));
+  let k = p.runs.filter((r) => r.replaces).length;
+  const added = [];
+  for (const r of [...p.runs]) {
+    const f = join(dir, r.id, 'metrics.json');
+    if (r.replaces || replaced.has(r.id) || !existsSync(f)) continue;
+    const m = JSON.parse(readFileSync(f, 'utf8'));
+    if (!m.invalid) continue;
+    k++;
+    const rep = { id: `${p.phase}-r${String(k).padStart(2, '0')}-${r.arm}-${r.model.replace('claude-', '')}`, phase: p.phase, arm: r.arm, model: r.model, replaces: r.id };
+    p.runs.push(rep);
+    added.push(`${rep.id} replaces ${r.id} (${m.invalid.reason})`);
+  }
+  writeFileSync(file, JSON.stringify(p, null, 2));
+  console.log(added.length ? added.join('\n') : 'no invalid run to replace');
+  process.exit(0);
+}
 
 const phase = process.argv[2];
 const cfg = JSON.parse(readFileSync(new URL('./config.json', import.meta.url), 'utf8'));

@@ -153,6 +153,9 @@ export const CHECKS = [
     const ownRoute = await c.call('GET', `/orgs/${w.orgB}/documents/${w.docA}`, { as: w.eve });
     status(foreign, 404, 'stranger reads');
     status(missing, 404, 'missing id');
+    const otherShape = await c.call('GET', `/orgs/${w.orgA}/documents/${w.ghostDocOtherShape}`, { as: w.alice });
+    status(otherShape, 404, 'a missing id of another shape');
+    expect(isErrorJson(otherShape), 'the other-shape refusal is not {error}');
     status(ownRoute, 404, "another org's document on your own org's route");
     expect(foreign.text === ownRoute.text, 'the two refusals have different bodies');
     expect(isErrorJson(foreign) && isErrorJson(missing), 'an error body is not {error}');

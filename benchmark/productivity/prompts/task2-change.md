@@ -1,8 +1,8 @@
 ## Task: a change of requirements
 
-`/work/app` holds the service as you built it. The specification in
-`/work/contract/` has not changed, except for what follows, which is now part
-of it.
+`/work/app` holds a working implementation of the service in
+`/work/contract/`, written by a colleague. The specification has not changed,
+except for what follows, which is now part of it.
 
 ### Revocation records a reason
 

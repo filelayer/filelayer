@@ -30,7 +30,7 @@ const emit = (m) => process.stdout.write(JSON.stringify(m) + '\n');
 const usage = (k) => ({ input_tokens: 40 * k, output_tokens: 900 * k, cache_read_input_tokens: 25000 * k, cache_creation_input_tokens: 3000 * k });
 function step(text, tool, input) {
   turns++;
-  emit({ type: 'assistant', message: { model, content: [{ type: 'text', text }, ...(tool ? [{ type: 'tool_use', id: `t${turns}`, name: tool, input }] : [])], usage: usage(1) } });
+  emit({ type: 'assistant', message: { id: `msg_fake_${turns}`, model, content: [{ type: 'text', text }, ...(tool ? [{ type: 'tool_use', id: `t${turns}`, name: tool, input }] : [])], usage: usage(1) } });
   if (tool) emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: `t${turns}`, content: 'ok' }] } });
 }
 const sh = (cmd) => execSync(cmd, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', cwd: '/work/app' });

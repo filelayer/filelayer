@@ -14,9 +14,9 @@
  *      and /work/smoke. Nothing of the hidden checks is ever in it.
  *   3. Tasks 1, 2 and 3, each a new Claude Code session (`claude -p`) with the
  *      prompt built from prompts/, the model of the run, and the limits of
- *      config.json. Task 2 starts from what task 1 left; task 3 starts from
- *      the seeded reference of the run's arm, with its own database and
- *      bucket. The session's stream-json is the record of the task.
+ *      config.json. Task 2 starts from the reference of the run's arm, task 3
+ *      from its seeded reference, each with its own database and bucket. The
+ *      session's stream-json is the record of the task.
  *   4. A snapshot of /work/app after each task, without node_modules.
  *
  * The scoring (score.mjs) runs afterwards, in another container, from the
@@ -39,6 +39,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, wr
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
+import { taskSpend, usageCounter } from './usage.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH = resolve(HERE, '..');
@@ -155,15 +156,15 @@ function stopServices(s, agent) {
   docker(['network', 'rm', s.net], { allowFail: true });
 }
 
-// The contract's variables for one task. Task 3 gets a database and a bucket
-// of its own, so the seeded reference starts as empty as task 1 did.
+// The contract's variables for one task. Each task has a database and a bucket
+// of its own: tasks 2 and 3 start from a reference, not from task 1.
 function contractEnv(task, adminToken) {
-  const db = task === 3 ? 'app3' : 'app';
+  const db = task === 1 ? 'app' : `app${task}`;
   return {
     DATABASE_URL: `postgres://postgres:postgres@postgres:5432/${db}`,
     S3_ENDPOINT: 'http://s3:5000',
     S3_REGION: 'us-east-1',
-    S3_BUCKET: task === 3 ? 'documents3' : 'documents',
+    S3_BUCKET: task === 1 ? 'documents' : `documents${task}`,
     S3_ACCESS_KEY_ID: 'benchmark',
     S3_SECRET_ACCESS_KEY: 'benchmark-secret',
     BASE_URL: 'http://127.0.0.1:3000',
@@ -193,10 +194,10 @@ function startAgent(name, s, run) {
   docker(['exec', '-i', '-u', 'root', c, 'tar', '-C', '/work', '-xf', '-'], { input: tar.stdout });
   docker(['exec', '-u', 'root', c, 'sh', '-c', 'chown -R root:root /work/contract /work/smoke && chmod -R a+rX,go-w /work/contract /work/smoke']);
   // The bucket of each task, made once.
-  for (const b of ['documents', 'documents3']) {
+  for (const b of ['documents', 'documents2', 'documents3']) {
     exec(c, `node -e "fetch('http://s3:5000/${b}',{method:'PUT'}).then(r=>process.exit(r.ok?0:1))"`);
   }
-  exec(s.pg, 'createdb -U postgres app3', { user: 'postgres' });
+  exec(s.pg, 'createdb -U postgres app2 && createdb -U postgres app3', { user: 'postgres' });
   exec(c, 'git config --global user.email run@prodbench.invalid && git config --global user.name run && git config --global init.defaultBranch main');
   return c;
 }
@@ -211,11 +212,13 @@ function promptFor(arm, task) {
 }
 
 function prepareApp(c, run, task) {
-  if (task === 3) {
-    // The seeded reference of the run's arm, without node_modules: the agent
-    // installs it the way the contract says.
+  if (task > 1) {
+    // Task 2 starts from the arm's reference, task 3 from its seeded
+    // reference, never from what task 1 left (cold review): each task measures
+    // itself. Without node_modules; the agent installs them as the contract says.
     exec(c, 'rm -rf /work/app && mkdir -p /work/app', { user: 'root' });
-    const ref = join(BENCH, 'reference', `${run.arm === 'a' ? 'a-filelayer' : 'b-own'}-t3-bug`);
+    const name = run.arm === 'a' ? 'a-filelayer' : 'b-own';
+    const ref = join(BENCH, 'reference', task === 2 ? name : `${name}-t3-bug`);
     const tar = spawnSync('tar', ['-C', ref, '--exclude=node_modules', '-cf', '-', '.']);
     docker(['exec', '-i', '-u', 'root', c, 'tar', '-C', '/work/app', '-xf', '-'], { input: tar.stdout });
     exec(c, 'chown -R agent:agent /work/app', { user: 'root' });
@@ -237,10 +240,12 @@ function runSession(c, run, task, budget, out, env) {
     ...(cfg.effort ? ['--effort', cfg.effort] : []),
     ...(cfg.disallowedTools.length ? ['--disallowedTools', ...cfg.disallowedTools] : [])];
   const started = Date.now();
+  const startedAt = new Date(started).toISOString();
   const stream = createWriteStream(out);
   const child = spawn('docker', argv, { stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdin.end(promptFor(run.arm, task));
-  const seen = { turns: 0, toolCalls: 0, result: null, lastText: '', stderr: '' };
+  const seen = { toolCalls: 0, result: null, lastText: '', stderr: '' };
+  const counter = usageCounter();
   let stop = null;
   const kill = (why) => {
     if (stop) return;
@@ -265,12 +270,14 @@ function runSession(c, run, task, budget, out, env) {
         continue;
       }
       if (m.type === 'assistant') {
-        seen.turns++;
+        // A turn is one API response: one message id, however many stream
+        // lines carry it.
+        counter.add(m);
         for (const part of m.message?.content ?? []) {
           if (part.type === 'tool_use') seen.toolCalls++;
           if (part.type === 'text') seen.lastText = part.text;
         }
-        if (seen.turns > t.maxTurns) kill('turns');
+        if (counter.turns > t.maxTurns) kill('turns');
       }
       if (m.type === 'result') seen.result = m;
     }
@@ -289,11 +296,15 @@ function runSession(c, run, task, budget, out, env) {
         stoppedBy: why,
         declaredDone: /(^|\n)\s*DONE\s*($|\n)/.test(text),
         wallMs: Date.now() - started,
-        turnsSeen: seen.turns,
+        startedAt,
+        endedAt: new Date().toISOString(),
+        turnsSeen: counter.turns,
+        streamUsage: counter.usage,
         toolCalls: seen.toolCalls,
         claude: r ? {
           numTurns: r.num_turns, durationMs: r.duration_ms, durationApiMs: r.duration_api_ms,
           totalCostUsd: r.total_cost_usd, usage: r.usage, modelUsage: r.modelUsage ?? null, subtype: r.subtype,
+          isError: r.is_error ?? false, resultText: String(r.result ?? '').slice(-2000),
         } : null,
         stderrTail: r ? undefined : seen.stderr.slice(-1500),
       });
@@ -317,7 +328,8 @@ function spentSoFar() {
   for (const d of readdirSync(outRoot, { withFileTypes: true })) {
     const f = join(outRoot, d.name, 'run.json');
     if (d.isDirectory() && existsSync(f)) {
-      for (const t of JSON.parse(readFileSync(f, 'utf8')).tasks ?? []) usd += t.claude?.totalCostUsd ?? 0;
+      const r = JSON.parse(readFileSync(f, 'utf8'));
+      for (const t of r.tasks ?? []) usd += taskSpend(cfg.prices, r.model, t);
     }
   }
   return usd;
@@ -326,7 +338,19 @@ function spentSoFar() {
 async function runOne(run) {
   const dir = join(outRoot, run.id);
   if (existsSync(join(dir, 'run.json'))) {
-    console.log(`${run.id}: already run, skipped`);
+    const prior = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8'));
+    if (prior.inProgress) {
+      // The harness died during this run. It is not resumed half-way: it is
+      // invalid (interrupted), its spend stays counted, and plan.mjs --extend
+      // schedules its replacement.
+      prior.inProgress = false;
+      prior.error = prior.error ?? 'interrupted: the harness stopped during this run';
+      prior.invalid = { reason: 'harness_interrupted' };
+      writeFileSync(join(dir, 'run.json'), JSON.stringify(prior, null, 2));
+      console.log(`${run.id}: interrupted in an earlier session, recorded as invalid`);
+    } else {
+      console.log(`${run.id}: already run, skipped`);
+    }
     return;
   }
   mkdirSync(dir, { recursive: true });
@@ -339,7 +363,7 @@ async function runOne(run) {
     s = startServices(name, dir);
     c = startAgent(name, s, run);
     for (const task of [1, 2, 3]) {
-      const cap = cfg.phaseCapUsd[plan.phase] - spentSoFar() - record.tasks.reduce((a, t) => a + (t.claude?.totalCostUsd ?? 0), 0);
+      const cap = cfg.phaseCapUsd[plan.phase] - spentSoFar();
       if (cap <= 0.5) {
         record.tasks.push({ task, stoppedBy: 'phase_cap', skipped: true });
         continue;
@@ -350,7 +374,10 @@ async function runOne(run) {
       res.snapshotOk = snapshot(c, join(dir, `task${task}`, 'app'));
       record.tasks.push(res);
       console.log(`${run.id} task ${task}: ${res.stoppedBy}${res.declaredDone ? ', DONE' : ''}, ` +
-        `${Math.round(res.wallMs / 1000)} s, ${res.turnsSeen} turns, $${(res.claude?.totalCostUsd ?? 0).toFixed(2)}`);
+        `${Math.round(res.wallMs / 1000)} s, ${res.turnsSeen} turns, $${taskSpend(cfg.prices, run.model, res).toFixed(2)}`);
+      // Written after every task, so a harness that dies mid-run leaves the
+      // spend on record and the run is not silently repeated (see below).
+      writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...record, inProgress: true }, null, 2));
     }
   } catch (e) {
     record.error = String(e.message ?? e).slice(0, 2000);

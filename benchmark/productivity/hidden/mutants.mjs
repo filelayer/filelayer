@@ -90,6 +90,11 @@ export const MUTANTS = [
     "'SELECT * FROM audit_events WHERE $1::text IS NOT NULL ORDER BY seq DESC LIMIT $2', [s.orgId, limit]", ['F25']],
   ['M22', 'malformed JSON is a 500', 'src/app.mjs',
     "if (err?.type === 'entity.parse.failed' || err?.status === 400) return fail(res, 400, 'invalid_request');", '', ['F29']],
+  // Refusing every read "defends" A1 and A2 unless their positive control runs.
+  ['M23', 'every document read is refused', 'src/app.mjs',
+    "    const doc = await liveDoc(s.orgId, req.params.documentId);\n    if (!doc) return s.deny(404, 'not_found', { documentId: req.params.documentId });\n    const bytes",
+    "    const doc = null;\n    if (!doc) return s.deny(404, 'not_found', { documentId: req.params.documentId });\n    const bytes",
+    ['A1', 'A2']],
 ];
 
 function mutate(m) {
