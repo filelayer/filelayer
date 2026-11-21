@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  GENERATED FILE. DO NOT EDIT.
+  Source: blog/404-not-403-when-someone-loses-access.md
+  Built by tools/build-guides.mjs, and `npm run check:guides` fails the build
+  if this file differs by one byte from what that source renders to. Edit the
+  markdown.
+-->
+
+<title>404, Not 403: What Happens When Someone Loses Access to a File?</title>
+<meta name="description" content="Returning 404 Not Found instead of 403 Forbidden is not a new security idea.">
+
+<link rel="canonical" href="https://filelayer.dev/blog/404-not-403-when-someone-loses-access">
+<link rel="stylesheet" href="/styles.css">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://filelayer.dev/blog/404-not-403-when-someone-loses-access">
+<meta property="og:title" content="404, Not 403: What Happens When Someone Loses Access to a File?">
+<meta property="og:description" content="Returning 404 Not Found instead of 403 Forbidden is not a new security idea.">
+<meta property="og:image" content="https://filelayer.dev/og.png">
+<meta property="og:image:alt" content="Filelayer: the file layer for SaaS applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="404, Not 403: What Happens When Someone Loses Access to a File?">
+<meta name="twitter:description" content="Returning 404 Not Found instead of 403 Forbidden is not a new security idea.">
+<meta name="twitter:image" content="https://filelayer.dev/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Cpath d='M7 10h18M7 16h18M7 22h18' stroke='%23fbfaf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M7 16h18' stroke='%230f766e' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "404, Not 403: What Happens When Someone Loses Access to a File?",
+  "description": "Returning 404 Not Found instead of 403 Forbidden is not a new security idea.",
+  "url": "https://filelayer.dev/blog/404-not-403-when-someone-loses-access",
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Filelayer",
+    "url": "https://filelayer.dev/"
+  },
+  "about": {
+    "@type": "SoftwareSourceCode",
+    "name": "Filelayer",
+    "alternateName": "@filelayer/core",
+    "codeRepository": "https://github.com/filelayer/filelayer",
+    "softwareVersion": "0.36.0"
+  },
+  "author": {
+    "@type": "Person",
+    "name": "Jorge Urios",
+    "url": "https://github.com/jorgeurios"
+  },
+  "datePublished": "2026-11-30"
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Filelayer home">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor"/>
+        <path d="M7 10h18M7 22h18" stroke="var(--paper)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M7 16h18" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      Filelayer
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/quickstart">Quickstart</a>
+      <a href="/guides/">Guides</a>
+      <a href="https://github.com/filelayer/filelayer">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="main" class="wrap">
+<article class="guide">
+<h1>404, Not 403: What Happens When Someone Loses Access to a File?</h1>
+<p class="byline">By Jorge Urios · <time datetime="2026-11-30">30 November 2026</time></p>
+<p>Returning 404 Not Found instead of 403 Forbidden is not a new security idea.</p>
+<p><a href="https://docs.github.com/rest/using-the-rest-api/troubleshooting-the-rest-api" rel="noopener">GitHub documents this behavior</a>. Its REST API uses 404 instead of 403 to avoid confirming that private repositories exist. <a href="https://developer.mozilla.org/docs/Web/HTTP/Status/403" rel="noopener">MDN describes the same option</a> in its documentation for HTTP 403 responses.</p>
+<p>The principle is straightforward: sometimes, telling someone that a resource exists is information they should not have.</p>
+<p>But implementing this principle in a file-sharing system involves more than changing an HTTP status code.</p>
+<p>A file can reveal its existence through several other parts of the application, even when its download endpoint returns 404.</p>
+<p>Let’s look at what that means in practice.</p>
+<h2 id="the-problem-with-confirming-that-a-file-exists">The problem with confirming that a file exists</h2>
+<p>Imagine a SaaS application where users can upload private documents.</p>
+<p>Alice belongs to Organization A. Bob belongs to Organization B.</p>
+<p>Alice uploads a confidential document. Bob somehow obtains its file ID.</p>
+<p>Bob makes a request:</p>
+<pre><code class="lang-http">GET /api/files/file_8f32a1</code></pre>
+<p>The server responds:</p>
+<pre><code class="lang-http">HTTP/1.1 403 Forbidden</code></pre>
+<p>The server has denied access, but it has also confirmed something:</p>
+<p><code>file_8f32a1</code> exists.</p>
+<p>This creates an enumeration opportunity. Someone can test file identifiers, share links or organization resources and distinguish existing resources from nonexistent ones.</p>
+<p>In a multi-tenant application, this is particularly problematic. The existence of another organization’s file is itself information that should remain private.</p>
+<p>Returning 404 Not Found is one way to avoid disclosing that information.</p>
+<pre><code class="lang-http">HTTP/1.1 404 Not Found</code></pre>
+<p>The important part is consistency.</p>
+<h2 id="a-404-response-is-only-the-beginning">A 404 response is only the beginning</h2>
+<p>A common implementation mistake is to change the status code while leaving other parts of the application untouched.</p>
+<p>Consider four additional places where a file-sharing system can disclose the same information.</p>
+<h3 id="1-the-error-response-body">1. The error response body</h3>
+<p>Changing 403 to 404 does not help much if the response body explains why access was denied.</p>
+<p>For example:</p>
+<pre><code class="lang-json">{
+  &quot;error&quot;: {
+    &quot;code&quot;: &quot;FILE_NOT_FOUND&quot;,
+    &quot;reason&quot;: &quot;no_membership&quot;
+  }
+}</code></pre>
+<p>The status code says the file was not found.</p>
+<p>The response body says the caller lacks membership.</p>
+<p>That distinction defeats the purpose.</p>
+<p>Internal reasons such as:</p>
+<ul><li><code>no_membership</code></li>
+<li><code>grant_revoked</code></li>
+<li><code>bad_link_secret</code></li></ul>
+<p>should remain server-side.</p>
+<p>The public response should use a stable error code that does not disclose the internal authorization decision.</p>
+<p>The application can retain the actual reason in its internal audit records.</p>
+<h3 id="2-file-listings">2. File listings</h3>
+<p>Individual file endpoints are not the only place where resources can be enumerated.</p>
+<p>Imagine two requests:</p>
+<ul><li>A user lists files belonging to an organization they cannot access.</li>
+<li>A user lists files belonging to an organization that does not exist.</li></ul>
+<p>If the responses are different, the listing endpoint becomes another way to discover organizations.</p>
+<p>A system should return the same empty result in both cases.</p>
+<p>For example:</p>
+<pre><code class="lang-json">{
+  &quot;data&quot;: [],
+  &quot;has_more&quot;: false
+}</code></pre>
+<p>The goal is to avoid turning listing behavior into an existence oracle.</p>
+<h3 id="3-unknown-users-and-audit-logs">3. Unknown users and audit logs</h3>
+<p>This is an easy detail to overlook.</p>
+<p>Suppose someone who has never been registered in the application tries to access a private file.</p>
+<p>The system must deny the request. It must not silently fall back to anonymous access.</p>
+<p>But there is another question:</p>
+<p>Where should the attempt be recorded?</p>
+<p>If the application first resolves the target organization and then writes the attempt into that organization’s audit log, the logging system has already revealed information about the resource owner.</p>
+<p>For an unknown user, the attempt should be recorded in a project-level system audit chain rather than the target organization’s audit log.</p>
+<p>This preserves operational visibility without disclosing which organization owns the resource.</p>
+<h3 id="4-role-based-permissions">4. Role-based permissions</h3>
+<p>Consider an organization member who attempts an administrative operation.</p>
+<p>The member does not have the required permissions.</p>
+<p>The operation itself is not secret. Administrative operations are part of the application’s public interface.</p>
+<p>The information that needs protection is the target of the operation.</p>
+<p>Returning 403 to an ordinary member, and 404 to a stranger, can let the caller learn things about the target that they have no right to know.</p>
+<p>For example, they might discover whether a particular user belongs to an organization or what role that user holds.</p>
+<p>The API should return the same externally visible denial to both callers.</p>
+<p>There is an important consequence for frontend developers:</p>
+<p>Do not rely on the HTTP status code alone to explain why someone cannot perform an operation.</p>
+<p>If your interface needs to tell an administrator that a member lacks a particular permission, it should derive that information from the authenticated session and permissions already available to the application.</p>
+<p>The API response should not become a source of information for unauthorized callers.</p>
+<p>We encountered this distinction ourselves. An integration review found that one of our documentation statements promised a 403 response that the API did not actually return. The discrepancy was identified against version 0.8.0 in October 2026.</p>
+<p>It was a useful reminder that security documentation must describe actual API behavior, not intended behavior.</p>
+<h2 id="when-403-is-still-appropriate">When 403 is still appropriate</h2>
+<p>This does not mean every authorization failure should return 404.</p>
+<p>There are situations where the caller already has legitimate access to the relevant resource and the application can safely explain that an operation is forbidden.</p>
+<p>For example:</p>
+<ul><li>An administrator attempts to promote someone above their own role.</li>
+<li>An owner attempts to remove the last remaining owner.</li>
+<li>A user attempts to widen a delegated permission grant beyond their authority.</li></ul>
+<p>In these cases, the caller already has standing to see the relevant resource.</p>
+<p>A 403 can communicate that the requested operation violates the application’s rules without revealing the existence of something the caller should not know about.</p>
+<p>The distinction is contextual.</p>
+<h2 id="what-happens-when-access-is-revoked-during-a-download">What happens when access is revoked during a download?</h2>
+<p>The most interesting case is not necessarily an ordinary denied request.</p>
+<p>It is what happens when access changes while a user is interacting with a file.</p>
+<p>Consider this sequence:</p>
+<ol><li>Bob has permission to download a private file.</li>
+<li>Bob requests the first five bytes.</li>
+<li>The server returns 206 Partial Content.</li>
+<li>Alice revokes Bob’s access.</li>
+<li>Bob requests the next byte range.</li></ol>
+<p>The second request must evaluate the current authorization state.</p>
+<p>If Bob no longer has access, the response should be:</p>
+<pre><code class="lang-http">HTTP/1.1 404 Not Found</code></pre>
+<p>The fact that Bob previously had permission should not automatically grant him continued access.</p>
+<p>This is particularly important for systems that support range requests, resumable downloads and revocable sharing links.</p>
+<p>A previously authorized request is not a permanent authorization grant.</p>
+<h2 id="what-this-approach-does-not-solve">What this approach does not solve</h2>
+<p>There are limitations worth acknowledging.</p>
+<h3 id="timing-differences">Timing differences</h3>
+<p>Returning the same status code does not guarantee that the server behaves identically in every observable way.</p>
+<p>A request for a nonexistent file might take a different amount of time from a request for an existing file that the caller cannot access.</p>
+<p>An attacker may potentially use repeated timing measurements to infer information.</p>
+<p>This is a known limitation of the general approach.</p>
+<p>We have not measured timing differences in our implementation, so we should not claim that this channel has been eliminated.</p>
+<h3 id="debugging-becomes-harder">Debugging becomes harder</h3>
+<p>There is also an operational cost.</p>
+<p>A developer receives 404, but the resource might actually exist.</p>
+<p>The real reason could be:</p>
+<ul><li>The file never existed.</li>
+<li>Access was revoked.</li>
+<li>A share link expired.</li>
+<li>A download limit was reached.</li>
+<li>The caller does not belong to the organization.</li>
+<li>The caller lacks the required role.</li></ul>
+<p>GitHub itself documents troubleshooting scenarios where an API returns 404 for a resource that exists.</p>
+<p>This is why internal diagnostics matter.</p>
+<p>The server should retain the actual denial reason in its internal logs or audit infrastructure, where authorized operators can investigate it.</p>
+<p>The public response and the internal diagnostic record serve different purposes.</p>
+<h2 id="thinking-about-file-security-as-a-complete-system">Thinking about file security as a complete system</h2>
+<p>The broader lesson is that authorization cannot be implemented as a single check on a download endpoint.</p>
+<p>In a multi-tenant file-sharing application, the same confidentiality rule must apply consistently to:</p>
+<ul><li>File retrieval.</li>
+<li>Share links.</li>
+<li>File listings.</li>
+<li>Error responses.</li>
+<li>Organization boundaries.</li>
+<li>Role-based operations.</li>
+<li>Revocation.</li>
+<li>Audit routing.</li></ul>
+<p>A system that protects its download endpoint but leaks resource existence through listings or error messages has not implemented the principle consistently.</p>
+<p>The objective is to ensure that callers cannot use different parts of the application to discover resources they are not authorized to access.</p>
+<p>This is one of the problems we think about when building file infrastructure for SaaS applications.</p>
+<p>I maintain Filelayer, an open-source Node library for user files in SaaS apps (per-file permissions, revocable links, audit log).</p>
+<p>If you are building a multi-tenant application, how do you handle resource-existence disclosure across your APIs?</p>
+<p>I’d be interested in hearing how other teams approach this.</p>
+<aside class="author-note">
+<p>Jorge Urios maintains Filelayer, an open-source Node library for user files in SaaS apps (per-file permissions, revocable links, audit log).</p>
+</aside>
+</article>
+
+<footer class="guide-foot">
+  <p>
+    This page is generated from
+    <a href="https://github.com/filelayer/filelayer/blob/main/blog/404-not-403-when-someone-loses-access.md" rel="noopener"><code>blog/404-not-403-when-someone-loses-access.md</code></a>
+    in a public repository.
+  </p>
+  <p>
+    <a href="/quickstart">Quickstart</a> ·
+    <a href="/blog/">All articles</a> ·
+    <a href="/">Filelayer</a> ·
+    <a href="/trust">Should you depend on this?</a>
+  </p>
+  <p class="fine">
+    Filelayer 0.36.0, alpha. Apache-2.0, with a patent grant.
+    Copyright 2026 Technology Pro Bono S.L.
+  </p>
+</footer>
+</main>
+
+</body>
+</html>

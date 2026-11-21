@@ -795,13 +795,24 @@ function frontMatter(md, file) {
   for (const line of m[1].split('\n')) {
     const kv = /^([A-Za-z]+):\s*(.*)$/.exec(line);
     if (!kv) throw new Unsupported(file, 1, 'front matter lines are `key: value`', line);
-    fields[kv[1]] = kv[2].trim();
+    // A value may be written in double quotes, as YAML allows; the quotes are
+    // not part of it. Only that one form: no escapes, no single quotes.
+    const v = kv[2].trim();
+    fields[kv[1]] = /^".*"$/.test(v) ? v.slice(1, -1) : v;
+  }
+  for (const k of Object.keys(fields)) {
+    if (!['title', 'date', 'authorNote'].includes(k)) throw new Unsupported(file, 1, `front matter field ${k} is not one this generator reads (title, date, authorNote)`, k);
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date ?? '') || Number.isNaN(Date.parse(fields.date))) {
     throw new Unsupported(file, 1, 'date must be YYYY-MM-DD', fields.date ?? '(missing)');
   }
   if (!fields.authorNote) throw new Unsupported(file, 1, 'authorNote is required; it is written by the author', '(missing)');
-  return { fields, body: md.slice(m[0].length) };
+  let body = md.slice(m[0].length);
+  // The title may be given in the front matter instead of as an h1, never both.
+  const hasH1 = /^# /m.test(body);
+  if (fields.title && hasH1) throw new Unsupported(file, 1, 'the title is given twice: as `title:` and as an h1', fields.title);
+  if (fields.title) body = `# ${fields.title}\n\n${body.replace(/^\n+/, '')}`;
+  return { fields, body };
 }
 
 const built = [];
