@@ -1345,6 +1345,29 @@ to surface as a raw `TypeError` or as the schema's CHECK constraint. Code that
 caught those by message should catch `FilelayerError` with
 `code === 'invalid_argument'`.
 
+### `0.36.0` → `0.36.1`: no schema change, and one call that is now refused
+
+A security fix, recorded here for transparency. The schema is still version 16
+and there is no SQL to apply.
+
+#### What is refused, if your members revoke through a group grant
+
+A holder of a grant to a group (subject `org` or `role`) with `share`, revoking:
+
+- that group grant itself, or
+- a grant another holder issued through it,
+
+now gets `not_found` (404) with reason `foreign_grant`. Before `0.36.1` both
+succeeded, so any member could revoke a colleague's links or end the group's
+access. The rule documented since `0.2.0` already said that authority from a
+grant revokes only its own subtree; a group grant has many holders, and the
+rule was not applied to that case. See `SEMANTICS.md` §7c.
+
+What still works: a holder revokes what they issued and anything delegated
+from it, and an admin or owner of the file's org, or the file's owner, revokes
+any grant on the file, the group grant included. If your application lets a
+member revoke a colleague's link, do it as an admin or owner.
+
 ---
 
 ## 4. What is not covered here
