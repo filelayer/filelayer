@@ -60,6 +60,9 @@ server.on('connect', (req, client, head) => {
   }
   const out = upstream ? connect(Number(upstream.port), upstream.hostname) : connect(p, host);
   const ready = () => {
+    // Successes are logged too, so a passing error can be told from a host
+    // that stayed down (analyze.mjs).
+    log({ method: 'CONNECT', host, port: p, allowed: true, connected: true });
     client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
     if (head?.length) out.write(head);
     out.pipe(client);

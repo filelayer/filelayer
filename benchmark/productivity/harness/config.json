@@ -71,5 +71,9 @@
       "cacheWrite": 2.5,
       "cacheRead": 0.1
     }
+  },
+  "egress": {
+    "$comment": "An allowed host invalidates a task only when its failure persists: no successful connection in the session's window, or failures for at least this many minutes with no success between them. The same for both arms.",
+    "persistentMinutes": 5
   }
 }

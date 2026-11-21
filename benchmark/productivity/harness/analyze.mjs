@@ -2,7 +2,12 @@
 /**
  * THE METRICS OF EACH TASK OF EACH RUN, from the record alone.
  *
- *   node analyze.mjs --runs ../runs/pilot
+ *   node analyze.mjs --runs ../runs/pilot [--unfrozen]
+ *
+ * It refuses to run on any score.json that does not carry the fingerprint
+ * FINGERPRINT.txt commits (cold review, B3), and on any valid task that has
+ * no score yet (N4): an unscored task is not a zero. --unfrozen accepts the
+ * scores of a rehearsal before the freeze, which say frozen: false.
  *
  * Reads run.json, task<N>.jsonl (the session's stream-json), the snapshot and
  * score.json, and writes runs/<phase>/<run>/metrics.json. Every figure carries
@@ -15,11 +20,17 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { COUNTED_EXT, countFile } from '../../loc-count.mjs';
 import { costOf, usageCounter } from './usage.mjs';
+import { apiFailure, egressInWindow, examplesReads } from './classify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const runsDir = resolve(args[args.indexOf('--runs') + 1]);
 const cfg = JSON.parse(readFileSync(join(HERE, 'config.json'), 'utf8'));
+const unfrozen = args.includes('--unfrozen');
+const committedFp = (() => {
+  const f = join(HERE, '..', 'FINGERPRINT.txt');
+  return existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').pop().split(/\s+/)[0] : null;
+})();
 
 const lines = (f) => readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => {
   try {
@@ -41,10 +52,6 @@ function session(file) {
     examples: { vault: 0, other: 0 },
   };
   const touches = (input) => JSON.stringify(input ?? {});
-  const countExamples = (text) => {
-    if (/examples\/vault/.test(text)) out.examples.vault++;
-    else if (/@filelayer\/core\/examples\/|node_modules\/@filelayer\/core\/.*examples\//.test(text)) out.examples.other++;
-  };
   const written = new Set();
   let ranOnce = false;
   const pending = new Map();
@@ -54,7 +61,6 @@ function session(file) {
         if (p.type !== 'tool_use') continue;
         out.toolCalls[p.name] = (out.toolCalls[p.name] ?? 0) + 1;
         const input = p.input ?? {};
-        countExamples(touches(input));
         if (p.name === 'Bash') {
           const cmd = String(input.command ?? '');
           // Documentation read through the shell: any command over a file
@@ -96,6 +102,7 @@ function session(file) {
       }
     }
   }
+  out.examples = examplesReads(lines(file));
   return out;
 }
 
@@ -149,30 +156,57 @@ function diff(dir) {
 // never at the outcome (PREREG.md, "Runs"). Any invalid task makes the whole
 // run invalid; it is published with its reason and replaced once.
 
-const API_FAILURE = /API Error:?\s*(5\d\d|429)|overloaded|rate[_ ]?limit|Internal server error|Connection error|ECONNRESET|socket hang up|fetch failed/i;
 
-function egressFailures(file, from, to) {
-  if (!existsSync(file) || !from || !to) return [];
-  const a = Date.parse(from);
-  const b = Date.parse(to);
-  return lines(file).filter((e) => e.allowed === true && e.error && Date.parse(e.t) >= a && Date.parse(e.t) <= b);
+function egressOf(file, t) {
+  if (!existsSync(file) || !t.startedAt || !t.endedAt) return { errors: {}, persistent: [] };
+  return egressInWindow(lines(file), t.startedAt, t.endedAt, cfg.egress.persistentMinutes);
 }
 
 function invalidity(run, t, score, base) {
   if (run.invalid) return run.invalid.reason;
   if (run.error) return 'harness_error';
   if (t.skipped) return null;
-  const r = t.claude;
-  // The session ended because the API failed: an error result whose text is an
-  // API failure, or no result at all and an API failure on stderr. A budget
-  // stop is the agent's, not the API's.
-  if (r?.subtype !== 'error_max_budget_usd' && r?.isError && API_FAILURE.test(r.resultText ?? '')) return 'api_failure';
-  if (!r && t.stoppedBy?.startsWith('exit_') && API_FAILURE.test(t.stderrTail ?? '')) return 'api_failure';
-  // An allowed host that could not be reached during the session.
-  const egress = egressFailures(join(base, 'egress.jsonl'), t.startedAt, t.endedAt);
-  if (egress.length) return `egress_failure (${[...new Set(egress.map((e) => e.host))].join(', ')})`;
+  // The API failed, whatever stopped the session: read from Claude Code's
+  // stderr and from an error result's own error text, never from what the
+  // agent wrote (classify.mjs). A budget or turn stop is the agent's.
+  const api = apiFailure(t);
+  if (api) return api;
+  // The harness could not take the snapshot: the score of a missing snapshot
+  // would be the harness's failure, not the agent's (cold review, I4).
+  if (t.snapshotOk === false) return 'snapshot_failed';
+  // An allowed host that stayed unreachable during the session.
+  const egress = egressOf(join(base, 'egress.jsonl'), t);
+  if (egress.persistent.length) return `egress_failure (${egress.persistent.join('; ')})`;
   if (score?.scorerError) return `scorer_failure (${score.scorerError})`;
   return null;
+}
+
+// Before anything is written: every score must be the frozen checks' own,
+// and every task that counts must have one.
+{
+  const problems = [];
+  for (const d of readdirSync(runsDir, { withFileTypes: true })) {
+    const runFile = join(runsDir, d.name, 'run.json');
+    if (!d.isDirectory() || !existsSync(runFile)) continue;
+    const run = JSON.parse(readFileSync(runFile, 'utf8'));
+    for (const t of run.tasks ?? []) {
+      if (t.skipped || t.interrupted) continue;
+      const f = join(runsDir, d.name, `task${t.task}`, 'score.json');
+      if (!existsSync(f)) {
+        if (!run.invalid && !run.error && t.snapshotOk !== false) problems.push(`${d.name} task ${t.task}: not scored`);
+        continue;
+      }
+      const sc = JSON.parse(readFileSync(f, 'utf8'));
+      if (!sc.fingerprint) problems.push(`${d.name} task ${t.task}: score.json has no fingerprint`);
+      else if (!unfrozen && (sc.frozen !== true || sc.fingerprint !== committedFp)) {
+        problems.push(`${d.name} task ${t.task}: scored with fingerprint ${sc.fingerprint.slice(0, 12)}${sc.frozen ? '' : ' (unfrozen)'}, FINGERPRINT.txt says ${committedFp?.slice(0, 12) ?? 'nothing'}`);
+      }
+    }
+  }
+  if (problems.length) {
+    console.error(`analyze: not run.\n  ${problems.join('\n  ')}`);
+    process.exit(2);
+  }
 }
 
 for (const d of readdirSync(runsDir, { withFileTypes: true })) {
@@ -229,6 +263,8 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
           : score && !score.scorerError ? { defended: 0, of: 21, breached: 'all', reason: score.noProject ? 'no project' : score.installFailed ? 'npm install failed' : 'did not start' } : null,
         installFailed: score?.installFailed ?? false,
         late: score?.late ? { defended: score.late.defended, of: score.late.of } : null,
+        // Every error to an allowed host in the session, by host, invalidating or not.
+        egressErrors: egressOf(join(base, 'egress.jsonl'), t).errors,
         // The three blocks. A task is complete only within its limits.
         blocks: {
           functional: withinLimits && functionalAll,
@@ -244,7 +280,10 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
       },
     });
   }
-  const bad = tasks.find((t) => t.invalid);
+  // Invalid at run level too: a harness error before any task, an interrupted
+  // run, a phase-cap skip (cold review, I3).
+  const bad = tasks.find((t) => t.invalid) ?? (run.invalid || run.error
+    ? { task: run.invalid?.task ?? null, invalid: run.invalid?.reason ?? 'harness_error' } : null);
   const metrics = {
     id: run.id, phase: run.phase, arm: run.arm, model: run.model, dryRun: run.dryRun, replaces: run.replaces ?? null,
     error: run.error ?? null,
