@@ -61,7 +61,7 @@ const envH = await startEnv();
 let server;
 const log = [];
 try {
-  const before = await probeEnv(envH.env);
+  const before = await probeEnv(envH.env, envH.probeUrl);
   if (before) {
     scorerError('environment', before);
   } else {
@@ -125,8 +125,11 @@ try {
         console.log(`both: ${out.both ? 'yes' : 'no'}`);
       }
       // Services that died during the scoring make every result after that point
-      // suspect, whoever's fault the failures look like.
-      const after = await probeEnv(envH.env);
+      // suspect, whoever's fault the failures look like. Asked after the
+      // snapshot is stopped, so its own connections are gone (N-I8).
+      await server.stop();
+      server = null;
+      const after = await probeEnv(envH.env, envH.probeUrl);
       if (after) scorerError('environment', `after the scoring: ${after}`);
       else write(out);
     }

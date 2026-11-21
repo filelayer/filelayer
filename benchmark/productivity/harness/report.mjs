@@ -39,6 +39,13 @@ const all = readdirSync(runsDir, { withFileTypes: true })
   .filter((d) => d.isDirectory() && existsSync(join(runsDir, d.name, 'metrics.json')))
   .map((d) => JSON.parse(readFileSync(join(runsDir, d.name, 'metrics.json'), 'utf8')))
   .filter((m) => includeDry || !m.dryRun);
+// An unfrozen score is a rehearsal's; it is only reported with --include-dry,
+// and the report says so at the top (cold review of 1bba1d8, N-I5).
+const unfrozenRuns = all.filter((m) => m.unfrozen);
+if (unfrozenRuns.length && !includeDry) {
+  console.error(`report: ${unfrozenRuns.length} run(s) scored unfrozen (${unfrozenRuns[0].id}...). A real report has none; a rehearsal is --include-dry.`);
+  process.exit(2);
+}
 
 const models = [...new Set(all.map((m) => m.model))].sort();
 const task = (m, n) => m.tasks.find((t) => t.task === n);
@@ -87,6 +94,7 @@ function cell(runs, n) {
 
 const report = {
   phase: all[0]?.phase ?? null, generatedAt: new Date().toISOString(), runs: all.length,
+  unfrozenRuns: unfrozenRuns.map((m) => m.id),
   invalid: all.filter((m) => m.invalid || m.error).map((m) => ({ id: m.id, reason: m.invalid?.reason ?? m.error, task: m.invalid?.task ?? null })),
   multiplicity: 'Six hypotheses per model, two models: twelve decisions, none corrected for multiplicity. At p < 0.05, about one false confirmation in twenty decisions is expected by chance where there is no real difference. Read each as its own result, not as a family.',
   models: {},
@@ -220,6 +228,7 @@ const f = (x, d = 0) => (x === null || x === undefined ? 'n/a' : Number(x).toLoc
 const pct = (p) => `${p.k}/${p.n}${p.wilson95 ? ` (95% ${f(p.wilson95[0] * 100)}-${f(p.wilson95[1] * 100)} %)` : ''}`;
 const st = (s, d = 0) => (s.median === null ? 'n/a' : `${f(s.median, d)} [${f(s.iqr[0], d)}-${f(s.iqr[1], d)}]`);
 const md = [`# Productivity benchmark: ${report.phase} phase`, '',
+  ...(unfrozenRuns.length ? [`**REHEARSAL: ${unfrozenRuns.length} run(s) scored with files that were not frozen. Not a result.**`, ''] : []),
   `${report.runs} runs. Medians with the interquartile range in brackets. Every figure is observed unless the row says estimated. Per model; models are never averaged.`, '',
   `**Invalid runs** (the infrastructure failed; counted in no figure, replaced once): ${report.invalid.length ? report.invalid.map((x) => `${x.id} (${x.reason}${x.task ? `, task ${x.task}` : ''})`).join('; ') : 'none'}.`, '',
   `**Multiplicity.** ${report.multiplicity}`, ''];

@@ -57,9 +57,16 @@ async function externalEnv() {
   const { default: pg } = await import(requireCore.resolve('pg'));
   const tag = randomBytes(6).toString('hex');
   const database = `app_${tag}`;
+  // The snapshot gets a role of its own that owns its database and is not a
+  // superuser. The probes below use the superuser, whose reserved connections
+  // a snapshot that leaks connections cannot take (cold review of 1bba1d8,
+  // N-I8): a leaking implementation fails its checks, it does not make the
+  // scorer look broken.
+  const role = `app_${tag}`;
   const admin = new pg.Client({ connectionString: process.env.PRODBENCH_PG_ADMIN_URL });
   await admin.connect();
-  await admin.query(`CREATE DATABASE ${database}`);
+  await admin.query(`CREATE ROLE ${role} LOGIN PASSWORD '${role}'`);
+  await admin.query(`CREATE DATABASE ${database} OWNER ${role}`);
   await admin.end();
   const s3Url = process.env.PRODBENCH_S3_URL.replace(/\/$/, '');
   const bucket = `documents-${tag}`;
@@ -67,7 +74,11 @@ async function externalEnv() {
   if (made.status !== 200) throw new Error(`could not create the bucket: ${made.status}`);
   const url = new URL(process.env.PRODBENCH_PG_ADMIN_URL);
   url.pathname = `/${database}`;
+  const probeUrl = url.toString();
+  url.username = role;
+  url.password = role;
   return {
+    probeUrl,
     env: {
       DATABASE_URL: url.toString(),
       S3_ENDPOINT: s3Url,
@@ -125,9 +136,9 @@ export async function startEnv() {
  * snapshot is scored, so that a PostgreSQL or moto that failed is recorded as
  * the scorer's failure (the task is invalid) and never as the agent's.
  */
-export async function probeEnv(env) {
+export async function probeEnv(env, probeUrl = env.DATABASE_URL) {
   const { default: pg } = await import(requireCore.resolve('pg'));
-  const db = new pg.Client({ connectionString: env.DATABASE_URL, connectionTimeoutMillis: 10_000 });
+  const db = new pg.Client({ connectionString: probeUrl, connectionTimeoutMillis: 10_000 });
   try {
     await db.connect();
     await db.query('SELECT 1');

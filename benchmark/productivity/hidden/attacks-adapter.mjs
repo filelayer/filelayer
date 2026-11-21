@@ -21,7 +21,7 @@
  * not scored, so the preregistered number stays the published 21.
  */
 import { ATTACKS } from '../../adversarial/attacks.mjs';
-import { buildWorld, tokenOf } from './client.mjs';
+import { buildWorld, tokenOf, withTimeout } from './client.mjs';
 
 export const SHARED = [
   'A1', 'A2', 'A3', 'A4', 'A5', 'A6',
@@ -141,7 +141,7 @@ export async function runAttacks(makeClient) {
       const control = CONTROLS[a.id] ? await CONTROLS[a.id](impl, impl.w) : null;
       verdict = control
         ? { verdict: 'control_failed', detail: `positive control failed, so the refusal proves nothing: ${control}` }
-        : await a.run(impl, impl.w);
+        : await withTimeout(a.run(impl, impl.w), 120_000, `attack ${a.id}`);
     } catch (e) {
       verdict = { verdict: 'error', detail: String(e?.message ?? e).slice(0, 300) };
     }
@@ -192,7 +192,7 @@ export async function runLateAttacks(makeClient) {
           const control = await a.control(impl, impl.w);
           verdict = control
             ? { verdict: 'control_failed', detail: `positive control failed, so the refusal proves nothing: ${control}` }
-            : await a.run(impl, impl.w);
+            : await withTimeout(a.run(impl, impl.w), 120_000, `attack ${a.id}`);
         }
       } catch (e) {
         verdict = { verdict: 'error', detail: String(e?.message ?? e).slice(0, 300) };

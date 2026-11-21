@@ -185,6 +185,15 @@ function invalidity(run, t, score, base) {
 // and every task that counts must have one.
 {
   const problems = [];
+  if (unfrozen) {
+    // A rehearsal's flag, never a real run's (cold review of 1bba1d8, N-I5).
+    for (const d of readdirSync(runsDir, { withFileTypes: true })) {
+      const f = join(runsDir, d.name, 'run.json');
+      if (d.isDirectory() && existsSync(f) && JSON.parse(readFileSync(f, 'utf8')).dryRun !== true) {
+        problems.push(`${d.name}: a real run, and --unfrozen is for rehearsals`);
+      }
+    }
+  }
   for (const d of readdirSync(runsDir, { withFileTypes: true })) {
     const runFile = join(runsDir, d.name, 'run.json');
     if (!d.isDirectory() || !existsSync(runFile)) continue;
@@ -218,6 +227,10 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
     const base = join(runsDir, d.name);
     const scoreFile = join(base, `task${t.task}`, 'score.json');
     const score = existsSync(scoreFile) ? JSON.parse(readFileSync(scoreFile, 'utf8')) : null;
+    // The late attacks' own file (cold review of 1bba1d8, N-I6), never the
+    // primary score's.
+    const lateFile = join(base, `task${t.task}`, 'late', 'late-score.json');
+    const late = existsSync(lateFile) ? JSON.parse(readFileSync(lateFile, 'utf8')) : null;
     // Claude Code's own total when the session ended normally; otherwise the
     // sum of the stream's messages, so a session the harness stopped keeps the
     // tokens it spent (cold review, finding 2).
@@ -262,7 +275,7 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
           ? { defended: score.security.defended, of: score.security.of, breached: score.security.results.filter((r) => r.scored && r.verdict !== 'defended').map((r) => r.id) }
           : score && !score.scorerError ? { defended: 0, of: 21, breached: 'all', reason: score.noProject ? 'no project' : score.installFailed ? 'npm install failed' : 'did not start' } : null,
         installFailed: score?.installFailed ?? false,
-        late: score?.late ? { defended: score.late.defended, of: score.late.of } : null,
+        late: late?.late ? { defended: late.late.defended, of: late.late.of } : null,
         // Every error to an allowed host in the session, by host, invalidating or not.
         egressErrors: egressOf(join(base, 'egress.jsonl'), t).errors,
         // The three blocks. A task is complete only within its limits.
@@ -286,6 +299,11 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
     ? { task: run.invalid?.task ?? null, invalid: run.invalid?.reason ?? 'harness_error' } : null);
   const metrics = {
     id: run.id, phase: run.phase, arm: run.arm, model: run.model, dryRun: run.dryRun, replaces: run.replaces ?? null,
+    // Scored with files that were not frozen: a rehearsal, and said so.
+    unfrozen: run.tasks.some((t) => {
+      const f = join(runsDir, d.name, `task${t.task}`, 'score.json');
+      return existsSync(f) && JSON.parse(readFileSync(f, 'utf8')).frozen !== true;
+    }),
     error: run.error ?? null,
     invalid: bad ? { task: bad.task, reason: bad.invalid } : null,
     tasks,

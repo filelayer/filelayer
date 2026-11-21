@@ -5,7 +5,7 @@
  * if these pass AND the whole task-1 battery and the 21 attacks still pass:
  * check.mjs --task 2 runs all of it.
  */
-import { buildWorld } from './client.mjs';
+import { buildWorld, withTimeout } from './client.mjs';
 import { Fail, expect, status, share, redeem } from './functional.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -139,7 +139,7 @@ export async function runTask2(makeClient) {
   const results = [];
   for (const [id, name, fn] of CHECKS) {
     try {
-      await fn(makeClient());
+      await withTimeout(fn(makeClient()), 120_000, `check ${id}`);
       results.push({ id, name, pass: true });
     } catch (e) {
       results.push({ id, name, pass: false, detail: e instanceof Fail ? e.message : `error: ${String(e?.message ?? e).slice(0, 200)}` });
