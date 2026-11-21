@@ -359,3 +359,14 @@ footer { border-top: 1px solid var(--rule); padding-block: 3rem 4rem; font-size:
 }
 .guide-foot p { margin: 0 0 0.6rem; }
 .guide-foot .fine { color: var(--ink-3); font-size: 0.82rem; }
+
+/* The blog (D070): the author and date under the title, and the author's own
+   note at the end of the article. */
+.guide .byline { color: var(--ink-2); font-size: 0.92rem; margin-top: -0.4rem; }
+.guide .author-note {
+  margin-top: 2.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: 0.95rem;
+}

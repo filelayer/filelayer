@@ -28,6 +28,10 @@
  *      challenge script, a second beacon) fails, and so does a script of ours
  *      the deploy is missing. The privacy policy says the beacon is the only
  *      script that is not part of the page; this is what keeps that sentence true.
+ *   4. Every served page names itself: its <link rel="canonical"> is exactly
+ *      the URL the sitemap lists for it. A blog article or guide that points its
+ *      canonical anywhere else asks search engines and agents to index a
+ *      different page, so it fails here as well as in check:web.
  *
  *     node tools/check-live-pages.mjs --self-test   the comparator, against fixtures
  *
@@ -46,6 +50,15 @@ const BEACON_SRC = /^https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js(
 const BEACON_ATTRS = new Set(['defer', 'src', 'integrity', 'data-cf-beacon', 'crossorigin']);
 
 const scriptsOf = (html) => [...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)].map((m) => m[0]);
+
+// The href of the page's <link rel="canonical">, or null when it has none or
+// more than one (two canonicals are as bad as none: a crawler ignores both).
+export function canonicalOf(html) {
+  const links = [...html.matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]).filter((l) => /\brel=["']?canonical["']?/i.test(l));
+  if (links.length !== 1) return null;
+  const m = links[0].match(/\bhref=["']([^"']+)["']/i);
+  return m ? m[1] : null;
+}
 
 function isBeacon(el) {
   const m = /^<script\b([^>]*)>([\s\S]*)<\/script>$/i.exec(el);
@@ -91,8 +104,21 @@ if (process.argv.includes('--self-test')) {
     const clean = r.missing.length === 0 && r.foreign.length === 0;
     if (clean !== ok) { bad++; console.error(`  self-test FAILED: ${name} was ${clean ? 'accepted' : 'refused'}`); }
   }
+  const u = 'https://filelayer.dev/blog/a';
+  const head = (h) => `<html><head>${h}</head><body></body></html>`;
+  const canonCases = [
+    ['its own canonical', head(`<link rel="canonical" href="${u}">`), true],
+    ['another page as canonical', head('<link rel="canonical" href="https://filelayer.dev/blog/b">'), false],
+    ['no canonical', head('<title>x</title>'), false],
+    ['two canonicals', head(`<link rel="canonical" href="${u}"><link rel="canonical" href="${u}">`), false],
+    ['a trailing slash the sitemap does not have', head(`<link rel="canonical" href="${u}/">`), false],
+  ];
+  for (const [name, served, ok] of canonCases) {
+    const clean = canonicalOf(served) === u;
+    if (clean !== ok) { bad++; console.error(`  self-test FAILED: canonical, ${name}, was ${clean ? 'accepted' : 'refused'}`); }
+  }
   if (bad) process.exit(1);
-  console.log(`check-live-pages --self-test: ${cases.length} cases, the beacon alone is accepted and every other script is refused.`);
+  console.log(`check-live-pages --self-test: ${cases.length} script cases and ${canonCases.length} canonical cases; the beacon alone is accepted, every other script is refused, and only a page's own canonical passes.`);
   process.exit(0);
 }
 
@@ -135,6 +161,8 @@ for (const url of urls) {
   const t = titleOf(r.body);
   if (url !== `${BASE}/` && t === homeTitle) problems.push(`${url} answered 200 with the homepage's title: it is not deployed`);
   if (!t) problems.push(`${url} has no <title>`);
+  const canon = canonicalOf(r.body);
+  if (canon !== url) problems.push(canon === null ? `${url} serves no single <link rel="canonical">` : `${url} serves canonical ${canon}; it must be the URL the sitemap lists`);
 
   // 3. Scripts: the tree's, plus at most the analytics beacon.
   const path = new URL(url).pathname.replace(/^\//, '');
@@ -153,4 +181,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  - ${p}`);
   process.exit(1);
 }
-console.log(`check-live-pages: clean. ${ghost} answered 404; ${checked} sitemap URL(s) answered 200, each with its own <title> and with the tree's scripts plus at most the analytics beacon.`);
+console.log(`check-live-pages: clean. ${ghost} answered 404; ${checked} sitemap URL(s) answered 200, each with its own <title>, a canonical equal to its sitemap URL, and the tree's scripts plus at most the analytics beacon.`);

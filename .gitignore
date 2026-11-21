@@ -62,6 +62,9 @@
 # tools/build-guides.mjs. Not in the npm package: the library's licence is
 # Apache-2.0 and these terms are about the services sold beside it.
 !/legal/
+# The blog's sources (D070): blog/<slug>.md, rendered to web/blog/ by
+# tools/build-guides.mjs. Articles are written by Jorge Urios.
+!/blog/
 
 # The deploy copies `llms.txt` and the OpenAPI documents into `web/` so a
 # machine finds them at the site root. The repository root is the single source

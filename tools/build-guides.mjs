@@ -90,6 +90,12 @@ class Unsupported extends Error {
   }
 }
 
+const AUTHOR = { name: 'Jorge Urios', url: 'https://github.com/jorgeurios' };
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const longDate = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+};
 const esc = (s) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -150,6 +156,18 @@ function rewriteHref(href, file = 'docs/guides/x.md') {
         continue;
       }
       resolved.push(seg);
+    }
+    // A blog article is read on the website, so a link from it to a guide or
+    // to another article goes to that page here, not to its markdown source on
+    // GitHub. Only articles get this: the repository documents keep pointing
+    // into the repository, where most of their readers are.
+    if (file.startsWith('blog/')) {
+      const r = resolved.join('/');
+      if (r === 'docs/guides/README.md') return `/guides/${frag}`;
+      const g = r.match(/^docs\/guides\/([a-z0-9-]+)\.md$/);
+      if (g) return `/guides/${g[1]}${frag}`;
+      const b = r.match(/^blog\/([a-z0-9-]+)\.md$/);
+      if (b) return `/blog/${b[1]}${frag}`;
     }
     return `${GH_BLOB}${resolved.join('/')}${frag}`;
   }
@@ -489,7 +507,7 @@ const clip = (s, n) => {
   return `${cut.slice(0, cut.lastIndexOf(' '))}…`;
 };
 
-function page({ url, source, title, lede, body }) {
+function page({ url, source, title, lede, body, post = null, blogIndex = false }) {
   const desc = clip(lede ?? '', 185);
 
   // THE FOOTER CLAIM IS DERIVED FROM THE PAGE, NOT ASSERTED ABOUT IT.
@@ -537,6 +555,24 @@ function page({ url, source, title, lede, body }) {
     author: { '@type': 'Organization', name: 'Technology Pro Bono S.L.' },
     license: 'https://www.apache.org/licenses/LICENSE-2.0',
   };
+  // A BLOG ARTICLE IS THE AUTHOR'S, NOT THE COMPANY'S (D070): a BlogPosting
+  // with a person as its author and its own date, and the page's own URL as
+  // its canonical, so a copy elsewhere points back here.
+  if (post) {
+    ld['@type'] = 'BlogPosting';
+    ld.author = { '@type': 'Person', name: AUTHOR.name, url: AUTHOR.url };
+    ld.datePublished = post.date;
+    delete ld.license;
+  }
+  if (blogIndex) {
+    ld['@type'] = 'Blog';
+    ld.author = { '@type': 'Person', name: AUTHOR.name, url: AUTHOR.url };
+    delete ld.license;
+  }
+  const byline = post
+    ? `<p class="byline">By ${esc(AUTHOR.name)} · <time datetime="${post.date}">${longDate(post.date)}</time></p>\n`
+    : '';
+  const authorNote = post ? `\n<aside class="author-note">\n<p>${post.authorNote}</p>\n</aside>` : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -602,7 +638,7 @@ ${JSON.stringify(ld, null, 2)}
 
 <main id="main" class="wrap">
 <article class="guide">
-${body}
+${post ? body.replace(/(<\/h1>\n)/, `$1${byline}`) : body}${authorNote}
 </article>
 
 <footer class="guide-foot">
@@ -613,7 +649,7 @@ ${body}
   </p>
   <p>
     <a href="/quickstart">Quickstart</a> ·
-    <a href="/guides/">All guides</a> ·
+    <a href="${post || blogIndex ? '/blog/' : '/guides/'}">${post || blogIndex ? 'All articles' : 'All guides'}</a> ·
     <a href="/">Filelayer</a> ·
     <a href="/trust">Should you depend on this?</a>
   </p>
@@ -732,6 +768,42 @@ const sources = [
   },
 ];
 
+// THE BLOG (D070, 21 Nov 2026): filelayer.dev/blog is the original home of the
+// articles Jorge Urios writes; copies elsewhere carry this URL as canonical.
+// The text is his (D062). This only gives it a page: a date, the author, an
+// authorship note he writes, and its own canonical URL.
+//
+// A post is blog/<slug>.md, opening with front matter:
+//
+//     ---
+//     date: 2026-11-30
+//     authorNote: One or two sentences, written by the author, in markdown.
+//     ---
+//     # The title
+//
+// Both fields are required; nothing is defaulted, so no page goes out with an
+// invented date or a note nobody wrote. The index exists only when there is at
+// least one post: an empty blog is not a page worth publishing.
+const BLOG = join(ROOT, 'blog');
+const postFiles = existsSync(BLOG)
+  ? readdirSync(BLOG).filter((f) => f.endsWith('.md') && f !== 'README.md').sort()
+  : [];
+function frontMatter(md, file) {
+  const m = /^---\n([\s\S]*?)\n---\n/.exec(md);
+  if (!m) throw new Unsupported(file, 1, 'a post needs front matter with date and authorNote', md.split('\n')[0]);
+  const fields = {};
+  for (const line of m[1].split('\n')) {
+    const kv = /^([A-Za-z]+):\s*(.*)$/.exec(line);
+    if (!kv) throw new Unsupported(file, 1, 'front matter lines are `key: value`', line);
+    fields[kv[1]] = kv[2].trim();
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date ?? '') || Number.isNaN(Date.parse(fields.date))) {
+    throw new Unsupported(file, 1, 'date must be YYYY-MM-DD', fields.date ?? '(missing)');
+  }
+  if (!fields.authorNote) throw new Unsupported(file, 1, 'authorNote is required; it is written by the author', '(missing)');
+  return { fields, body: md.slice(m[0].length) };
+}
+
 const built = [];
 for (const s of sources) {
   const md = readFileSync(join(ROOT, s.src), 'utf8');
@@ -742,6 +814,36 @@ for (const s of sources) {
     lede,
     ids,
     text: page({ url: s.url, source: s.src, title, lede, body: html }),
+  });
+}
+
+for (const f of postFiles) {
+  const slug = f.replace(/\.md$/, '');
+  const src = `blog/${f}`;
+  const md = readFileSync(join(ROOT, src), 'utf8');
+  const { fields, body } = frontMatter(md, src);
+  const { html, title, lede, ids } = render(body, src);
+  const url = `${SITE}/blog/${slug}`;
+  built.push({
+    src, out: `blog/${slug}.html`, url, slug: null, isGuide: false, isIndex: false, isPost: true,
+    date: fields.date, title, lede, ids,
+    text: page({
+      url, source: src, title, lede, body: html,
+      post: { date: fields.date, authorNote: inline(fields.authorNote, src, 1) },
+    }),
+  });
+}
+const posts = built.filter((b) => b.isPost).sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title));
+if (posts.length) {
+  const list = posts
+    .map((p) => `<li><a href="${p.url.replace(SITE, '')}">${esc(p.title)}</a> · <time datetime="${p.date}">${longDate(p.date)}</time></li>`)
+    .join('\n');
+  const lede = `Articles by ${AUTHOR.name}, who maintains Filelayer, an open-source Node library for the files users upload to SaaS applications.`;
+  const body = `<h1 id="blog">Blog</h1>\n<p>${esc(lede)}</p>\n<ul>\n${list}\n</ul>`;
+  built.push({
+    src: 'blog/', out: 'blog/index.html', url: `${SITE}/blog/`, slug: null, isGuide: false, isIndex: false,
+    isBlogIndex: true, title: 'Blog', lede, ids: ['blog'],
+    text: page({ url: `${SITE}/blog/`, source: 'blog/', title: 'Blog', lede, body, blogIndex: true }),
   });
 }
 
@@ -761,8 +863,10 @@ for (const s of sources) {
 {
   const problems = [];
   for (const b of built) {
+    if (b.isBlogIndex) continue; // generated from the posts, which are checked themselves
     const f = b.src;
-    const md = readFileSync(join(ROOT, f), 'utf8');
+    const raw = readFileSync(join(ROOT, f), 'utf8');
+    const md = b.isPost ? frontMatter(raw, f).body : raw;
     const body = b.text.slice(b.text.indexOf('<article'), b.text.indexOf('</article>'));
 
     // Fenced blocks come in pairs, so the opening count is half the fences.
@@ -828,6 +932,7 @@ for (const s of sources) {
       }
       if (/^(https?:|mailto:)/.test(href)) continue;
       if (['/', '/styles.css', '/quickstart', '/trust'].includes(href)) continue;
+      if (href === '/blog/' && posts.length) continue;
       if (href.startsWith('/guides')) {
         const slug = href.replace(/^\/guides\/?/, '').split('#')[0];
         const ok = slug === '' ? built.some((b) => b.isIndex) : built.some((b) => b.slug === slug);
@@ -850,7 +955,7 @@ for (const s of sources) {
   // Every class the template and the renderer emit must exist in the stylesheet,
   // because an unstyled table on a published page looks like a broken page.
   const css = readFileSync(join(ROOT, 'web', 'styles.css'), 'utf8');
-  for (const cls of ['guide', 'table-scroll', 'guide-foot', 'fine', 'wrap', 'masthead', 'brand', 'nav', 'skip']) {
+  for (const cls of ['guide', 'table-scroll', 'guide-foot', 'fine', 'wrap', 'masthead', 'brand', 'nav', 'skip', ...(posts.length ? ['byline', 'author-note'] : [])]) {
     if (!new RegExp(`\\.${cls}\\b`).test(css)) {
       problems.push(`web/styles.css has no rule for .${cls}, which these pages use.`);
     }
@@ -937,6 +1042,10 @@ const artifacts = [
 
 if (CHECK) {
   const stale = [];
+  const builtPaths = new Set(artifacts.map((a) => a.path.split('\\').join('/')));
+  for (const f of execFileSync('git', ['ls-files', '-z', '--', 'web/blog'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean)) {
+    if (!builtPaths.has(f)) stale.push(`${f}: tracked, but no post under blog/ renders to it. Remove it with the post.`);
+  }
   for (const a of artifacts) {
     const full = join(ROOT, a.path);
     if (!existsSync(full)) {
@@ -962,6 +1071,7 @@ if (CHECK) {
   );
 } else {
   mkdirSync(OUT, { recursive: true });
+  if (posts.length) mkdirSync(join(ROOT, 'web', 'blog'), { recursive: true });
   for (const a of artifacts) writeFileSync(join(ROOT, a.path), a.text);
   console.log(
     // `built.length + 1` until the sitemap stopped being "the guides plus the

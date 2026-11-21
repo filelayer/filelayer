@@ -67,6 +67,8 @@
     "benchmark/README.md",
     "benchmark/PAGE.md",
     "legal/*.md",
+    "blog/*.md",
+    "web/blog/*.html",
     "benchmark/package.json",
     "packages/core/migrations/*.md",
     "packages/core/migrations/*.json",

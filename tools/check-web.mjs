@@ -398,6 +398,31 @@ if (existsSync(join(WEB, 'og.png'))) {
   }
 }
 
+// EVERY PAGE'S CANONICAL IS ITS OWN URL, AND EVERY PAGE IS IN THE SITEMAP.
+//
+// Added for the blog (D070, 21 Nov 2026): an article published here first and
+// copied elsewhere relies on this page's canonical pointing at this page. A
+// canonical copied from a template, or pointing at another page, would hand
+// the original to the copy. The URL is derived from the path the same way the
+// host serves it and the sitemap lists it: `x.html` is `/x`, `dir/index.html`
+// is `/dir/`. The not-found page is the one page not in the sitemap.
+{
+  const sitemapXml = existsSync(join(WEB, 'sitemap.xml')) ? readFileSync(join(WEB, 'sitemap.xml'), 'utf8') : '';
+  const locs = new Set([...sitemapXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]));
+  const root = [...locs].find((u) => /^https:\/\/[^/]+\/$/.test(u));
+  if (!root) fail('web/sitemap.xml', 'has no root URL to derive canonical URLs from');
+  else {
+    for (const [label, file] of PAGES) {
+      const html = readFileSync(file, 'utf8');
+      const path = label.replace(/^web\//, '').replace(/\.html$/, '');
+      const want = path === 'index' ? root : path.endsWith('/index') ? `${root}${path.slice(0, -'/index'.length)}/` : `${root}${path}`;
+      const got = /<link rel="canonical" href="([^"]+)"/i.exec(html)?.[1];
+      if (got && got !== want) fail(label, `canonical is ${got}; this page is served at ${want}`);
+      if (label !== 'web/404.html' && !locs.has(want)) fail(label, `${want} is not in web/sitemap.xml. Run \`npm run build:guides\` after tracking the page.`);
+    }
+  }
+}
+
 // The domain must be identical in the canonical link, the OG/Twitter URLs, the
 // sitemap and robots.txt. A canonical pointing one way and a sitemap another is
 // invisible in a browser and expensive in an index. `tools/set-site-domain.mjs`
