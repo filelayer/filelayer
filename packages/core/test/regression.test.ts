@@ -657,6 +657,24 @@ describe('holding `share` does not confer revoke over other people’s grants', 
     assert.equal(text((await w.fl.read(P(ben), w.file.id)).body), 'SECRET', 'Ben still reads through the group grant');
   });
 
+  it('revokeFor is all-or-nothing: a group member cannot remove a user a colleague granted', async () => {
+    const w = await world();
+    const ana = await w.actor('rf-ana', 'member');
+    const ben = await w.actor('rf-ben', 'member');
+    const carl = await w.actor('rf-carl');
+    await w.fl.share(P(w.owner), w.file.id, {
+      subject: { type: 'role', orgId: w.org, minRole: 'member' },
+      capabilities: ['read', 'share'],
+    });
+    await w.fl.share(P(ana), w.file.id, { subject: { type: 'actor', actorId: carl }, capabilities: ['read'] });
+    // Ben did not issue Carl's grant: the whole call is refused and nothing is revoked.
+    await rejects(() => w.fl.revokeFor(P(ben), w.file.id, { type: 'actor', actorId: carl }), 404);
+    assert.equal(text((await w.fl.read(P(carl), w.file.id)).body), 'SECRET', 'Carl still reads');
+    // Ana issued it, so she can.
+    assert.equal((await w.fl.revokeFor(P(ana), w.file.id, { type: 'actor', actorId: carl })).revoked.length, 1);
+    await rejects(() => w.fl.read(P(carl), w.file.id), 404);
+  });
+
   it('below a group grant, revoke follows the chain of issuers', async () => {
     const w = await world();
     const ana = await w.actor('chain-ana', 'member');

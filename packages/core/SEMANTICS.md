@@ -366,6 +366,26 @@ is what happened. A holder of a group grant now revokes along the chain of
 issuers, and the group grant is revoked by role-derived authority, which is the
 only authority that can issue one (7b).
 
+**Renouncing needs nothing.** Anyone may revoke a grant that names them
+(subject `actor`, themselves), with or without `share`: giving up your own
+access takes no authority over anyone else's. This comes before every rule in
+the table.
+
+**Authority comes from one source, the first that supplies `share`:** an org
+role, then a grant to the caller by name, then a group grant. Only that
+source's rule above is applied; the others are not consulted. So a member who
+issued links through a group grant, and is later given a grant by name with
+`share`, revokes along that named grant's subtree from then on, and the links
+issued earlier through the group grant are outside it: revoking them now
+needs an admin or owner. Consulting every live source is on the roadmap, not
+in this version.
+
+**`revokeFor` and `unshare` are all or nothing.** They revoke every live grant
+naming the subject in one transaction, so if any one of them is outside the
+caller's authority, the whole call is refused with `not_found` (404) and
+nothing is revoked. A group member who removes a user to whom a colleague
+issued a grant gets that refusal.
+
 A refusal is `not_found` (404) with reason `foreign_grant`, audited as a denied
 `grant.revoke` with the grant the authority came from in `context.viaGrantId`
 (and `context.viaGroupGrant: true` for a group grant). Asserted in
