@@ -138,3 +138,20 @@ person running this in production.
     takes somebody's own routes and reports whether the properties hold: that a
     stranger gets a 404, that revocation lands on the next request, that an
     unknown user id denies instead of degrading to anonymous.
+- **Candidates from `benchmark/productivity/`, not scheduled.** Arm A's
+  reference implementation of the contract in `benchmark/productivity/contract/`
+  (`benchmark/productivity/reference/a-filelayer/`) had to write its own code
+  around four gaps. Each is listed with what that code does today:
+  - **One audit reader across every chain, the system chain included.** An
+    operator view of "every event" walks each org's chain and the system chain
+    separately and merges them.
+  - **Metadata on a revocation.** `shares.revoke` takes no reason, so recording
+    why a link was revoked takes a table of the application's own, and the
+    application writes the event itself.
+  - **Members sharing each other's org documents.** A member reads an
+    org-visible document someone else uploaded but cannot share it; the
+    reference gives the org a `role` grant with `share` at every upload.
+  - **A share-link redemption that says it is one.** A download through a link,
+    and an attempt with an unknown secret, are recorded as an anonymous read
+    (`file.read` or `file.access`), so a reader of the trail tells them apart
+    from other reads only by the actor's resolution.
