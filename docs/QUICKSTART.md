@@ -604,11 +604,11 @@ createServer(async (req, res) => {
 **`principal` returns YOUR user id, as `{ as }`.** The same string you pass
 everywhere else. An id this project has never seen is a `404` and the attempt is
 recorded -- never a silent downgrade to anonymous, which would turn a typo in a
-session lookup into a read of every published file. It is recorded on the
-project's system chain, not in the organization's audit trail, as a
-`file.access` denial with reason `unknown_actor` and the id that was tried: a
-caller nobody registered has no standing in any organization, so it cannot add
-events to one. See [`SEMANTICS.md`](../packages/core/SEMANTICS.md), section 9.
+session lookup into a read of every published file. It is recorded as a
+`file.access` denial with reason `unknown_actor` and the id that was tried, and
+it goes to the project's system chain, not the organization's: attributing it to
+an organization would mean resolving which organization owns the file before
+authorizing anyone, which would tell a stranger whose file an id is. See [`SEMANTICS.md`](../packages/core/SEMANTICS.md), section 9.
 
 Until `0.13.0` the callback had to return Filelayer's **internal** actor uuid,
 and there was no public way to get one. That made the library's own route for

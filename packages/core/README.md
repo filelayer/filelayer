@@ -148,9 +148,12 @@ Filelayer                 ONE authorization function answers every request
                           the audit event, written in the decision's own
                           transaction so the log cannot disagree with it
    ───────────────────────────────────────────────────────────────────────
-your Postgres             9 tables. Filelayer owns the schema, you own the
-your bucket               database. Bytes go to S3, R2, B2 or a directory
-                          behind one adapter; storage is replaceable
+your Postgres             13 tables: 9 for files, permissions, shares and
+your bucket               the audit chain, and 4 for the schema version and
+                          the usage report. Filelayer owns the schema, you
+                          own the database. Bytes go to S3, R2, B2 or a
+                          directory behind one adapter; storage is
+                          replaceable
 ```
 
 Filelayer sits between the two things you already run. It brings no database and
