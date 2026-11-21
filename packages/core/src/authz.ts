@@ -338,8 +338,8 @@ export interface AuthzDeps {
   findGrantBySecret(secretHash: string): Promise<GrantRow | null>;
   /** Is `grantId` the same grant as, or delegated from, `ancestorId`? */
   isDescendantOf(ancestorId: string, grantId: string): Promise<boolean>;
-  /** The subject type of a grant, live or not; null when there is no such grant. */
-  grantSubjectType(grantId: string): Promise<GrantSubjectType | null>;
+  /** The subject of a grant, live or not; null when there is no such grant. */
+  grantSubject(grantId: string): Promise<{ type: GrantSubjectType; actorId: string | null } | null>;
   /**
    * Did `actorId` issue `grantId`, or any grant on its chain strictly below
    * `ancestorId`? False when `grantId` does not descend from `ancestorId`.
@@ -1225,18 +1225,28 @@ export async function authorizeShare(
  *     grants between it and the group grant: the chain of issuers.
  *
  * Grants to one actor are unchanged.
+ *
+ * And one rule before all of them: anyone may RENOUNCE a grant that names them
+ * (subject `actor`, the caller). Giving up your own access needs no authority
+ * over anyone else's, and no `share`. Found by the cold review of 0.36.1: the
+ * group rule had refused a member renouncing a read-only grant a colleague had
+ * issued them, which worked before it.
  */
 export async function authorizeRevoke(
   deps: AuthzDeps,
   principal: Principal,
   grant: { id: string; fileId: string; orgId: string },
 ): Promise<Decision> {
+  const subject = await deps.grantSubject(grant.id);
+  if (subject?.type === 'actor' && principal.actorId && subject.actorId === principal.actorId) {
+    return { allow: true, via: 'grant:actor', grantId: grant.id };
+  }
   const resolved = await decideFile(deps, principal, grant.fileId, 'share');
   if (!resolved.decision.allow) return resolved.decision;
 
   const via = resolved.decision.grantId ?? null;
   if (via === null) return resolved.decision;
-  const viaType = await deps.grantSubjectType(via);
+  const viaType = (await deps.grantSubject(via))?.type ?? null;
   const group = viaType === 'org' || viaType === 'role';
   if (!group && (grant.id === via || (await deps.isDescendantOf(via, grant.id)))) {
     return resolved.decision;

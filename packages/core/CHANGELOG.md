@@ -53,6 +53,12 @@ file's owner), the only authority that can issue one. A refusal is `not_found`
 grant, through a group grant is now refused. Code that relied on that should
 revoke as an admin or owner instead.
 
+**Renouncing is always allowed.** Anyone may revoke a grant that names them
+(subject `actor`, themselves), with or without `share` on the file. The first
+draft of this fix refused a member renouncing a read-only grant a colleague had
+issued them under a group grant, which had worked before; the cold review of
+the fix found it. Asserted in `test/regression.test.ts`.
+
 **Found** on 2026-11-21 by the productivity benchmark's arm A reference, which
 had to restrict revocation to a link's creator in its own code. Asserted for
 both `org` and `role` subjects, and for a chain below one, in

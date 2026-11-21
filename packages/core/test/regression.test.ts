@@ -634,6 +634,29 @@ describe('holding `share` does not confer revoke over other people’s grants', 
     });
   }
 
+  // Cold review of 0.36.1 (2026-11-21): the group rule refused a holder who
+  // renounced a grant naming them, which worked before it.
+  it('anyone may renounce a grant that names them, under a group grant or not', async () => {
+    const w = await world();
+    const ana = await w.actor('ren-ana', 'member');
+    const ben = await w.actor('ren-ben', 'member');
+    const carl = await w.actor('ren-carl');
+    await w.fl.share(P(w.owner), w.file.id, {
+      subject: { type: 'role', orgId: w.org, minRole: 'member' },
+      capabilities: ['read', 'share'],
+    });
+    const toBen = await w.fl.share(P(ana), w.file.id, { subject: { type: 'actor', actorId: ben }, capabilities: ['read'] });
+    const toCarl = await w.fl.share(P(ana), w.file.id, { subject: { type: 'actor', actorId: carl }, capabilities: ['read'] });
+
+    // Neither may end the other's grant...
+    await rejects(() => w.fl.revoke(P(carl), toBen.grantId), 404);
+    // ...but each may end their own, Carl without holding share at all.
+    await w.fl.revoke(P(ben), toBen.grantId);
+    await w.fl.revoke(P(carl), toCarl.grantId);
+    await rejects(() => w.fl.read(P(carl), w.file.id), 404);
+    assert.equal(text((await w.fl.read(P(ben), w.file.id)).body), 'SECRET', 'Ben still reads through the group grant');
+  });
+
   it('below a group grant, revoke follows the chain of issuers', async () => {
     const w = await world();
     const ana = await w.actor('chain-ana', 'member');

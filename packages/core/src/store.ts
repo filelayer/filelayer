@@ -743,13 +743,14 @@ export class PostgresStore implements AuthzDeps {
     return rows.length > 0;
   }
 
-  async grantSubjectType(grantId: string): Promise<GrantSubjectType | null> {
+  async grantSubject(grantId: string): Promise<{ type: GrantSubjectType; actorId: string | null } | null> {
     if (!isUuid(grantId)) return null;
-    const { rows } = await this.db.query<{ subject_type: GrantSubjectType }>(
-      `SELECT subject_type FROM file_grant WHERE id = $1`,
+    const { rows } = await this.db.query<{ subject_type: GrantSubjectType; subject_id: string | null }>(
+      `SELECT subject_type, subject_id FROM file_grant WHERE id = $1`,
       [grantId],
     );
-    return rows[0]?.subject_type ?? null;
+    const r = rows[0];
+    return r ? { type: r.subject_type, actorId: r.subject_type === 'actor' ? r.subject_id : null } : null;
   }
 
   async issuedOnChainBelow(ancestorId: string, grantId: string, actorId: string): Promise<boolean> {
