@@ -20,19 +20,34 @@ test('egress: one ECONNRESET a retry got past is recorded and does not invalidat
   assert.equal(r.persistent.length, 0);
 });
 
-test('egress: a host down for the whole window invalidates', () => {
+test('egress: an essential host down for the whole window invalidates', () => {
   const r = egressInWindow([attempt(1), err(1), attempt(9), err(9), attempt(20), err(20)], ...win, 5);
   assert.equal(r.persistent.length, 1);
   assert.match(r.persistent[0], /no successful connection/);
 });
 
-test('egress: failing five minutes in a row without a success invalidates, four does not', () => {
-  const five = egressInWindow([ok(0), err(10), err(12), err(15)], ...win, 5);
+test('egress: one failed attempt never decides, even with no success', () => {
+  const r = egressInWindow([attempt(3, 'api.anthropic.com'), err(3, 'api.anthropic.com')], ...win, 5);
+  assert.deepEqual(r.errors, { 'api.anthropic.com': 1 });
+  assert.equal(r.persistent.length, 0);
+});
+
+test('egress: a documentation host is recorded and never invalidates', () => {
+  const docs = 'docs.aws.amazon.com';
+  const r = egressInWindow([err(1, docs), err(2, docs), err(9, docs)], ...win, 5);
+  assert.deepEqual(r.errors, { [docs]: 3 });
+  assert.equal(r.persistent.length, 0);
+});
+
+test('egress: five minutes of continuous failing invalidates; four, a success between, or sparse errors do not', () => {
+  const five = egressInWindow([ok(0), err(10), err(11.5), err(13), err(14.2), err(15)], ...win, 5);
   assert.equal(five.persistent.length, 1);
   const four = egressInWindow([ok(0), err(10), err(12), err(14), ok(14.5)], ...win, 5);
   assert.equal(four.persistent.length, 0);
   const broken = egressInWindow([ok(0), err(10), ok(12), err(13), err(16)], ...win, 5);
   assert.equal(broken.persistent.length, 0, 'a success in between restarts the count');
+  const sparse = egressInWindow([ok(0), err(10), err(15.5)], ...win, 5);
+  assert.equal(sparse.persistent.length, 0, 'two errors 5 minutes apart with nothing between are not a streak');
 });
 
 test('egress: only the session window counts', () => {
@@ -41,26 +56,36 @@ test('egress: only the session window counts', () => {
   assert.equal(r.persistent.length, 0);
 });
 
-test('api: read from stderr whatever stopped the session', () => {
-  assert.equal(apiFailure({ stoppedBy: 'wall', stderrTail: 'API Error: 529 {"type":"overloaded_error"}' }), 'api_failure');
-  assert.equal(apiFailure({ stoppedBy: 'turns', stderrTail: 'Request timed out.' }), 'api_failure');
-  assert.equal(apiFailure({ stoppedBy: 'finished', stderrTail: 'Credit balance is too low' }), 'api_key_exhausted');
+test('api: never when the session ended for the agent\'s reason, whatever it retried', () => {
+  // A budget stop with a retried 429 on stderr: valid.
+  assert.equal(apiFailure({ stoppedBy: 'budget', claude: { isError: true, subtype: 'error_max_budget_usd', resultText: 'x' },
+    stderrTail: 'API Error (429 rate_limit_error) retrying in 2s' }), null);
+  // A session that finished after a retried 529: valid.
+  assert.equal(apiFailure({ stoppedBy: 'finished', claude: { isError: false, subtype: 'success', resultText: 'DONE' },
+    stderrTail: 'API Error: 529 {"type":"overloaded_error"} Retrying' }), null);
+  // A turn stop after a timeout that was retried: valid.
+  assert.equal(apiFailure({ stoppedBy: 'turns', stderrTail: 'Request timed out.' }), null);
 });
 
-test('api: an error result, by its own error text', () => {
-  const r = (resultText, subtype = 'error_during_execution') => ({ claude: { isError: true, subtype, resultText } });
-  assert.equal(apiFailure(r('API Error: 401 {"type":"authentication_error"}')), 'api_auth');
-  assert.equal(apiFailure(r('API Error: 500 Internal server error')), 'api_failure');
-  assert.equal(apiFailure(r('Credit balance is too low')), 'api_key_exhausted');
+test('api: an error or exit stop, with Claude Code\'s own error line', () => {
+  assert.equal(apiFailure({ stoppedBy: 'error', claude: { isError: true, subtype: 'error_during_execution', resultText: 'API Error: 529 {"type":"overloaded_error"}' } }), 'api_failure');
+  assert.equal(apiFailure({ stoppedBy: 'exit_1', stderrTail: 'something\nAPI Error: 500 Internal server error' }), 'api_failure');
+  assert.equal(apiFailure({ stoppedBy: 'error', claude: { isError: true, subtype: 'error_during_execution', resultText: 'API Error: 401 {"type":"authentication_error"}' } }), 'api_auth');
+  assert.equal(apiFailure({ stoppedBy: 'error', stderrTail: 'Credit balance is too low' }), 'api_key_exhausted');
 });
 
-test('api: never the agent\'s own words', () => {
-  // The agent's summary on a normal result.
+test('api: never a bare number or word', () => {
+  assert.equal(apiFailure({ stoppedBy: 'exit_1', stderrTail: 'Warning: heap at 512 MB' }), null);
+  assert.equal(apiFailure({ stoppedBy: 'exit_1', stderrTail: 'see the billing page' }), null);
+  assert.equal(apiFailure({ stoppedBy: 'error', claude: { isError: true, subtype: 'error_during_execution', resultText: 'The tests hit a 503 from moto.' } }), null);
   assert.equal(apiFailure({ claude: { isError: false, subtype: 'success', resultText: 'DONE. I handled 429 rate limit errors from S3.' } }), null);
-  // A budget stop whose text mentions a rate limit.
-  assert.equal(apiFailure({ claude: { isError: true, subtype: 'error_max_budget_usd', resultText: 'API Error: rate limit' } }), null);
-  // An error result whose text is not an error message.
-  assert.equal(apiFailure({ claude: { isError: true, subtype: 'error_during_execution', resultText: 'The tests hit a 503 from moto.' } }), null);
+});
+
+test('api: a wall-clock stop counts only if the API was still failing at the end', () => {
+  const base = { stoppedBy: 'wall', stderrTail: 'API Error: 529 overloaded', startedAt: at(0), endedAt: at(60) };
+  assert.equal(apiFailure({ ...base, lastResponseAt: at(55), lastApiErrorAt: at(58) }), 'api_failure', 'silent for 5 minutes, failing at the end');
+  assert.equal(apiFailure({ ...base, lastResponseAt: at(59.5), lastApiErrorAt: at(59) }), null, 'it was still answering');
+  assert.equal(apiFailure({ ...base, lastResponseAt: at(50), lastApiErrorAt: at(20) }), null, 'the last error was before the last response');
 });
 
 import { examplesReads } from './classify.mjs';
@@ -85,8 +110,13 @@ test('vault: the four reads the cold review planted are all counted', () => {
     result('t4', ''),
     use('t5', 'Bash', { command: 'sed -n 1,80p vault/server.ts' }),
     result('t5', 'import express ...'),
+    // 5. A cd into examples/vault, then a read with no "vault" in it.
+    use('t6', 'Bash', { command: `cd ${PKG}/examples/vault` }),
+    result('t6', ''),
+    use('t7', 'Bash', { command: 'cat server.ts' }),
+    result('t7', 'import express ...'),
   ];
-  assert.deepEqual(examplesReads(stream), { vault: 4, other: 0 });
+  assert.deepEqual(examplesReads(stream), { vault: 5, other: 0 });
 });
 
 test('vault: other examples are counted apart, and unrelated reads not at all', () => {

@@ -13,23 +13,50 @@
  * phase.
  */
 
-const KEY_EXHAUSTED = /credit balance is too low|spend(ing)? limit (has been )?reached|usage limit (has been )?reached|insufficient (credit|funds|balance)|billing/i;
-const AUTH = /\b(401|403)\b|authentication_error|permission_error|invalid x-api-key|invalid api key/i;
-const TRANSIENT = /\b(5\d\d)\b|overloaded|rate_limit_error|\b429\b|request timed out|timed out|internal server error|connection error|ECONNRESET|socket hang up|fetch failed/i;
-const ERROR_START = /^\s*(API Error|Error:|Request timed out|Credit balance|Invalid API key|Connection error)/i;
-const AGENT_STOPS = new Set(['error_max_budget_usd', 'error_max_turns']);
+// Claude Code's own error lines, anchored at the start of a line: never a bare
+// number or word, which a warning or the agent's output could carry.
+const LINE = /^\s*(API Error\b.*|Request timed out.*|Credit balance is too low.*|Invalid API key.*|Connection error.*)$/gim;
+const KEY_EXHAUSTED = /^\s*(Credit balance is too low|API Error\b.*\b(credit balance|billing_error)\b)/i;
+const AUTH = /^\s*(Invalid API key|API Error\b.*\b(401|403|authentication_error|permission_error)\b)/i;
+const ERROR_START = /^\s*(API Error\b|Request timed out|Credit balance is too low|Invalid API key|Connection error)/i;
+// A session that ended for the agent's reason (finished, its budget, its turns)
+// is never invalid by the API, whatever retries it went through (cold review of
+// 1bba1d8, N-B1): only error, exit_* and wall stops are read below. Retried
+// errors are frequent in long sessions, and dropping those would select on the
+// outcome.
+const AGENT_SUBTYPES = new Set(['error_max_budget_usd', 'error_max_turns', 'success']);
+// How long without a single response before a wall-clock stop counts as the
+// API having been down at the end.
+export const WALL_SILENCE_MINUTES = 2;
 
-/** null, or 'api_key_exhausted' | 'api_auth' | 'api_failure'. */
+const kind = (line) => (KEY_EXHAUSTED.test(line) ? 'api_key_exhausted' : AUTH.test(line) ? 'api_auth' : 'api_failure');
+
+/**
+ * null, or 'api_key_exhausted' | 'api_auth' | 'api_failure'.
+ *
+ * API evidence counts only when the session did not end for the agent's own
+ * reason:
+ *   - `error` or `exit_*`: an error result whose text is one of Claude Code's
+ *     error lines, or such a line on stderr;
+ *   - `wall`: only if the API was still failing at the end, that is, no
+ *     response for WALL_SILENCE_MINUTES before the stop and an error line
+ *     after the last response.
+ *   - `finished`, `budget`, `turns`: never.
+ */
 export function apiFailure(t) {
-  const sources = [];
-  if (t?.stderrTail) sources.push(t.stderrTail);
+  const stop = t?.stoppedBy ?? '';
   const r = t?.claude;
-  if (r?.isError && !AGENT_STOPS.has(r.subtype) && ERROR_START.test(r.resultText ?? '')) sources.push(r.resultText);
-  const text = sources.join('\n');
-  if (!text) return null;
-  if (KEY_EXHAUSTED.test(text)) return 'api_key_exhausted';
-  if (AUTH.test(text)) return 'api_auth';
-  if (TRANSIENT.test(text)) return 'api_failure';
+  if (r && AGENT_SUBTYPES.has(r.subtype)) return null;
+  const lines = [...String(t?.stderrTail ?? '').matchAll(LINE)].map((m) => m[1]);
+  if (r?.isError && ERROR_START.test(r.resultText ?? '')) lines.push(String(r.resultText).trim().split('\n')[0]);
+  if (!lines.length) return null;
+  if (stop === 'error' || stop.startsWith('exit_')) return kind(lines.at(-1));
+  if (stop === 'wall') {
+    const last = Date.parse(t.lastResponseAt ?? t.startedAt ?? 0);
+    const err = Date.parse(t.lastApiErrorAt ?? 0);
+    const end = Date.parse(t.endedAt ?? 0);
+    if (err > last && end - last >= WALL_SILENCE_MINUTES * 60_000) return kind(lines.at(-1));
+  }
   return null;
 }
 
@@ -45,7 +72,7 @@ export const STOPS_THE_PHASE = new Set(['api_key_exhausted', 'api_auth']);
  * about the infrastructure, and invalidating on it would drop long sessions
  * more often than short ones.
  */
-export function egressInWindow(entries, from, to, persistentMinutes) {
+export function egressInWindow(entries, from, to, persistentMinutes, essential = ['api.anthropic.com', 'registry.npmjs.org']) {
   const a = Date.parse(from);
   const b = Date.parse(to);
   const inside = entries.filter((e) => e.allowed === true && e.host && Date.parse(e.t) >= a && Date.parse(e.t) <= b)
@@ -54,17 +81,27 @@ export function egressInWindow(entries, from, to, persistentMinutes) {
   const persistent = [];
   for (const host of new Set(inside.filter((e) => e.error).map((e) => e.host))) {
     const mine = inside.filter((e) => e.host === host);
-    errors[host] = mine.filter((e) => e.error).length;
+    const failed = mine.filter((e) => e.error);
+    errors[host] = failed.length;
+    // Only the hosts a run cannot do without can invalidate it (cold review of
+    // 1bba1d8, N-I1). A documentation site that failed is recorded, and it is
+    // the agent's problem as much as a page that was hard to read.
+    if (!essential.includes(host)) continue;
+    // At least two failed attempts, so that one error never decides (N-N2).
+    if (failed.length < 2) continue;
     if (!mine.some((e) => e.connected)) {
       persistent.push(`${host}: no successful connection in the session`);
       continue;
     }
-    let streakStart = null;
+    let streak = [];
     for (const e of mine) {
-      if (e.connected) streakStart = null;
+      if (e.connected) streak = [];
       else if (e.error) {
-        streakStart ??= Date.parse(e.t);
-        if (Date.parse(e.t) - streakStart >= persistentMinutes * 60_000) {
+        // A streak is continuous trying: a gap of more than 2 minutes with no
+        // attempt at all starts a new one (N-N2).
+        if (streak.length && Date.parse(e.t) - streak.at(-1) > 2 * 60_000) streak = [];
+        streak.push(Date.parse(e.t));
+        if (streak.length >= 2 && streak.at(-1) - streak[0] >= persistentMinutes * 60_000) {
           persistent.push(`${host}: failing for ${persistentMinutes} minutes without a success`);
           break;
         }
@@ -91,6 +128,7 @@ export function examplesReads(messages) {
   const out = { vault: 0, other: 0 };
   const calls = new Map(); // tool_use id -> { counted: 'vault' | 'other' | null }
   let shellInExamples = false;
+  let shellInVault = false;
   const inExamples = (s) => /(^|[/\s'"])examples(\/|\b)/.test(s);
   const count = (id, kind) => {
     const c = calls.get(id) ?? { counted: null };
@@ -111,10 +149,19 @@ export function examplesReads(messages) {
           // Where the shell is after this command, for the next one.
           const cds = [...cmd.matchAll(/(?:^|[;&|]\s*)cd\s+([^\s;&|]+)/g)].map((x) => x[1]);
           const contextExamples = shellInExamples || cds.some(inExamples);
-          if (cds.length) shellInExamples = inExamples(cds.at(-1));
+          // A cd into examples/vault (or into vault from the examples) leaves
+          // the shell there, and the next command's reads are vault reads.
+          const intoVault = (d, fromExamples) => /examples\/vault/.test(d) || (fromExamples && /^\.?\/?vault(\/|$)/.test(d));
+          const contextVault = shellInVault || cds.some((d) => intoVault(d, shellInExamples));
+          if (cds.length) {
+            const last = cds.at(-1);
+            const relative = !last.startsWith('/') && !last.startsWith('~') && !last.startsWith('..');
+            shellInVault = intoVault(last, shellInExamples) || (shellInVault && relative);
+            shellInExamples = inExamples(last) || (shellInExamples && relative);
+          }
           // A command that only changes directory reads nothing.
           if (!cmd.replace(/(?:^|[;&|]\s*)cd\s+[^\s;&|]+/g, '').replace(/[;&|\s]+/g, '')) continue;
-          if (/vault/.test(cmd) && (inExamples(cmd) || contextExamples)) count(p.id, 'vault');
+          if ((/vault/.test(cmd) && (inExamples(cmd) || contextExamples)) || contextVault) count(p.id, 'vault');
           else if (inExamples(cmd) && /@filelayer\/core|node_modules/.test(cmd + (contextExamples ? ' node_modules' : ''))) count(p.id, 'other');
           continue;
         }
