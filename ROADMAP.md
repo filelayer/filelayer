@@ -155,3 +155,11 @@ person running this in production.
     and an attempt with an unknown secret, are recorded as an anonymous read
     (`file.read` or `file.access`), so a reader of the trail tells them apart
     from other reads only by the actor's resolution.
+- **Revoke authority from every live source, not only the first.** Authority
+  to revoke comes from the first source that supplies `share` (an org role,
+  then a grant by name, then a group grant), and only that source's rule is
+  applied. A member who issued links through a group grant and is later given
+  a grant by name with `share` can no longer revoke those earlier links; an
+  admin or owner can. Found on 21 November 2026 by the cold review of the
+  group-grant revoke fix, which documents it in `SEMANTICS.md` §7c. Not
+  scheduled.
