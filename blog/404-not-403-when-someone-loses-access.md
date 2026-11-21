@@ -6,7 +6,7 @@ authorNote: "Jorge Urios maintains Filelayer, an open-source Node library for us
 
 Returning 404 Not Found instead of 403 Forbidden is not a new security idea.
 
-[GitHub documents this behavior](https://docs.github.com/rest/using-the-rest-api/troubleshooting-the-rest-api). Its REST API uses 404 instead of 403 to avoid confirming that private repositories exist. [MDN describes the same option](https://developer.mozilla.org/docs/Web/HTTP/Status/403) in its documentation for HTTP 403 responses.
+[GitHub documents this behavior](https://docs.github.com/rest/using-the-rest-api/troubleshooting-the-rest-api). Its REST API uses 404 instead of 403 to avoid confirming that private repositories exist. [MDN describes the same option](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/403) in its documentation for HTTP 403 responses.
 
 The principle is straightforward: sometimes, telling someone that a resource exists is information they should not have.
 

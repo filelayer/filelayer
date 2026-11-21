@@ -90,7 +90,7 @@
 <h1>404, Not 403: What Happens When Someone Loses Access to a File?</h1>
 <p class="byline">By Jorge Urios · <time datetime="2026-11-30">30 November 2026</time></p>
 <p>Returning 404 Not Found instead of 403 Forbidden is not a new security idea.</p>
-<p><a href="https://docs.github.com/rest/using-the-rest-api/troubleshooting-the-rest-api" rel="noopener">GitHub documents this behavior</a>. Its REST API uses 404 instead of 403 to avoid confirming that private repositories exist. <a href="https://developer.mozilla.org/docs/Web/HTTP/Status/403" rel="noopener">MDN describes the same option</a> in its documentation for HTTP 403 responses.</p>
+<p><a href="https://docs.github.com/rest/using-the-rest-api/troubleshooting-the-rest-api" rel="noopener">GitHub documents this behavior</a>. Its REST API uses 404 instead of 403 to avoid confirming that private repositories exist. <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/403" rel="noopener">MDN describes the same option</a> in its documentation for HTTP 403 responses.</p>
 <p>The principle is straightforward: sometimes, telling someone that a resource exists is information they should not have.</p>
 <p>But implementing this principle in a file-sharing system involves more than changing an HTTP status code.</p>
 <p>A file can reveal its existence through several other parts of the application, even when its download endpoint returns 404.</p>
