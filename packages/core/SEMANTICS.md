@@ -435,8 +435,9 @@ cross-customer compromise from the most ergonomic entry point we ship.
   per file.
 - **Decisions with no tenant to charge them to go to the SYSTEM chain**
   (`org_id IS NULL`): probes at unknown file ids, sweeps against link secrets,
-  probes at orgs outside the caller's project, and project-level control-plane
-  actions. No tenant-facing API can read it. Attributing such events to a
+  probes at orgs outside the caller's project, a caller id the project has never
+  seen (`file.access`, `deny`, reason `unknown_actor`, with the id tried in
+  `context.as`), and project-level control-plane actions. No tenant-facing API can read it. Attributing such events to a
   guessed org would itself be an existence oracle; dropping them made
   enumeration invisible.
 - **Attempts against a suspended tenant's own files still land on that tenant's
