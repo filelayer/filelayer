@@ -55,7 +55,8 @@
     "full": 400
   },
   "scoring": {
-    "installMinutes": 10
+    "installMinutes": 10,
+    "globalTimeoutMinutes": 180
   },
   "prices": {
     "$comment": "USD per million tokens, from https://platform.claude.com/docs/en/about-claude/pricing as read on 2026-11-17. Checked again on the day of each phase; a change is recorded in PREREG.md before the phase starts.",
@@ -75,5 +76,7 @@
   "egress": {
     "$comment": "An allowed host invalidates a task only when its failure persists: no successful connection in the session's window, or failures for at least this many minutes with no success between them. The same for both arms.",
     "persistentMinutes": 5
-  }
+  },
+  "runStartMarginUsd": 9,
+  "$comment_runStartMarginUsd": "A run starts only if the phase cap covers its three task budgets plus this slack ($3 per task) for one-turn overruns, so that no task is skipped for want of cap."
 }

@@ -35,7 +35,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
@@ -77,8 +77,10 @@ if (!DRY && !process.env.ANTHROPIC_API_KEY) {
 
 // --- docker ------------------------------------------------------------------
 
-function docker(argv, { input, allowFail = false } = {}) {
-  const r = spawnSync('docker', argv, { input, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+// Every call has a time limit: a container the agent wedged (memory, pids)
+// must not hang the harness (cold review of 1bba1d8, N-I4).
+function docker(argv, { input, allowFail = false, timeoutMs = 300_000 } = {}) {
+  const r = spawnSync('docker', argv, { input, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: timeoutMs, killSignal: 'SIGKILL' });
   if (r.status !== 0 && !allowFail) {
     throw new Error(`docker ${argv.slice(0, 3).join(' ')} failed: ${(r.stderr || r.stdout).slice(-600)}`);
   }
@@ -162,7 +164,7 @@ function stopServices(s, agent) {
 function contractEnv(task, adminToken) {
   const db = task === 1 ? 'app' : `app${task}`;
   return {
-    DATABASE_URL: `postgres://postgres:postgres@postgres:5432/${db}`,
+    DATABASE_URL: `postgres://app:app@postgres:5432/${db}`,
     S3_ENDPOINT: 'http://s3:5000',
     S3_REGION: 'us-east-1',
     S3_BUCKET: task === 1 ? 'documents' : `documents${task}`,
@@ -189,6 +191,10 @@ function startAgent(name, s, run) {
     '-e', 'DISABLE_TELEMETRY=1', '-e', 'DISABLE_AUTOUPDATER=1', '-e', 'DISABLE_ERROR_REPORTING=1',
     '-e', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1',
     ...(DRY ? [] : ['-e', 'ANTHROPIC_API_KEY']),
+    // PID 1 runs as root, so that every process of the user `agent` can be
+    // killed between sessions without stopping the container, and it is an
+    // init (tini) that reaps them: killed processes do not linger as zombies.
+    '-u', 'root', '--init',
     ...caArgs, ...dryArgs, imageTag('agent'), 'sleep', 'infinity']);
   // The contract and the smoke test, owned by root and read-only to the agent.
   const tar = spawnSync('tar', ['-C', BENCH, '-cf', '-', 'contract', 'smoke']);
@@ -198,7 +204,10 @@ function startAgent(name, s, run) {
   for (const b of ['documents', 'documents2', 'documents3']) {
     exec(c, `node -e "fetch('http://s3:5000/${b}',{method:'PUT'}).then(r=>process.exit(r.ok?0:1))"`);
   }
-  exec(s.pg, 'createdb -U postgres app2 && createdb -U postgres app3', { user: 'postgres' });
+  // The service's databases belong to a role of their own that is not a
+  // superuser, as in the scorer (local-env.mjs), so both arms build against
+  // what they are scored against.
+  exec(s.pg, `psql -v ON_ERROR_STOP=1 -U postgres -c "CREATE ROLE app LOGIN PASSWORD 'app'" -c "ALTER DATABASE app OWNER TO app" && createdb -U postgres -O app app2 && createdb -U postgres -O app app3`, { user: 'postgres' });
   exec(c, 'git config --global user.email run@prodbench.invalid && git config --global user.name run && git config --global init.defaultBranch main');
   return c;
 }
@@ -235,9 +244,7 @@ function runSession(c, run, task, budget, out, env) {
   const t = cfg.tasks[task];
   const argv = ['exec', '-i', '-u', 'agent', '-w', '/work/app',
     ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), c,
-    // Its own session and process group inside the container, so that stopping
-    // it stops everything it started.
-    'setsid', '-w', 'claude', '-p', '--model', run.model, '--output-format', 'stream-json', '--verbose',
+    'claude', '-p', '--model', run.model, '--output-format', 'stream-json', '--verbose',
     '--dangerously-skip-permissions', '--no-session-persistence',
     '--max-budget-usd', budget.toFixed(2),
     ...(cfg.effort ? ['--effort', cfg.effort] : []),
@@ -249,15 +256,32 @@ function runSession(c, run, task, budget, out, env) {
   const stream = createWriteStream(out, { flags: 'wx' });
   const child = spawn('docker', argv, { stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdin.end(promptFor(run.arm, task));
-  const seen = { toolCalls: 0, result: null, lastText: '', stderr: '' };
+  const seen = { toolCalls: 0, result: null, lastText: '', stderr: '', lastResponseAt: null, lastApiErrorAt: null, hardKilled: false };
   const counter = usageCounter();
   let stop = null;
+  let deadline = null;
+  // Every timer kill() sets is cancelled when this session ends: `pkill -u
+  // agent` reaches every process of the agent, and a timer that fired during
+  // the next task would kill the next session.
+  const timers = [];
   const kill = (why) => {
     if (stop) return;
     stop = why;
-    // Killing `docker exec` would leave the session running in the container.
-    docker(['exec', '-u', 'root', c, 'pkill', '-TERM', '-f', 'claude'], { allowFail: true });
-    setTimeout(() => docker(['exec', '-u', 'root', c, 'pkill', '-KILL', '-f', 'claude'], { allowFail: true }), 5000).unref();
+    // Killing `docker exec` would leave the session running in the container:
+    // every process of the user `agent` goes, the session and whatever it
+    // started (a server in the background included).
+    docker(['exec', '-u', 'root', c, 'pkill', '-TERM', '-u', 'agent'], { allowFail: true, timeoutMs: 15_000 });
+    timers.push(setTimeout(() => docker(['exec', '-u', 'root', c, 'pkill', '-KILL', '-u', 'agent'], { allowFail: true, timeoutMs: 15_000 }), 5000));
+    // A container that does not answer (the agent exhausted its memory or its
+    // pids) is killed from the host after 10 s; the stop is still the clock's
+    // or the turns', the agent's own doing. The session ends 15 s after that
+    // whatever `docker exec` does.
+    timers.push(setTimeout(() => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      seen.hardKilled = true;
+      docker(['kill', c], { allowFail: true, timeoutMs: 30_000 });
+      deadline = setTimeout(() => child.emit('exit', null), 15_000);
+    }, 10_000));
   };
   const wall = setTimeout(() => kill('wall'), t.wallMinutes * wallScale * 60_000);
   let buf = '';
@@ -278,6 +302,7 @@ function runSession(c, run, task, budget, out, env) {
         // A turn is one API response: one message id, however many stream
         // lines carry it.
         counter.add(m);
+        seen.lastResponseAt = new Date().toISOString();
         for (const part of m.message?.content ?? []) {
           if (part.type === 'tool_use') seen.toolCalls++;
           if (part.type === 'text') seen.lastText = part.text;
@@ -287,14 +312,26 @@ function runSession(c, run, task, budget, out, env) {
       if (m.type === 'result') seen.result = m;
     }
   });
-  child.stderr.on('data', (d) => (seen.stderr = (seen.stderr + d).slice(-4000)));
+  child.stderr.on('data', (d) => {
+    seen.stderr = (seen.stderr + d).slice(-4000);
+    // When Claude Code last printed one of its API error lines (classify.mjs).
+    if (/^\s*(API Error\b|Request timed out|Credit balance is too low|Invalid API key|Connection error)/im.test(String(d))) {
+      seen.lastApiErrorAt = new Date().toISOString();
+    }
+  });
   return new Promise((resolveP) => {
+    let ended = false;
     child.on('exit', (code) => {
+      if (ended) return;
+      ended = true;
       clearTimeout(wall);
+      if (deadline) clearTimeout(deadline);
+      for (const t of timers) clearTimeout(t);
       stream.end();
       const r = seen.result;
       const why = stop ?? (r?.subtype === 'error_max_budget_usd' || /budget/i.test(r?.subtype ?? '') ? 'budget'
-        : r?.is_error ? 'error' : r ? 'finished' : `exit_${code}`);
+        : r?.subtype === 'error_max_turns' ? 'turns'
+          : r?.is_error ? 'error' : r ? 'finished' : `exit_${code}`);
       const text = r?.result ?? seen.lastText ?? '';
       resolveP({
         task,
@@ -314,18 +351,47 @@ function runSession(c, run, task, budget, out, env) {
         // Always kept: Claude Code's own stderr is where an API failure shows,
         // whatever stopped the session.
         stderrTail: seen.stderr.slice(-4000),
+        lastResponseAt: seen.lastResponseAt,
+        lastApiErrorAt: seen.lastApiErrorAt,
+        hardKilled: seen.hardKilled,
       });
     });
   });
 }
 
+/**
+ * The snapshot is copied out with `docker cp`, which works on a stopped
+ * container too (one the harness had to kill), and committed on this side,
+ * so the task's diff does not depend on the container still answering.
+ */
 function snapshot(c, dest) {
   mkdirSync(dest, { recursive: true });
-  exec(c, 'cd /work/app && git add -A && git commit -q --allow-empty -m after', { allowFail: true });
-  const r = spawnSync('docker', ['exec', '-u', 'agent', c, 'tar', '-C', '/work/app', '--exclude=./node_modules', '-cf', '-', '.'],
-    { maxBuffer: 512 * 1024 * 1024 });
-  if (r.status !== 0) return false;
-  return spawnSync('tar', ['-C', dest, '-xf', '-'], { input: r.stdout }).status === 0;
+  const copy = spawnSync('sh', ['-c', `docker cp ${c}:/work/app - | tar -C "${dest}" --strip-components=1 --exclude=app/node_modules -xf -`],
+    { timeout: 600_000, killSignal: 'SIGKILL' });
+  if (copy.status !== 0) return false;
+  const git = (...a) => spawnSync('git', ['-C', dest, '-c', 'safe.directory=*', '-c', 'user.email=run@prodbench.invalid', '-c', 'user.name=run', ...a]);
+  if (existsSync(join(dest, '.git'))) {
+    git('add', '-A');
+    git('commit', '-q', '--allow-empty', '-m', 'after');
+  }
+  return true;
+}
+
+/**
+ * Nothing the agent started survives its session: every process of the user
+ * `agent` is killed and checked gone before the next task (cold review of
+ * 1bba1d8, N-I3). A container the harness had to kill is started again first;
+ * its files are still there.
+ */
+function endAgentProcesses(c) {
+  const running = docker(['inspect', '-f', '{{.State.Running}}', c], { allowFail: true, timeoutMs: 30_000 }).stdout.trim();
+  if (running !== 'true') docker(['start', c], { timeoutMs: 60_000 });
+  for (let i = 0; i < 10; i++) {
+    docker(['exec', '-u', 'root', c, 'pkill', '-KILL', '-u', 'agent'], { allowFail: true, timeoutMs: 15_000 });
+    if (docker(['exec', '-u', 'root', c, 'pgrep', '-u', 'agent'], { allowFail: true, timeoutMs: 15_000 }).status === 1) return;
+    spawnSync('sleep', ['1']);
+  }
+  throw new Error('processes of the agent survived the end of its session');
 }
 
 // --- the phase ---------------------------------------------------------------
@@ -373,7 +439,10 @@ function recoverInterrupted() {
           /* a partial last line */
         }
       }
-      prior.tasks.push({ task, stoppedBy: 'harness_interrupted', interrupted: true, turnsSeen: c.turns, streamUsage: c.usage });
+      // The session may have run on after the harness died, out of its
+      // stream's sight: the cap is charged the whole task budget at least.
+      prior.tasks.push({ task, stoppedBy: 'harness_interrupted', interrupted: true, turnsSeen: c.turns, streamUsage: c.usage,
+        capChargeUsd: cfg.tasks[task].maxBudgetUsd });
     }
     prior.inFlight = null;
     prior.state = 'finished';
@@ -446,6 +515,7 @@ async function runOne(run) {
       save();
       const res = await runSession(c, run, task, budget, join(dir, `task${task}.jsonl`), contractEnv(task, adminToken));
       res.snapshotOk = snapshot(c, join(dir, `task${task}`, 'app'));
+      endAgentProcesses(c);
       record.tasks.push(res);
       record.inFlight = null;
       save();
@@ -472,16 +542,57 @@ async function runOne(run) {
   }
 }
 
-// Stopped by a signal: take the run's containers (and the session in them)
-// down with the harness. A run left this way is closed as interrupted by the
-// next harness.
+// Stopped by a signal or by an error nothing caught: take the run's
+// containers (and the session in them) down with the harness. A run left this
+// way is closed as interrupted by the next harness.
+const teardown = () => {
+  if (current?.s) stopServices(current.s, current.c);
+  releaseLock();
+};
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sig, () => {
-    if (current?.s) stopServices(current.s, current.c);
+    teardown();
     process.exit(130);
   });
 }
+process.on('uncaughtException', (e) => {
+  console.error(`harness: ${e.stack ?? e}`);
+  teardown();
+  process.exit(1);
+});
 
+// One harness per phase directory at a time: a second one would remove the
+// first one's containers as orphans (cold review of 1bba1d8, N-N6).
+const LOCK = join(outRoot, '.harness.lock');
+function takeLock() {
+  try {
+    writeFileSync(LOCK, String(process.pid), { flag: 'wx' });
+  } catch {
+    const pid = Number(readFileSync(LOCK, 'utf8'));
+    let alive = false;
+    try {
+      process.kill(pid, 0);
+      alive = true;
+    } catch {
+      /* gone */
+    }
+    if (alive) {
+      console.error(`another harness (pid ${pid}) is running on ${outRoot}. Not starting.`);
+      process.exit(2);
+    }
+    writeFileSync(LOCK, String(process.pid));
+  }
+}
+function releaseLock() {
+  try {
+    if (readFileSync(LOCK, 'utf8') === String(process.pid)) rmSync(LOCK);
+  } catch {
+    /* not ours, or gone */
+  }
+}
+
+takeLock();
+process.on('exit', releaseLock);
 removeOrphans();
 recoverInterrupted();
 buildImages();
@@ -491,7 +602,9 @@ for (const run of plan.runs) {
     break;
   }
   if (only && run.id !== only) continue;
-  const runBudget = Object.values(cfg.tasks).reduce((s, t) => s + t.maxBudgetUsd, 0);
+  // The three budgets plus some slack for the one-turn overruns, so that a task
+  // is never skipped for want of cap (cold review of 1bba1d8, N-I7).
+  const runBudget = Object.values(cfg.tasks).reduce((s, t) => s + t.maxBudgetUsd, 0) + cfg.runStartMarginUsd;
   const left = cfg.phaseCapUsd[plan.phase] - spentSoFar();
   if (left < runBudget) {
     console.log(`$${left.toFixed(2)} left of the phase cap of $${cfg.phaseCapUsd[plan.phase]}, less than a run's ` +

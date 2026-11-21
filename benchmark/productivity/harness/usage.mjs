@@ -52,5 +52,5 @@ export function costOf(prices, model, u) {
  */
 export function taskSpend(prices, model, t) {
   const fromStream = costOf(prices, model, t?.streamUsage) ?? 0;
-  return Math.max(t?.claude?.totalCostUsd ?? 0, fromStream);
+  return Math.max(t?.claude?.totalCostUsd ?? 0, fromStream, t?.capChargeUsd ?? 0);
 }

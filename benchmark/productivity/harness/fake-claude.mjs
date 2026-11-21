@@ -15,6 +15,8 @@
  *   broken  task 1 leaves the seeded bug in place, so the scoring must fail it
  *   hang    task 1 never finishes, so the wall clock must stop it
  *   hang2   task 2 never finishes (to stop the harness in the middle of it)
+ *   leak    task 1 leaves its server running on :3000 when it is done; every
+ *           task reports whether something answered on :3000 when it began
  */
 import { execSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -35,6 +37,15 @@ function step(text, tool, input) {
   if (tool) emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: `t${turns}`, content: 'ok' }] } });
 }
 const sh = (cmd) => execSync(cmd, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', cwd: '/work/app' });
+
+// What was already listening on :3000 when this session began.
+let before = 'nothing';
+try {
+  const r = await fetch('http://127.0.0.1:3000/health', { signal: AbortSignal.timeout(2000) });
+  before = `a server answered ${r.status}`;
+} catch {
+  /* nothing there */
+}
 
 emit({ type: 'system', subtype: 'init', model, tools: ['Bash', 'Read', 'Edit', 'Write'], fake: true });
 step('Reading the contract.', 'Read', { file_path: '/work/contract/REQUIREMENTS.md' });
@@ -77,9 +88,10 @@ try {
 } catch (e) {
   smoke = `failed: ${String(e.stdout ?? e.message).trim().split('\n').pop()}`;
 }
-process.kill(-server.pid, 'SIGTERM');
+if (!(mode === 'leak' && task === 1)) process.kill(-server.pid, 'SIGTERM');
+else server.unref();
 
-const text = `Smoke test: ${smoke}\nGitHub: ${github}\n\nDONE\nThis is the rehearsal agent; it copied ${source}.`;
+const text = `Port 3000 when the session began: ${before}\nSmoke test: ${smoke}\nGitHub: ${github}\n\nDONE\nThis is the rehearsal agent; it copied ${source}.`;
 step(text);
 const k = turns;
 emit({
