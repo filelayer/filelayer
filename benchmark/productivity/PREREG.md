@@ -263,6 +263,7 @@ benchmark with their own API key (`README.md`).
 | The contract differs from Filelayer's model in places: a member revokes only their own links; a refused member gets 403 where Filelayer answers 404, and the last owner 409 where Filelayer answers 403; no members list in Filelayer; the audit actions have other names | against Filelayer | reported as found; arm A's reference shows the extra code it costs |
 | Task 2's reason for a revocation cannot be stored by Filelayer; arm A needs a table of its own | against Filelayer | declared |
 | Filelayer's documentation is written for agents | Filelayer | part of what is measured; documentation read is reported separately |
+| Arm A reads only the documentation inside the package; filelayer.dev is not reachable. A real agent could also read the live site (guides, comparison pages), and this benchmark does not measure what that adds or costs | either | declared as a limitation; the package's copy is what is frozen, by the tarball's integrity hash |
 | The models know S3 from training and Filelayer not | against Filelayer | the real situation; reported without correction |
 | Arm A is told to use Filelayer; a real user would have to choose it | Filelayer | this measures implementation, not selection; selection is measured by the discovery gates |
 | The library's own code is not counted as lines | Filelayer | its size is reported next to arm A's lines |
