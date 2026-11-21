@@ -88,9 +88,22 @@ the container and its network are the boundary. Telemetry, error reporting
 and the autoupdater are off. The wall clock and the turn limit are enforced
 by the harness, which stops the session when either is reached; a turn is one
 API response, counted once per message id. Claude Code checks the budget after
-each turn, so a session can exceed its budget by up to one turn. Claude Code
-runs in its own session and process group inside the container (`setsid`), so
-stopping it stops everything it started.
+each turn, so a session can exceed its budget by up to one turn.
+
+Nothing an agent starts outlives its session. The container's first process
+is an init that runs as root and reaps what dies; after every session, and
+whenever the harness stops one, every process of the user `agent` is killed
+(a server left running in the background included) and the harness checks
+that none is left before the next task. A container that stops answering (an
+agent that exhausted its memory or its process limit) is killed from the host
+10 seconds after the stop; the stop is still the clock's or the turns', the
+agent's own doing, and the container is started again with its files for the
+next task. The snapshot is copied out with `docker cp`, which does not need the
+container to answer.
+
+The service's databases belong to a role of their own that is not a
+superuser, in the agent's container and in the scorer alike, so both arms
+build against what they are scored against.
 
 A run is never resumed or run twice. `run.json` is written with `state:
 started` before the first session and again before and after every session,
@@ -98,9 +111,11 @@ naming the session in flight; each session's stream has a file of its own,
 never overwritten. If the harness dies, the next harness first removes every
 container, network and proxy the earlier one left (and checks they are gone),
 then closes each run that did not finish: the spend of the session in flight
-is read from its stream and counted, and the run is invalid
-(`harness_interrupted`). A harness stopped by a signal takes its containers
-down with it.
+is read from its stream, the phase cap is charged at least that task's whole
+budget (the session may have run on after the harness died), and the run is
+invalid (`harness_interrupted`). A harness stopped by a signal or by an
+uncaught error takes its containers down with it. Only one harness may work on
+a phase directory at a time (a lock file).
 
 Every run gets a new internal Docker network with no route out, a new
 PostgreSQL and a new S3 emulator on it, and an egress proxy as its only way
@@ -116,19 +131,34 @@ HTTP. The snapshot sees only the contract's environment variables. For task
 `package-lock.json` (fingerprinted), started first on the same database and
 bucket, and uploads the documents T3-01 checks.
 
+A snapshot has 30 seconds per HTTP request and 120 seconds per check or
+attack (240 for T3-01); past them the check fails, which is the snapshot's
+failure, not the scorer's. The whole scoring of one snapshot has a last bound
+of 3 hours, far past those, and reaching it is the scorer's failure. The probe
+of the services after the checks runs once the snapshot is stopped, as the
+superuser, whose reserved connections a snapshot that leaks connections cannot
+take.
+
 The scorer reaches one host, `registry.npmjs.org` (`harness/allowlist-score.txt`),
 through a proxy whose log is kept with the score. A failed `npm install` is
 the scorer's failure only when that registry could not be reached (a
 connection error to it in the scorer's log, or a 5xx or 429 from it); it is
-then scored once more. Any other failure to install is the agent's, including
-a dependency that fetches from another host while installing: the contract
-says `npm install` must work, and the rule is the same for both arms.
+then scored once more. npm's own verdict on the project comes first: a missing
+version, an unresolvable tree or a bad manifest (E404, ETARGET, ERESOLVE and
+the like) is the agent's, whatever the network did meanwhile. Any other
+failure to install is the agent's too, including a dependency that fetches
+from another host while installing: the contract says `npm install` must work,
+and the rule is the same for both arms.
 
 The scorer refuses to score unless the benchmark files match
 `FINGERPRINT.txt`, and writes the fingerprint into every `score.json`;
 `analyze.mjs` refuses any score without it, or with another one, and any
 valid task that has no score (an unscored task is not a zero). A score is
-written once; only a scorer failure is scored again.
+written once; only a scorer failure is scored again, and only once: every
+attempt is appended to `score-attempts.jsonl`, and after two there are no
+more, whatever `score.json` says or whether it exists. `--unfrozen`, which
+lets the tools work before the freeze, is refused for any run that is not a
+rehearsal, and a report with an unfrozen score says so at the top.
 
 ## What is measured
 
@@ -150,7 +180,7 @@ observed.
 | Dependencies | `package.json` of the snapshot | observed |
 | Functional | every hidden functional check of the task passes (for tasks 2 and 3, the task's checks and the whole task-1 battery) | observed |
 | Security | the number of the 21 shared attacks defended. A1-A4 count as defended only if their positive control passes first (the legitimate twin of the attack works), so refusing everything defends nothing. A project that is missing, does not install or does not start defends 0 | observed |
-| Late attacks | attacks written after the freeze by someone who has not seen Filelayer (`hidden/late/`), each with its own positive control, defended out of those that apply. Scored separately into `late-score.json`, which nothing else reads or writes; never part of the 21, H2 or "both" | observed |
+| Late attacks | attacks written after the freeze by someone who has not seen Filelayer (`hidden/late/`), each with its own positive control, defended out of those that apply. Scored separately, in a directory of their own, into `late-score.json`, which the primary scoring never reads or writes; the report gives them a row of their own; never part of the 21, H2 or "both" | observed |
 | Reads of `examples/vault` | tool calls that ask for vault in the package's examples (a path, pattern or glob of Read, Grep or Glob taken together, or a shell command, with the directory an earlier `cd` left it in), or whose result lists a file under `examples/vault`; other examples counted apart (`harness/classify.mjs`, tested on the reads a cold review planted) | observed |
 | Egress errors | every connection error to an allowed host during a session, by host and arm, whether or not it invalidates | observed |
 | Documentation read | characters of the results of WebFetch, and of Read, Grep, Glob and shell reads of files under `node_modules`, divided by 4 | estimated |
@@ -227,9 +257,9 @@ task:
 
 | The record shows | Read from |
 |---|---|
-| The API failed (5xx, 429, overloaded, a timeout, a connection error, 401 or 403, an exhausted key), whatever stopped the session: read from Claude Code's stderr, and from the final result's text only when the result is an error and the text is an error message, never from what the agent wrote. A budget or turn stop is not one | the session's stderr and result (`harness/classify.mjs`) |
-| An allowed host failed persistently during the session: no successful connection to it in the session's window, or errors for at least 5 minutes in a row with no success between them. A single error that a retry got past is recorded and does not invalidate | the egress log, by time, inside the session's window |
-| The scorer failed: its PostgreSQL or S3 failed before or after the scoring, its checks threw, the npm registry could not be reached (see above), or the seeded reference did not install. Each is scored once more before it counts | `score.json` |
+| The API failed (5xx, 429, overloaded, a timeout, a connection error, 401 or 403, an exhausted key), and that is why the session ended: only for a session that ended in an error or an exit of its own, or that the clock stopped after 2 minutes without a single response and with an API error after the last one. Read from Claude Code's own error lines (anchored at "API Error", "Request timed out" and the like) on stderr, or in an error result's text, never a bare number or word, never what the agent wrote. A session that finished, or that its budget or its turns stopped, is never invalid by the API, whatever it retried on the way | the session's stderr and result (`harness/classify.mjs`) |
+| A host the run cannot do without, `api.anthropic.com` or `registry.npmjs.org`, failed persistently during the session: at least two failed attempts, and no successful connection in the session's window, or 5 minutes of continuous failing (no gap of more than 2 minutes without an attempt) with no success between. Errors to documentation hosts, and a single error that a retry got past, are recorded per task and arm and never invalidate | the egress log, by time, inside the session's window |
+| The scorer failed: its PostgreSQL or S3 failed before or after the scoring, its checks threw, the npm registry could not be reached (see above), the seeded reference did not install, or the whole scoring reached its last bound. Each is scored once more, at most, before it counts | `score.json` and `score-attempts.jsonl` |
 | The harness could not take the snapshot | `run.json` (`snapshotOk: false`) |
 | The harness failed, before the first task or during any, or was stopped during the run | `run.json` |
 | A task was skipped because the phase cap could not cover its budget | `run.json` |
@@ -269,10 +299,11 @@ the phase has spent, counting for each task the larger of Claude Code's own
 figure and the estimate from the stream, so a session that was stopped or died
 is counted too. Every task has its own fixed budget ($15, $6, $6), never what
 is left of the run. A run starts only if what remains of the cap covers the
-sum of the three ($27); if overruns of earlier tasks (up to one turn each)
-then leave less than a task's budget, that task is skipped and the run is
-invalid and replaced, rather than run with a smaller budget. An overrun is
-paid out of what the cap leaves over, not out of the next task. After the pilot, if its measured cost per run times 40 exceeds
+sum of the three ($27) plus $9 of slack ($3 a task) for the one-turn
+overruns, so that in practice no task is ever skipped. If overruns ever did
+exceed that slack, the task would be skipped and the run invalid and replaced,
+rather than run with a smaller budget; that would drop a run that overran,
+which is a struggling run, and the report would say so. After the pilot, if its measured cost per run times 40 exceeds
 what remains of the ceiling, the full phase does not start without a new
 approval.
 
