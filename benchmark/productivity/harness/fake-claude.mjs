@@ -14,6 +14,7 @@
  *           task-2 reference; task 3: the healthy reference)
  *   broken  task 1 leaves the seeded bug in place, so the scoring must fail it
  *   hang    task 1 never finishes, so the wall clock must stop it
+ *   hang2   task 2 never finishes (to stop the harness in the middle of it)
  */
 import { execSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -47,7 +48,7 @@ try {
   github = `refused (${e.cause?.code ?? e.message})`;
 }
 
-if (task === 1 && mode === 'hang') {
+if ((task === 1 && mode === 'hang') || (task === 2 && mode === 'hang2')) {
   step('Thinking for a very long time.', 'Bash', { command: 'sleep 100000' });
   setInterval(() => {}, 60_000);
   await new Promise(() => {});

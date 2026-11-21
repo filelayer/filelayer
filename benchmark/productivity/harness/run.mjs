@@ -40,6 +40,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
 import { taskSpend, usageCounter } from './usage.mjs';
+import { apiFailure, STOPS_THE_PHASE } from './classify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH = resolve(HERE, '..');
@@ -234,14 +235,18 @@ function runSession(c, run, task, budget, out, env) {
   const t = cfg.tasks[task];
   const argv = ['exec', '-i', '-u', 'agent', '-w', '/work/app',
     ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), c,
-    'claude', '-p', '--model', run.model, '--output-format', 'stream-json', '--verbose',
+    // Its own session and process group inside the container, so that stopping
+    // it stops everything it started.
+    'setsid', '-w', 'claude', '-p', '--model', run.model, '--output-format', 'stream-json', '--verbose',
     '--dangerously-skip-permissions', '--no-session-persistence',
     '--max-budget-usd', budget.toFixed(2),
     ...(cfg.effort ? ['--effort', cfg.effort] : []),
     ...(cfg.disallowedTools.length ? ['--disallowedTools', ...cfg.disallowedTools] : [])];
   const started = Date.now();
   const startedAt = new Date(started).toISOString();
-  const stream = createWriteStream(out);
+  // 'wx': a stream is never overwritten. A run is never run twice (see
+  // recoverInterrupted), so an existing file would be a harness bug.
+  const stream = createWriteStream(out, { flags: 'wx' });
   const child = spawn('docker', argv, { stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdin.end(promptFor(run.arm, task));
   const seen = { toolCalls: 0, result: null, lastText: '', stderr: '' };
@@ -306,7 +311,9 @@ function runSession(c, run, task, budget, out, env) {
           totalCostUsd: r.total_cost_usd, usage: r.usage, modelUsage: r.modelUsage ?? null, subtype: r.subtype,
           isError: r.is_error ?? false, resultText: String(r.result ?? '').slice(-2000),
         } : null,
-        stderrTail: r ? undefined : seen.stderr.slice(-1500),
+        // Always kept: Claude Code's own stderr is where an API failure shows,
+        // whatever stopped the session.
+        stderrTail: seen.stderr.slice(-4000),
       });
     });
   });
@@ -335,62 +342,154 @@ function spentSoFar() {
   return usd;
 }
 
+/**
+ * A RUN THAT DID NOT FINISH IS NEVER RESUMED OR REPEATED.
+ *
+ * run.json is written with `state: 'started'` before the first session, and
+ * again before and after every session, with the session in flight named in
+ * `inFlight`. A harness that dies leaves a run that is not `finished`. When a
+ * harness starts, every such run is closed here: the spend of the session in
+ * flight is read from its stream, the run is marked invalid
+ * (`harness_interrupted`), and plan.mjs --extend replaces it once. A run
+ * directory with no run.json at all is treated the same way.
+ */
+function recoverInterrupted() {
+  for (const run of plan.runs) {
+    const dir = join(outRoot, run.id);
+    if (!existsSync(dir)) continue;
+    const file = join(dir, 'run.json');
+    const prior = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { ...run, tasks: [] };
+    if (prior.state === 'finished') continue;
+    const done = new Set((prior.tasks ?? []).map((t) => t.task));
+    // The session in flight, and any stream on disk with no task record.
+    for (const task of [1, 2, 3]) {
+      const stream = join(dir, `task${task}.jsonl`);
+      if (done.has(task) || !existsSync(stream)) continue;
+      const c = usageCounter();
+      for (const line of readFileSync(stream, 'utf8').split('\n')) {
+        try {
+          c.add(JSON.parse(line));
+        } catch {
+          /* a partial last line */
+        }
+      }
+      prior.tasks.push({ task, stoppedBy: 'harness_interrupted', interrupted: true, turnsSeen: c.turns, streamUsage: c.usage });
+    }
+    prior.inFlight = null;
+    prior.state = 'finished';
+    prior.error = prior.error ?? 'interrupted: the harness stopped during this run';
+    prior.invalid = { reason: 'harness_interrupted' };
+    writeFileSync(file, JSON.stringify(prior, null, 2));
+    console.log(`${run.id}: interrupted in an earlier session; recorded as invalid with $${prior.tasks.reduce((a, t) => a + taskSpend(cfg.prices, run.model, t), 0).toFixed(2)} spent`);
+  }
+}
+
+/**
+ * Nothing of an earlier harness may still be running: its containers (and the
+ * session inside), its networks, its host-side proxies. Removed before
+ * anything starts, and checked gone.
+ */
+function removeOrphans() {
+  const prefixes = plan.runs.map((r) => `pb-${r.id}-`);
+  const names = docker(['ps', '-a', '--format', '{{.Names}}']).stdout.split('\n').filter((n) => prefixes.some((p) => n.startsWith(p)));
+  for (const n of names) docker(['rm', '-f', n], { allowFail: true });
+  const nets = docker(['network', 'ls', '--format', '{{.Name}}']).stdout.split('\n').filter((n) => prefixes.some((p) => n.startsWith(p)));
+  for (const n of nets) docker(['network', 'rm', n], { allowFail: true });
+  spawnSync('pkill', ['-f', `egress-proxy.mjs.*${outRoot}`]);
+  const left = docker(['ps', '-a', '--format', '{{.Names}}']).stdout.split('\n').filter((n) => prefixes.some((p) => n.startsWith(p)));
+  if (left.length) {
+    console.error(`containers of an earlier harness are still there: ${left.join(', ')}. Not starting.`);
+    process.exit(2);
+  }
+  if (names.length || nets.length) console.log(`removed what an earlier harness left: ${names.length} container(s), ${nets.length} network(s)`);
+}
+
+let current = null; // the services and container of the run in progress, for the signal handlers
+let phaseStop = null;
+
 async function runOne(run) {
   const dir = join(outRoot, run.id);
-  if (existsSync(join(dir, 'run.json'))) {
-    const prior = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8'));
-    if (prior.inProgress) {
-      // The harness died during this run. It is not resumed half-way: it is
-      // invalid (interrupted), its spend stays counted, and plan.mjs --extend
-      // schedules its replacement.
-      prior.inProgress = false;
-      prior.error = prior.error ?? 'interrupted: the harness stopped during this run';
-      prior.invalid = { reason: 'harness_interrupted' };
-      writeFileSync(join(dir, 'run.json'), JSON.stringify(prior, null, 2));
-      console.log(`${run.id}: interrupted in an earlier session, recorded as invalid`);
-    } else {
-      console.log(`${run.id}: already run, skipped`);
-    }
+  if (existsSync(dir)) {
+    console.log(`${run.id}: already run, skipped`);
     return;
   }
   mkdirSync(dir, { recursive: true });
+  const runFile = join(dir, 'run.json');
+  const save = () => writeFileSync(runFile, JSON.stringify(record, null, 2));
   const name = `${run.id}-${randomBytes(3).toString('hex')}`;
   const adminToken = randomBytes(24).toString('hex');
-  const record = { ...run, startedAt: new Date().toISOString(), dryRun: DRY, claudeCode: cfg.claudeCode, fingerprint: FP.all, tasks: [] };
+  const record = {
+    ...run, state: 'started', startedAt: new Date().toISOString(), dryRun: DRY, claudeCode: cfg.claudeCode,
+    fingerprint: FP.all, tasks: [], inFlight: null,
+  };
+  save();
   let s;
   let c;
   try {
     s = startServices(name, dir);
+    current = { s, c: null };
     c = startAgent(name, s, run);
+    current.c = c;
     for (const task of [1, 2, 3]) {
-      const cap = cfg.phaseCapUsd[plan.phase] - spentSoFar();
-      if (cap <= 0.5) {
+      // Every task gets its own fixed budget, never what is left of the run.
+      // The run started only if the phase could cover all three; if earlier
+      // overruns leave less than this task's budget, the task is skipped and
+      // the run is invalid and replaced, rather than given a smaller budget.
+      const budget = cfg.tasks[task].maxBudgetUsd;
+      if (cfg.phaseCapUsd[plan.phase] - spentSoFar() < budget) {
         record.tasks.push({ task, stoppedBy: 'phase_cap', skipped: true });
-        continue;
+        record.invalid = { reason: 'phase_cap_skip', task };
+        break;
       }
       prepareApp(c, run, task);
-      const res = await runSession(c, run, task, Math.min(cfg.tasks[task].maxBudgetUsd, cap),
-        join(dir, `task${task}.jsonl`), contractEnv(task, adminToken));
+      record.inFlight = { task, stream: `task${task}.jsonl`, startedAt: new Date().toISOString() };
+      save();
+      const res = await runSession(c, run, task, budget, join(dir, `task${task}.jsonl`), contractEnv(task, adminToken));
       res.snapshotOk = snapshot(c, join(dir, `task${task}`, 'app'));
       record.tasks.push(res);
+      record.inFlight = null;
+      save();
       console.log(`${run.id} task ${task}: ${res.stoppedBy}${res.declaredDone ? ', DONE' : ''}, ` +
         `${Math.round(res.wallMs / 1000)} s, ${res.turnsSeen} turns, $${taskSpend(cfg.prices, run.model, res).toFixed(2)}`);
-      // Written after every task, so a harness that dies mid-run leaves the
-      // spend on record and the run is not silently repeated (see below).
-      writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...record, inProgress: true }, null, 2));
+      const api = apiFailure(res);
+      if (STOPS_THE_PHASE.has(api)) {
+        // An exhausted or refused key makes every later run fail the same way.
+        // Those would be zeros the agent did not earn: the phase stops instead.
+        record.invalid = { reason: api, task };
+        phaseStop = api;
+        break;
+      }
     }
   } catch (e) {
     record.error = String(e.message ?? e).slice(0, 2000);
     console.error(`${run.id}: ${record.error}`);
   } finally {
     if (s) stopServices(s, c);
+    current = null;
+    record.state = 'finished';
     record.finishedAt = new Date().toISOString();
-    writeFileSync(join(dir, 'run.json'), JSON.stringify(record, null, 2));
+    save();
   }
 }
 
+// Stopped by a signal: take the run's containers (and the session in them)
+// down with the harness. A run left this way is closed as interrupted by the
+// next harness.
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(sig, () => {
+    if (current?.s) stopServices(current.s, current.c);
+    process.exit(130);
+  });
+}
+
+removeOrphans();
+recoverInterrupted();
 buildImages();
 for (const run of plan.runs) {
+  if (phaseStop) {
+    console.log(`the phase stops: ${phaseStop}. ${run.id} and the rest are not run.`);
+    break;
+  }
   if (only && run.id !== only) continue;
   const runBudget = Object.values(cfg.tasks).reduce((s, t) => s + t.maxBudgetUsd, 0);
   const left = cfg.phaseCapUsd[plan.phase] - spentSoFar();

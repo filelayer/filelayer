@@ -25,14 +25,19 @@ if (process.argv[2] === '--extend') {
   let k = p.runs.filter((r) => r.replaces).length;
   const added = [];
   for (const r of [...p.runs]) {
+    if (r.replaces || replaced.has(r.id)) continue;
+    // Invalid by analyze.mjs (metrics.json), or by the harness itself
+    // (run.json: an interrupted run, a harness error, a phase-cap skip).
     const f = join(dir, r.id, 'metrics.json');
-    if (r.replaces || replaced.has(r.id) || !existsSync(f)) continue;
-    const m = JSON.parse(readFileSync(f, 'utf8'));
-    if (!m.invalid) continue;
+    const rf = join(dir, r.id, 'run.json');
+    const m = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
+    const rr = existsSync(rf) ? JSON.parse(readFileSync(rf, 'utf8')) : null;
+    const why = m?.invalid?.reason ?? rr?.invalid?.reason ?? (rr?.error ? 'harness_error' : null);
+    if (!why) continue;
     k++;
     const rep = { id: `${p.phase}-r${String(k).padStart(2, '0')}-${r.arm}-${r.model.replace('claude-', '')}`, phase: p.phase, arm: r.arm, model: r.model, replaces: r.id };
     p.runs.push(rep);
-    added.push(`${rep.id} replaces ${r.id} (${m.invalid.reason})`);
+    added.push(`${rep.id} replaces ${r.id} (${why})`);
   }
   writeFileSync(file, JSON.stringify(p, null, 2));
   console.log(added.length ? added.join('\n') : 'no invalid run to replace');
