@@ -982,6 +982,12 @@ function sweepVersions(entries) {
     // being published is X" -- is registered above and checked on every commit,
     // which is the claim an operator acts on.
     if (/PUBLISH-RUNBOOK\.md$/.test(file)) continue;
+    // benchmark/productivity/ is excluded because it is a preregistered
+    // experiment, frozen by its own FINGERPRINT.txt: the versions in it are
+    // the ones the experiment fixed (the @filelayer/core arm A uses, the Claude
+    // Code that runs it), and none is a claim about the current package.
+    // Rewriting them on a bump would void the runs made under them.
+    if (/(?:^|\/)benchmark\/productivity\//.test(file)) continue;
     const re = new RegExp(SHAPE.source, SHAPE.flags);
     let m;
     while ((m = re.exec(text)) !== null) {

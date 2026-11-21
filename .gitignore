@@ -114,6 +114,7 @@
 !/benchmark/tier1-avatar/
 !/benchmark/count-decisions.mjs
 !/benchmark/count-loc.mjs
+!/benchmark/loc-count.mjs
 !/benchmark/count-tiers.mjs
 # The load benchmark's method and its recorded run are public, because TRUST.md
 # links to them and a trust page that cites a file nobody can open is worse than

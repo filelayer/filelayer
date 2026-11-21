@@ -1,0 +1,2 @@
+# What the scorer may reach: npm, to install the snapshot as the contract says.
+registry.npmjs.org

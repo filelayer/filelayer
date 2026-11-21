@@ -1,0 +1,17 @@
+{
+  "name": "filelayer-productivity-benchmark",
+  "private": true,
+  "type": "module",
+  "description": "The harness, the hidden checks and the scoring of the productivity benchmark. See PREREG.md.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "check": "node hidden/check.mjs",
+    "mutants": "node hidden/mutants.mjs"
+  },
+  "dependencies": {
+    "pg": "8.23.1"
+  },
+  "optionalDependencies": {
+    "embedded-postgres": "18.4.0-beta.17"
+  }
+}

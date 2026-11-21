@@ -1,0 +1,18 @@
+# Hosts a run may reach, the same for both arms. Everything else is refused
+# and logged. See egress-proxy.mjs.
+#
+# The agent itself.
+api.anthropic.com
+# Packages.
+registry.npmjs.org
+www.npmjs.com
+# Documentation. The arm A line names filelayer.dev; the rest is what an
+# implementation in either arm is likely to read. GitHub is not on the list:
+# the repository holds this benchmark's hidden checks.
+filelayer.dev
+nodejs.org
+developer.mozilla.org
+www.postgresql.org
+node-postgres.com
+expressjs.com
+docs.aws.amazon.com

@@ -1,0 +1,75 @@
+{
+  "$comment": "Everything a run depends on. PREREG.md quotes this file; changing it after the preregistration commit voids the runs made under the old one.",
+  "claudeCode": "2.1.330",
+  "models": [
+    "claude-opus-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "effort": null,
+  "arms": [
+    "a",
+    "b"
+  ],
+  "filelayerVersion": "0.36.0",
+  "runsPerCell": {
+    "pilot": 2,
+    "full": 10
+  },
+  "seed": {
+    "pilot": 20261201,
+    "full": 20261208
+  },
+  "tasks": {
+    "1": {
+      "prompt": "task1-build.md",
+      "wallMinutes": 60,
+      "maxTurns": 250,
+      "maxBudgetUsd": 15,
+      "start": "empty"
+    },
+    "2": {
+      "prompt": "task2-change.md",
+      "wallMinutes": 25,
+      "maxTurns": 100,
+      "maxBudgetUsd": 6,
+      "start": "task1"
+    },
+    "3": {
+      "prompt": "task3-bug.md",
+      "wallMinutes": 25,
+      "maxTurns": 100,
+      "maxBudgetUsd": 6,
+      "start": "seeded"
+    }
+  },
+  "disallowedTools": [
+    "WebSearch"
+  ],
+  "images": {
+    "postgres": "postgres:17-alpine",
+    "s3": "motoserver/moto:5.1.4",
+    "node": "node:22-bookworm-slim"
+  },
+  "phaseCapUsd": {
+    "pilot": 100,
+    "full": 400
+  },
+  "scoring": {
+    "installMinutes": 10
+  },
+  "prices": {
+    "$comment": "USD per million tokens, from https://platform.claude.com/docs/en/about-claude/pricing as read on 2026-11-17. Checked again on the day of each phase; a change is recorded in PREREG.md before the phase starts.",
+    "claude-opus-5-5": {
+      "input": 4,
+      "output": 20,
+      "cacheWrite": 5,
+      "cacheRead": 0.2
+    },
+    "claude-sonnet-5-5": {
+      "input": 2,
+      "output": 10,
+      "cacheWrite": 2.5,
+      "cacheRead": 0.1
+    }
+  }
+}

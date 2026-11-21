@@ -67,3 +67,5 @@ try {
   await server?.stop();
   await envH.stop();
 }
+// Nothing may keep a scorer alive once the result is written.
+process.exit(process.exitCode ?? 0);
