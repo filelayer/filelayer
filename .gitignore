@@ -105,6 +105,7 @@
 !/architecture/RFC-001-GROUP-SUBJECTS.md
 
 /benchmark/*
+!/benchmark/productivity/
 !/benchmark/adversarial/
 !/benchmark/baseline-convex/
 !/benchmark/baseline-raw-s3/

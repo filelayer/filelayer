@@ -1,0 +1,454 @@
+openapi: 3.1.0
+info:
+  title: Document workspace (productivity benchmark contract)
+  version: 1.0.0
+  description: |
+    The HTTP contract every run of the productivity benchmark implements, in
+    both arms. It describes a multi-tenant document workspace: organizations
+    with roles, private documents, share links with an expiry, an optional
+    password and an optional download cap, immediate revocation, and an audit
+    trail that records denied attempts as well as successful ones.
+
+    It is written from the requirements of the original benchmark brief
+    (benchmark/BRIEF.md), not from any library's API. Nothing here requires a
+    particular library, framework, database schema or storage layout.
+
+    The prose rules in REQUIREMENTS.md are part of the contract. Where this
+    file and REQUIREMENTS.md disagree, REQUIREMENTS.md wins and the
+    disagreement is a defect in the benchmark.
+
+    Authentication is out of scope. The caller's identity is the user id in
+    the `X-User-Id` header, as an upstream gateway would set it. The operator
+    endpoint `/admin/audit` is authenticated with `X-Admin-Token`.
+servers:
+  - url: http://127.0.0.1:{port}
+    variables:
+      port:
+        default: '3000'
+security:
+  - userId: []
+components:
+  securitySchemes:
+    userId:
+      type: apiKey
+      in: header
+      name: X-User-Id
+    adminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token
+  parameters:
+    org:
+      name: orgId
+      in: path
+      required: true
+      schema: { type: string }
+    doc:
+      name: documentId
+      in: path
+      required: true
+      schema: { type: string }
+    share:
+      name: shareId
+      in: path
+      required: true
+      schema: { type: string }
+    user:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: A short machine-readable code, such as "not_found" or "invalid_request".
+    Role:
+      type: string
+      enum: [owner, admin, member, viewer]
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: string }
+        email: { type: string }
+    Org:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+    Member:
+      type: object
+      required: [userId, role]
+      properties:
+        userId: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+    Document:
+      type: object
+      required: [id, name, contentType, size, createdAt, uploadedBy]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        contentType: { type: string }
+        size: { type: integer, description: Bytes. }
+        createdAt: { type: string, format: date-time }
+        uploadedBy: { type: string, description: The uploader's user id. }
+    NewDocument:
+      type: object
+      required: [name, contentType, content]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: The file name. Any characters, including ones that are not safe in a header.
+        contentType: { type: string, minLength: 1, maxLength: 255 }
+        content:
+          type: string
+          contentEncoding: base64
+          description: The bytes, base64-encoded. At most 10 MiB decoded.
+    NewShare:
+      type: object
+      required: [expiresInSeconds]
+      properties:
+        expiresInSeconds:
+          type: integer
+          minimum: 1
+          maximum: 604800
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        maxDownloads:
+          type: integer
+          minimum: 1
+          maximum: 1000
+    CreatedShare:
+      type: object
+      required: [id, url, expiresAt]
+      properties:
+        id: { type: string }
+        url:
+          type: string
+          description: Absolute URL, `${BASE_URL}/s/<token>`. The only place the token is ever returned.
+        expiresAt: { type: string, format: date-time }
+    Share:
+      type: object
+      required: [id, documentId, createdBy, createdAt, expiresAt, hasPassword, maxDownloads, downloadCount, revoked]
+      description: A share as listed. It never contains the token, the URL or the password.
+      properties:
+        id: { type: string }
+        documentId: { type: string }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        hasPassword: { type: boolean }
+        maxDownloads: { type: [integer, 'null'] }
+        downloadCount: { type: integer }
+        revoked: { type: boolean }
+    AuditEvent:
+      type: object
+      required: [at, action, decision]
+      properties:
+        at: { type: string, format: date-time }
+        action:
+          type: string
+          enum:
+            - org.create
+            - member.list
+            - member.set_role
+            - member.remove
+            - document.upload
+            - document.list
+            - document.read
+            - document.delete
+            - share.create
+            - share.list
+            - share.revoke
+            - share.download
+            - audit.read
+        decision:
+          type: string
+          enum: [allow, deny]
+        actorId:
+          type: [string, 'null']
+          description: The caller's user id as presented, null for an anonymous share download.
+        orgId:
+          type: [string, 'null']
+          description: The org the event belongs to, or null where none can be attributed.
+        documentId: { type: [string, 'null'] }
+        shareId: { type: [string, 'null'] }
+        reason:
+          type: [string, 'null']
+          description: Why a request was denied, as a short code. Null on allow.
+paths:
+  /users:
+    post:
+      summary: Register a user.
+      security: []
+      description: Open registration. The returned id is what later requests carry in X-User-Id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, minLength: 3, maxLength: 254 }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { description: Invalid body. }
+        '409': { description: The email is already registered. }
+  /orgs:
+    post:
+      summary: Create an organization. The caller becomes its owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Org' }
+        '400': { description: Invalid body. }
+        '401': { description: No X-User-Id, or a user id that is not registered. }
+  /orgs/{orgId}/members:
+    parameters:
+      - $ref: '#/components/parameters/org'
+    get:
+      summary: List the members. Any member.
+      responses:
+        '200':
+          description: The members.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items: { $ref: '#/components/schemas/Member' }
+        '404': { description: No such org, or the caller is not a member. }
+  /orgs/{orgId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/org'
+      - $ref: '#/components/parameters/user'
+    put:
+      summary: Add a member or change a member's role.
+      description: See REQUIREMENTS.md, "Roles", for who may set which role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: '#/components/schemas/Role' }
+      responses:
+        '200':
+          description: The membership as it now stands.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '400': { description: Invalid body, or a target user that is not registered. }
+        '403': { description: The caller is a member but may not make this change. }
+        '404': { description: No such org, or the caller is not a member. }
+        '409': { description: The change would leave the org without an owner. }
+    delete:
+      summary: Remove a member.
+      responses:
+        '204': { description: Removed. }
+        '403': { description: The caller is a member but may not remove this member. }
+        '404': { description: No such org, the caller is not a member, or the target is not a member. }
+        '409': { description: The target is the last owner. }
+  /orgs/{orgId}/documents:
+    parameters:
+      - $ref: '#/components/parameters/org'
+    get:
+      summary: List the org's documents. Any member.
+      responses:
+        '200':
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documents]
+                properties:
+                  documents:
+                    type: array
+                    items: { $ref: '#/components/schemas/Document' }
+        '404': { description: No such org, or the caller is not a member. }
+    post:
+      summary: Upload a document. Member, admin or owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewDocument' }
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        '400': { description: Invalid body. }
+        '403': { description: The caller is a viewer. }
+        '404': { description: No such org, or the caller is not a member. }
+        '413': { description: More than 10 MiB. }
+  /orgs/{orgId}/documents/{documentId}:
+    parameters:
+      - $ref: '#/components/parameters/org'
+      - $ref: '#/components/parameters/doc'
+    get:
+      summary: Download a document's bytes. Any member.
+      description: The response body is the bytes. See REQUIREMENTS.md, "Delivery", for the headers.
+      responses:
+        '200':
+          description: The bytes.
+          content:
+            application/octet-stream: {}
+        '404': { description: No such document in this org, or the caller cannot see it. }
+    delete:
+      summary: Delete a document. Its uploader, an admin or the owner.
+      responses:
+        '204': { description: Deleted. Its share links stop working. }
+        '403': { description: The caller can see the document but may not delete it. }
+        '404': { description: No such document in this org, or the caller cannot see it. }
+  /orgs/{orgId}/documents/{documentId}/shares:
+    parameters:
+      - $ref: '#/components/parameters/org'
+      - $ref: '#/components/parameters/doc'
+    get:
+      summary: List a document's share links. Any member who could create one.
+      responses:
+        '200':
+          description: The shares, revoked ones included.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [shares]
+                properties:
+                  shares:
+                    type: array
+                    items: { $ref: '#/components/schemas/Share' }
+        '403': { description: The caller is a viewer. }
+        '404': { description: No such document in this org, or the caller cannot see it. }
+    post:
+      summary: Create a share link. Member, admin or owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewShare' }
+      responses:
+        '201':
+          description: Created. The response is the only place the token appears.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedShare' }
+        '400': { description: Invalid body. }
+        '403': { description: The caller is a viewer. }
+        '404': { description: No such document in this org, or the caller cannot see it. }
+  /orgs/{orgId}/shares/{shareId}:
+    parameters:
+      - $ref: '#/components/parameters/org'
+      - $ref: '#/components/parameters/share'
+    delete:
+      summary: Revoke a share link. Its creator, an admin or the owner.
+      description: Takes effect for the next request, including for links already handed out.
+      responses:
+        '204': { description: Revoked (also when it was already revoked). }
+        '403': { description: The caller may not revoke this share. }
+        '404': { description: No such share in this org, or the caller is not a member. }
+  /s/{token}:
+    get:
+      summary: Download through a share link. Anonymous.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+        - name: X-Share-Password
+          in: header
+          required: false
+          schema: { type: string }
+          description: Required when the share has a password.
+      responses:
+        '200':
+          description: The bytes.
+          content:
+            application/octet-stream: {}
+        '401': { description: The share has a password and it is missing or wrong. Consumes nothing. }
+        '404': { description: Unknown, revoked, expired or exhausted token, or the document was deleted. One answer for all of them. }
+  /orgs/{orgId}/audit:
+    parameters:
+      - $ref: '#/components/parameters/org'
+    get:
+      summary: Read the org's audit trail. Admin or owner.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        '200':
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEvent' }
+        '403': { description: The caller is a member or a viewer. }
+        '404': { description: No such org, or the caller is not a member. }
+  /admin/audit:
+    get:
+      summary: The operator's view of every audit event, in every org and in none.
+      security:
+        - adminToken: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 1000 }
+      responses:
+        '200':
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEvent' }
+        '401': { description: Missing or wrong X-Admin-Token. }
+  /health:
+    get:
+      summary: Liveness. Returns 200 once the server accepts requests.
+      security: []
+      responses:
+        '200': { description: Ready. }

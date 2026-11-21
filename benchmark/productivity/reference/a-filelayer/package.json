@@ -1,0 +1,15 @@
+{
+  "name": "productivity-reference-a-filelayer",
+  "private": true,
+  "type": "module",
+  "description": "Reference implementation, arm A: the contract on @filelayer/core.",
+  "scripts": {
+    "start": "node src/server.mjs"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@filelayer/core": "0.36.0",
+    "express": "5.2.1",
+    "pg": "8.16.3"
+  }
+}
