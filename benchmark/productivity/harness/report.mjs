@@ -16,13 +16,12 @@ import { join, resolve } from 'node:path';
 const args = process.argv.slice(2);
 const runsDir = resolve(args[args.indexOf('--runs') + 1]);
 const includeDry = args.includes('--include-dry');
-const CONFIRM = 0.3; // at least 30 % better
-const REFUTE = 0.1; // less than 10 % better, or worse
 const BOOT = 10_000;
 
 // --- statistics: in stats.mjs, with its own tests ------------------------------
 
 import { bootDiff, fisherGreater, fisherTwoSided, iqr, mannWhitney, median, quantile, rng, wilson } from './stats.mjs';
+import * as V from './verdicts.mjs';
 
 /** A "less is better" comparison of A against B, read by the preregistered thresholds. */
 function lessIsBetter(name, a, b, seed) {
@@ -30,16 +29,7 @@ function lessIsBetter(name, a, b, seed) {
   const mb = median(b);
   const rel = ma !== null && mb ? (ma - mb) / mb : null;
   const ci = bootDiff(a, b, seed);
-  let verdict = 'not computable';
-  if (rel !== null) {
-    // Confirmed: at least 30 % better, and the interval of the difference
-    // excludes zero. Refuted: the whole interval of the relative difference
-    // lies above -10 %, so even the best case is less than 10 % better.
-    // Anything else is inconclusive (cold review, finding 7).
-    if (rel <= -CONFIRM && ci && ci.diff95[1] < 0) verdict = 'confirmed';
-    else if (ci && ci.relative95[0] > -REFUTE) verdict = 'refuted';
-    else verdict = 'inconclusive';
-  }
+  const verdict = V.lessIsBetter(rel, ci?.diff95, ci?.relative95);
   return { measure: name, medianA: ma, medianB: mb, relative: rel, ...ci, nA: a.length, nB: b.length, verdict };
 }
 
@@ -120,11 +110,10 @@ for (const model of models) {
     const kB = b1.filter((t) => t.observed.blocks.functional).length;
     const ok = a1.length && b1.length;
     const p = ok ? fisherTwoSided(kA, a1.length, kB, b1.length) : null;
-    const better = ok && kA / a1.length > kB / b1.length;
     r.hypotheses.H1 = {
       block: 'functional', a: `${kA}/${a1.length}`, b: `${kB}/${b1.length}`, fisherTwoSidedP: p,
       fisherOneSidedP: ok ? fisherGreater(kA, a1.length, kB, b1.length) : null,
-      verdict: !ok ? 'not computable' : !better ? 'refuted' : p < 0.05 ? 'confirmed' : 'inconclusive',
+      verdict: V.h1({ kA, nA: a1.length, kB, nB: b1.length, p }),
     };
   }
   // H2, security: more attacks defended per task-1 run. Decided by a two-sided
@@ -143,7 +132,7 @@ for (const model of models) {
       block: 'security', meanA: mean(da), meanB: mean(db), medianA: median(da), medianB: median(db),
       mannWhitney: mw, allDefended: { a: `${allA}/${a1.length}`, b: `${allB}/${b1.length}`,
         fisherTwoSidedP: a1.length && b1.length ? fisherTwoSided(allA, a1.length, allB, b1.length) : null },
-      verdict: !mw ? 'not computable' : mean(da) <= mean(db) ? 'refuted' : mw.p < 0.05 ? 'confirmed' : 'inconclusive',
+      verdict: V.h2({ meanA: mean(da), meanB: mean(db), p: mw?.p }),
     };
   }
   // H3, total cost: median tokens of task 1 at least 30 % lower.
@@ -187,9 +176,7 @@ for (const model of models) {
       ci = { relative95: rels.length ? [quantile(rels, 0.025), quantile(rels, 0.975)] : null, droppedResamples: dropped / BOOT };
       // The same rule as H3: confirmed at 30 % lower with the interval below
       // zero, refuted when the whole interval is above -10 %.
-      verdict = !ci.relative95 ? 'not computable'
-        : rel <= -CONFIRM && ci.relative95[1] < 0 ? 'confirmed'
-          : ci.relative95[0] > -REFUTE ? 'refuted' : 'inconclusive';
+      verdict = V.h4(rel, ci.relative95);
     } else {
       // An arm with no correct implementation has no cost per correct
       // implementation: not computed, not replaced by another figure.
@@ -208,12 +195,7 @@ for (const model of models) {
       sum23(B, (t) => t.observed.tokens?.inputPlusOutput ?? NaN), 61);
     const time = lessIsBetter('wall seconds, tasks 2+3', sum23(A, (t) => t.observed.wallMs / 1000),
       sum23(B, (t) => t.observed.wallMs / 1000), 62);
-    const v = [tok.verdict, time.verdict];
-    r.hypotheses.H6 = {
-      tokens: tok, time,
-      verdict: v.includes('not computable') ? 'not computable' : v.includes('refuted') ? 'refuted'
-        : v.every((x) => x === 'confirmed') ? 'confirmed' : 'inconclusive',
-    };
+    r.hypotheses.H6 = { tokens: tok, time, verdict: V.h6(tok.verdict, time.verdict) };
   }
   // Cold review, finding 1: arm A's completion, split by whether the run read
   // the package's examples/vault, the example closest to this task.
