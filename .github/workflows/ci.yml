@@ -240,6 +240,9 @@ jobs:
       - name: No internal-process language on the shipped surface
         run: npm run check:language
 
+      - name: An error code is never confused with its denial reason
+        run: npm run check:error-wording
+
       - name: Every link and script reference resolves
         run: npm run check:links
 
