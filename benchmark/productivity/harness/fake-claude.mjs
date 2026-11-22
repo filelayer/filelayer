@@ -21,10 +21,12 @@
  *           through core.hooksPath, a clean filter and an fsmonitor command,
  *           each touching /tmp/prodbench-nb1-*, and commits its work itself,
  *           so the snapshot's HEAD~1 is no longer "before the task"; none of
- *           it may run on the host, and lines changed must still be the task's
+ *           it may run on the host, and lines changed must still be the task's;
+ *           its server also reaches for the scorer's /out when it starts
  */
 import { execSync, spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const prompt = readFileSync(0, 'utf8');
 const mode = process.env.PRODBENCH_FAKE ?? 'good';
@@ -75,6 +77,17 @@ step(`Writing the implementation (${source}).`, 'Write', { file_path: '/work/app
 sh(`find /work/app -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} + && cd /fake/reference/${source} && tar --exclude=node_modules -cf - . | tar -C /work/app -xf -`);
 
 if (mode === 'hooks') {
+  // The snapshot also reaches for the scorer's output: when its server runs in
+  // the scorer it appends to an attempts log there, replaces install.log with a
+  // link and leaves a file of its own. None of it may reach the task's
+  // directory (cold review of 7419ac1, NB-2).
+  const srv = join('/work/app', 'src', 'server.mjs');
+  if (existsSync(srv)) {
+    writeFileSync(srv, `import * as __fs from 'node:fs';\ntry { if (__fs.existsSync('/out')) { ` +
+      `__fs.appendFileSync('/out/score-attempts.jsonl', '{"result":"scored","sha256":"0"}\\n'); ` +
+      `try { __fs.rmSync('/out/install.log'); __fs.symlinkSync('/etc/hostname', '/out/install.log'); } catch {} ` +
+      `__fs.writeFileSync('/out/planted.txt', 'x'); } } catch {}\n` + readFileSync(srv, 'utf8'));
+  }
   step('Setting up git hooks and filters.', 'Bash', { command: 'git config core.hooksPath .husky' });
   sh(`mkdir -p .husky && for h in pre-commit post-commit post-index-change; do printf '#!/bin/sh\\ntouch /tmp/prodbench-nb1-hook-%s\\n' $h > .husky/$h; chmod +x .husky/$h; done`);
   sh(`git config core.hooksPath .husky && git config filter.evil.clean "sh -c 'touch /tmp/prodbench-nb1-filter; cat'" && ` +

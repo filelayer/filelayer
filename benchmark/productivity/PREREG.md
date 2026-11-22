@@ -111,6 +111,16 @@ system or global configuration, hooks and fsmonitor off in the command itself,
 attributes from the empty tree, and an environment of only `PATH` and an empty
 `HOME` (`harness/history.mjs`). The lines a task changed are the difference
 between those two records, so commits the agent makes itself change nothing.
+That history lives beside the run's task directories
+(`history/task<N>.git`), outside every directory a container mounts, so no
+snapshot can rewrite it; the ids of its two commits are kept in `run.json`
+and the difference is taken between those ids; and git neither fetches nor
+runs a transport for it (`protocol.allow=never`, `GIT_NO_LAZY_FETCH`). The
+harness refuses to start on a git older than 2.40, which would ignore the
+empty-tree attributes. A repository nested inside the project is recorded
+as a link to its commit, so the files inside it count no lines; the old
+method did the same, and an agent that wants its lines counted keeps them in
+the project.
 
 The service's databases belong to a role of their own that is not a
 superuser, in the agent's container and in the scorer alike, so both arms
@@ -166,8 +176,10 @@ then scored once more. npm's own verdict on the project comes first: a missing
 version, an unresolvable tree or a bad manifest (E404, ETARGET, ERESOLVE and
 the like) is the agent's, whatever the network did meanwhile. An install that
 runs out of its 10 minutes is the scorer's only if npm itself failed the way a
-network fails (a network error code, or a 5xx or 429 from the registry): a
-project whose install is just slow is the agent's. Any other
+network fails (a network error code, or a 5xx or 429 from the registry), or
+the scorer's egress log has at least two errors to the registry after its
+last successful connection: a project whose install is just slow is the
+agent's. Any other
 failure to install is the agent's too, including a dependency that fetches
 from another host while installing: the contract says `npm install` must work,
 and the rule is the same for both arms.
@@ -178,7 +190,15 @@ The scorer refuses to score unless the benchmark files match
 valid task that has no score (an unscored task is not a zero). A score is
 written once; only a scorer failure is scored again, and only once: every
 attempt is appended to `score-attempts.jsonl`, and after two there are no
-more, whatever `score.json` says or whether it exists. `--unfrozen`, which
+more, whatever `score.json` says or whether it exists. Each attempt logs
+the sha256 of the score file it wrote, and `analyze.mjs` refuses a score
+file that is missing, has no attempt behind it or does not match. The
+snapshot cannot reach either file: the scorer writes only to a new, empty
+directory of its own for each attempt, and the expected files, regular files
+only, are copied back from it. Someone who deletes both files by hand reopens
+the scoring; the run's directory is published, so that would show.
+Rehearsal scores written before the attempts log carried hashes are refused
+by `analyze.mjs`; rehearsals are scored again after the freeze. `--unfrozen`, which
 lets the tools work before the freeze, is refused for any run that is not a
 rehearsal, and a report with an unfrozen score says so at the top.
 
@@ -329,15 +349,21 @@ which is a struggling run, and the report would say so.
 
 Because a run needs $36 left to start, the last run of a phase needs $36 left
 whatever the runs cost, and the caps are sized for that (`harness/money.mjs`,
-whose figures `harness/rules.test.mjs` checks). With today's caps, at the high
-estimate below, the pilot starts 7 of its 8 runs and the full phase 39 of its
-40. **Proposed, to be decided on 30 November with the freeze:** keep
-the slack at $9; raise the pilot's cap to $110, which starts all 8 runs at
-the high estimate; give the full phase what is left of the $500 ceiling after
-the pilot, at most $400. After the pilot, the full phase starts only if its
-measured mean cost per run, times 39, plus $36, fits that cap: with $390 left,
-that is up to $9.07 a run. Above it, the full phase does not start without a
-new approval.
+whose figures `harness/rules.test.mjs` checks against `harness/config.json`,
+including that the two caps together never exceed the approved $500).
+**Pending approval on 30 November, with the freeze:** the slack
+stays at $9; the pilot's cap is $110, which starts all 8 runs at the high
+estimate below (with $100, run 8 would not start); the full phase's cap is
+$390, the $500 ceiling less the pilot's. At the high estimate the pilot has
+$35 left after its 8 runs, so a replacement for an invalid pilot run does
+not start (it needs $36; $111 would allow one).
+
+The gate between the pilot and the full phase is manual, decided by whoever
+approves the spending, not by `run.mjs`: the full
+phase starts only if the pilot's measured mean cost per run, times 39, plus
+$36, fits the full phase's $390, that is up to $9.07 a run. At the high
+estimate ($9.38 a run) it does not fit, and the full phase needs a new
+approval.
 
 Expected cost of the pilot, estimated, not measured. The pilot is 8 runs: two
 per cell, four cells (two arms, two models), so 4 runs of each model.
@@ -347,8 +373,8 @@ per cell, four cells (two arms, two models), so 4 runs of each model.
 | Opus 5.5, central | about $5.00 | 4 | about $20 |
 | Sonnet 5.5, central | about $2.50 | 4 | about $10 |
 | Pilot, central | about $3.75 | 8 | **about $30**; all 8 start |
-| Pilot, high (2.5 times) | about $9.40 | 8 | **about $75**; with the $100 cap, run 8 does not start; with $110, all 8 do |
-| Pilot, at the limits | $27 | 8 | 3 runs start, with either cap |
+| Pilot, high (2.5 times) | about $9.38 | 8 | **about $75**; all 8 start with the $110 cap, none is replaced |
+| Pilot, at the limits | $27 | 8 | 3 runs start |
 
 The central case assumes, per run, 3 million tokens read from the cache, 0.4
 million written to it or uncached, and 0.12 million of output, at the prices of

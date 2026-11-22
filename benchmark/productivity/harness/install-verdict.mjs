@@ -30,7 +30,14 @@ export function installVerdict(out) {
   // if npm itself failed the way a network fails: a project whose install is
   // slow, or that waits on something, is the agent's (cold review of d89b967).
   const timedOut = exit === '124';
-  const registryDown = !agentsOwn && (timedOut ? npmSaysNetwork
+  // A registry that stops answering leaves npm waiting until the timeout kills
+  // it, with no error line of its own: then the egress log decides. At least
+  // two errors to the registry after its last successful connection (cold
+  // review of 7419ac1, nit d).
+  const reg = egress.filter((e) => e.host === 'registry.npmjs.org');
+  const lastOk = reg.findLastIndex((e) => e.connected);
+  const stillFailing = reg.slice(lastOk + 1).filter((e) => e.error).length >= 2;
+  const registryDown = !agentsOwn && (timedOut ? npmSaysNetwork || stillFailing
     : egress.some((e) => e.host === 'registry.npmjs.org' && e.error) || npmSaysNetwork);
   const refused = [...new Set(egress.filter((e) => e.allowed === false).map((e) => e.host))];
   return { ok: false, network: registryDown, refused, exit };

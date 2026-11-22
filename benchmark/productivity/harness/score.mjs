@@ -29,7 +29,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
@@ -72,6 +72,7 @@ function scoreOne(app, task, out, arm) {
   // attacks are scored in a directory of their own (N-N4), so nothing of
   // theirs can land next to the primary score.
   const egressLog = join(out, 'score-egress.jsonl');
+  const work = join(out, 'score-out');
   rmSync(egressLog, { force: true });
   try {
     docker(['run', '-d', '--name', `${name}-pg`, '--network', name, '--network-alias', 'postgres',
@@ -101,6 +102,14 @@ function scoreOne(app, task, out, arm) {
     const installSecs = cfg.scoring.installMinutes * 60;
     const result = late ? '/out/late-score.json' : '/out/score.json';
     mkdirSync(out, { recursive: true });
+    // The scorer, where the snapshot runs, writes only to a directory of its
+    // own, new and empty for each attempt; the expected files are copied back
+    // from it afterwards, regular files only. The task's directory, its
+    // attempts log and the harness's history are out of its reach (cold
+    // review of 7419ac1, NB-2).
+    rmSync(work, { recursive: true, force: true });
+    mkdirSync(work);
+    spawnSync('chmod', ['a+rwx', work]);
     const seed = `${arm === 'a' ? 'a-filelayer' : 'b-own'}-t3-bug`;
     // check.mjs starts the snapshot with PATH and HOME and the contract's
     // variables only, so the proxy settings below reach npm install and
@@ -128,11 +137,12 @@ function scoreOne(app, task, out, arm) {
     const r = docker(['run', '--rm', '--name', `${name}-scorer`, '--network', name, '--cpus', '2', '--memory', '4g',
       '-u', 'node',
       '-v', `${BENCH}:/bench:ro`, '-v', `${ATTACKS}:/adversarial/attacks.mjs:ro`,
-      '-v', `${app}:/snapshot:ro`, '-v', `${out}:/out`,
+      '-v', `${app}:/snapshot:ro`, '-v', `${work}:/out`,
       '-e', `PRODBENCH_PG_ADMIN_URL=postgres://postgres:postgres@postgres:5432/postgres`,
       '-e', 'PRODBENCH_S3_URL=http://s3:5000',
       '-e', `npm_config_proxy=${proxyUrl}`, '-e', `npm_config_https_proxy=${proxyUrl}`,
       ...ca, cfg.images.node, 'bash', '-c', script], true, cfg.scoring.globalTimeoutMinutes * 60_000);
+    copyBack(work, out, ['install.log', 'install.exit', 'seed-install.log', 'check.log', late ? 'late-score.json' : 'score.json']);
     if (r.error || r.status === null) {
       docker(['rm', '-f', `${name}-scorer`], true);
       writeFileSync(join(out, late ? 'late-score.json' : 'score.json'), JSON.stringify({ scorerError: 'scorer_timeout' }));
@@ -141,6 +151,29 @@ function scoreOne(app, task, out, arm) {
     for (const c of started) docker(['rm', '-f', c], true);
     proxyChild?.kill('SIGTERM');
     docker(['network', 'rm', name], true);
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Copy the named files from the scorer's directory to the task's: regular
+ * files only (a link the snapshot planted is not followed), at most 20 MB each.
+ * A file that is missing or refused is left out, and whatever reads it treats
+ * it as missing.
+ */
+function copyBack(from, to, names) {
+  for (const n of names) {
+    // What an earlier attempt left is not this attempt's.
+    rmSync(join(to, n), { force: true });
+    const src = join(from, n);
+    let st;
+    try {
+      st = lstatSync(src);
+    } catch {
+      continue;
+    }
+    if (!st.isFile() || st.size > 20 * 1024 * 1024) continue;
+    copyFileSync(src, join(to, n));
   }
 }
 
@@ -231,8 +264,6 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
       continue;
     }
     mkdirSync(dir, { recursive: true });
-    // The scorer runs as the image's `node` user; it must be able to write here.
-    spawnSync('chmod', ['a+rwx', dir]);
     let s;
     while (attemptLog(attemptsFile).length < 2) {
       rmSync(file, { force: true });

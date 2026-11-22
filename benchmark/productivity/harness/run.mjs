@@ -41,7 +41,7 @@ import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
 import { taskSpend, usageCounter } from './usage.mjs';
 import { API_ERROR_LINES, apiFailure, STOPS_THE_PHASE } from './classify.mjs';
-import { record as recordHistory } from './history.mjs';
+import { gitVersion, historyDir, record as recordHistory } from './history.mjs';
 import { startNeedUsd } from './money.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -53,6 +53,14 @@ const flag = (name) => args.includes(name);
 const planFile = resolve(arg('--plan') ?? '');
 const plan = JSON.parse(readFileSync(planFile, 'utf8'));
 const cfg = JSON.parse(readFileSync(join(HERE, 'config.json'), 'utf8'));
+{
+  // The harness's history needs git 2.40 or later (history.mjs).
+  const g = gitVersion();
+  if (!g.ok) {
+    console.error(`${g.version || 'git not found'}: the harness needs git 2.40 or later (GIT_ATTR_SOURCE). Not starting.`);
+    process.exit(2);
+  }
+}
 const DRY = flag('--dry-run');
 const proxyMode = arg('--proxy', 'container');
 const upstream = arg('--upstream');
@@ -268,6 +276,9 @@ function runSession(c, run, task, budget, out, env) {
   const counter = usageCounter();
   let stop = null;
   let deadline = null;
+  // How the session ends: on 'close', once its output has all arrived, or by
+  // the synthetic end after a hard kill (cold review of 7419ac1, nit c).
+  const end = { now: () => {} };
   // Every timer kill() sets is cancelled when this session ends: `pkill -u
   // agent` reaches every process of the agent, and a timer that fired during
   // the next task would kill the next session.
@@ -288,7 +299,7 @@ function runSession(c, run, task, budget, out, env) {
       if (child.exitCode !== null || child.signalCode !== null) return;
       seen.hardKilled = true;
       docker(['kill', c], { allowFail: true, timeoutMs: 30_000 });
-      deadline = setTimeout(() => child.emit('exit', null), 15_000);
+      deadline = setTimeout(() => end.now(null), 15_000);
     }, 10_000));
   };
   const wall = setTimeout(() => kill('wall'), t.wallMinutes * wallScale * 60_000);
@@ -335,7 +346,15 @@ function runSession(c, run, task, budget, out, env) {
     }
   });
   return new Promise((resolveP) => {
+    let exitCode = null;
+    // A real exit: wait for 'close', so the last line, the result line
+    // included, is read; 10 s at most, if something still holds the pipe.
     child.on('exit', (code) => {
+      exitCode = code;
+      timers.push(setTimeout(() => end.now(code), 10_000));
+    });
+    child.on('close', (code) => end.now(code ?? exitCode));
+    end.now = (code) => {
       if (ended) return;
       ended = true;
       clearTimeout(wall);
@@ -370,7 +389,7 @@ function runSession(c, run, task, budget, out, env) {
         apiErrorTimes: seen.apiErrorTimes,
         hardKilled: seen.hardKilled,
       });
-    });
+    };
   });
 }
 
@@ -388,12 +407,12 @@ function copyOut(c, dest) {
   return copy.status === 0;
 }
 
-/** The tree before the task, in the harness's history; the copy is not kept. */
-function recordBefore(c, tdir) {
+/** The tree before the task, in the harness's history; its commit id. The copy is not kept. */
+function recordBefore(c, runDir, tdir, task) {
   const tmp = join(tdir, 'before');
-  const ok = copyOut(c, tmp) && recordHistory(join(tdir, 'history.git'), tmp, 'before');
+  const id = copyOut(c, tmp) && recordHistory(historyDir(runDir, task), tmp, 'before');
   rmSync(tmp, { recursive: true, force: true });
-  return ok;
+  return id || null;
 }
 
 /**
@@ -536,12 +555,14 @@ async function runOne(run) {
       }
       prepareApp(c, run, task);
       const tdir = join(dir, `task${task}`);
-      const beforeOk = recordBefore(c, tdir);
+      const before = recordBefore(c, dir, tdir, task);
       record.inFlight = { task, stream: `task${task}.jsonl`, startedAt: new Date().toISOString() };
       save();
       const res = await runSession(c, run, task, budget, join(dir, `task${task}.jsonl`), contractEnv(task, adminToken));
       res.snapshotOk = copyOut(c, join(tdir, 'app'));
-      res.historyOk = beforeOk && res.snapshotOk && recordHistory(join(tdir, 'history.git'), join(tdir, 'app'), 'after');
+      const after = before && res.snapshotOk ? recordHistory(historyDir(dir, task), join(tdir, 'app'), 'after') || null : null;
+      // The ids analyze.mjs diffs between; null when either was not recorded.
+      res.history = { before, after };
       endAgentProcesses(c);
       record.tasks.push(res);
       record.inFlight = null;

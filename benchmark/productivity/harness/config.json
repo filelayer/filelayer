@@ -50,9 +50,10 @@
     "s3": "motoserver/moto:5.1.4",
     "node": "node:22-bookworm-slim"
   },
+  "approvedCeilingUsd": 500,
   "phaseCapUsd": {
-    "pilot": 100,
-    "full": 400
+    "pilot": 110,
+    "full": 390
   },
   "scoring": {
     "installMinutes": 10,

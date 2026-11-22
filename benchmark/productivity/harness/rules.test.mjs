@@ -250,18 +250,21 @@ test('money: the figures of PREREG.md "Money" (NI-6)', () => {
   // Central and high estimates of a run, the mean of the two models.
   const central = (5 + 2.5) / 2;
   const high = central * 2.5;
-  // Today's caps: the pilot's high case starts 7 of its 8 runs, the full
-  // phase's 39 of 40; at the limits ($27 a run) the pilot starts 3.
-  assert.equal(runsThatStart({ capUsd: 100, costPerRun: high, needUsd: need, runs: pilot }), 7);
-  assert.equal(runsThatStart({ capUsd: 400, costPerRun: high, needUsd: need, runs: full }), 39);
-  assert.equal(runsThatStart({ capUsd: 100, costPerRun: 27, needUsd: need, runs: pilot }), 3);
-  assert.ok(phaseFits({ capUsd: 100, costPerRun: central, needUsd: need, runs: pilot }));
-  // The figures proposed for 30 Nov: a pilot cap of $110 starts all 8 at
-  // the high estimate; the full phase then has what is left of the $500
-  // ceiling, at least $390, enough for 40 runs up to $9.07 each.
-  assert.ok(phaseFits({ capUsd: 110, costPerRun: high, needUsd: need, runs: pilot }));
-  assert.equal(Math.floor(maxCostPerRun({ capUsd: 390, needUsd: need, runs: full }) * 100) / 100, 9.07);
-  assert.equal(phaseFits({ capUsd: 390, costPerRun: high, needUsd: need, runs: full }), false);
+  const caps = cfg.phaseCapUsd;
+  // The two caps together never exceed the approved ceiling (NI-a).
+  assert.ok(caps.pilot + caps.full <= cfg.approvedCeilingUsd, `${caps.pilot} + ${caps.full} > ${cfg.approvedCeilingUsd}`);
+  // The pilot's cap starts all 8 runs at the high estimate, and 3 at the
+  // limits ($27 a run).
+  assert.ok(phaseFits({ capUsd: caps.pilot, costPerRun: high, needUsd: need, runs: pilot }), `pilot cap ${caps.pilot}`);
+  assert.equal(runsThatStart({ capUsd: caps.pilot, costPerRun: 27, needUsd: need, runs: pilot }), 3);
+  // ...but not a replacement for an invalid pilot run: 9 runs need
+  // 8 x 9.375 + 36 = 111 (PREREG says so).
+  assert.equal(phaseFits({ capUsd: caps.pilot, costPerRun: high, needUsd: need, runs: pilot + 1 }), caps.pilot >= 111);
+  // The full phase's cap starts all 40 at the central estimate, and not at
+  // the high one: then the full phase needs a new approval (PREREG says so).
+  assert.ok(phaseFits({ capUsd: caps.full, costPerRun: central, needUsd: need, runs: full }));
+  assert.equal(phaseFits({ capUsd: caps.full, costPerRun: high, needUsd: need, runs: full }), false);
+  assert.equal(Math.floor(maxCostPerRun({ capUsd: caps.full, needUsd: need, runs: full }) * 100) / 100, 9.07);
 });
 
 import { installVerdict } from './install-verdict.mjs';
@@ -286,4 +289,23 @@ test('install: a timeout is the scorer\'s only when npm failed the way a network
   assert.equal(installVerdict(dir(1, 'npm error something\n', blip)).network, true);
   // npm's own verdict on the package wins.
   assert.equal(installVerdict(dir(1, 'npm error code ETARGET\n', blip)).network, false);
+});
+
+test('api: a session stopped by its own turns or budget is never the API\'s, without a result too (nit a)', () => {
+  const recent = { stderrTail: 'API Error: 529\nAPI Error: 529', startedAt: at(0), lastResponseAt: at(50), endedAt: at(60), apiErrorTimes: [at(59.5), at(59.9)] };
+  for (const stoppedBy of ['turns', 'budget', 'finished']) assert.equal(apiFailure({ ...recent, stoppedBy }), null, stoppedBy);
+  assert.equal(apiFailure({ ...recent, stoppedBy: 'exit_1' }), 'api_failure', 'the same evidence counts for an exit');
+});
+
+test('install: a timeout while the registry kept failing is the scorer\'s (nit d)', () => {
+  const d = mkd(pj(tmpd(), 'inst-'));
+  wf(pj(d, 'install.exit'), '124\n');
+  wf(pj(d, 'install.log'), '');
+  const e = (o) => JSON.stringify({ host: 'registry.npmjs.org', allowed: true, ...o });
+  wf(pj(d, 'score-egress.jsonl'), [e({ connected: true }), e({ error: 'ETIMEDOUT' }), e({ error: 'ETIMEDOUT' })].join('\n'));
+  assert.equal(installVerdict(d).network, true, 'two errors and no success after them');
+  wf(pj(d, 'score-egress.jsonl'), [e({ error: 'ETIMEDOUT' }), e({ error: 'ETIMEDOUT' }), e({ connected: true })].join('\n'));
+  assert.equal(installVerdict(d).network, false, 'it connected again afterwards');
+  wf(pj(d, 'score-egress.jsonl'), [e({ connected: true }), e({ error: 'ETIMEDOUT' })].join('\n'));
+  assert.equal(installVerdict(d).network, false, 'one error never decides');
 });

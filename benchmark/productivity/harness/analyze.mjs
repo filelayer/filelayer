@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { COUNTED_EXT, countFile } from '../../loc-count.mjs';
 import { costOf, usageCounter } from './usage.mjs';
 import { apiFailure, egressInWindow, examplesReads } from './classify.mjs';
-import { changed } from './history.mjs';
+import { changed, historyDir } from './history.mjs';
 import { checkScoreFile } from './attempts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -139,13 +139,18 @@ function dependencies(dir) {
 
 /**
  * Lines the task itself changed, from the harness's own history of the task
- * (history.mjs): "before" is the tree when the task started, "after" its
- * snapshot. The agent's repository is never read, so its commits, hooks,
- * filters and diff drivers change nothing here.
+ * (history.mjs): the commit of the tree when the task started and the one of
+ * its snapshot, by the ids run.json recorded, so a history rewritten since
+ * gives no number rather than a wrong one. The agent's repository is never
+ * read, so its commits, hooks, filters and diff drivers change nothing here.
+ * `diffNote` says why there is no number.
  */
-function diff(taskDir) {
-  const h = join(taskDir, 'history.git');
-  return existsSync(h) ? changed(h) : null;
+function diff(runDir, t) {
+  const ids = t.history;
+  if (!ids?.before || !ids?.after) return { diff: null, diffNote: 'the history of the task was not recorded' };
+  const h = historyDir(runDir, t.task);
+  const d = existsSync(h) ? changed(h, ids.before, ids.after) : null;
+  return d ? { diff: d } : { diff: null, diffNote: 'the recorded commits are not in the history' };
 }
 
 
@@ -274,7 +279,7 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
         claudeCodeCostUsd: t.claude?.totalCostUsd ?? null,
         ...(existsSync(join(base, `task${t.task}.jsonl`)) ? session(join(base, `task${t.task}.jsonl`)) : {}),
         loc: loc(app),
-        diff: diff(join(base, `task${t.task}`)),
+        ...diff(base, t),
         dependencies: dependencies(app),
         functional: score?.functional ? { passed: score.functional.passed, of: score.functional.of, failed: score.functional.results.filter((r) => !r.pass).map((r) => r.id) } : null,
         taskChecks: extra ? { passed: extra.passed, of: extra.of, failed: extra.results.filter((r) => !r.pass).map((r) => r.id) } : null,
