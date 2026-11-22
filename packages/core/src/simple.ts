@@ -729,15 +729,16 @@ export class FilesApi {
  * THE DEFECT THIS CLOSES
  * ---------------------------------------------------------------------------
  *
- * Six places in this file did `findActor()` and threw `404 unknown_actor` when
- * it came back null. The status was right and the refusal was right. What was
- * missing is that the throw happened BEFORE the engine ran, so **no audit event
- * was written** -- while the same refusal on the core API writes one.
+ * Six places in this file did `findActor()` and threw `404 not_found` (reason
+ * `unknown_actor`) when it came back null. The status was right and the
+ * refusal was right. What was missing is that the throw happened BEFORE the
+ * engine ran, so **no audit event was written** -- while the same refusal on
+ * the core API writes one.
  *
  * Measured on the published `0.11.0`:
  *
- *     facade, unknown external id  -> 404 unknown_actor   deny events 0 -> 0
- *     core, well-formed actor uuid -> 404 no_membership   deny events 0 -> 1
+ *     facade, unknown external id  -> 404 not_found (reason unknown_actor)   deny events 0 -> 0
+ *     core, well-formed actor uuid -> 404 not_found (reason no_membership)   deny events 0 -> 1
  *
  * `schema.sql` is explicit that this is a defect, in a comment on the very
  * column that makes the fix possible. It explains that `audit_event.actor_id`

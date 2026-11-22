@@ -15,11 +15,12 @@
  * -----------------------------------------------------------------------------
  *
  * Six places in `simple.ts` resolved `as:` with `findActor()` and threw
- * `404 unknown_actor` on null -- before the engine ran, so nothing was
- * recorded. The same refusal through the core API writes an event. Measured:
+ * `404 not_found` (reason `unknown_actor`) on null -- before the engine ran,
+ * so nothing was recorded. The same refusal through the core API writes an
+ * event. Measured:
  *
- *     facade, unknown external id  -> 404 unknown_actor   deny events 0 -> 0
- *     core, well-formed actor uuid -> 404 no_membership   deny events 0 -> 1
+ *     facade, unknown external id  -> 404 not_found (reason unknown_actor)   deny events 0 -> 0
+ *     core, well-formed actor uuid -> 404 not_found (reason no_membership)   deny events 0 -> 1
  *
  * `schema.sql` says in a comment on the column that makes the fix possible that
  * `audit_event.actor_id` carries no foreign key PRECISELY so a caller
