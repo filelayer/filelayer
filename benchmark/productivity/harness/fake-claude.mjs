@@ -30,7 +30,14 @@ import { execSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const prompt = readFileSync(0, 'utf8');
+let prompt = '';
+try {
+  prompt = readFileSync(0, 'utf8');
+} catch {
+  // no stdin
+}
+// The smoke call passes its prompt as an argument, as Claude Code allows.
+prompt += ' ' + process.argv.slice(2).join(' ');
 const mode = process.env.PRODBENCH_FAKE ?? 'good';
 const model = process.argv[process.argv.indexOf('--model') + 1];
 const arm = prompt.includes('@filelayer/core') ? 'a-filelayer' : 'b-own';
@@ -39,6 +46,12 @@ const t0 = Date.now();
 let turns = 0;
 
 const emit = (m) => process.stdout.write(JSON.stringify(m) + '\n');
+// run.mjs --smoke-call: one word back, as Claude Code's json output would.
+if (prompt.includes('Reply with the single word OK')) {
+  emit({ type: 'result', subtype: 'success', is_error: false, result: 'OK', num_turns: 1,
+    total_cost_usd: 0.004, usage: { input_tokens: 12, output_tokens: 2, cache_read_input_tokens: 0, cache_creation_input_tokens: 9000 }, fake: true });
+  process.exit(0);
+}
 const usage = (k) => ({ input_tokens: 40 * k, output_tokens: 900 * k, cache_read_input_tokens: 25000 * k, cache_creation_input_tokens: 3000 * k });
 function step(text, tool, input) {
   turns++;

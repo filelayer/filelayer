@@ -497,3 +497,27 @@ together to stay within the ceiling, now with these figures.
 
 **The fingerprint.** `harness/config.json` and `harness/rules.test.mjs` are
 under `harness/`, so `FINGERPRINT.txt` is rewritten in the same commit.
+
+### 3. A paid smoke call before the pilot (22 November 2026, before any run)
+
+**What changes.** `run.mjs --smoke-call` makes one real request before the
+pilot spends anything else, through exactly the environment of a run: the
+internal network, the egress proxy, the agent's container and the plan's
+token. A one-word answer, one turn, at most $0.05. It writes
+`smoke-call/<time>/smoke-call.json` beside the plan: the result's subtype,
+`total_cost_usd`, the usage, the cost computed from it at `config.json`'s
+prices, and every host the proxy saw. `harness/fake-claude.mjs` answers it in
+a rehearsal.
+
+**Why.** Deviation 1 left three things to be seen in the pilot: whether the
+token authenticates through the proxy, which hosts Claude Code needs with it,
+and whether the cost fields come back. Seeing them for a few cents, before the
+first run, keeps a run from being the one that finds out.
+
+**What does not change.** The runs, the scoring and the analysis. The call
+counts toward no phase, and the pilot does not start until it passes. What it
+shows that differs from the frozen set-up (a host the allowlist lacks, a cost
+field missing) is the next deviation, before the first run.
+
+**The fingerprint.** `harness/run.mjs` and `harness/fake-claude.mjs` are under
+`harness/`, so `FINGERPRINT.txt` is rewritten in the same commit.

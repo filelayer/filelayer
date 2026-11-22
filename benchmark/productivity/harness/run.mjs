@@ -676,9 +676,78 @@ function releaseLock() {
   }
 }
 
+/**
+ * --smoke-call (D-c): one real request, before the pilot spends anything else,
+ * through exactly the environment of a run: the internal network, the egress
+ * proxy and the agent's container with the plan's token. A one-word answer,
+ * at most one turn and $0.05. It shows what the pilot must not discover on its
+ * own: whether the token authenticates through the proxy, which hosts Claude
+ * Code needs (the proxy's log), and whether total_cost_usd and the usage come
+ * back with a plan's token. It writes smoke-call/<time>/ beside the plan and
+ * counts toward no phase.
+ */
+async function smokeCall() {
+  const name = `smoke-${randomBytes(3).toString('hex')}`;
+  const dir = join(outRoot, 'smoke-call', new Date().toISOString().replace(/[:.]/g, '-'));
+  mkdirSync(dir, { recursive: true });
+  const run = { id: name, model: cfg.models.at(-1), arm: 'a', fake: 'good' };
+  let s;
+  let c;
+  try {
+    s = startServices(name, dir);
+    current = { s, c: null };
+    c = startAgent(name, s, run);
+    current.c = c;
+    const r = spawnSync('docker', ['exec', '-u', 'agent', '-w', '/work/app', c,
+      'claude', '-p', 'Reply with the single word OK. Do not use any tool.', '--model', run.model,
+      '--output-format', 'json', '--max-turns', '1', '--max-budget-usd', '0.05', '--no-session-persistence'],
+    { encoding: 'utf8', timeout: 180_000, killSignal: 'SIGKILL' });
+    let result = null;
+    for (const line of String(r.stdout ?? '').trim().split('\n').reverse()) {
+      try {
+        const m = JSON.parse(line);
+        if (m.type === 'result') {
+          result = m;
+          break;
+        }
+      } catch {
+        // not a JSON line
+      }
+    }
+    const egress = existsSync(join(dir, 'egress.jsonl'))
+      ? readFileSync(join(dir, 'egress.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+    const hosts = {};
+    for (const e of egress.filter((x) => x.host)) {
+      const h = (hosts[e.host] ??= { allowed: e.allowed, connected: 0, errors: 0 });
+      if (e.connected) h.connected++;
+      if (e.error) h.errors++;
+    }
+    const summary = {
+      at: new Date().toISOString(), model: run.model, exit: r.status,
+      subtype: result?.subtype ?? null, isError: result?.is_error ?? null, result: result?.result ?? null,
+      totalCostUsd: result?.total_cost_usd ?? null, usage: result?.usage ?? null,
+      costFromTokensUsd: costOf(cfg.prices, run.model, result?.usage),
+      hosts, stderrTail: String(r.stderr ?? '').slice(-2000),
+    };
+    writeFileSync(join(dir, 'smoke-call.json'), JSON.stringify(summary, null, 2));
+    console.log(JSON.stringify({ ...summary, stderrTail: undefined }, null, 2));
+    console.log(`written: ${join(dir, 'smoke-call.json')}`);
+    const ok = r.status === 0 && result && !result.is_error && /\bOK\b/.test(String(result.result ?? ''));
+    console.log(ok ? 'smoke call: OK' : 'smoke call: FAILED, see the file above; the pilot does not start until it passes');
+    return ok;
+  } finally {
+    if (s) stopServices(s, c);
+    current = null;
+  }
+}
+
 takeLock();
 process.on('exit', releaseLock);
 removeOrphans();
+if (flag('--smoke-call')) {
+  buildImages();
+  process.exit((await smokeCall()) ? 0 : 1);
+}
 recoverInterrupted();
 buildImages();
 for (const run of plan.runs) {
