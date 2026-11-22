@@ -235,3 +235,31 @@ test('bounds: work past its limit is cancelled, so it cannot reach the service d
   assert.equal(requestsAfter, 0);
   assert.equal(await bounded(200, 'quick', async () => 'ok'), 'ok');
 });
+
+import { maxCostPerRun, phaseFits, runsThatStart, startNeedUsd } from './money.mjs';
+
+test('money: the figures of PREREG.md "Money" (NI-6)', () => {
+  const cfg = JSON.parse(readFileSync(new URL('./config.json', import.meta.url), 'utf8'));
+  const need = startNeedUsd(cfg);
+  assert.equal(need, 36);
+  const cells = cfg.models.length * cfg.arms.length;
+  const pilot = cfg.runsPerCell.pilot * cells;
+  const full = cfg.runsPerCell.full * cells;
+  assert.equal(pilot, 8);
+  assert.equal(full, 40);
+  // Central and high estimates of a run, the mean of the two models.
+  const central = (5 + 2.5) / 2;
+  const high = central * 2.5;
+  // Today's caps: the pilot's high case starts 7 of its 8 runs, the full
+  // phase's 39 of 40; at the limits ($27 a run) the pilot starts 3.
+  assert.equal(runsThatStart({ capUsd: 100, costPerRun: high, needUsd: need, runs: pilot }), 7);
+  assert.equal(runsThatStart({ capUsd: 400, costPerRun: high, needUsd: need, runs: full }), 39);
+  assert.equal(runsThatStart({ capUsd: 100, costPerRun: 27, needUsd: need, runs: pilot }), 3);
+  assert.ok(phaseFits({ capUsd: 100, costPerRun: central, needUsd: need, runs: pilot }));
+  // The figures proposed for 30 Nov: a pilot cap of $110 starts all 8 at
+  // the high estimate; the full phase then has what is left of the $500
+  // ceiling, at least $390, enough for 40 runs up to $9.07 each.
+  assert.ok(phaseFits({ capUsd: 110, costPerRun: high, needUsd: need, runs: pilot }));
+  assert.equal(Math.floor(maxCostPerRun({ capUsd: 390, needUsd: need, runs: full }) * 100) / 100, 9.07);
+  assert.equal(phaseFits({ capUsd: 390, costPerRun: high, needUsd: need, runs: full }), false);
+});

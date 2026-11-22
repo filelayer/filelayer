@@ -42,6 +42,7 @@ import { fingerprint } from './fingerprint.mjs';
 import { taskSpend, usageCounter } from './usage.mjs';
 import { API_ERROR_LINES, apiFailure, STOPS_THE_PHASE } from './classify.mjs';
 import { record as recordHistory } from './history.mjs';
+import { startNeedUsd } from './money.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH = resolve(HERE, '..');
@@ -623,7 +624,7 @@ for (const run of plan.runs) {
   if (only && run.id !== only) continue;
   // The three budgets plus some slack for the one-turn overruns, so that a task
   // is never skipped for want of cap (cold review of 1bba1d8, N-I7).
-  const runBudget = Object.values(cfg.tasks).reduce((s, t) => s + t.maxBudgetUsd, 0) + cfg.runStartMarginUsd;
+  const runBudget = startNeedUsd(cfg);
   const left = cfg.phaseCapUsd[plan.phase] - spentSoFar();
   if (left < runBudget) {
     console.log(`$${left.toFixed(2)} left of the phase cap of $${cfg.phaseCapUsd[plan.phase]}, less than a run's ` +

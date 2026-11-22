@@ -321,19 +321,30 @@ sum of the three ($27) plus $9 of slack ($3 a task) for the one-turn
 overruns, so that in practice no task is ever skipped. If overruns ever did
 exceed that slack, the task would be skipped and the run invalid and replaced,
 rather than run with a smaller budget; that would drop a run that overran,
-which is a struggling run, and the report would say so. After the pilot, if its measured cost per run times 40 exceeds
-what remains of the ceiling, the full phase does not start without a new
-approval.
+which is a struggling run, and the report would say so.
 
-Expected cost of the pilot, estimated, not measured:
+Because a run needs $36 left to start, the last run of a phase needs $36 left
+whatever the runs cost, and the caps are sized for that (`harness/money.mjs`,
+whose figures `harness/rules.test.mjs` checks). With today's caps, at the high
+estimate below, the pilot starts 7 of its 8 runs and the full phase 39 of its
+40. **Proposed, to be decided on 30 November with the freeze:** keep
+the slack at $9; raise the pilot's cap to $110, which starts all 8 runs at
+the high estimate; give the full phase what is left of the $500 ceiling after
+the pilot, at most $400. After the pilot, the full phase starts only if its
+measured mean cost per run, times 39, plus $36, fits that cap: with $390 left,
+that is up to $9.07 a run. Above it, the full phase does not start without a
+new approval.
 
-| | Per run (three tasks) | 4 runs |
-|---|---|---|
-| Opus 5.5, central | about $5.00 | about $20 |
-| Sonnet 5.5, central | about $2.50 | about $10 |
-| Pilot, central | | **about $30** |
-| Pilot, high (2.5 times) | | **about $75** |
-| Pilot, at the limits | $27 a run | stopped by the $100 cap after 3 runs |
+Expected cost of the pilot, estimated, not measured. The pilot is 8 runs: two
+per cell, four cells (two arms, two models), so 4 runs of each model.
+
+| | Per run (three tasks) | Runs | Total |
+|---|---|---|---|
+| Opus 5.5, central | about $5.00 | 4 | about $20 |
+| Sonnet 5.5, central | about $2.50 | 4 | about $10 |
+| Pilot, central | about $3.75 | 8 | **about $30**; all 8 start |
+| Pilot, high (2.5 times) | about $9.40 | 8 | **about $75**; with the $100 cap, run 8 does not start; with $110, all 8 do |
+| Pilot, at the limits | $27 | 8 | 3 runs start, with either cap |
 
 The central case assumes, per run, 3 million tokens read from the cache, 0.4
 million written to it or uncached, and 0.12 million of output, at the prices of
