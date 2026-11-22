@@ -19,15 +19,22 @@ const LINE = /^\s*(API Error\b.*|Request timed out.*|Credit balance is too low.*
 const KEY_EXHAUSTED = /^\s*(Credit balance is too low|API Error\b.*\b(credit balance|billing_error)\b)/i;
 const AUTH = /^\s*(Invalid API key|API Error\b.*\b(401|403|authentication_error|permission_error)\b)/i;
 const ERROR_START = /^\s*(API Error\b|Request timed out|Credit balance is too low|Invalid API key|Connection error)/i;
+/** Lines of stderr that are Claude Code's API error lines; run.mjs times each. */
+export const API_ERROR_LINES = /^\s*(API Error\b|Request timed out|Credit balance is too low|Invalid API key|Connection error)/gim;
 // A session that ended for the agent's reason (finished, its budget, its turns)
 // is never invalid by the API, whatever retries it went through (cold review of
 // 1bba1d8, N-B1): only error, exit_* and wall stops are read below. Retried
 // errors are frequent in long sessions, and dropping those would select on the
-// outcome.
-const AGENT_SUBTYPES = new Set(['error_max_budget_usd', 'error_max_turns', 'success']);
+// outcome. A budget or turn subtype is the agent's whatever is_error says; a
+// success subtype only when it is not an error, because Claude Code reports a
+// failed API call as success with is_error true (cold review of d89b967, NI-1).
+const AGENT_LIMITS = new Set(['error_max_budget_usd', 'error_max_turns']);
 // How long without a single response before a wall-clock stop counts as the
 // API having been down at the end.
 export const WALL_SILENCE_MINUTES = 2;
+// How close to the end of the session the last API error must be to say the
+// API was what ended it (NI-2, NI-3).
+export const RECENT_SECONDS = 60;
 
 const kind = (line) => (KEY_EXHAUSTED.test(line) ? 'api_key_exhausted' : AUTH.test(line) ? 'api_auth' : 'api_failure');
 
@@ -35,29 +42,37 @@ const kind = (line) => (KEY_EXHAUSTED.test(line) ? 'api_key_exhausted' : AUTH.te
  * null, or 'api_key_exhausted' | 'api_auth' | 'api_failure'.
  *
  * API evidence counts only when the session did not end for the agent's own
- * reason:
- *   - `error` or `exit_*`: an error result whose text is one of Claude Code's
- *     error lines, or such a line on stderr;
- *   - `wall`: only if the API was still failing at the end, that is, no
- *     response for WALL_SILENCE_MINUTES before the stop and an error line
- *     after the last response.
+ * reason, and only API errors after the last response the session got count:
+ * an error that a retry got past is history, not the cause of the end.
+ *   - `error` or `exit_*`: at least one such error, the last within
+ *     RECENT_SECONDS of the end. An error result whose text is one of Claude
+ *     Code's error lines is an error at the end;
+ *   - `wall`: the API was still failing at the end: at least two such errors,
+ *     the last within RECENT_SECONDS of the end, and no response for
+ *     WALL_SILENCE_MINUTES before the stop;
  *   - `finished`, `budget`, `turns`: never.
+ * The kind is read from the last error line.
  */
 export function apiFailure(t) {
   const stop = t?.stoppedBy ?? '';
   const r = t?.claude;
-  if (r && AGENT_SUBTYPES.has(r.subtype)) return null;
+  if (r && (AGENT_LIMITS.has(r.subtype) || (r.subtype === 'success' && !r.isError))) return null;
+  if (!(stop === 'error' || stop.startsWith('exit_') || stop === 'wall')) return null;
   const lines = [...String(t?.stderrTail ?? '').matchAll(LINE)].map((m) => m[1]);
-  if (r?.isError && ERROR_START.test(r.resultText ?? '')) lines.push(String(r.resultText).trim().split('\n')[0]);
-  if (!lines.length) return null;
-  if (stop === 'error' || stop.startsWith('exit_')) return kind(lines.at(-1));
-  if (stop === 'wall') {
-    const last = Date.parse(t.lastResponseAt ?? t.startedAt ?? 0);
-    const err = Date.parse(t.lastApiErrorAt ?? 0);
-    const end = Date.parse(t.endedAt ?? 0);
-    if (err > last && end - last >= WALL_SILENCE_MINUTES * 60_000) return kind(lines.at(-1));
+  const end = Date.parse(t.endedAt ?? 0);
+  const last = Date.parse(t.lastResponseAt ?? t.startedAt ?? 0) || 0;
+  const times = (t.apiErrorTimes ?? (t.lastApiErrorAt ? [t.lastApiErrorAt] : [])).map((x) => Date.parse(x)).filter((x) => x > last);
+  if (r?.isError && ERROR_START.test(r.resultText ?? '')) {
+    lines.push(String(r.resultText).trim().split('\n')[0]);
+    times.push(end);
   }
-  return null;
+  if (!lines.length || !times.length) return null;
+  const recent = end - Math.max(...times) <= RECENT_SECONDS * 1000;
+  if (!recent) return null;
+  if (stop === 'wall') {
+    if (times.length < 2 || end - last < WALL_SILENCE_MINUTES * 60_000) return null;
+  }
+  return kind(lines.at(-1));
 }
 
 /** A failure after which no further run can succeed: the phase stops. */

@@ -67,25 +67,66 @@ test('api: never when the session ended for the agent\'s reason, whatever it ret
   assert.equal(apiFailure({ stoppedBy: 'turns', stderrTail: 'Request timed out.' }), null);
 });
 
-test('api: an error or exit stop, with Claude Code\'s own error line', () => {
-  assert.equal(apiFailure({ stoppedBy: 'error', claude: { isError: true, subtype: 'error_during_execution', resultText: 'API Error: 529 {"type":"overloaded_error"}' } }), 'api_failure');
-  assert.equal(apiFailure({ stoppedBy: 'exit_1', stderrTail: 'something\nAPI Error: 500 Internal server error' }), 'api_failure');
-  assert.equal(apiFailure({ stoppedBy: 'error', claude: { isError: true, subtype: 'error_during_execution', resultText: 'API Error: 401 {"type":"authentication_error"}' } }), 'api_auth');
-  assert.equal(apiFailure({ stoppedBy: 'error', stderrTail: 'Credit balance is too low' }), 'api_key_exhausted');
+// A session of an hour: started at 0, its last response at 59, ended at 60,
+// unless a case says otherwise.
+const sess = (o) => ({ startedAt: at(0), lastResponseAt: at(59), endedAt: at(60), ...o });
+
+test('api: an error or exit stop, with Claude Code\'s own error line at the end', () => {
+  assert.equal(apiFailure(sess({ stoppedBy: 'error', claude: { isError: true, subtype: 'error_during_execution', resultText: 'API Error: 529 {"type":"overloaded_error"}' } })), 'api_failure');
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: 'something\nAPI Error: 500 Internal server error', apiErrorTimes: [at(59.8)] })), 'api_failure');
+  assert.equal(apiFailure(sess({ stoppedBy: 'error', claude: { isError: true, subtype: 'error_during_execution', resultText: 'API Error: 401 {"type":"authentication_error"}' } })), 'api_auth');
+  assert.equal(apiFailure(sess({ stoppedBy: 'error', stderrTail: 'Credit balance is too low', apiErrorTimes: [at(59.9)] })), 'api_key_exhausted');
 });
 
-test('api: never a bare number or word', () => {
-  assert.equal(apiFailure({ stoppedBy: 'exit_1', stderrTail: 'Warning: heap at 512 MB' }), null);
-  assert.equal(apiFailure({ stoppedBy: 'exit_1', stderrTail: 'see the billing page' }), null);
-  assert.equal(apiFailure({ stoppedBy: 'error', claude: { isError: true, subtype: 'error_during_execution', resultText: 'The tests hit a 503 from moto.' } }), null);
+test('api: success with is_error true is Claude Code reporting a failed call, not the agent finishing (NI-1)', () => {
+  // The shape Claude Code uses when the API call failed after its retries.
+  const failed = { isError: true, subtype: 'success', resultText: 'API Error: 529 {"type":"overloaded_error","message":"Overloaded"}' };
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', claude: failed })), 'api_failure');
+  assert.equal(apiFailure(sess({ stoppedBy: 'error', claude: { ...failed, resultText: 'Credit balance is too low' } })), 'api_key_exhausted');
+  // The same subtype without is_error is the agent finishing: never.
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', claude: { ...failed, isError: false }, stderrTail: 'API Error: 529', apiErrorTimes: [at(59.9)] })), null);
+  // A budget or turn subtype is the agent's limit whatever is_error says.
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', claude: { ...failed, subtype: 'error_max_turns' } })), null);
+});
+
+test('api: an error or exit stop counts only an API error after the last response, near the end (NI-2)', () => {
+  // pkill node kills claude (exit_143) twenty minutes after a 429 that a retry
+  // got past: the agent's own doing, valid.
+  const retried = { stoppedBy: 'exit_143', stderrTail: 'API Error (429 rate_limit_error) retrying in 2s', apiErrorTimes: [at(39)], lastResponseAt: at(40) };
+  assert.equal(apiFailure(sess(retried)), null, 'the 429 was before the last response');
+  // The same a second before the end: a 429, the retry answered, then pkill.
+  assert.equal(apiFailure(sess({ ...retried, apiErrorTimes: [at(59.8)], lastResponseAt: at(59.9) })), null, 'the retry answered after the 429');
+  // An error after the last response, but long before the end, is not what ended it.
+  assert.equal(apiFailure(sess({ ...retried, lastResponseAt: at(30), apiErrorTimes: [at(40)] })), null, 'the last error was 20 minutes before the end');
+  // The same exit right after an error with no response since: the API.
+  assert.equal(apiFailure(sess({ ...retried, lastResponseAt: at(30), apiErrorTimes: [at(40), at(59.5)] })), 'api_failure');
+  // Records without times (written before apiErrorTimes) are read through lastApiErrorAt.
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: 'API Error: 500', lastApiErrorAt: at(59.9) })), 'api_failure');
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: 'API Error: 500' })), null, 'no time, no evidence');
+});
+
+test('api: never a bare number or word, and only whole error lines (LINE is anchored)', () => {
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: 'Warning: heap at 512 MB', apiErrorTimes: [at(59.9)] })), null);
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: 'see the billing page', apiErrorTimes: [at(59.9)] })), null);
+  assert.equal(apiFailure(sess({ stoppedBy: 'error', claude: { isError: true, subtype: 'error_during_execution', resultText: 'The tests hit a 503 from moto.' } })), null);
   assert.equal(apiFailure({ claude: { isError: false, subtype: 'success', resultText: 'DONE. I handled 429 rate limit errors from S3.' } }), null);
+  // The words in the middle of a line the agent's tools printed are not
+  // Claude Code's line, which starts the line.
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: 'npm warn: saw "API Error: 500" in a fixture', apiErrorTimes: [at(59.9)] })), null);
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: 'log: Connection error retrying', apiErrorTimes: [at(59.9)] })), null);
+  // Leading whitespace is still the start of the line.
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: 'x\n   API Error: 500', apiErrorTimes: [at(59.9)] })), 'api_failure');
 });
 
-test('api: a wall-clock stop counts only if the API was still failing at the end', () => {
-  const base = { stoppedBy: 'wall', stderrTail: 'API Error: 529 overloaded', startedAt: at(0), endedAt: at(60) };
-  assert.equal(apiFailure({ ...base, lastResponseAt: at(55), lastApiErrorAt: at(58) }), 'api_failure', 'silent for 5 minutes, failing at the end');
-  assert.equal(apiFailure({ ...base, lastResponseAt: at(59.5), lastApiErrorAt: at(59) }), null, 'it was still answering');
-  assert.equal(apiFailure({ ...base, lastResponseAt: at(50), lastApiErrorAt: at(20) }), null, 'the last error was before the last response');
+test('api: a wall-clock stop counts only if the API was still failing at the end (NI-3)', () => {
+  const base = { stoppedBy: 'wall', stderrTail: 'API Error: 529 overloaded\nAPI Error: 529 overloaded', startedAt: at(0), endedAt: at(60) };
+  assert.equal(apiFailure({ ...base, lastResponseAt: at(55), apiErrorTimes: [at(57), at(59.5)] }), 'api_failure', 'silent for 5 minutes, failing at the end');
+  assert.equal(apiFailure({ ...base, lastResponseAt: at(55), apiErrorTimes: [at(59.5)] }), null, 'one error never decides');
+  assert.equal(apiFailure({ ...base, lastResponseAt: at(55), apiErrorTimes: [at(56), at(57)] }), null, 'the last error three minutes before the end');
+  assert.equal(apiFailure({ ...base, lastResponseAt: at(50), apiErrorTimes: [at(20), at(21)] }), null, 'the errors were before the last response');
+  // The case that needs the silence condition: two recent errors after a
+  // response 30 seconds before the end. It was still answering.
+  assert.equal(apiFailure({ ...base, lastResponseAt: at(59.5), apiErrorTimes: [at(59.6), at(59.8)] }), null, 'it was still answering');
 });
 
 import { examplesReads } from './classify.mjs';

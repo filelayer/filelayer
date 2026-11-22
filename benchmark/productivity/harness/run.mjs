@@ -40,7 +40,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
 import { taskSpend, usageCounter } from './usage.mjs';
-import { apiFailure, STOPS_THE_PHASE } from './classify.mjs';
+import { API_ERROR_LINES, apiFailure, STOPS_THE_PHASE } from './classify.mjs';
 import { record as recordHistory } from './history.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -263,7 +263,7 @@ function runSession(c, run, task, budget, out, env) {
   const stream = createWriteStream(out, { flags: 'wx' });
   const child = spawn('docker', argv, { stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdin.end(promptFor(run.arm, task));
-  const seen = { toolCalls: 0, result: null, lastText: '', stderr: '', lastResponseAt: null, lastApiErrorAt: null, hardKilled: false };
+  const seen = { toolCalls: 0, result: null, lastText: '', stderr: '', lastResponseAt: null, lastApiErrorAt: null, apiErrorTimes: [], hardKilled: false };
   const counter = usageCounter();
   let stop = null;
   let deadline = null;
@@ -321,9 +321,13 @@ function runSession(c, run, task, budget, out, env) {
   });
   child.stderr.on('data', (d) => {
     seen.stderr = (seen.stderr + d).slice(-4000);
-    // When Claude Code last printed one of its API error lines (classify.mjs).
-    if (/^\s*(API Error\b|Request timed out|Credit balance is too low|Invalid API key|Connection error)/im.test(String(d))) {
-      seen.lastApiErrorAt = new Date().toISOString();
+    // When Claude Code printed each of its API error lines (classify.mjs): only
+    // those after the last response can say the API ended the session.
+    const n = String(d).match(API_ERROR_LINES)?.length ?? 0;
+    for (let i = 0; i < n; i++) seen.apiErrorTimes.push(new Date().toISOString());
+    if (n) {
+      seen.apiErrorTimes = seen.apiErrorTimes.slice(-50);
+      seen.lastApiErrorAt = seen.apiErrorTimes.at(-1);
     }
   });
   return new Promise((resolveP) => {
@@ -360,6 +364,7 @@ function runSession(c, run, task, budget, out, env) {
         stderrTail: seen.stderr.slice(-4000),
         lastResponseAt: seen.lastResponseAt,
         lastApiErrorAt: seen.lastApiErrorAt,
+        apiErrorTimes: seen.apiErrorTimes,
         hardKilled: seen.hardKilled,
       });
     });
