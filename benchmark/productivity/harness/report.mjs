@@ -75,6 +75,7 @@ function cell(runs, n) {
       both: prop('both'),
       attacksDefended: stat((t) => t.observed.security?.defended),
       lateAttacksDefended: stat((t) => t.observed.late?.defended),
+      lateAttacksOf: stat((t) => t.observed.late?.of),
       tokens: stat((t) => t.observed.tokens?.inputPlusOutput),
       outputTokens: stat((t) => t.observed.tokens?.output),
       wallSeconds: stat((t) => (t.observed.wallMs ?? NaN) / 1000),
@@ -227,6 +228,8 @@ writeFileSync(join(runsDir, 'REPORT.json'), JSON.stringify(report, null, 2));
 const f = (x, d = 0) => (x === null || x === undefined ? 'n/a' : Number(x).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }));
 const pct = (p) => `${p.k}/${p.n}${p.wilson95 ? ` (95% ${f(p.wilson95[0] * 100)}-${f(p.wilson95[1] * 100)} %)` : ''}`;
 const st = (s, d = 0) => (s.median === null ? 'n/a' : `${f(s.median, d)} [${f(s.iqr[0], d)}-${f(s.iqr[1], d)}]`);
+// The late attacks that applied can differ by arm (n/a ones are not counted), so the row says of how many.
+const lateOf = (o) => (o.lateAttacksDefended.median === null ? 'n/a' : `${st(o.lateAttacksDefended)} of ${f(o.lateAttacksOf.median)}`);
 const md = [`# Productivity benchmark: ${report.phase} phase`, '',
   ...(unfrozenRuns.length ? [`**REHEARSAL: ${unfrozenRuns.length} run(s) scored with files that were not frozen. Not a result.**`, ''] : []),
   `${report.runs} runs. Medians with the interquartile range in brackets. Every figure is observed unless the row says estimated. Per model; models are never averaged.`, '',
@@ -242,7 +245,7 @@ for (const [model, r] of Object.entries(report.models)) {
       `| Security: defends all 21 attacks | ${pct(a.observed.security)} | ${pct(b.observed.security)} |`,
       `| Both | ${pct(a.observed.both)} | ${pct(b.observed.both)} |`,
       `| Attacks defended (of the 21) | ${st(a.observed.attacksDefended)} | ${st(b.observed.attacksDefended)} |`,
-      `| Late attacks defended (written after the freeze, apart) | ${st(a.observed.lateAttacksDefended)} | ${st(b.observed.lateAttacksDefended)} |`,
+      `| Late attacks defended (written after the freeze, apart) | ${lateOf(a.observed)} | ${lateOf(b.observed)} |`,
       `| Tokens, all kinds | ${st(a.observed.tokens)} | ${st(b.observed.tokens)} |`,
       `| Output tokens | ${st(a.observed.outputTokens)} | ${st(b.observed.outputTokens)} |`,
       `| Cost, USD (estimated) | ${st(a.estimated.costUsd, 2)} | ${st(b.estimated.costUsd, 2)} |`,

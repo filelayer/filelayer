@@ -263,3 +263,27 @@ test('money: the figures of PREREG.md "Money" (NI-6)', () => {
   assert.equal(Math.floor(maxCostPerRun({ capUsd: 390, needUsd: need, runs: full }) * 100) / 100, 9.07);
   assert.equal(phaseFits({ capUsd: 390, costPerRun: high, needUsd: need, runs: full }), false);
 });
+
+import { installVerdict } from './install-verdict.mjs';
+import { mkdtempSync as mkd, writeFileSync as wf } from 'node:fs';
+import { tmpdir as tmpd } from 'node:os';
+import { join as pj } from 'node:path';
+
+test('install: a timeout is the scorer\'s only when npm failed the way a network fails', () => {
+  const dir = (exit, log, egress = []) => {
+    const d = mkd(pj(tmpd(), 'inst-'));
+    wf(pj(d, 'install.exit'), `${exit}\n`);
+    wf(pj(d, 'install.log'), log);
+    wf(pj(d, 'score-egress.jsonl'), egress.map((e) => JSON.stringify(e)).join('\n'));
+    return d;
+  };
+  const blip = [{ host: 'registry.npmjs.org', allowed: true, error: 'ECONNRESET' }];
+  // A slow install with one connection error a retry got past: the agent's.
+  assert.equal(installVerdict(dir(124, 'npm http fetch GET 200 https://registry.npmjs.org/x\n', blip)).network, false);
+  // A timeout with npm reporting a network failure: the scorer's.
+  assert.equal(installVerdict(dir(124, 'npm error code ETIMEDOUT\nnpm error network request to https://registry.npmjs.org/x failed\n')).network, true);
+  // Not a timeout: an egress error to the registry still counts, as before.
+  assert.equal(installVerdict(dir(1, 'npm error something\n', blip)).network, true);
+  // npm's own verdict on the package wins.
+  assert.equal(installVerdict(dir(1, 'npm error code ETARGET\n', blip)).network, false);
+});

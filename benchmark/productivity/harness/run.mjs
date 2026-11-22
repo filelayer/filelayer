@@ -293,8 +293,11 @@ function runSession(c, run, task, budget, out, env) {
   };
   const wall = setTimeout(() => kill('wall'), t.wallMinutes * wallScale * 60_000);
   let buf = '';
+  // Set when the session ends, the synthetic end after a hard kill included:
+  // output that arrives later is not written to a stream already closed.
+  let ended = false;
   child.stdout.on('data', (d) => {
-    stream.write(d);
+    if (!ended) stream.write(d);
     buf += d;
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
@@ -332,7 +335,6 @@ function runSession(c, run, task, budget, out, env) {
     }
   });
   return new Promise((resolveP) => {
-    let ended = false;
     child.on('exit', (code) => {
       if (ended) return;
       ended = true;
@@ -408,7 +410,12 @@ function endAgentProcesses(c) {
     if (docker(['exec', '-u', 'root', c, 'pgrep', '-u', 'agent'], { allowFail: true, timeoutMs: 15_000 }).status === 1) return;
     spawnSync('sleep', ['1']);
   }
-  throw new Error('processes of the agent survived the end of its session');
+  // A process that survives SIGKILL (stuck in the kernel) goes with the
+  // container: restarted, its files kept, rather than the run ending in a
+  // harness error for something the agent left (cold review of d89b967).
+  docker(['restart', '-t', '5', c], { timeoutMs: 120_000 });
+  if (docker(['exec', '-u', 'root', c, 'pgrep', '-u', 'agent'], { allowFail: true, timeoutMs: 15_000 }).status === 1) return;
+  throw new Error('processes of the agent survived the end of its session and a restart of its container');
 }
 
 // --- the phase ---------------------------------------------------------------

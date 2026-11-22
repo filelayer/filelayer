@@ -94,7 +94,8 @@ Nothing an agent starts outlives its session. The container's first process
 is an init that runs as root and reaps what dies; after every session, and
 whenever the harness stops one, every process of the user `agent` is killed
 (a server left running in the background included) and the harness checks
-that none is left before the next task. A container that stops answering (an
+that none is left before the next task; one that survives even SIGKILL goes
+with a restart of the container, whose files stay. A container that stops answering (an
 agent that exhausted its memory or its process limit) is killed from the host
 10 seconds after the stop; the stop is still the clock's or the turns', the
 agent's own doing, and the container is started again with its files for the
@@ -163,7 +164,10 @@ the scorer's failure only when that registry could not be reached (a
 connection error to it in the scorer's log, or a 5xx or 429 from it); it is
 then scored once more. npm's own verdict on the project comes first: a missing
 version, an unresolvable tree or a bad manifest (E404, ETARGET, ERESOLVE and
-the like) is the agent's, whatever the network did meanwhile. Any other
+the like) is the agent's, whatever the network did meanwhile. An install that
+runs out of its 10 minutes is the scorer's only if npm itself failed the way a
+network fails (a network error code, or a 5xx or 429 from the registry): a
+project whose install is just slow is the agent's. Any other
 failure to install is the agent's too, including a dependency that fetches
 from another host while installing: the contract says `npm install` must work,
 and the rule is the same for both arms.

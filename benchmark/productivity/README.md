@@ -39,7 +39,7 @@ moto (`pip install "moto[server]"`).
     node hidden/check.mjs reference/a-filelayer --task 3 --seed reference/a-filelayer-t3-bug
     node hidden/mutants.mjs
     node hidden/mutants.mjs --task 2
-    node --test harness/stats.test.mjs harness/rules.test.mjs harness/history.test.mjs
+    node --test harness/stats.test.mjs harness/rules.test.mjs harness/history.test.mjs harness/attempts.test.mjs
 
 ## Rehearse
 
