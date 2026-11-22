@@ -65,7 +65,7 @@ const docker = (argv, allowFail = false, timeoutMs = 300_000) => {
 
 function scoreOne(app, task, out, arm) {
   const name = `pbs-${randomBytes(4).toString('hex')}`;
-  docker(['network', 'create', '--internal', name]);
+  docker(['network', 'create', '--label', 'prodbench=1', '--internal', name]);
   const gw = docker(['network', 'inspect', name, '-f', '{{(index .IPAM.Config 0).Gateway}}']).stdout.trim();
   const started = [];
   let proxyChild = null;
@@ -78,10 +78,10 @@ function scoreOne(app, task, out, arm) {
   // The proxy container mounts this one file, not the task's directory.
   writeFileSync(egressLog, '');
   try {
-    docker(['run', '-d', '--name', `${name}-pg`, '--network', name, '--network-alias', 'postgres',
+    docker(['run', '-d', '--label', 'prodbench=1', '--name', `${name}-pg`, '--network', name, '--network-alias', 'postgres',
       '-e', 'POSTGRES_PASSWORD=postgres', cfg.images.postgres]);
     started.push(`${name}-pg`);
-    docker(['run', '-d', '--name', `${name}-s3`, '--network', name, '--network-alias', 's3', cfg.images.s3]);
+    docker(['run', '-d', '--label', 'prodbench=1', '--name', `${name}-s3`, '--network', name, '--network-alias', 's3', cfg.images.s3]);
     started.push(`${name}-s3`);
     for (let i = 0; i < 120 && docker(['exec', `${name}-pg`, 'pg_isready', '-U', 'postgres'], true).status !== 0; i++) {
       spawnSync('sleep', ['0.5']);
@@ -93,7 +93,7 @@ function scoreOne(app, task, out, arm) {
         '--log', egressLog, ...(upstream ? ['--upstream', upstream] : [])], { stdio: 'ignore' });
       proxyUrl = `http://${gw}:3129`;
     } else {
-      docker(['run', '-d', '--name', `${name}-proxy`, '--network', name, '--network-alias', 'egress',
+      docker(['run', '-d', '--label', 'prodbench=1', '--name', `${name}-proxy`, '--network', name, '--network-alias', 'egress',
         '-v', `${join(HERE, 'egress-proxy.mjs')}:/proxy.mjs:ro`, '-v', `${allow}:/allow.txt:ro`, '-v', `${egressLog}:/log/egress.jsonl`,
         cfg.images.node, 'node', '/proxy.mjs', '--port', '3129', '--allow', '/allow.txt', '--log', '/log/egress.jsonl']);
       started.push(`${name}-proxy`);
@@ -137,7 +137,7 @@ function scoreOne(app, task, out, arm) {
     // A last bound on the whole scoring. Per request (30 s) and per check
     // (120 s) the limits are the snapshot's own failures; this one, far past
     // them, is the scorer's.
-    const r = docker(['run', '--rm', '--name', `${name}-scorer`, '--network', name, '--cpus', '2', '--memory', '4g',
+    const r = docker(['run', '--rm', '--label', 'prodbench=1', '--name', `${name}-scorer`, '--network', name, '--cpus', '2', '--memory', '4g',
       '-u', 'node',
       '-v', `${BENCH}:/bench:ro`, '-v', `${ATTACKS}:/adversarial/attacks.mjs:ro`,
       '-v', `${app}:/snapshot:ro`, '-v', `${work}:/out`,
@@ -147,14 +147,14 @@ function scoreOne(app, task, out, arm) {
       ...ca, cfg.images.node, 'bash', '-c', script], true, cfg.scoring.globalTimeoutMinutes * 60_000);
     // The scorer is gone before anything is copied: on the global timeout it
     // is removed first, so nothing it runs can still change what is copied.
-    if (r.error || r.status === null) docker(['rm', '-f', `${name}-scorer`], true);
+    if (r.error || r.status === null) docker(['rm', '-fv', `${name}-scorer`], true);
     copyBack(work, out, ['install.log', 'install.exit', 'seed-install.log', 'check.log', late ? 'late-score.json' : 'score.json'],
       { truncate: ['install.log', 'seed-install.log', 'check.log'] });
     if (r.error || r.status === null) {
       writeFileSync(join(out, late ? 'late-score.json' : 'score.json'), JSON.stringify({ scorerError: 'scorer_timeout' }));
     }
   } finally {
-    for (const c of started) docker(['rm', '-f', c], true);
+    for (const c of started) docker(['rm', '-fv', c], true);
     proxyChild?.kill('SIGTERM');
     docker(['network', 'rm', name], true);
     rmSync(work, { recursive: true, force: true });

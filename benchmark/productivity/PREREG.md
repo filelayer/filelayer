@@ -521,3 +521,26 @@ field missing) is the next deviation, before the first run.
 
 **The fingerprint.** `harness/run.mjs` and `harness/fake-claude.mjs` are under
 `harness/`, so `FINGERPRINT.txt` is rewritten in the same commit.
+
+### 4. Nothing of a run stays on the machine (22 November 2026, before any run)
+
+**What changes.** `harness/run.mjs` and `harness/score.mjs` remove every
+container with its anonymous volumes (`docker rm -fv`), and label every
+container and network they create `prodbench=1`.
+
+**Why.** Postgres keeps its data in an anonymous volume, and `docker rm -f`
+left it behind: about 60 MB for each run and each scoring, some 2 GB over the
+pilot, on the machine of a person who uses Docker for other things. A
+general clean-up (`docker volume prune`) would also remove that person's own
+unused volumes, so the leak is closed where it starts, and anything the
+benchmark ever has to find again is found by its own label, never by a
+general clean-up.
+
+**Rehearsed.** A dry run and its scoring left 4 volumes behind before this
+change and none after it, with no container or network labelled
+`prodbench=1` left over.
+
+**What does not change.** What is measured, and how.
+
+**The fingerprint.** Both files are under `harness/`, so `FINGERPRINT.txt` is
+rewritten in the same commit.

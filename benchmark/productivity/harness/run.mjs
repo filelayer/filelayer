@@ -156,13 +156,13 @@ function buildImages() {
 
 function startServices(name, dir) {
   const net = `pb-${name}`;
-  docker(['network', 'create', '--internal', net]);
+  docker(['network', 'create', '--label', 'prodbench=1', '--internal', net]);
   const gw = docker(['network', 'inspect', net, '-f', '{{(index .IPAM.Config 0).Gateway}}']).stdout.trim();
   const pg = `${net}-pg`;
   const s3 = `${net}-s3`;
-  docker(['run', '-d', '--name', pg, '--network', net, '--network-alias', 'postgres',
+  docker(['run', '-d', '--label', 'prodbench=1', '--name', pg, '--network', net, '--network-alias', 'postgres',
     '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_DB=app', cfg.images.postgres]);
-  docker(['run', '-d', '--name', s3, '--network', net, '--network-alias', 's3', cfg.images.s3]);
+  docker(['run', '-d', '--label', 'prodbench=1', '--name', s3, '--network', net, '--network-alias', 's3', cfg.images.s3]);
   waitHealthy(pg, 'pg_isready -U postgres -d app');
   const proxy = startProxy(net, gw, name, dir);
   return { net, pg, s3, proxy, containers: [pg, s3] };
@@ -181,7 +181,7 @@ function startProxy(net, gw, name, dir) {
   // The proxy is a container on the internal network and on the default one.
   const c = `pb-${name}-proxy`;
   if (!existsSync(logFile)) writeFileSync(logFile, '');
-  docker(['run', '-d', '--name', c, '--network', net, '--network-alias', 'egress',
+  docker(['run', '-d', '--label', 'prodbench=1', '--name', c, '--network', net, '--network-alias', 'egress',
     '-v', `${join(HERE, 'egress-proxy.mjs')}:/proxy.mjs:ro`, '-v', `${allow}:/allow.txt:ro`,
     // The log file alone, not the run's directory, which holds run.json and
     // the harness's history (cold review of 21c4946, a). It is created first:
@@ -189,11 +189,16 @@ function startProxy(net, gw, name, dir) {
     '-v', `${logFile}:/log/egress.jsonl`, cfg.images.node,
     'node', '/proxy.mjs', '--port', '3128', '--allow', '/allow.txt', '--log', '/log/egress.jsonl']);
   docker(['network', 'connect', 'bridge', c]);
-  return { url: 'http://egress:3128', stop: () => docker(['rm', '-f', c], { allowFail: true }) };
+  return { url: 'http://egress:3128', stop: () => docker(['rm', '-fv', c], { allowFail: true }) };
 }
 
+// Every container and network the harness creates carries the label
+// prodbench=1, and every container goes with its anonymous volumes (`rm -fv`):
+// Postgres's data directory is one, and nothing of a run may stay behind on
+// the machine (deviation 4). Nothing is ever cleaned by anything but that
+// label or the names the harness gave.
 function stopServices(s, agent) {
-  for (const c of [agent, ...s.containers].filter(Boolean)) docker(['rm', '-f', c], { allowFail: true });
+  for (const c of [agent, ...s.containers].filter(Boolean)) docker(['rm', '-fv', c], { allowFail: true });
   s.proxy.stop();
   docker(['network', 'rm', s.net], { allowFail: true });
 }
@@ -222,7 +227,7 @@ function startAgent(name, s, run) {
        '-e', 'npm_config_cafile=/etc/prodbench-ca.crt', '-e', 'SSL_CERT_FILE=/etc/prodbench-ca.crt']
     : [];
   const dryArgs = DRY ? ['-v', `${join(BENCH, 'reference')}:/fake/reference:ro`, '-e', `PRODBENCH_FAKE=${run.fake ?? 'good'}`] : [];
-  docker(['run', '-d', '--name', c, '--network', s.net, '--cpus', '2', '--memory', '4g', '--pids-limit', '2048',
+  docker(['run', '-d', '--label', 'prodbench=1', '--name', c, '--network', s.net, '--cpus', '2', '--memory', '4g', '--pids-limit', '2048',
     '-e', `HTTPS_PROXY=${s.proxy.url}`, '-e', `https_proxy=${s.proxy.url}`,
     '-e', 'NO_PROXY=postgres,s3,localhost,127.0.0.1', '-e', 'no_proxy=postgres,s3,localhost,127.0.0.1',
     '-e', `npm_config_proxy=${s.proxy.url}`, '-e', `npm_config_https_proxy=${s.proxy.url}`,
@@ -541,7 +546,7 @@ function recoverInterrupted() {
 function removeOrphans() {
   const prefixes = plan.runs.map((r) => `pb-${r.id}-`);
   const names = docker(['ps', '-a', '--format', '{{.Names}}']).stdout.split('\n').filter((n) => prefixes.some((p) => n.startsWith(p)));
-  for (const n of names) docker(['rm', '-f', n], { allowFail: true });
+  for (const n of names) docker(['rm', '-fv', n], { allowFail: true });
   const nets = docker(['network', 'ls', '--format', '{{.Name}}']).stdout.split('\n').filter((n) => prefixes.some((p) => n.startsWith(p)));
   for (const n of nets) docker(['network', 'rm', n], { allowFail: true });
   spawnSync('pkill', ['-f', `egress-proxy.mjs.*${outRoot}`]);
