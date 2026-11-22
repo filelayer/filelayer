@@ -476,3 +476,24 @@ gate are as frozen.
 **The fingerprint.** These are files under `harness/`, so the fingerprint
 changes: `FINGERPRINT.txt` is rewritten in the same commit as this entry, and
 every run carries the new one.
+
+### 2. The caps as approved: $111 for the pilot, $389 for the full phase (22 November 2026, before any run)
+
+**What changes.** `harness/config.json` froze the caps as proposed, $110 and
+$390, pending approval. The approval set them at $111 for the pilot and $389
+for the full phase, so that the two together stay within the $500 ceiling;
+the slack stays at $9.
+
+**Why.** With $111, at the high estimate ($9.38 a run), the pilot has $36
+left after its 8 runs, enough to start one replacement for an invalid run;
+with $110 it had $35 and could not. The full phase gives up the dollar: with
+$389, all 40 of its runs start if the pilot measures at most $9.05 a run on
+average (it was $9.07 with $390). At the high estimate it still does not fit,
+and the full phase still needs a new approval.
+
+**What does not change.** Everything else: the gate between the phases is
+still manual, and `harness/rules.test.mjs` still requires the two caps
+together to stay within the ceiling, now with these figures.
+
+**The fingerprint.** `harness/config.json` and `harness/rules.test.mjs` are
+under `harness/`, so `FINGERPRINT.txt` is rewritten in the same commit.

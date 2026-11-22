@@ -52,8 +52,8 @@
   },
   "approvedCeilingUsd": 500,
   "phaseCapUsd": {
-    "pilot": 110,
-    "full": 390
+    "pilot": 111,
+    "full": 389
   },
   "scoring": {
     "installMinutes": 10,

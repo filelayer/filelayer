@@ -263,14 +263,18 @@ test('money: the figures of PREREG.md "Money" (NI-6)', () => {
   // limits ($27 a run).
   assert.ok(phaseFits({ capUsd: caps.pilot, costPerRun: high, needUsd: need, runs: pilot }), `pilot cap ${caps.pilot}`);
   assert.equal(runsThatStart({ capUsd: caps.pilot, costPerRun: 27, needUsd: need, runs: pilot }), 3);
-  // ...but not a replacement for an invalid pilot run: 9 runs need
-  // 8 x 9.375 + 36 = 111 (PREREG says so).
-  assert.equal(phaseFits({ capUsd: caps.pilot, costPerRun: high, needUsd: need, runs: pilot + 1 }), caps.pilot >= 111);
+  // ...and, with $111 (deviation 2), one replacement for an invalid pilot
+  // run: 9 runs need 8 x 9.375 + 36 = 111.
+  assert.ok(phaseFits({ capUsd: caps.pilot, costPerRun: high, needUsd: need, runs: pilot + 1 }));
   // The full phase's cap starts all 40 at the central estimate, and not at
   // the high one: then the full phase needs a new approval (PREREG says so).
   assert.ok(phaseFits({ capUsd: caps.full, costPerRun: central, needUsd: need, runs: full }));
   assert.equal(phaseFits({ capUsd: caps.full, costPerRun: high, needUsd: need, runs: full }), false);
-  assert.equal(Math.floor(maxCostPerRun({ capUsd: caps.full, needUsd: need, runs: full }) * 100) / 100, 9.07);
+  // The most a full-phase run may cost on average for all 40 to start: below
+  // the high estimate, above the central one (9.05 with $389, deviation 2).
+  const maxRun = maxCostPerRun({ capUsd: caps.full, needUsd: need, runs: full });
+  assert.ok(maxRun > central && maxRun < high, `${maxRun}`);
+  assert.equal(Math.floor(maxRun * 100) / 100, 9.05);
 });
 
 import { installVerdict } from './install-verdict.mjs';
