@@ -112,12 +112,14 @@ attributes from the empty tree, and an environment of only `PATH` and an empty
 `HOME` (`harness/history.mjs`). The lines a task changed are the difference
 between those two records, so commits the agent makes itself change nothing.
 That history lives beside the run's task directories
-(`history/task<N>.git`), outside every directory a container mounts, so no
-snapshot can rewrite it; the ids of its two commits are kept in `run.json`
+(`history/task<N>.git`), outside every directory a container mounts (the
+egress proxies, harness code that parses the agent's traffic, mount only
+their log file), so no snapshot can rewrite it; the ids of its two commits are kept in `run.json`
 and the difference is taken between those ids; and git neither fetches nor
-runs a transport for it (`protocol.allow=never`, `GIT_NO_LAZY_FETCH`). The
-harness refuses to start on a git older than 2.40, which would ignore the
-empty-tree attributes. A repository nested inside the project is recorded
+runs a transport for it (`protocol.allow=never`, which alone is enough;
+`GIT_NO_LAZY_FETCH` adds to it on git 2.44 and later). The harness refuses to
+start on a git older than 2.40, which would ignore the empty-tree
+attributes, and `analyze.mjs` reports lines changed as n/a there. A repository nested inside the project is recorded
 as a link to its commit, so the files inside it count no lines; the old
 method did the same, and an agent that wants its lines counted keeps them in
 the project.
@@ -193,9 +195,20 @@ attempt is appended to `score-attempts.jsonl`, and after two there are no
 more, whatever `score.json` says or whether it exists. Each attempt logs
 the sha256 of the score file it wrote, and `analyze.mjs` refuses a score
 file that is missing, has no attempt behind it or does not match. The
-snapshot cannot reach either file: the scorer writes only to a new, empty
-directory of its own for each attempt, and the expected files, regular files
-only, are copied back from it. Someone who deletes both files by hand reopens
+snapshot cannot reach the attempts log or the task's directory: the scorer
+writes only to a new, empty directory of its own for each attempt, and once
+the scorer is gone the expected files are copied back from it, regular files
+only (opened without following links, checked on the open file), a log over
+20 MB cut to its last 20 MB, any other file over 20 MB dropped
+(`harness/copy-back.mjs`). Inside an attempt, though, the snapshot's server
+runs as the same user as the checks, so a snapshot written on purpose to
+attack the scorer could stop the checks or replace that attempt's score
+before it is copied. Such a snapshot is out of the benchmark's scope: the
+agents are asked to build a service, not to attack the harness, the
+snapshot and the check log are published with the results, and a score file
+the checks did not write would show there. The rehearsal `hooks` mode
+(`harness/fake-claude.mjs`) plants files and links in the scorer's directory
+and `harness/check-hooks-rehearsal.mjs` asserts that none of it arrives. Someone who deletes both files by hand reopens
 the scoring; the run's directory is published, so that would show.
 Rehearsal scores written before the attempts log carried hashes are refused
 by `analyze.mjs`; rehearsals are scored again after the freeze. `--unfrozen`, which

@@ -155,9 +155,13 @@ function startProxy(net, gw, name, dir) {
   }
   // The proxy is a container on the internal network and on the default one.
   const c = `pb-${name}-proxy`;
+  if (!existsSync(logFile)) writeFileSync(logFile, '');
   docker(['run', '-d', '--name', c, '--network', net, '--network-alias', 'egress',
     '-v', `${join(HERE, 'egress-proxy.mjs')}:/proxy.mjs:ro`, '-v', `${allow}:/allow.txt:ro`,
-    '-v', `${dirname(logFile)}:/log`, cfg.images.node,
+    // The log file alone, not the run's directory, which holds run.json and
+    // the harness's history (cold review of 21c4946, a). It is created first:
+    // a missing file would be mounted as a directory.
+    '-v', `${logFile}:/log/egress.jsonl`, cfg.images.node,
     'node', '/proxy.mjs', '--port', '3128', '--allow', '/allow.txt', '--log', '/log/egress.jsonl']);
   docker(['network', 'connect', 'bridge', c]);
   return { url: 'http://egress:3128', stop: () => docker(['rm', '-f', c], { allowFail: true }) };

@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { COUNTED_EXT, countFile } from '../../loc-count.mjs';
 import { costOf, usageCounter } from './usage.mjs';
 import { apiFailure, egressInWindow, examplesReads } from './classify.mjs';
-import { changed, historyDir } from './history.mjs';
+import { changed, gitVersion, historyDir } from './history.mjs';
 import { checkScoreFile } from './attempts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -145,7 +145,14 @@ function dependencies(dir) {
  * read, so its commits, hooks, filters and diff drivers change nothing here.
  * `diffNote` says why there is no number.
  */
+// The diff needs git 2.40 or later: older versions ignore GIT_ATTR_SOURCE
+// without a word and would read the agent's .gitattributes (cold review of
+// 21c4946, I-3). Without it there is no number, and analyze says why.
+const GIT = gitVersion();
+if (!GIT.ok) console.error(`${GIT.version || 'git not found'}: lines changed need git 2.40 or later; reported as n/a.`);
+
 function diff(runDir, t) {
+  if (!GIT.ok) return { diff: null, diffNote: 'git older than 2.40 on the machine that analyzed' };
   const ids = t.history;
   if (!ids?.before || !ids?.after) return { diff: null, diffNote: 'the history of the task was not recorded' };
   const h = historyDir(runDir, t.task);

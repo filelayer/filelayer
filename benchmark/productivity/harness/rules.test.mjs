@@ -251,8 +251,14 @@ test('money: the figures of PREREG.md "Money" (NI-6)', () => {
   const central = (5 + 2.5) / 2;
   const high = central * 2.5;
   const caps = cfg.phaseCapUsd;
-  // The two caps together never exceed the approved ceiling (NI-a).
-  assert.ok(caps.pilot + caps.full <= cfg.approvedCeilingUsd, `${caps.pilot} + ${caps.full} > ${cfg.approvedCeilingUsd}`);
+  // The two caps together never exceed the approved ceiling (NI-a). The
+  // ceiling is the one PREREG.md states, not config's own figure, so raising
+  // both in config fails here (cold review of 21c4946, c).
+  const prereg = readFileSync(new URL('../PREREG.md', import.meta.url), 'utf8');
+  const ceiling = Number(/the \$(\d+) ceiling less the pilot's/.exec(prereg)?.[1]);
+  assert.equal(ceiling, 500);
+  assert.equal(cfg.approvedCeilingUsd, ceiling);
+  assert.ok(caps.pilot + caps.full <= ceiling, `${caps.pilot} + ${caps.full} > ${ceiling}`);
   // The pilot's cap starts all 8 runs at the high estimate, and 3 at the
   // limits ($27 a run).
   assert.ok(phaseFits({ capUsd: caps.pilot, costPerRun: high, needUsd: need, runs: pilot }), `pilot cap ${caps.pilot}`);

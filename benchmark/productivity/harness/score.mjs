@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
 import { attemptLog, FINAL } from './attempts.mjs';
 import { installVerdict } from './install-verdict.mjs';
+import { copyBack } from './copy-back.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH = resolve(HERE, '..');
@@ -74,6 +75,8 @@ function scoreOne(app, task, out, arm) {
   const egressLog = join(out, 'score-egress.jsonl');
   const work = join(out, 'score-out');
   rmSync(egressLog, { force: true });
+  // The proxy container mounts this one file, not the task's directory.
+  writeFileSync(egressLog, '');
   try {
     docker(['run', '-d', '--name', `${name}-pg`, '--network', name, '--network-alias', 'postgres',
       '-e', 'POSTGRES_PASSWORD=postgres', cfg.images.postgres]);
@@ -91,8 +94,8 @@ function scoreOne(app, task, out, arm) {
       proxyUrl = `http://${gw}:3129`;
     } else {
       docker(['run', '-d', '--name', `${name}-proxy`, '--network', name, '--network-alias', 'egress',
-        '-v', `${join(HERE, 'egress-proxy.mjs')}:/proxy.mjs:ro`, '-v', `${allow}:/allow.txt:ro`, '-v', `${out}:/log`,
-        cfg.images.node, 'node', '/proxy.mjs', '--port', '3129', '--allow', '/allow.txt', '--log', `/log/${basename(egressLog)}`]);
+        '-v', `${join(HERE, 'egress-proxy.mjs')}:/proxy.mjs:ro`, '-v', `${allow}:/allow.txt:ro`, '-v', `${egressLog}:/log/egress.jsonl`,
+        cfg.images.node, 'node', '/proxy.mjs', '--port', '3129', '--allow', '/allow.txt', '--log', '/log/egress.jsonl']);
       started.push(`${name}-proxy`);
       docker(['network', 'connect', 'bridge', `${name}-proxy`]);
       proxyUrl = 'http://egress:3129';
@@ -142,9 +145,12 @@ function scoreOne(app, task, out, arm) {
       '-e', 'PRODBENCH_S3_URL=http://s3:5000',
       '-e', `npm_config_proxy=${proxyUrl}`, '-e', `npm_config_https_proxy=${proxyUrl}`,
       ...ca, cfg.images.node, 'bash', '-c', script], true, cfg.scoring.globalTimeoutMinutes * 60_000);
-    copyBack(work, out, ['install.log', 'install.exit', 'seed-install.log', 'check.log', late ? 'late-score.json' : 'score.json']);
+    // The scorer is gone before anything is copied: on the global timeout it
+    // is removed first, so nothing it runs can still change what is copied.
+    if (r.error || r.status === null) docker(['rm', '-f', `${name}-scorer`], true);
+    copyBack(work, out, ['install.log', 'install.exit', 'seed-install.log', 'check.log', late ? 'late-score.json' : 'score.json'],
+      { truncate: ['install.log', 'seed-install.log', 'check.log'] });
     if (r.error || r.status === null) {
-      docker(['rm', '-f', `${name}-scorer`], true);
       writeFileSync(join(out, late ? 'late-score.json' : 'score.json'), JSON.stringify({ scorerError: 'scorer_timeout' }));
     }
   } finally {
@@ -155,27 +161,6 @@ function scoreOne(app, task, out, arm) {
   }
 }
 
-/**
- * Copy the named files from the scorer's directory to the task's: regular
- * files only (a link the snapshot planted is not followed), at most 20 MB each.
- * A file that is missing or refused is left out, and whatever reads it treats
- * it as missing.
- */
-function copyBack(from, to, names) {
-  for (const n of names) {
-    // What an earlier attempt left is not this attempt's.
-    rmSync(join(to, n), { force: true });
-    const src = join(from, n);
-    let st;
-    try {
-      st = lstatSync(src);
-    } catch {
-      continue;
-    }
-    if (!st.isFile() || st.size > 20 * 1024 * 1024) continue;
-    copyFileSync(src, join(to, n));
-  }
-}
 
 
 const FP = fingerprint();

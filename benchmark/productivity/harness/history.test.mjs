@@ -127,6 +127,10 @@ test('a tampered history runs nothing on the host, and gives no number (NB-2)', 
   writeFileSync(join(a, 'x.js'), '1\n2\n');
   const ib = record(h, a, 'after');
   assert.deepEqual(changed(h, ia, ib), { files: 1, added: 1, removed: 0 });
+  // Only commit ids are diffed: the tags, which a rewritten history could
+  // move, give nothing even on an intact history (cold review of 21c4946, b).
+  assert.equal(changed(h, 'before', 'after'), null);
+  assert.equal(changed(h, ia.slice(0, 12), ib), null);
   // What the review did: the after blob deleted, and a promisor remote whose
   // upload-pack is a command, so git would fetch the missing blob by running it.
   const blob = execFileSync('git', ['--git-dir', h, 'rev-parse', `${ib}:x.js`], { encoding: 'utf8' }).trim();
@@ -137,8 +141,6 @@ test('a tampered history runs nothing on the host, and gives no number (NB-2)', 
   execFileSync('git', ['--git-dir', h, 'config', 'remote.evil.uploadpack', `touch "${marks}/uploadpack"; false`]);
   assert.equal(changed(h, ia, ib), null);
   assert.deepEqual(readdirSync(marks), [], 'nothing in the history config ran');
-  // An id that is not a commit id gives nothing either.
-  assert.equal(changed(h, 'before', 'after'), null);
   rmSync(root, { recursive: true, force: true });
 });
 
