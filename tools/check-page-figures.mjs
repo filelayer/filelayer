@@ -197,9 +197,10 @@ function expectations(f) {
     [`<span class="v">about ${f.decMedian.types} times as many</span>`, 'the decisions ratio'],
     [`took ${f.prodTotals} lines against Filelayer's ${f.prodMedian.fl}`, 'the production-wired lines of each alternative'],
     [`${f.dsup.types} and ${f.ds3.types} kinds of security-sensitive decision against its ${f.dfl.types}`, 'decision kinds'],
-    f.as3.defended === f.asup.defended
-      ? [`raw S3 and Supabase defended all ${f.as3.defended} shared attacks`, 'raw S3 and Supabase on the shared attacks']
-      : [`raw S3 and Supabase scored ${f.as3.defended} and ${f.asup.defended}`, 'raw S3 and Supabase on the shared attacks, which RESULTS.md now gives apart'],
+    // The lead states both ratios in one sentence (22 November 2026). The
+    // attack results moved to the method page, which states them per
+    // implementation in its table, so the homepage no longer repeats them.
+    [`the same feature took about ${f.prodMedian.x} times as much code and left about ${f.decMedian.types} times as many security-sensitive decisions`, 'the lead sentence'],
   ];
   return { 'benchmark/PAGE.md': page, 'README.md': readme, 'web/index.html': home };
 }

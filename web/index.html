@@ -144,9 +144,8 @@
     <h2>What your agent would write by hand</h2>
 
     <p class="lead">
-      Ask a coding agent for private uploads, sharing you can take back and an access log, and it
-      writes them into your application. We had agents do exactly that, four ways, each following
-      its platform's own documentation, and counted what they wrote.
+      Without Filelayer, the same feature took about 2.9 times as much code and left about 3.1
+      times as many security-sensitive decisions to whoever maintains it.
     </p>
 
     <ul class="numbers">
@@ -155,12 +154,13 @@
     </ul>
 
     <p>
-      The two alternatives that ran took 794 and 569 lines against Filelayer's 233, and 25 and 24
-      kinds of security-sensitive decision against its 8: places where a wrong choice leaks data
-      and nothing reports it. The hand-written versions can be made safe. Once revised against the
-      attacks, raw S3 and Supabase defended all 21 shared attacks, as Filelayer does. The difference is how much you write,
-      and how much you then have to keep right.
-      <a href="/one-feature-five-ways">The method, the results, and where each alternative is better &rarr;</a>
+      Ask a coding agent for private uploads, sharing you can take back and an access log, and it
+      writes them into your application. We built one such workspace five times: once with
+      Filelayer, and four times by agents following each platform's own documentation. Two of the
+      four, raw S3 and Supabase, run here. They took 794 and 569 lines against Filelayer's 233, and
+      25 and 24 kinds of security-sensitive decision against its 8: places where a wrong choice
+      leaks data and nothing reports it.
+      <a href="/one-feature-five-ways">The method, all five builds, the attacks, and where each alternative is better &rarr;</a>
     </p>
   </section>
 </div>
@@ -313,6 +313,12 @@
     <p class="note">
       The core library is and will remain Apache-2.0.
       <a href="/trust#who-maintains-this">Who maintains it, and what happens if he stops &rarr;</a>
+    </p>
+
+    <p class="note">
+      The library is free and complete under Apache-2.0, with no limit on files, users or
+      applications. The paid plans are support and reviews.
+      <a href="/pricing">Pricing &rarr;</a>
     </p>
 
     <p class="note">
