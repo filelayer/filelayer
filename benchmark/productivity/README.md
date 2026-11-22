@@ -19,9 +19,12 @@ question, the hypotheses and how each is decided are in
 
 ## Requirements
 
-Docker, Node.js 22, and for a real run an Anthropic API key with a spending
-limit of its own, in `ANTHROPIC_API_KEY`. The key goes to the agent's
-container by name only; it is never written to an argument, a log or a file.
+Docker, Node.js 22, git 2.40 or later, and for a real run a Claude plan's
+token from `claude setup-token`, in a file of its own (mode 600) whose path is
+in `PRODBENCH_OAUTH_TOKEN_FILE` (PREREG.md, deviation 1). The token goes to the
+agent's container by name only; it is never written to an argument, a log or
+a file of the run. `ANTHROPIC_API_KEY` must be unset: the harness does not
+start with it, because an API key takes precedence over the plan.
 
     npm ci
 

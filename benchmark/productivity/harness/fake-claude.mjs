@@ -17,6 +17,8 @@
  *   hang2   task 2 never finishes (to stop the harness in the middle of it)
  *   leak    task 1 leaves its server running on :3000 when it is done; every
  *           task reports whether something answered on :3000 when it began
+ *   overspend  task 1 keeps reporting large usage and never ends: the
+ *           harness's budget backstop must stop it as 'budget'
  *   hooks   every task leaves traps in its own repository, husky-style hooks
  *           through core.hooksPath, a clean filter and an fsmonitor command,
  *           each touching /tmp/prodbench-nb1-*, and commits its work itself,
@@ -64,6 +66,17 @@ try {
   github = `reached, status ${(await fetch('https://github.com/')).status}`;
 } catch (e) {
   github = `refused (${e.cause?.code ?? e.message})`;
+}
+
+if (task === 1 && mode === 'overspend') {
+  // Turn after turn of large usage and never a result: Claude Code's own
+  // --max-budget-usd does nothing here, as it might not with a plan's token
+  // (deviation 1). The harness's backstop must stop it as 'budget'.
+  for (;;) {
+    turns++;
+    emit({ type: 'assistant', message: { id: `msg_fake_${turns}`, model, content: [{ type: 'text', text: 'Spending.' }], usage: usage(100) } });
+    await new Promise((r) => setTimeout(r, 200));
+  }
 }
 
 if ((task === 1 && mode === 'hang') || (task === 2 && mode === 'hang2')) {

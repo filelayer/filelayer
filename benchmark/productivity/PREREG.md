@@ -427,4 +427,52 @@ benchmark with their own API key (`README.md`).
 
 ## Deviations
 
-None yet.
+### 1. The pilot is paid from a Claude plan's credit, not an API key (22 November 2026, before any run)
+
+**What changes.** The pilot's sessions are paid from the monthly Agent SDK
+credit of the Claude Max plan of Filelayer's founder ($200 a month, which
+covers `claude -p` and is separate from the plan's own daily use), not from
+an API key. Usage credits beyond it are turned off, so when the credit is
+spent the requests stop.
+
+**Why.** It pays for the pilot without a new recurring cost, before the
+pilot has measured what a run costs. The full phase is decided after the
+pilot: by API key, as frozen above, or from the credit spread over two
+months.
+
+**How the harness changes** (`harness/run.mjs`, `harness/classify.mjs`,
+`harness/fake-claude.mjs`, `harness/rules.test.mjs`):
+
+- Claude Code authenticates with `CLAUDE_CODE_OAUTH_TOKEN`, from
+  `claude setup-token`. The harness reads it from the file named by
+  `PRODBENCH_OAUTH_TOKEN_FILE`, never prints it, and passes it to the
+  container by name.
+- An API key takes precedence over a plan's credentials, so the harness does
+  not start, dry or not, if `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is
+  set, even to an empty value.
+- The credit running out is the money running out, as an exhausted key was:
+  it stops the phase and is never the agent's failure. `classify.mjs`
+  recognises the forms Claude Code has used for a plan's limits ("Claude AI
+  usage limit reached", "You've hit your limit" and the like), at the start
+  of a line, as before. The exact text is checked in the pilot's records, and
+  a difference is the next deviation.
+- Whether `--max-budget-usd` and `total_cost_usd` work the same with a
+  plan's token is checked in the pilot. Until then the harness keeps a
+  backstop of its own: when its count of the stream's tokens, at the prices
+  of `config.json`, passes the task's budget plus the $3 a task the start
+  gate keeps for an overrun, the session stops as `budget`, the agent's own
+  limit. It cannot fire before Claude Code's own check would. The turns
+  already on their way when it fires still count, so a task can end a turn
+  or two past that line; the pilot shows by how much. Rehearsed with a fake
+  session that never stops on its own: stopped as `budget` at $21.03 of a $15
+  budget; without the backstop, the same session spent $341.57 before the
+  clock stopped it.
+
+**What does not change.** What is measured, and how. The cost of a run is
+still computed from its tokens at the API's prices in `config.json`, so the
+figures compare with an API-paid phase. The caps, the budgets and the start
+gate are as frozen.
+
+**The fingerprint.** These are files under `harness/`, so the fingerprint
+changes: `FINGERPRINT.txt` is rewritten in the same commit as this entry, and
+every run carries the new one.

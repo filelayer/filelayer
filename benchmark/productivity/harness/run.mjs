@@ -22,10 +22,15 @@
  * The scoring (score.mjs) runs afterwards, in another container, from the
  * snapshots alone.
  *
- * The API key is read from ANTHROPIC_API_KEY in this process's environment
- * and handed to the container by name (`docker run -e ANTHROPIC_API_KEY`), so
- * it never appears in an argument list, a log or a file. --dry-run uses
- * fake-claude.mjs instead of Claude Code and needs no key.
+ * Authentication (deviation 1, D077): the sessions are paid from the Agent
+ * SDK credit of a Claude plan, through CLAUDE_CODE_OAUTH_TOKEN. The harness
+ * reads the token from a file whose path is in PRODBENCH_OAUTH_TOKEN_FILE,
+ * never prints it, and hands it to the container by name (`docker run -e
+ * CLAUDE_CODE_OAUTH_TOKEN`), so it never appears in an argument list, a log
+ * or a file of the run. ANTHROPIC_API_KEY must not be set: an API key takes
+ * precedence over a plan's credentials, so the harness refuses to start with
+ * one. --dry-run uses fake-claude.mjs instead of Claude Code and needs no
+ * token.
  *
  * Money: before each run the phase's spend so far is read from the results.
  * A run starts only if what remains of the phase cap covers the full budgets
@@ -39,7 +44,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rm
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
-import { taskSpend, usageCounter } from './usage.mjs';
+import { costOf, taskSpend, usageCounter } from './usage.mjs';
 import { API_ERROR_LINES, apiFailure, STOPS_THE_PHASE } from './classify.mjs';
 import { gitVersion, historyDir, record as recordHistory } from './history.mjs';
 import { startNeedUsd } from './money.mjs';
@@ -53,6 +58,9 @@ const flag = (name) => args.includes(name);
 const planFile = resolve(arg('--plan') ?? '');
 const plan = JSON.parse(readFileSync(planFile, 'utf8'));
 const cfg = JSON.parse(readFileSync(join(HERE, 'config.json'), 'utf8'));
+// The harness's budget backstop (runSession): the slack the start gate keeps
+// per task for a one-turn overrun.
+const BUDGET_BACKSTOP_USD = cfg.runStartMarginUsd / Object.keys(cfg.tasks).length;
 {
   // The harness's history needs git 2.40 or later (history.mjs).
   const g = gitVersion();
@@ -80,9 +88,26 @@ if (!DRY) {
   }
 }
 
-if (!DRY && !process.env.ANTHROPIC_API_KEY) {
-  console.error('ANTHROPIC_API_KEY is not set. A real run needs it; a rehearsal is --dry-run.');
+// An API key would take precedence over the plan's token and bill the API
+// instead (deviation 1): the harness does not start with one, dry or not.
+if (process.env.ANTHROPIC_API_KEY !== undefined || process.env.ANTHROPIC_AUTH_TOKEN !== undefined) {
+  console.error('ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is set. Unset it: the runs are paid from the plan\'s credit (PREREG.md, deviation 1).');
   process.exit(2);
+}
+if (!DRY) {
+  const f = process.env.PRODBENCH_OAUTH_TOKEN_FILE;
+  let token = '';
+  try {
+    token = f ? readFileSync(f, 'utf8').trim() : '';
+  } catch {
+    token = '';
+  }
+  if (!token) {
+    console.error('PRODBENCH_OAUTH_TOKEN_FILE does not name a readable file holding the token from `claude setup-token`. A real run needs it; a rehearsal is --dry-run.');
+    process.exit(2);
+  }
+  // Passed to docker by name only (see the header).
+  process.env.CLAUDE_CODE_OAUTH_TOKEN = token;
 }
 
 // --- docker ------------------------------------------------------------------
@@ -204,7 +229,7 @@ function startAgent(name, s, run) {
     '-e', 'NODE_USE_ENV_PROXY=1',
     '-e', 'DISABLE_TELEMETRY=1', '-e', 'DISABLE_AUTOUPDATER=1', '-e', 'DISABLE_ERROR_REPORTING=1',
     '-e', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1',
-    ...(DRY ? [] : ['-e', 'ANTHROPIC_API_KEY']),
+    ...(DRY ? [] : ['-e', 'CLAUDE_CODE_OAUTH_TOKEN']),
     // PID 1 runs as root, so that every process of the user `agent` can be
     // killed between sessions without stopping the container, and it is an
     // init (tini) that reaps them: killed processes do not linger as zombies.
@@ -334,6 +359,14 @@ function runSession(c, run, task, budget, out, env) {
           if (part.type === 'text') seen.lastText = part.text;
         }
         if (counter.turns > t.maxTurns) kill('turns');
+        // A backstop for --max-budget-usd, in case Claude Code does not apply
+        // it with a plan's token (deviation 1; checked in the pilot): the
+        // harness's own count of the stream's tokens, at config's prices.
+        // Above the budget plus the $3 a task the start gate keeps for a
+        // one-turn overrun, the session stops as if its budget had: the
+        // agent's limit, never sooner than Claude Code's own check would.
+        const est = costOf(cfg.prices, run.model, counter.usage);
+        if (est !== null && est > budget + BUDGET_BACKSTOP_USD) kill('budget');
       }
       if (m.type === 'result') seen.result = m;
     }

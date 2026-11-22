@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apiFailure, egressInWindow } from './classify.mjs';
+import { apiFailure, egressInWindow, STOPS_THE_PHASE } from './classify.mjs';
 
 const at = (min) => new Date(Date.parse('2026-12-01T10:00:00Z') + min * 60_000).toISOString();
 const win = [at(0), at(30)];
@@ -314,4 +314,16 @@ test('install: a timeout while the registry kept failing is the scorer\'s (nit d
   assert.equal(installVerdict(d).network, false, 'it connected again afterwards');
   wf(pj(d, 'score-egress.jsonl'), [e({ connected: true }), e({ error: 'ETIMEDOUT' })].join('\n'));
   assert.equal(installVerdict(d).network, false, 'one error never decides');
+});
+
+test('api: the plan\'s credit running out stops the phase and is never the agent\'s (deviation 1)', () => {
+  for (const text of ['Claude AI usage limit reached|1764000000', "You've hit your limit · resets 5pm", "You're out of extra usage"]) {
+    const t = sess({ stoppedBy: 'exit_1', claude: { isError: true, subtype: 'success', resultText: text } });
+    assert.equal(apiFailure(t), 'api_key_exhausted', text);
+    assert.ok(STOPS_THE_PHASE.has(apiFailure(t)));
+    assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: text, apiErrorTimes: [at(59.9)] })), 'api_key_exhausted', `stderr: ${text}`);
+  }
+  // The agent writing those words in its own summary is not the credit.
+  assert.equal(apiFailure(sess({ stoppedBy: 'finished', claude: { isError: false, subtype: 'success', resultText: "Usage limit reached handling is in src/limits.mjs" } })), null);
+  assert.equal(apiFailure(sess({ stoppedBy: 'exit_1', stderrTail: 'log: Usage limit reached for user 42', apiErrorTimes: [at(59.9)] })), null);
 });

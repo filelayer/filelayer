@@ -15,12 +15,20 @@
 
 // Claude Code's own error lines, anchored at the start of a line: never a bare
 // number or word, which a warning or the agent's output could carry.
-const LINE = /^\s*(API Error\b.*|Request timed out.*|Credit balance is too low.*|Invalid API key.*|Connection error.*)$/gim;
-const KEY_EXHAUSTED = /^\s*(Credit balance is too low|API Error\b.*\b(credit balance|billing_error)\b)/i;
+//
+// The plan's credit (deviation 1, D077): with usage credits turned off, the
+// requests stop once the month's Agent SDK credit is spent. Claude Code's text
+// for that is checked in the pilot; these are the forms it has used for a
+// plan's limits. Any of them is the money running out, as an exhausted key
+// was: it stops the phase and is never the agent's failure.
+const PLAN_OUT = String.raw`(?:Claude AI usage limit reached|You've hit your (?:usage )?limit|You've reached your (?:usage )?limit|Usage limit reached|You're out of (?:extra )?usage|You have run out of (?:credits?|usage))`;
+const STARTS = String.raw`(?:API Error\b|Request timed out|Credit balance is too low|Invalid API key|Connection error|${PLAN_OUT})`;
+const LINE = new RegExp(String.raw`^\s*(${STARTS}.*)$`, 'gim');
+const KEY_EXHAUSTED = new RegExp(String.raw`^\s*(?:Credit balance is too low|${PLAN_OUT}|API Error\b.*\b(?:credit balance|billing_error)\b)`, 'i');
 const AUTH = /^\s*(Invalid API key|API Error\b.*\b(401|403|authentication_error|permission_error)\b)/i;
-const ERROR_START = /^\s*(API Error\b|Request timed out|Credit balance is too low|Invalid API key|Connection error)/i;
+const ERROR_START = new RegExp(String.raw`^\s*${STARTS}`, 'i');
 /** Lines of stderr that are Claude Code's API error lines; run.mjs times each. */
-export const API_ERROR_LINES = /^\s*(API Error\b|Request timed out|Credit balance is too low|Invalid API key|Connection error)/gim;
+export const API_ERROR_LINES = new RegExp(String.raw`^\s*${STARTS}`, 'gim');
 // A session that ended for the agent's reason (finished, its budget, its turns)
 // is never invalid by the API, whatever retries it went through (cold review of
 // 1bba1d8, N-B1): only error, exit_* and wall stops are read below. Retried
