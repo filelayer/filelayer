@@ -14,13 +14,13 @@
  * its label: observed (read from the record), or estimated (computed from
  * observed figures with the method written next to it).
  */
-import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { COUNTED_EXT, countFile } from '../../loc-count.mjs';
 import { costOf, usageCounter } from './usage.mjs';
 import { apiFailure, egressInWindow, examplesReads } from './classify.mjs';
+import { changed } from './history.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -136,16 +136,15 @@ function dependencies(dir) {
   }
 }
 
-/** Lines the task itself changed, from the snapshot's git history. */
-function diff(dir) {
-  try {
-    const s = execFileSync('git', ['-C', dir, 'diff', '--shortstat', 'HEAD~1', 'HEAD', '--', '.', ':!package-lock.json'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    const n = (re) => Number(s.match(re)?.[1] ?? 0);
-    return { files: n(/(\d+) files? changed/), added: n(/(\d+) insertions?/), removed: n(/(\d+) deletions?/) };
-  } catch {
-    return null;
-  }
+/**
+ * Lines the task itself changed, from the harness's own history of the task
+ * (history.mjs): "before" is the tree when the task started, "after" its
+ * snapshot. The agent's repository is never read, so its commits, hooks,
+ * filters and diff drivers change nothing here.
+ */
+function diff(taskDir) {
+  const h = join(taskDir, 'history.git');
+  return existsSync(h) ? changed(h) : null;
 }
 
 
@@ -265,7 +264,7 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
         claudeCodeCostUsd: t.claude?.totalCostUsd ?? null,
         ...(existsSync(join(base, `task${t.task}.jsonl`)) ? session(join(base, `task${t.task}.jsonl`)) : {}),
         loc: loc(app),
-        diff: diff(app),
+        diff: diff(join(base, `task${t.task}`)),
         dependencies: dependencies(app),
         functional: score?.functional ? { passed: score.functional.passed, of: score.functional.of, failed: score.functional.results.filter((r) => !r.pass).map((r) => r.id) } : null,
         taskChecks: extra ? { passed: extra.passed, of: extra.of, failed: extra.results.filter((r) => !r.pass).map((r) => r.id) } : null,

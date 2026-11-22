@@ -41,6 +41,7 @@ import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
 import { taskSpend, usageCounter } from './usage.mjs';
 import { apiFailure, STOPS_THE_PHASE } from './classify.mjs';
+import { record as recordHistory } from './history.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH = resolve(HERE, '..');
@@ -233,10 +234,16 @@ function prepareApp(c, run, task) {
     docker(['exec', '-i', '-u', 'root', c, 'tar', '-C', '/work/app', '-xf', '-'], { input: tar.stdout });
     exec(c, 'chown -R agent:agent /work/app', { user: 'root' });
   }
-  // A commit before the task, so the snapshot's diff is the task's own work.
-  // node_modules stays out of the harness's commits whatever the project's own
-  // .gitignore says.
-  exec(c, `cd /work/app && (test -d .git || git init -q) && printf 'node_modules/\\n' >> .git/info/exclude && git add -A && git commit -q --allow-empty -m "before task ${task}"`);
+  // The project is a git repository when the task starts, as the agent may
+  // expect. This commit is the agent's, inside its container; what the harness
+  // counts comes from its own history (history.mjs). Whatever the agent left in
+  // its global git configuration during an earlier task cannot make it fail:
+  // no global configuration, hooks or fsmonitor, and no signing.
+  exec(c, `cd /work/app && (test -d .git || git init -q) && printf 'node_modules/\\n' >> .git/info/exclude && ` +
+    `GIT_CONFIG_GLOBAL=/dev/null git -c user.email=run@prodbench.invalid -c user.name=run -c core.hooksPath=/dev/null ` +
+    `-c core.fsmonitor=false -c commit.gpgSign=false add -A && ` +
+    `GIT_CONFIG_GLOBAL=/dev/null git -c user.email=run@prodbench.invalid -c user.name=run -c core.hooksPath=/dev/null ` +
+    `-c core.fsmonitor=false -c commit.gpgSign=false commit -q --no-verify --allow-empty -m "before task ${task}"`);
 }
 
 /** Run one Claude Code session; resolve with what the stream said and why it stopped. */
@@ -361,20 +368,24 @@ function runSession(c, run, task, budget, out, env) {
 
 /**
  * The snapshot is copied out with `docker cp`, which works on a stopped
- * container too (one the harness had to kill), and committed on this side,
- * so the task's diff does not depend on the container still answering.
+ * container too (one the harness had to kill). It is never committed in the
+ * agent's repository on this side, where its hooks, filters and fsmonitor
+ * would run as the harness (cold review of d89b967, NB-1): the harness records
+ * it in a history of its own (history.mjs).
  */
-function snapshot(c, dest) {
+function copyOut(c, dest) {
   mkdirSync(dest, { recursive: true });
   const copy = spawnSync('sh', ['-c', `docker cp ${c}:/work/app - | tar -C "${dest}" --strip-components=1 --exclude=app/node_modules -xf -`],
     { timeout: 600_000, killSignal: 'SIGKILL' });
-  if (copy.status !== 0) return false;
-  const git = (...a) => spawnSync('git', ['-C', dest, '-c', 'safe.directory=*', '-c', 'user.email=run@prodbench.invalid', '-c', 'user.name=run', ...a]);
-  if (existsSync(join(dest, '.git'))) {
-    git('add', '-A');
-    git('commit', '-q', '--allow-empty', '-m', 'after');
-  }
-  return true;
+  return copy.status === 0;
+}
+
+/** The tree before the task, in the harness's history; the copy is not kept. */
+function recordBefore(c, tdir) {
+  const tmp = join(tdir, 'before');
+  const ok = copyOut(c, tmp) && recordHistory(join(tdir, 'history.git'), tmp, 'before');
+  rmSync(tmp, { recursive: true, force: true });
+  return ok;
 }
 
 /**
@@ -511,10 +522,13 @@ async function runOne(run) {
         break;
       }
       prepareApp(c, run, task);
+      const tdir = join(dir, `task${task}`);
+      const beforeOk = recordBefore(c, tdir);
       record.inFlight = { task, stream: `task${task}.jsonl`, startedAt: new Date().toISOString() };
       save();
       const res = await runSession(c, run, task, budget, join(dir, `task${task}.jsonl`), contractEnv(task, adminToken));
-      res.snapshotOk = snapshot(c, join(dir, `task${task}`, 'app'));
+      res.snapshotOk = copyOut(c, join(tdir, 'app'));
+      res.historyOk = beforeOk && res.snapshotOk && recordHistory(join(tdir, 'history.git'), join(tdir, 'app'), 'after');
       endAgentProcesses(c);
       record.tasks.push(res);
       record.inFlight = null;

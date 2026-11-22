@@ -101,6 +101,16 @@ agent's own doing, and the container is started again with its files for the
 next task. The snapshot is copied out with `docker cp`, which does not need the
 container to answer.
 
+The agent controls its project's git repository: hooks, `core.hooksPath`,
+filters, fsmonitor, attributes and diff drivers. Nothing of it runs where the
+harness runs. The harness never commits or diffs in the agent's repository on
+the host; it copies the tree out when the task starts and when it ends and
+records both in a repository of its own, outside the copied tree, with no
+system or global configuration, hooks and fsmonitor off in the command itself,
+attributes from the empty tree, and an environment of only `PATH` and an empty
+`HOME` (`harness/history.mjs`). The lines a task changed are the difference
+between those two records, so commits the agent makes itself change nothing.
+
 The service's databases belong to a role of their own that is not a
 superuser, in the agent's container and in the scorer alike, so both arms
 build against what they are scored against.
@@ -176,7 +186,7 @@ observed.
 | Turns, tool calls | from the session's stream; a turn is a distinct message id | observed |
 | Test runs | Bash calls that run the smoke test, a test runner, `npm start`, or a request to the local service | observed |
 | Corrections | edits to a file already written, after the first test run | observed |
-| Lines | the shared counter's rules (`../loc-count.mjs`): net lines of the project, and lines the task changed | observed |
+| Lines | the shared counter's rules (`../loc-count.mjs`): net lines of the project; and lines the task changed, from the harness's own record of the tree before and after the task, without `package-lock.json` (`harness/history.mjs`) | observed |
 | Dependencies | `package.json` of the snapshot | observed |
 | Functional | every hidden functional check of the task passes (for tasks 2 and 3, the task's checks and the whole task-1 battery) | observed |
 | Security | the number of the 21 shared attacks defended. A1-A4 count as defended only if their positive control passes first (the legitimate twin of the attack works), so refusing everything defends nothing. A project that is missing, does not install or does not start defends 0 | observed |

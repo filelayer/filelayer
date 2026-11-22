@@ -17,6 +17,11 @@
  *   hang2   task 2 never finishes (to stop the harness in the middle of it)
  *   leak    task 1 leaves its server running on :3000 when it is done; every
  *           task reports whether something answered on :3000 when it began
+ *   hooks   every task leaves traps in its own repository, husky-style hooks
+ *           through core.hooksPath, a clean filter and an fsmonitor command,
+ *           each touching /tmp/prodbench-nb1-*, and commits its work itself,
+ *           so the snapshot's HEAD~1 is no longer "before the task"; none of
+ *           it may run on the host, and lines changed must still be the task's
  */
 import { execSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -68,6 +73,14 @@ if ((task === 1 && mode === 'hang') || (task === 2 && mode === 'hang2')) {
 const source = task === 1 ? (mode === 'broken' ? `${arm}-t3-bug` : arm) : task === 2 ? `${arm}-t2` : arm;
 step(`Writing the implementation (${source}).`, 'Write', { file_path: '/work/app/src/app.mjs' });
 sh(`find /work/app -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} + && cd /fake/reference/${source} && tar --exclude=node_modules -cf - . | tar -C /work/app -xf -`);
+
+if (mode === 'hooks') {
+  step('Setting up git hooks and filters.', 'Bash', { command: 'git config core.hooksPath .husky' });
+  sh(`mkdir -p .husky && for h in pre-commit post-commit post-index-change; do printf '#!/bin/sh\\ntouch /tmp/prodbench-nb1-hook-%s\\n' $h > .husky/$h; chmod +x .husky/$h; done`);
+  sh(`git config core.hooksPath .husky && git config filter.evil.clean "sh -c 'touch /tmp/prodbench-nb1-filter; cat'" && ` +
+    `git config filter.evil.required true && git config core.fsmonitor "sh -c 'touch /tmp/prodbench-nb1-fsmonitor; exit 1'" && ` +
+    `printf '* filter=evil\\n' > .gitattributes && git add -A && git -c user.email=a@b.invalid -c user.name=a commit -qm 'the agent commits its work'`);
+}
 
 step('Installing.', 'Bash', { command: 'npm install' });
 sh('npm install --no-audit --no-fund');
