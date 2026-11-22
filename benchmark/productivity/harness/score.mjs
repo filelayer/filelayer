@@ -28,11 +28,12 @@
  * Writes runs/<phase>/<run>/task<N>/score.json, with the three blocks.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fingerprint } from './fingerprint.mjs';
+import { attemptLog, FINAL } from './attempts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH = resolve(HERE, '..');
@@ -51,6 +52,8 @@ if (!existsSync(join(BENCH, 'node_modules', 'pg'))) {
   console.error('Run `npm ci --omit=optional` in benchmark/productivity first.');
   process.exit(2);
 }
+
+const sha256 = (x) => createHash('sha256').update(x).digest('hex');
 
 const docker = (argv, allowFail = false, timeoutMs = 300_000) => {
   const r = spawnSync('docker', argv, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: timeoutMs, killSignal: 'SIGKILL' });
@@ -217,7 +220,6 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
     const app = join(taskDir, 'app');
     const file = join(dir, late ? 'late-score.json' : 'score.json');
     const attemptsFile = join(dir, 'score-attempts.jsonl');
-    const attempts = () => (existsSync(attemptsFile) ? readFileSync(attemptsFile, 'utf8').split('\n').filter(Boolean).length : 0);
     const read = () => {
       try {
         return JSON.parse(readFileSync(file, 'utf8'));
@@ -228,24 +230,36 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
     // A score is written once. Only a scorer failure is scored again, and only
     // once: every attempt is appended to score-attempts.jsonl, across
     // invocations, and after two there are no more, whatever score.json says
-    // or whether it is there at all (cold review of 1bba1d8, N-I2).
-    if (existsSync(file) && !read().scorerError) {
-      console.log(`${d.name} task ${task}: already scored, left as it is`);
+    // or whether it is there at all (cold review of 1bba1d8, N-I2). The log
+    // decides, not score.json: once it holds an attempt that was not the
+    // scorer's failure, the task is scored, and deleting score.json by hand
+    // opens no new attempt (cold review of d89b967, NI-5).
+    const log = attemptLog(attemptsFile);
+    if (log.some((e) => FINAL.has(e.result))) {
+      console.log(`${d.name} task ${task}: already scored (score-attempts.jsonl), left as it is${existsSync(file) ? '' : '; its score file is missing'}`);
       continue;
     }
-    if (attempts() >= 2) {
+    if (existsSync(file) && !read().scorerError && !log.length) {
+      console.log(`${d.name} task ${task}: a score file with no attempt behind it, not scored`);
+      continue;
+    }
+    if (log.length >= 2) {
       console.log(`${d.name} task ${task}: scored twice already, not again`);
       continue;
     }
     if (!existsSync(join(app, 'package.json'))) {
-      if (existsSync(taskDir) && !late) writeFileSync(file, JSON.stringify({ noProject: true, fingerprint: FP.all, frozen: !unfrozen }));
+      if (existsSync(taskDir) && !late) {
+        const body = JSON.stringify({ noProject: true, fingerprint: FP.all, frozen: !unfrozen });
+        writeFileSync(file, body);
+        appendFileSync(attemptsFile, JSON.stringify({ at: new Date().toISOString(), result: 'noProject', sha256: sha256(body) }) + '\n');
+      }
       continue;
     }
     mkdirSync(dir, { recursive: true });
     // The scorer runs as the image's `node` user; it must be able to write here.
     spawnSync('chmod', ['a+rwx', dir]);
     let s;
-    while (attempts() < 2) {
+    while (attemptLog(attemptsFile).length < 2) {
       rmSync(file, { force: true });
       scoreOne(app, task, dir, arm);
       const inst = installVerdict(dir);
@@ -253,20 +267,28 @@ for (const d of readdirSync(runsDir, { withFileTypes: true })) {
         s = inst.network
           ? { scorerError: 'install_network', detail: 'the npm registry could not be reached' }
           : { installFailed: true, refusedHosts: inst.refused };
-        if (!late) writeFileSync(file, JSON.stringify(s, null, 2));
       } else {
         s = read();
       }
-      appendFileSync(attemptsFile, JSON.stringify({ at: new Date().toISOString(), result: s.scorerError ?? (s.installFailed ? 'installFailed' : 'scored') }) + '\n');
+      const n = attemptLog(attemptsFile).length + 1;
+      s = { ...s, attempts: n, fingerprint: FP.all, frozen: !unfrozen };
+      // The score file is written before its attempt is logged, and the log
+      // carries its hash, so analyze.mjs can tell a score file the scorer
+      // wrote from one written or edited by hand.
+      let sha = null;
+      if (!late || !s.installFailed) {
+        const body = JSON.stringify(s, null, 2);
+        writeFileSync(file, body);
+        sha = sha256(body);
+      }
+      const result = s.scorerError ? 'scorerError' : s.installFailed ? 'installFailed' : 'scored';
+      appendFileSync(attemptsFile, JSON.stringify({ at: new Date().toISOString(), result, ...(s.scorerError ? { scorerError: s.scorerError } : {}), sha256: sha }) + '\n');
       // A failure of the scorer says nothing about the agent: score again, once.
       if (!s.scorerError) break;
-      const again = attempts() < 2;
+      const again = n < 2;
       console.log(`${d.name} task ${task}: scorer error (${s.scorerError})${again ? ', scoring again' : ''}`);
       if (again) spawnSync('sleep', ['20']);
     }
-    s.attempts = attempts();
-    s = { ...s, fingerprint: FP.all, frozen: !unfrozen };
-    if (!late || !s.installFailed) writeFileSync(file, JSON.stringify(s, null, 2));
     if (late) {
       console.log(`${d.name} task ${task}: late attacks ${s.late ? `${s.late.defended}/${s.late.of}` : `not scored (${s.scorerError ?? (s.installFailed ? 'npm install failed' : 'no result')})`}`);
       continue;

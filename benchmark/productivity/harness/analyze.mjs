@@ -21,6 +21,7 @@ import { COUNTED_EXT, countFile } from '../../loc-count.mjs';
 import { costOf, usageCounter } from './usage.mjs';
 import { apiFailure, egressInWindow, examplesReads } from './classify.mjs';
 import { changed } from './history.mjs';
+import { checkScoreFile } from './attempts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -200,6 +201,15 @@ function invalidity(run, t, score, base) {
     for (const t of run.tasks ?? []) {
       if (t.skipped || t.interrupted) continue;
       const f = join(runsDir, d.name, `task${t.task}`, 'score.json');
+      // score.json must be the file the scorer wrote last (NI-5).
+      const why = checkScoreFile(f, join(runsDir, d.name, `task${t.task}`, 'score-attempts.jsonl'));
+      const lateDir = join(runsDir, d.name, `task${t.task}`, 'late');
+      const lateWhy = checkScoreFile(join(lateDir, 'late-score.json'), join(lateDir, 'score-attempts.jsonl'));
+      if (lateWhy) problems.push(`${d.name} task ${t.task}, late attacks: ${lateWhy}`);
+      if (why) {
+        problems.push(`${d.name} task ${t.task}: ${why}`);
+        continue;
+      }
       if (!existsSync(f)) {
         if (!run.invalid && !run.error && t.snapshotOk !== false) problems.push(`${d.name} task ${t.task}: not scored`);
         continue;
