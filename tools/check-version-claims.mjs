@@ -586,6 +586,9 @@ const SWEEP_EXCEPTIONS = [
   // (gross / net lines). Excluded by the shape of those two output lines.
   { match: /^\s*test\s+files=\s*\d+\s+gross=\s*\d+\s+net=\s*\d+/, why: "count-loc.mjs's `test` bucket: lines, not tests" },
   { match: /^\s+\S+\.(?:m?js|ts|sql)\s+\d+ \/\s+\d+\s*$/, why: "count-loc.mjs's per-file row: gross / net lines of one file" },
+  // benchmark/productivity/FINGERPRINT.txt is a SHA-256 per file: a hash that
+  // happens to hold three digits near a file named *.test.mjs is not a count.
+  { match: /^[0-9a-f]{64}  \S/, why: 'a SHA-256 and a path, not a count of tests' },
 ];
 
 if (recorded && Number(recorded.tests) > 0) {
