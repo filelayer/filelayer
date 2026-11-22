@@ -56,7 +56,7 @@
   },
   "scoring": {
     "installMinutes": 10,
-    "globalTimeoutMinutes": 180
+    "globalTimeoutMinutes": 240
   },
   "prices": {
     "$comment": "USD per million tokens, from https://platform.claude.com/docs/en/about-claude/pricing as read on 2026-11-17. Checked again on the day of each phase; a change is recorded in PREREG.md before the phase starts.",

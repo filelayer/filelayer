@@ -32,6 +32,7 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { probeEnv, startEnv, startServer } from '../harness/local-env.mjs';
 import { client } from './client.mjs';
+import { SEED_MS, bounded } from './bounds.mjs';
 import { SHARED, runAttacks, runLateAttacks } from './attacks-adapter.mjs';
 import { CHECKS as F_CHECKS, runFunctional } from './functional.mjs';
 import { CHECKS as T2_CHECKS, runTask2 } from './task2.mjs';
@@ -70,13 +71,13 @@ try {
     if (late) {
       // The late attacks alone, against the snapshot, on an empty database.
       server = await startServer(dir, envH.env, { log: (s) => log.push(s) });
-      out.late = await runLateAttacks(() => client(server.baseUrl, server.adminToken));
+      out.late = await runLateAttacks((signal) => client(server.baseUrl, server.adminToken, { signal }));
       console.log(`late attacks: ${out.late.defended}/${out.late.of} defended`);
       write(out);
     } else if (task === 3 && seedDir) {
       const ref = await startServer(seedDir, envH.env);
       try {
-        seed = await seedTask3(client(ref.baseUrl, ref.adminToken));
+        seed = await bounded(SEED_MS, 'seeding task 3', (signal) => seedTask3(client(ref.baseUrl, ref.adminToken, { signal })));
       } finally {
         await ref.stop();
       }
@@ -99,7 +100,7 @@ try {
       write(out);
     }
     if (server && !late) {
-      const make = () => client(server.baseUrl, server.adminToken);
+      const make = (signal) => client(server.baseUrl, server.adminToken, { signal });
       if (only !== 'attacks') {
         out.functional = await runFunctional(make);
         console.log(`functional: ${out.functional.passed}/${out.functional.of}`);

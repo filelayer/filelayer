@@ -9,7 +9,8 @@
  * Each check builds its own world (client.mjs), so no check depends on
  * another's leftovers.
  */
-import { buildWorld, tokenOf, withTimeout } from './client.mjs';
+import { buildWorld, tokenOf } from './client.mjs';
+import { CHECK_MS, bounded } from './bounds.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const b64 = (s) => Buffer.from(s).toString('base64');
@@ -346,7 +347,7 @@ export async function runFunctional(makeClient) {
   const results = [];
   for (const [id, name, fn] of CHECKS) {
     try {
-      await withTimeout(fn(makeClient()), 120_000, `check ${id}`);
+      await bounded(CHECK_MS, `check ${id}`, (signal) => fn(makeClient(signal)));
       results.push({ id, name, pass: true });
     } catch (e) {
       results.push({ id, name, pass: false, detail: e instanceof Fail ? e.message : `error: ${String(e?.message ?? e).slice(0, 200)}` });

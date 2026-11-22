@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { START_MS } from '../hidden/bounds.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const requireCore = createRequire(join(HERE, '..', 'package.json'));
@@ -172,7 +173,7 @@ export async function startServer(dir, env, { log = () => {} } = {}) {
   });
   child.stdout.on('data', (d) => log(String(d)));
   child.stderr.on('data', (d) => log(String(d)));
-  await waitFor(`${baseUrl}/health`, 60_000);
+  await waitFor(`${baseUrl}/health`, START_MS);
   return {
     baseUrl,
     adminToken: env.ADMIN_TOKEN,

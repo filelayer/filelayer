@@ -201,3 +201,37 @@ test('verdicts: H1, H2, H4, H6', () => {
   assert.equal(V.h6('confirmed', 'inconclusive'), 'inconclusive');
   assert.equal(V.h6('confirmed', 'refuted'), 'refuted');
 });
+
+import { readFileSync } from 'node:fs';
+import { worstCaseMinutes, SPARE_MINUTES, ATTACK_MS, bounded } from '../hidden/bounds.mjs';
+import { CHECKS as F_CHECKS } from '../hidden/functional.mjs';
+import { CHECKS as T2_CHECKS } from '../hidden/task2.mjs';
+import { CHECKS as T3_CHECKS } from '../hidden/task3.mjs';
+import { ATTACKS } from '../../adversarial/attacks.mjs';
+
+test('bounds: the per-check limits can never add up to the scorer\'s global limit (NI-4)', () => {
+  const cfg = JSON.parse(readFileSync(new URL('./config.json', import.meta.url), 'utf8'));
+  const counts = { installMinutes: cfg.scoring.installMinutes, functional: F_CHECKS.length, task2: T2_CHECKS.length, task3: T3_CHECKS.length, attacks: ATTACKS.length };
+  const worst = worstCaseMinutes(counts);
+  assert.ok(cfg.scoring.globalTimeoutMinutes >= worst + SPARE_MINUTES,
+    `global ${cfg.scoring.globalTimeoutMinutes} min, worst case ${worst} min + spare ${SPARE_MINUTES}`);
+  // The late attacks are scored in a run of their own, under the same limit:
+  // this many fit, and late/README.md says so.
+  const lateFit = Math.floor((cfg.scoring.globalTimeoutMinutes - SPARE_MINUTES - cfg.scoring.installMinutes - 1) / (ATTACK_MS / 60_000));
+  assert.ok(worstCaseMinutes({ ...counts, late: lateFit }) + SPARE_MINUTES <= cfg.scoring.globalTimeoutMinutes);
+  assert.ok(lateFit >= 40, `room for ${lateFit} late attacks`);
+});
+
+test('bounds: work past its limit is cancelled, so it cannot reach the service during the next check', async () => {
+  let requestsAfter = 0;
+  let aborted = false;
+  const work = (signal) => new Promise((resolve) => {
+    signal.addEventListener('abort', () => { aborted = true; });
+    setTimeout(() => { if (!signal.aborted) requestsAfter++; resolve('late'); }, 80);
+  });
+  await assert.rejects(bounded(20, 'slow check', work), /slow check took more than/);
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(aborted, true);
+  assert.equal(requestsAfter, 0);
+  assert.equal(await bounded(200, 'quick', async () => 'ok'), 'ok');
+});

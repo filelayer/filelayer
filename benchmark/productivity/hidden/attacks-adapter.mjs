@@ -21,7 +21,8 @@
  * not scored, so the preregistered number stays the published 21.
  */
 import { ATTACKS } from '../../adversarial/attacks.mjs';
-import { buildWorld, tokenOf, withTimeout } from './client.mjs';
+import { buildWorld, tokenOf } from './client.mjs';
+import { ATTACK_MS, bounded } from './bounds.mjs';
 
 export const SHARED = [
   'A1', 'A2', 'A3', 'A4', 'A5', 'A6',
@@ -137,11 +138,16 @@ export async function runAttacks(makeClient) {
   for (const a of ATTACKS) {
     let verdict;
     try {
-      const impl = await adapterFor(makeClient());
-      const control = CONTROLS[a.id] ? await CONTROLS[a.id](impl, impl.w) : null;
-      verdict = control
-        ? { verdict: 'control_failed', detail: `positive control failed, so the refusal proves nothing: ${control}` }
-        : await withTimeout(a.run(impl, impl.w), 120_000, `attack ${a.id}`);
+      // The world, the positive control and the attack share one limit
+      // (NI-4): a service that hangs while the world is built cannot stall
+      // the scorer.
+      verdict = await bounded(ATTACK_MS, `attack ${a.id}`, async (signal) => {
+        const impl = await adapterFor(makeClient(signal));
+        const control = CONTROLS[a.id] ? await CONTROLS[a.id](impl, impl.w) : null;
+        return control
+          ? { verdict: 'control_failed', detail: `positive control failed, so the refusal proves nothing: ${control}` }
+          : await a.run(impl, impl.w);
+      });
     } catch (e) {
       verdict = { verdict: 'error', detail: String(e?.message ?? e).slice(0, 300) };
     }
@@ -188,11 +194,13 @@ export async function runLateAttacks(makeClient) {
         if (typeof a.control !== 'function') {
           verdict = { verdict: 'error', detail: 'no positive control: a late attack must bring control(impl, w)' };
         } else {
-          const impl = await adapterFor(makeClient());
-          const control = await a.control(impl, impl.w);
-          verdict = control
-            ? { verdict: 'control_failed', detail: `positive control failed, so the refusal proves nothing: ${control}` }
-            : await withTimeout(a.run(impl, impl.w), 120_000, `attack ${a.id}`);
+          verdict = await bounded(ATTACK_MS, `attack ${a.id}`, async (signal) => {
+            const impl = await adapterFor(makeClient(signal));
+            const control = await a.control(impl, impl.w);
+            return control
+              ? { verdict: 'control_failed', detail: `positive control failed, so the refusal proves nothing: ${control}` }
+              : await a.run(impl, impl.w);
+          });
         }
       } catch (e) {
         verdict = { verdict: 'error', detail: String(e?.message ?? e).slice(0, 300) };

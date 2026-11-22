@@ -28,6 +28,10 @@ An attack without `control` is not run (`error`); one whose control fails
 is not defended (`control_failed`). An attack that passes by refusing
 everything proves nothing, so the control is not optional.
 
+Each attack has 180 seconds, its world and its control included
+(`../bounds.mjs`); past them it is `error`. The late attacks run under the
+scorer's global bound, which has room for 66 of them.
+
 `impl` is the same adapter the shared attacks use (`../attacks-adapter.mjs`):
 `read`, `list`, `del`, `share`, `redeem`, `revoke`, `expireShare`,
 `shareState`, `listShares`, `setRole`, `audit`, `auditEvents`, `countAudit`,

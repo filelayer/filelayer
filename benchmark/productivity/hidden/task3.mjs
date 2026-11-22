@@ -13,7 +13,8 @@
  * uploads, and leaves the documents already uploaded exposed, fails it (cold
  * review, finding 5).
  */
-import { buildWorld, tokenOf, withTimeout } from './client.mjs';
+import { buildWorld, tokenOf } from './client.mjs';
+import { T3_CHECK_MS, bounded } from './bounds.mjs';
 import { Fail, expect, status, share, redeem } from './functional.mjs';
 
 /** Run against the seeded reference: the world whose documents predate the fix. */
@@ -56,7 +57,7 @@ export async function runTask3(makeClient, seed = null) {
   const results = [];
   for (const [id, name, fn] of CHECKS) {
     try {
-      await withTimeout(fn(makeClient(), seed), 240_000, `check ${id}`);
+      await bounded(T3_CHECK_MS, `check ${id}`, (signal) => fn(makeClient(signal), seed));
       results.push({ id, name, pass: true, seeded: !!seed });
     } catch (e) {
       results.push({ id, name, pass: false, seeded: !!seed, detail: e instanceof Fail ? e.message : `error: ${String(e?.message ?? e).slice(0, 200)}` });

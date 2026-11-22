@@ -4,15 +4,20 @@
  * anything, so the same checks run unchanged against both arms.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
+import { REQUEST_MS } from './bounds.mjs';
 
-export function client(baseUrl, adminToken) {
+/**
+ * `signal` is the check's (bounds.mjs): once the check is past its limit,
+ * every request it still makes fails at once.
+ */
+export function client(baseUrl, adminToken, { signal } = {}) {
   async function call(method, path, { as, body, headers = {} } = {}) {
     const res = await fetch(baseUrl + path, {
       method,
       redirect: 'manual',
       // A snapshot that does not answer fails the check that asked; it does
       // not stall the scorer (cold review of 1bba1d8, N-N7).
-      signal: AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([AbortSignal.timeout(REQUEST_MS), signal]) : AbortSignal.timeout(REQUEST_MS),
       headers: {
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...(as !== undefined ? { 'x-user-id': as } : {}),
@@ -109,11 +114,5 @@ export async function buildWorld(c) {
 
 export const tokenOf = (url) => (typeof url === 'string' ? url.split('/s/').pop() : undefined);
 
-/** Run a check with a time limit: past it, the check has failed. */
-export function withTimeout(promise, ms, what) {
-  let t;
-  const limit = new Promise((_, reject) => {
-    t = setTimeout(() => reject(new Error(`${what} took more than ${ms / 1000} s`)), ms);
-  });
-  return Promise.race([promise, limit]).finally(() => clearTimeout(t));
-}
+// The time limits of the checks are in bounds.mjs.
+export { bounded } from './bounds.mjs';

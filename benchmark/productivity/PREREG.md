@@ -141,10 +141,18 @@ HTTP. The snapshot sees only the contract's environment variables. For task
 `package-lock.json` (fingerprinted), started first on the same database and
 bucket, and uploads the documents T3-01 checks.
 
-A snapshot has 30 seconds per HTTP request and 120 seconds per check or
-attack (240 for T3-01); past them the check fails, which is the snapshot's
-failure, not the scorer's. The whole scoring of one snapshot has a last bound
-of 3 hours, far past those, and reaching it is the scorer's failure. The probe
+A snapshot has 30 seconds per HTTP request, 60 seconds to answer `/health`,
+120 seconds per check (240 for T3-01) and 180 seconds per attack, its world
+and its positive control included; past them the check fails, which is the
+snapshot's failure, not the scorer's, and every request the abandoned check
+still makes fails at once. Seeding task 3 from the seeded reference has 120
+seconds. Every limit is in `hidden/bounds.mjs`. The whole scoring of one
+snapshot has a last bound of 4 hours, and reaching it is the scorer's failure.
+Those limits added up give at most 164 minutes (task 3: two installs, two
+starts, the seeding, 29 checks, T3-01 and 26 attacks), and a test checks that
+the last bound stays at least 30 minutes above that sum, so no snapshot can
+reach it by being slow; the late attacks, scored in a run of their own under
+the same bound, have room for 66. The probe
 of the services after the checks runs once the snapshot is stopped, as the
 superuser, whose reserved connections a snapshot that leaks connections cannot
 take.
