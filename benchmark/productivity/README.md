@@ -63,10 +63,15 @@ and `score.mjs`.
 ## Run
 
     node harness/plan.mjs pilot > runs/pilot/plan.json
+    node harness/run.mjs --plan runs/pilot/plan.json --smoke-call
     node harness/run.mjs --plan runs/pilot/plan.json
     node harness/score.mjs --runs runs/pilot --jobs 4
     node harness/analyze.mjs --runs runs/pilot
     node harness/report.mjs --runs runs/pilot
+
+The smoke call (PREREG.md, deviation 3) is one paid request of a few cents
+through a run's environment; the pilot starts only once it prints
+`smoke call: OK`.
 
 An invalid run (the infrastructure failed; `analyze.mjs` says which and why)
 is replaced once: `node harness/plan.mjs --extend runs/pilot/plan.json`, then
