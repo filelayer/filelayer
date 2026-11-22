@@ -1,9 +1,10 @@
 # Productivity benchmark: preregistration
 
-**Status: DRAFT, not yet frozen.** This file is frozen by a public commit
-that also adds `FINGERPRINT.txt`, before the first run. Until then it may
-change. After that, every change is a dated entry under "Deviations", and the
-runs made before it say so.
+**Status: frozen on 22 November 2026**, by the commit that adds
+`FINGERPRINT.txt`, before the first run. From here on, every change is a
+dated entry under "Deviations", and the runs made before it say so. The
+figures marked as pending approval (the caps under "Money") are frozen as
+proposed; if the approval changes them, that is the first deviation.
 
 ## The question
 
