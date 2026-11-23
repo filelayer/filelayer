@@ -42,9 +42,17 @@ function errorCodes(src) {
 function denyReasons(src) {
   const i = src.indexOf('export type DenyReason =');
   if (i < 0) throw new Error('check-error-wording: DenyReason not found in authz.ts.');
-  const block = src.slice(i, src.indexOf(';', i));
+  // COMMENTS FIRST. The union carries JSDoc, and one of those comments holds a
+  // semicolon ("stops you doing more; this stops you reaching more people").
+  // Cutting at the first ';' before removing comments ended the union there,
+  // and the four reasons after it, all of them 403s, were never read. Found by
+  // the cold review of 23 November 2026.
+  const rest = src.slice(i).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const block = rest.slice(0, rest.indexOf(';'));
   const reasons = new Set([...block.matchAll(/'([a-z][a-z0-9_]*)'/g)].map((m) => m[1]));
-  if (reasons.size < 10) throw new Error(`check-error-wording: read only ${reasons.size} deny reasons from authz.ts.`);
+  // The union had 21 members on 23 November 2026. Fewer means the parser lost
+  // some; more is fine. Raise the floor when a reason is added.
+  if (reasons.size < 21) throw new Error(`check-error-wording: read only ${reasons.size} deny reasons from authz.ts, fewer than the 21 it held; the parser no longer matches the file.`);
   // unknown_org and unknown_actor are recorded reasons that are not part of
   // the DenyReason union; they are written where the denial is recorded.
   for (const extra of ['unknown_org', 'unknown_actor']) reasons.add(extra);
@@ -57,7 +65,7 @@ function denyReasons(src) {
 function plain(text) {
   return text
     .replace(/<[^>]+>/g, '')
-    .replace(/&[a-z]+;/g, ' ')
+    .replace(/&(?:[a-z]+|#\d+|#x[0-9a-f]+);/gi, ' ')
     .replace(/[`*]/g, '');
 }
 
@@ -68,8 +76,16 @@ export function findProblems(file, text, codes, reasons) {
   const out = [];
   const lines = text.split('\n');
   lines.forEach((raw, n) => {
-    const line = plain(raw);
-    for (const m of line.matchAll(/\b([1-5]\d\d)\s+([a-z][a-z0-9]*(?:_[a-z0-9]+)*)\b/g)) {
+    // A hard-wrapped line can put the status at the end of one line and the
+    // identifier at the start of the next, so each line is read with the first
+    // word of the next one appended. A hit that lies wholly on the next line is
+    // reported there, not twice: only matches that start on this line count.
+    const own = plain(raw);
+    const next = plain(lines[n + 1] ?? '').trimStart().split(/\s+/)[0] ?? '';
+    const line = `${own} ${next}`;
+    // Between the status and the identifier: spaces, or one of `:`, `(`, `/`.
+    for (const m of line.matchAll(/\b([1-5]\d\d)(?:\s*[:(/]\s*|\s+)([a-z][a-z0-9]*(?:_[a-z0-9]+)*)\b/g)) {
+      if (m.index >= own.length) continue;
       const status = Number(m[1]);
       const id = m[2];
       if (codes.has(id)) {
@@ -93,6 +109,18 @@ if (process.argv.includes('--self-test')) {
     ['gets `404 insufficient_role`, the same answer', false],
     ['**403 `no_membership`**', false],
     ['404 <code>unknown_org</code>', false],
+    ['403 `role_escalation`', false],
+    ['**403 last_owner**', false],
+    ['403 `superior_target`', false],
+    ['403 `subject_breadth_amplification`', false],
+    ['403 `forbidden`, with reason `role_escalation`', true],
+    ['the caller gets 404\ninsufficient_role back', false],
+    ['404 (insufficient_role)', false],
+    ['404: `unknown_org`', false],
+    ['404/insufficient_role', false],
+    ['404&#160;insufficient_role', false],
+    ['a 404 (not found)', true],
+    ['HTTP 404: the page', true],
     ['403 `not_found`', false],
     ['409 forbidden', false],
     ['404 `not_found`, with reason `insufficient_role`', true],

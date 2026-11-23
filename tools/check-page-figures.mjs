@@ -196,7 +196,7 @@ function expectations(f) {
     [`<span class="v">about ${f.prodMedian.x} times as many</span>`, 'the production-wired ratio'],
     [`<span class="v">about ${f.decMedian.types} times as many</span>`, 'the decisions ratio'],
     [`took ${f.prodTotals} lines against Filelayer's ${f.prodMedian.fl}`, 'the production-wired lines of each alternative'],
-    [`${f.dsup.types} and ${f.ds3.types} kinds of security-sensitive decision against its ${f.dfl.types}`, 'decision kinds'],
+    [`${f.ds3.types} and ${f.dsup.types} kinds of security-sensitive decision against its ${f.dfl.types}`, 'decision kinds'],
     // The lead states both ratios in one sentence (22 November 2026). The
     // attack results moved to the method page, which states them per
     // implementation in its table, so the homepage no longer repeats them.
