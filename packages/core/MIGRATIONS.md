@@ -1327,7 +1327,8 @@ customer's `orgs.create` could.
 Create each org once with `fl.orgs.create(org, { owner })`, which names its
 owner, before the first upload into it. `orgs.create` with the same owner is
 idempotent, so calling it where you provision a tenant is safe on a retry. The
-default workspace, used when `put` names no org, is unchanged.
+default org, `__filelayer_workspace__`, used when `put` names no org, is
+unchanged.
 
 #### What you may have to change, if you construct `Filelayer` with a typo
 

@@ -173,7 +173,7 @@ can express.** All three defend every one of them.
 | Filelayer 0.36.0 | 21 of 21 | 0 | 0 |
 | Raw S3 | 21 of 21 | 0 | 0 |
 | Supabase | 21 of 21 | 0 | 0 |
-| Filelayer, earlier version (control) | 16 of 21 | 2 | 2 |
+| filelayer-prerebuild (control) | 16 of 21 | 2 | 2 |
 
 Before the revisions, neither raw S3 nor Supabase recorded a refused
 cross-tenant read, or probes at documents that do not exist, in the
@@ -202,8 +202,8 @@ grant, because the HTTP surface only creates read grants.
 
 **Why a perfect score is not the headline.** A suite that the implementation it
 was written alongside passes in full is exactly the suite a reader should
-distrust. So it is also run against an earlier version of Filelayer's own
-example, from before its delivery and authorization were rebuilt, on the same
+distrust. So it is also run against `filelayer-prerebuild`: Filelayer's own example
+as it was before its delivery and authorization were rebuilt, on the same
 library. That version is breached 3 times: among the 21, a forged but well-formed caller
 id treated as real and a revoked download replayable from a cache, and among
 the other 5, user-uploaded HTML rendered on the authenticated read path. The suite finds real defects in Filelayer's own code, which is the best
@@ -224,8 +224,11 @@ Each alternative's `REPORT.md` has this section in full. The short version:
 
 - **Supabase fails closed, and its rules cannot be bypassed by new code.** No
   policy means no access, every rule is in one declarative file you can query
-  and show a compliance auditor, and the policies apply to every path into the database,
-  a `psql` session included. Filelayer is authorization middleware: it decides
+  and show a compliance auditor, and the policies apply to every path into the database
+  that connects as an ordinary role, a `psql` session included. As
+  [PostgreSQL documents](https://www.postgresql.org/docs/current/ddl-rowsecurity.html),
+  superusers and roles with `BYPASSRLS` always skip them, and so does the table's
+  owner unless the table is set to `FORCE ROW LEVEL SECURITY`. Filelayer is authorization middleware: it decides
   for calls made through it, and a direct `SELECT` against its tables is not
   checked by anything. If your team already runs on Supabase, it is one vendor
   instead of two.

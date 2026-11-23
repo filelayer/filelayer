@@ -12,7 +12,8 @@ function answers every access question. 781 tests across 169 suites, every
 commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the
 concurrency, audit retention and MCP server suites run against a real
 PostgreSQL 17. 26 adversarial attacks score zero breaches, and the same suite
-scores three against an earlier revision of this library, so the suite is
+scores three against `filelayer-prerebuild`, the example application as it was
+before its delivery and authorization were rebuilt, so the suite is
 calibrated rather than merely passing. The storage adapter runs against live
 Cloudflare R2 and live AWS S3 on every commit. There are no runtime
 dependencies. From `npm install` of the published package to a stored byte:
@@ -62,9 +63,10 @@ mistakes people actually make:
 - **A differential test** asserts that the set query (`listFiles`) and the point
   check (`authorize`) agree exactly, over randomized corpora. If a listing ever
   returns a file the point check would deny, that is a leak, and the suite fails.
-- **A calibration control.** The adversarial suite is also run against an earlier
-  revision of this library that is known to be vulnerable. It scores 3 breaches
-  there and 0 here. A suite that only ever passes proves nothing about itself.
+- **A calibration control.** The adversarial suite is also run against
+  `filelayer-prerebuild`: the example application as it was before its delivery
+  and authorization were rebuilt, on the current library, known to be
+  vulnerable. It scores 3 breaches there and 0 here. A suite that only ever passes proves nothing about itself.
 
 ## What runs against a real object store, and what still does not
 

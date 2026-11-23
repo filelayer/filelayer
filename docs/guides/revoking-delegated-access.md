@@ -395,8 +395,10 @@ If no, stop here.
 [Filelayer](https://filelayer.dev) is this shape, packaged. `parent_grant_id`,
 the recursive liveness function, the attenuation trigger with its `UPDATE OF`
 list, chain-wide budget consumption and the two bounds are in its schema rather
-than in application code — so they bind a migration and a psql session as well
-as the library.
+than in application code, so they bind a migration and a psql session as well
+as the library, unless that session stops triggers from firing, which takes a
+superuser, a role granted `session_replication_role`, or the table's owner
+([PostgreSQL](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE)).
 
 <!-- doccheck-setup
 import { Filelayer } from '@filelayer/core';

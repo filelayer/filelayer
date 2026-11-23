@@ -547,6 +547,14 @@ cron job, to an intern's ad-hoc script. There is no "we forgot to add the check
 to the new endpoint" failure, because there is no endpoint-level check to
 forget. This is a structurally stronger position than middleware.
 
+> Correction, 23 November 2026, added after this report was written: the
+> policies bind sessions that connect as an ordinary role. As
+> [PostgreSQL documents](https://www.postgresql.org/docs/current/ddl-rowsecurity.html),
+> superusers and roles with `BYPASSRLS` always bypass row security, and so
+> does the table's owner unless the table is set to `FORCE ROW LEVEL SECURITY`.
+> A psql session, cron job or script that connects as one of those is not
+> bound by the policies.
+
 **4. One vendor, and probably one you already have.**
 The marginal cost of adding permissioned file storage to an app that already
 uses Supabase Postgres is: create a bucket, write policies in the same file you

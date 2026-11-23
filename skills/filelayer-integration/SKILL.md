@@ -167,7 +167,7 @@ stream.
 
 In a **named org**, `fl.files.put({ org: 'acme', owner: 'newcomer' })` throws
 `forbidden` with reason `no_membership` unless the owner is already a member
-of that org (or it is the default workspace). Since 0.36.0 an org that does not
+of that org (or it is the default org, `__filelayer_workspace__`). Since 0.36.0 an org that does not
 exist yet is `not_found` with reason `unknown_org`: create it first with
 `fl.orgs.create(org, { owner })`.
 

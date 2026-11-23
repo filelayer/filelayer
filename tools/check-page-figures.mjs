@@ -148,7 +148,7 @@ function expectations(f) {
     [`| Filelayer ${f.version} | ${f.afl.defended} of ${f.shared} | ${f.afl.partial} | ${f.afl.breach} |`, 'Filelayer on the shared attacks'],
     [`| Raw S3 | ${f.as3.defended} of ${f.shared} | ${f.as3.partial} | ${f.as3.breach} |`, 'raw S3 on the shared attacks'],
     [`| Supabase | ${f.asup.defended} of ${f.shared} | ${f.asup.partial} | ${f.asup.breach} |`, 'Supabase on the shared attacks'],
-    [`| Filelayer, earlier version (control) | ${f.actl.defended} of ${f.shared} | ${f.actl.partial} | ${f.actl.breach} |`, 'the control on the shared attacks'],
+    [`| filelayer-prerebuild (control) | ${f.actl.defended} of ${f.shared} | ${f.actl.partial} | ${f.actl.breach} |`, 'the control on the shared attacks'],
     [`| Filelayer | ${f.dfl.types} | ${f.dfl.sites} |`, 'Filelayer decisions'],
     [`| Supabase | ${f.dsup.types} | ${f.dsup.sites} |`, 'Supabase decisions'],
     [`| Raw S3 | ${f.ds3.types} | ${f.ds3.sites} |`, 'raw S3 decisions'],

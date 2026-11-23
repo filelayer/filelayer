@@ -155,8 +155,9 @@ their only withdrawal mechanism.
 grant row with `subject_type = 'anonymous'` and capability `read`. That row can
 be listed, audited and revoked, which is why `unpublish()` works.
 
-If you never mention an org, your files land in a **default workspace** — a real
-organization row with a reserved id, auto-created on first use. It is not a
+If you never mention an org, your files land in the **default org**,
+`__filelayer_workspace__`: a real org with a reserved id, which the library
+creates on the first upload and owns through its service identity. It is not a
 special case in the data model; it is an ordinary tenant you did not have to
 name. Adding `org:` later (§3) moves you to a named one.
 
@@ -379,7 +380,9 @@ await fl.shares.list(fileId, { as: 'ceo' });   // what have we shared, with whom
 If you give someone `share`, what they hand on can never exceed what they hold —
 not in capability, not in lifetime, not in remaining download budget. That is
 enforced by the authorization engine *and* again by a database trigger, so it
-binds a migration or a psql session too. Revoking a grant kills everything ever
+binds a migration or a psql session too, unless that session stops triggers from
+firing, which takes a superuser, a role granted `session_replication_role`, or
+the table's owner ([PostgreSQL](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE)). Revoking a grant kills everything ever
 delegated from it, at any depth, with **no cascading write** — liveness is
 evaluated over the ancestor chain.
 
