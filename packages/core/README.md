@@ -73,8 +73,9 @@ runs was attacked by one shared suite:
   is how much code that takes.
 - **About 2.9 times as many lines** in the two alternatives that ran, wired as
   in production: 569 lines of application and infrastructure code for Supabase
-  and 794 for raw S3, against Filelayer's 233, with its pool, bucket and policies. Against our
-  example as it ships, 157 lines, it is about 4.1 times as many. Convex and
+  and 794 for raw S3, against Filelayer's 233, with its pool, bucket and
+  policies. Against our example as it ships, 157 lines, it is about 4.1 times
+  as many. Convex and
   Vercel Blob were neither executed nor compiled, so they are left out of every
   figure.
 

@@ -119,11 +119,13 @@ A grant is **live** iff **it and every one of its ancestors** satisfies all of:
 | budget | `download_count ≥ max_downloads` |
 | **scope** | its file, org, project, **subject**, **subject org** or **issuer** is deleted |
 
-Evaluated by one predicate, `grant_is_live()`, which every grant lookup the
-library makes reads through (`live_grant`), so no path in the library, present
-or future, can skip it. A query written against `file_grant` directly, from
-`psql` or anywhere else, is not filtered: read authorization lives in the
-library, not in the database.
+Evaluated by one predicate, `grant_is_live()`. Every grant lookup the library
+uses to authorize reads through it (`live_grant`). The library also reads
+`file_grant` directly, and none of those reads authorizes access: they only
+explain a refusal, attribute a link secret, list grants, or repeat an
+idempotent share. A query written against `file_grant` directly, from `psql` or
+anywhere else, is not filtered: read authorization lives in the library, not in
+the database.
 
 Liveness is **derived, never cascaded**. Revoking a grant or deleting a scope
 writes nothing to the grants below it; they simply stop being live. This is why
