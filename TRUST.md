@@ -28,7 +28,7 @@ real traffic.
 
 | | |
 |---|---|
-| Version | 0.36.0 — alpha |
+| Version | 0.36.1 — alpha |
 | Known production deployments | **0** |
 | Maintainers with commit rights | **1** |
 | Independent security review | **none** |

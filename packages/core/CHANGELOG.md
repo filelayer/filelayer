@@ -19,7 +19,7 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
-## [Unreleased]
+## [0.36.1] — 2026-11-23
 
 A patch release with one authorization fix and support for PGlite 0.6. No
 schema change (still version 16) and no change to the API.

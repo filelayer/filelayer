@@ -1,6 +1,6 @@
 {
   "name": "filelayer",
-  "version": "0.36.0",
+  "version": "0.36.1",
   "description": "Per-file permissions, share links you can revoke and an audit trail of every allowed and denied access, for the files your users upload. A Node library on your own Postgres and S3 or R2 bucket. This plugin adds the integration skill and the filelayer-mcp server.",
   "author": {
     "name": "Jorge Urios",
