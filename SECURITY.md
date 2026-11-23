@@ -133,7 +133,7 @@ backporting. See [Versioning](README.md#versioning) in the README.
 
 Earlier versions with known defects, so you know to upgrade rather than patch:
 
-- `0.36.0` and earlier: a holder of a grant to a group (`org` or `role`) with `share` could revoke the links a colleague had issued through it, and the group grant itself. Denial of service inside one group; nothing disclosed. Fixed in `0.36.1`, see its [changelog entry](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md).
+- Every version before `0.36.1`: a holder of a grant to a group (`org` or `role`) with `share` could revoke the links a colleague had issued through it, and the group grant itself. Denial of service inside one group; nothing disclosed. Fixed in `0.36.1`, see its [changelog entry](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md).
 - `0.10.x` and earlier: `shares.revoke(grantId)` could report success and leave a named user's access working. Fixed in `0.11.0`, see its [changelog entry](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md).
 - `0.11.x` and earlier: `FsStorage` wrote world-readable bytes. Fixed in `0.12.0`.
 - `0.3.0` through `0.5.3`: a remote unauthenticated denial of service and a tenant takeover, both fixed in `0.6.0`. See GHSA-835c-wg3v-pv7q and the [changelog entry](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md).
