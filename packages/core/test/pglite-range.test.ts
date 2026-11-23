@@ -17,8 +17,13 @@ test('the supported PGlite versions: 0.3.11+, 0.5.8+ and every 0.6.x', () => {
   for (const v of ['0.3.10', '0.4.6', '0.5.7', '0.7.0', '1.0.0', 'x']) assert.equal(pgliteSupported(v), false, v);
 });
 
-test('the runtime check and devDependencies declare the same range', () => {
-  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+// The published procedure for running this suite from an install
+// (docs/VERIFY-WHAT-YOU-INSTALLED.md) writes a package.json of its own, without
+// devDependencies, so there is nothing to compare against there.
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const ownManifest = pkg.name === '@filelayer/core' ? false : "needs @filelayer/core's own package.json";
+
+test('the runtime check and devDependencies declare the same range', { skip: ownManifest }, () => {
   assert.equal(pkg.devDependencies['@electric-sql/pglite'], '^0.3.11 || ^0.5.8 || ^0.6.0');
   assert.equal(pkg.peerDependencies?.['@electric-sql/pglite'], undefined, 'never a peer again');
 });

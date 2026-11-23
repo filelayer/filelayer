@@ -78,9 +78,9 @@ Four details in there are load-bearing:
 | | as a normal user | as root |
 |---|---|---|
 | tests | 779 | 779 |
-| pass | 735 | 734 |
+| pass | 741 | 740 |
 | fail | **0** | **0** |
-| skipped | 37 | 38 |
+| skipped | 38 | 39 |
 | suites | 169 | 169 |
 
 The lines will look different depending on your Node version and whether you are
