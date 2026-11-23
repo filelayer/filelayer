@@ -102,8 +102,8 @@ const CORE_PKG = 'packages/core/package.json';
 // `bareOk`: from 0.35.4 the recommended command carries no version, because
 // npm's latest is inside the supported range. That is not taken on trust:
 // check:pglite-install installs the latest beside the tarball and runs it, and
-// the CI job "test on PGlite's latest" runs the whole suite on it and fails if
-// the latest leaves `^0.3.11 || ^0.5.8`. A written constraint must still fall
+// the CI job "upstream release outside supported range" fails, under that name, if
+// the latest leaves the declared range. A written constraint must still fall
 // inside the declared range.
 const POLICY = [{ pkg: '@electric-sql/pglite', rangeFrom: 'devDependencies', bareOk: true }];
 
