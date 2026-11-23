@@ -1212,7 +1212,7 @@ export async function authorizeShare(
  *     which is exactly the authority it was given.
  *
  * A GROUP grant (subject `org` or `role`) needed one more rule, found by the
- * productivity benchmark's arm A reference on 21 November 2026. The subtree
+ * reference for arm A in `benchmark/productivity/` on 21 November 2026. The subtree
  * rule assumes one holder per grant; a group grant has every member of the
  * group as a holder, all holding the same authority. So every member's links
  * were in every other member's "own" subtree, and the group grant itself was

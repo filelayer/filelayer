@@ -76,10 +76,10 @@ export const DEFAULT_WORKSPACE = '__filelayer_workspace__';
 /**
  * The identity that owns files uploaded with no `owner:`.
  *
- * It is the `owner` of the default workspace (so tier 1 works with no user
- * model at all) and a plain `member` of any org the developer names (so it does
- * NOT acquire admin read over a real tenant's documents as a side effect of
- * being used for an unowned upload).
+ * It is the `owner` of the default org, `__filelayer_workspace__` (so tier 1
+ * works with no user model at all), and a plain `member` of any org the
+ * developer names (so it does NOT acquire admin read over a real tenant's
+ * documents as a side effect of being used for an unowned upload).
  */
 export const SYSTEM_ACTOR = '__filelayer_system__';
 
@@ -500,7 +500,7 @@ export class FilesApi {
     const name = opts.name ?? 'file';
 
     // Resolve the tenant. Naming an org is what promotes you from tier 2 to
-    // tier 3; not naming one puts you in the default workspace, which is a real
+    // tier 3; not naming one puts you in the default org (`__filelayer_workspace__`), which is a real
     // org with a real id, not a hole in the model.
     //
     // A NAMED ORG MUST ALREADY EXIST. Until 0.36.0 `put({ org })` created an
@@ -524,7 +524,7 @@ export class FilesApi {
       ownerId = await this.ids.actor(opts.owner);
       // JOINING IS NOT THE SAME AS BEING REGISTERED.
       //
-      // In the DEFAULT workspace, auto-join is the design: a tier-1/tier-2
+      // In the DEFAULT org, auto-join is the design: a tier-1/tier-2
       // application has one implicit tenant and every user belongs to it.
       //
       // In a NAMED org it was a hole. `put({ org: 'acme', owner: 'mallory' })`
@@ -534,7 +534,7 @@ export class FilesApi {
       // `addMember`, the verbose equivalent, denies that exact call. Found
       // 2026-10-02 by adversarial review.
       //
-      // `resolved.created` is true only for the default workspace's first
+      // `resolved.created` is true only for the default org's first
       // upload; a named org is never created here (see above).
       const mayJoin =
         isDefaultWorkspace ||
@@ -548,7 +548,7 @@ export class FilesApi {
       ownerId = system;
       // In a NAMED org the service identity is only a `member`, so an unowned
       // upload into a customer tenant does not hand us admin read over that
-      // tenant's documents. In the default workspace it is the owner, because
+      // tenant's documents. In the default org (`__filelayer_workspace__`) it is the owner, because
       // somebody has to be.
       if (!isDefaultWorkspace) await this.ids.membership(orgId, system, 'member');
     }
@@ -714,7 +714,7 @@ export class FilesApi {
     if (opts.as === undefined) {
       if (!cfg.orSystem) return { actorId: null, ...audit };
       // publish/unpublish with no `as` is a server-side administrative action in
-      // the default workspace, performed by the service identity that owns it.
+      // the default org (`__filelayer_workspace__`), performed by the service identity that owns it.
       return { actorId: await this.ids.actor(SYSTEM_ACTOR), ...audit };
     }
     const actorId = await resolveActorOrDeny(this.fl, this.ids, opts.as, 'file.access');

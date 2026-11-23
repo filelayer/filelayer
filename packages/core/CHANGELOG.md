@@ -59,7 +59,7 @@ draft of this fix refused a member renouncing a read-only grant a colleague had
 issued them under a group grant, which had worked before; the cold review of
 the fix found it. Asserted in `test/regression.test.ts`.
 
-**Found** on 2026-11-21 by the productivity benchmark's arm A reference, which
+**Found** on 2026-11-21 by arm A's reference in `benchmark/productivity/`, which
 had to restrict revocation to a link's creator in its own code. Asserted for
 both `org` and `role` subjects, and for a chain below one, in
 `test/regression.test.ts`.
@@ -83,6 +83,24 @@ waits about 10 s on exit. Asserted in `test/pglite-range.test.ts`.
 **In CI**, an upstream release outside the range now fails one job of its own,
 "upstream release outside supported range", instead of the install and
 lifecycle jobs; those install the newest release inside the range.
+
+### Documented — a caller can tell an org id that exists from one that does not
+
+`files.put()` answers `404` for an org that does not exist and `403
+no_membership` for one the caller is not in; `files.list()` answers `404` for
+the first and an empty list for the second. That has been so since the
+methods took an org, and it contradicts what `src/errors.ts` says about those
+reasons. It is now `LIMITATIONS.md` entry 18, with
+`test/org-existence.test.ts` asserting the behaviour as it is. The next minor
+release is planned to answer both cases alike.
+
+### Changed — wording only
+
+The comments on the default org in `src/simple.ts` call it the default org,
+`__filelayer_workspace__`, as the rest of the documentation does, and the
+comments and test notes that put a refusal's reason right after its status
+write the code first and the reason after it, as in `404 not_found` (reason
+`unknown_actor`).
 
 ---
 

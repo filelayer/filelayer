@@ -237,6 +237,19 @@ Each one is current as of
    inside `share_revoke`. Both say so in the report's `notes`
    (`errors_not_measured`, `unshare_not_recorded`). See
    [docs/USAGE-REPORT.md](docs/USAGE-REPORT.md).
+18. **A caller can tell an org id that exists from one that does not.**
+   `files.put()` into an org that does not exist is refused with `404
+   not_found` (reason `unknown_org`), and into an org that exists but that the
+   caller does not belong to with `403 forbidden` (reason `no_membership`).
+   `files.list()` on an org that does not exist is a `404`, and on one that
+   exists but that the caller cannot read an empty list. So the answer alone
+   says whether an org id exists, which `src/errors.ts` says it must not. No
+   file, name or member is disclosed, only the existence of the id. If your org
+   ids are guessable (sequential, or a customer's name), treat them as
+   disclosed to anyone who can call these methods, or check membership in your
+   own route before calling them. `test/org-existence.test.ts` asserts the
+   behaviour as it is; the next minor release is planned to answer both cases
+   alike and keep the reason in the audit log.
 
 ---
 

@@ -600,7 +600,7 @@ describe('holding `share` does not confer revoke over other people’s grants', 
     await w.fl.revoke(P(admin), link.grantId);
     await rejects(() => w.fl.redeem(link.secret!), 404);
   });
-  // Found by the productivity benchmark's arm A reference (2026-11-21). The
+  // Found by arm A's reference in `benchmark/productivity/` (2026-11-21). The
   // subtree rule assumes one holder per grant. A grant to a group (`org` or
   // `role`) has many: every member holds the same authority, so every member's
   // links sit in every other member's "own" subtree, and the group grant itself
