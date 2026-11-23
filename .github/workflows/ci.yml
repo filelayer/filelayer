@@ -132,8 +132,9 @@ jobs:
         working-directory: packages/core
         run: |
           npm ci
-          RANGE=$(node -p 'require("./package.json").devDependencies["@electric-sql/pglite"]')
-          npm install --no-save --no-audit --no-fund "@electric-sql/pglite@$RANGE"
+          # The declared range, written out: check:install fails if it ever
+          # admits a version devDependencies does not.
+          npm install --no-save --no-audit --no-fund "@electric-sql/pglite@^0.3.11 || ^0.5.8 || ^0.6.0"
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
             import { inside } from "../../tools/check-upstream-range.mjs";
@@ -675,15 +676,14 @@ jobs:
       # their first quickstart. The step above is what proves it was not
       # already there.
       #
-      # The supported range itself, from devDependencies: npm picks the newest
-      # release inside it. Not npm's bare `latest`, which an upstream release
+      # The supported range itself, as devDependencies declares it (check:install
+      # fails if this one admits more): npm picks the newest release inside it. Not npm's bare `latest`, which an upstream release
       # can move outside the range; the job "upstream release outside
       # supported range" reports that, under its own name.
       - name: Install the PGlite the quickstart helper needs
         working-directory: ${{ runner.temp }}/consumer
         run: |
-          RANGE=$(node -p 'require(process.env.GITHUB_WORKSPACE + "/packages/core/package.json").devDependencies["@electric-sql/pglite"]')
-          npm install --save-dev "@electric-sql/pglite@$RANGE"
+          npm install --save-dev "@electric-sql/pglite@^0.3.11 || ^0.5.8 || ^0.6.0"
 
       - name: Import it and use it
         run: node "$GITHUB_WORKSPACE/tools/verify-install.mjs" "$RUNNER_TEMP/consumer"
