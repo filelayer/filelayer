@@ -383,7 +383,8 @@ enforced by the authorization engine *and* again by a database trigger, so it
 binds a migration or a psql session too, unless triggers are kept from firing: a
 superuser, or a role granted SET on [`session_replication_role`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE), can do that for its own session, and
 the table's owner can disable the trigger with [`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html), for every session until it
-is enabled again. Revoking a grant kills everything ever delegated from it, at
+is enabled again. If you applied `schema.sql` with your application's own
+`DATABASE_URL`, as §7 does, your application's role is that owner. Revoking a grant kills everything ever delegated from it, at
 any depth, with **no cascading write**: liveness is evaluated over the ancestor
 chain.
 

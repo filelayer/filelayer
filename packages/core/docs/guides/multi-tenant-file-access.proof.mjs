@@ -4,8 +4,8 @@
  *
  * The guide beside this file claims that Row-Level Security filters reads and
  * does not stop you WRITING a row that joins two tenants, and that a composite
- * foreign key does — against every writer, including one that has bypassed RLS
- * entirely. Those are claims about PostgreSQL, so they are demonstrated against
+ * foreign key does, against every writer that connects as an ordinary role,
+ * including one with BYPASSRLS. Those are claims about PostgreSQL, so they are demonstrated against
  * PostgreSQL rather than asserted.
  *
  *     node docs/guides/multi-tenant-file-access.proof.mjs

@@ -119,9 +119,11 @@ A grant is **live** iff **it and every one of its ancestors** satisfies all of:
 | budget | `download_count ≥ max_downloads` |
 | **scope** | its file, org, project, **subject**, **subject org** or **issuer** is deleted |
 
-Evaluated by one predicate, `grant_is_live()`, which every grant lookup reads
-through (`live_grant`). There is no query that can opt out of it, including a
-`psql` session or a future endpoint.
+Evaluated by one predicate, `grant_is_live()`, which every grant lookup the
+library makes reads through (`live_grant`), so no path in the library, present
+or future, can skip it. A query written against `file_grant` directly, from
+`psql` or anywhere else, is not filtered: read authorization lives in the
+library, not in the database.
 
 Liveness is **derived, never cascaded**. Revoking a grant or deleting a scope
 writes nothing to the grants below it; they simply stop being live. This is why
@@ -290,7 +292,14 @@ instead of defining one).
 
 Attenuation has **two dimensions**: what a delegate may *do*, and *who they may
 reach*. Both are enforced by the same `BEFORE INSERT OR UPDATE` trigger, so both
-bind every writer and not just the application.
+bind any writer that connects as an ordinary role, not just the application. A
+superuser, or a role granted SET on
+[`session_replication_role`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE),
+can keep triggers from firing for its own session, and the table's owner can
+disable the trigger with
+[`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html), for
+every session. In the documented install, which applies `schema.sql` with the
+application's own `DATABASE_URL`, the application's role is that owner.
 
 ### 7a. Authority — what a delegate may do
 
@@ -339,8 +348,8 @@ whole way. Both dimensions must be attenuated or neither is.
 **Where it is enforced.** In `authorizeShare()`, which refuses with reason
 `subject_breadth_amplification`, a `403`, and an audit event naming the
 requested subject type; **and** in the `file_grant_attenuate()` trigger, which
-raises `grant_subject_amplification` — so the invariant holds for a caller
-issuing raw SQL, a migration, or an admin tool. The trigger fires on the subject
+raises `grant_subject_amplification`, so the invariant also holds for raw SQL,
+a migration or an admin tool, within the same bound as every trigger (§7). The trigger fires on the subject
 columns as well as on INSERT, so a delegated grant cannot be widened by a later
 `UPDATE` either. Every case in the table above is asserted through both paths in
 `test/group-subjects.test.ts`.

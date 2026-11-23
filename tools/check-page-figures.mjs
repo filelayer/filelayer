@@ -181,13 +181,15 @@ function expectations(f) {
     ]);
   }
   const readme = [
-    [`${f.dsup.types} and ${f.ds3.types} against Filelayer's ${f.dfl.types}`, 'decision kinds'],
+    // The README introduces Supabase before raw S3, so both bullets name the
+    // platforms in that order (cold review, 23 November 2026).
+    [`${f.dsup.types} for Supabase and ${f.ds3.types} for raw S3, against Filelayer's ${f.dfl.types}`, 'decision kinds, named'],
     [`About ${f.decMedian.types} times as many kinds`, 'the decisions average'],
     [`about ${f.decMedian.sites} times as many places`, 'the places average'],
     [`**${f.afl.defended} of ${f.shared}** for Filelayer`, 'Filelayer on the shared attacks'],
     [`Raw S3 also defends ${f.as3.defended} of ${f.shared}; Supabase defends ${f.asup.defended}`, 'raw S3 and Supabase on the shared attacks'],
     [`About ${f.prodMedian.x} times as many lines`, 'the production-wired ratio'],
-    [`${f.prodTotals} lines of application and infrastructure code against Filelayer's ${f.prodMedian.fl}`, 'the production-wired lines of each alternative'],
+    [`${f.prodSup} lines of application and infrastructure code for Supabase and ${f.prodS3} for raw S3, against Filelayer's ${f.prodMedian.fl}`, 'the production-wired lines of each alternative, named'],
     [`(raw S3 in ${rounds(f.rev['Raw S3'].rounds)}, Supabase in ${rounds(f.rev['Supabase'].rounds)})`, 'the revision rounds, from benchmark/revisions/README.md'],
     [`${f.median.fl} lines, it is about ${f.median.x} times as many`, 'the example ratio'],
   ];
@@ -272,6 +274,8 @@ const f = figures(results);
     process.exit(1);
   }
   f.prodTotals = `${s3} and ${sup}`;
+  f.prodS3 = s3;
+  f.prodSup = sup;
 }
 const texts = { 'benchmark/PAGE.md': read('benchmark/PAGE.md'), 'README.md': read('README.md'), 'web/index.html': read('web/index.html') };
 

@@ -169,8 +169,9 @@ FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id) ON DELETE CASCADE
 Worth being precise about what that is and is not: **Filelayer is authorization
 middleware, not row-level security.** It decides for calls made through it. A
 client that queries your Postgres directly bypasses it. The composite keys and
-triggers still hold for any client that connects as an ordinary role, but no
-authorization runs
+triggers still hold for any client that connects as an ordinary role (the
+table's owner can still disable a trigger, and in the documented install the
+application's role is the owner), but no authorization runs
 and no audit event is written. The two compose; neither replaces the other. If
 you want RLS as well, add it; nothing here conflicts.
 

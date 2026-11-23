@@ -399,6 +399,8 @@ than in application code, so they bind a migration and a psql session as well
 as the library, unless triggers are kept from firing: a superuser, or a role
 granted SET on [`session_replication_role`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE), can do that for its own session, and the table's owner can
 disable the trigger with [`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html), for every session until it is enabled again.
+In Filelayer's documented install, which applies `schema.sql` with the
+application's own `DATABASE_URL`, the application's role is that owner.
 
 <!-- doccheck-setup
 import { Filelayer } from '@filelayer/core';

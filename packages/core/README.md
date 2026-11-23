@@ -64,16 +64,16 @@ runs was attacked by one shared suite:
 
 - **About 3.1 times as many kinds of security-sensitive decision** in the two
   alternatives that ran, places where a wrong choice leaks data and nothing
-  reports it: 25 and 24 against Filelayer's 8, and about 4.0 times as many
-  places to get them right.
+  reports it: 25 for Supabase and 24 for raw S3, against Filelayer's 8, and
+  about 4.0 times as many places to get them right.
 - **21 of 21** for Filelayer on the 21 attacks every executed version can
   express, after the executed alternatives were revised against the suite
   (raw S3 in one round, Supabase in two rounds), with every diff published. Raw S3 also defends 21 of 21; Supabase
   defends 21 of 21. The hand-written versions can be made safe; the difference
   is how much code that takes.
 - **About 2.9 times as many lines** in the two alternatives that ran, wired as
-  in production: 794 and 569 lines of application and infrastructure code
-  against Filelayer's 233, with its pool, bucket and policies. Against our
+  in production: 569 lines of application and infrastructure code for Supabase
+  and 794 for raw S3, against Filelayer's 233, with its pool, bucket and policies. Against our
   example as it ships, 157 lines, it is about 4.1 times as many. Convex and
   Vercel Blob were neither executed nor compiled, so they are left out of every
   figure.
@@ -166,6 +166,8 @@ every writer that connects as an ordinary role, a `psql` session included;
 those are constraints and triggers. A superuser, or a role granted SET on
 [`session_replication_role`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE), can switch triggers and foreign-key checks off for its own session, and
 the table's owner can disable a trigger with [`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html).
+In the documented install, which applies `schema.sql` with the application's own
+`DATABASE_URL`, the application's role is that owner.
 But there is no RLS policy in `schema.sql`, and a direct `SELECT` against these
 tables is filtered by nothing. Filelayer composes with database-level
 enforcement; it does not replace it.
