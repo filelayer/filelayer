@@ -326,8 +326,8 @@ otherwise. `createTestDb()` will tell you, by name, if you need it:
 npm install --save-dev "@electric-sql/pglite@^0.3.11"
 ```
 
-Filelayer supports PGlite `^0.3.11` and `^0.5.8`, and CI runs the whole suite on
-the 0.3 line and on PGlite's latest. The command pins the 0.3 line: 0.5.x works too; with it, a script that uses `quickstart()` ends with `await fl.close()`, or it waits about 10 s on exit ([electric-sql/pglite#1232](https://github.com/electric-sql/pglite/issues/1232)). PGlite is not a peer dependency, so installing it never
+Filelayer supports PGlite `^0.3.11`, `^0.5.8` and `^0.6.0`, and CI runs the whole suite on
+the 0.3 line and on PGlite's latest. The command pins the 0.3 line: 0.5.x and 0.6.x work too; with them, a script that uses `quickstart()` ends with `await fl.close()`, or it waits about 10 s on exit ([electric-sql/pglite#1232](https://github.com/electric-sql/pglite/issues/1232)). PGlite is not a peer dependency, so installing it never
 fails the tree. With a version outside the range, `quickstart()` and
 `createTestDb()` stop with the error `pglite_unsupported_version`, which gives
 the command above.

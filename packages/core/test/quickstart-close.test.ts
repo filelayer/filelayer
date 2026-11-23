@@ -6,7 +6,7 @@
  * last line then sat for ten seconds before the process exited (measured
  * 2026-11-15: 13 s against 2 s on 0.3.x). `fl.close()` closes the database
  * `quickstart()` created. This file runs on whatever PGlite is installed; CI's
- * `test on PGlite's latest` job is the one that runs it on 0.5.x.
+ * `test on the newest PGlite in range` job is the one that runs it on 0.6.x.
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';

@@ -28,7 +28,7 @@
  * "point it at your own Postgres" should not put a second Postgres into every
  * production `node_modules`. So whoever prepares the consumer directory must
  * run `npm install --save-dev "@electric-sql/pglite@^0.3.11"` in it before
- * running this. The supported range is `^0.3.11` or `^0.5.8`; outside it
+ * running this. The supported range is `^0.3.11`, `^0.5.8` or `^0.6.0`; outside it
  * `quickstart()` stops with `pglite_unsupported_version`.
  * See the `packaging` job in .github/workflows/ci.yml, which does exactly that
  * and says why. `tools/verify-release.mjs` proves the other half: that the
@@ -119,7 +119,7 @@ try {
   console.error(
     `\nverify-install: ${consumerDir} has no @electric-sql/pglite.\n\n` +
       `  npm install --save-dev "@electric-sql/pglite@^0.3.11"\n\n` +
-      `The supported range is ^0.3.11 or ^0.5.8.\n\n` +
+      `The supported range is ^0.3.11, ^0.5.8 or ^0.6.0.\n\n` +
       `This script drives Filelayer.quickstart(), which runs on an embedded WASM\n` +
       `Postgres. That package is not a dependency of @filelayer/core, on purpose:\n` +
       `a production install of this library ships no database at all.\n`,

@@ -69,8 +69,9 @@ Four details in there are load-bearing:
   agent had to rewrite the block by hand, which is the one thing this procedure
   must not require.
 - **PGlite is the only thing installed.** It runs PostgreSQL in-process, so the
-  suite needs no server. npm's `latest` is a 0.5.x release; the library
-  supports `^0.3.11` and `^0.5.8`, and CI runs the suite on both lines.
+  suite needs no server. npm's `latest` is a 0.6.x release; the library
+  supports `^0.3.11`, `^0.5.8` and `^0.6.0`, and CI runs the suite on the 0.3
+  line and on PGlite's latest.
 
 ## What you should see
 

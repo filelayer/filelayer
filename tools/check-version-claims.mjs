@@ -933,9 +933,9 @@ const DATING = [
  */
 const VERSION_SWEEP_EXCEPTIONS = [
   {
-    match: /pglite@[\^~]?\d|pglite\b[\s\S]{0,40}0\.\d+\.\d+|PGlite[\s\S]{0,60}0\.\d+\.\d+|\^0\.3\.11`? (?:and|or) `?\^0\.5\.8/,
-    why: "a DEPENDENCY's version, not ours. @electric-sql/pglite is supported on ^0.3.11 "
-      + 'and ^0.5.8, and the runtime refuses anything else with pglite_unsupported_version.',
+    match: /pglite@[\^~]?\d|pglite\b[\s\S]{0,40}0\.\d+\.\d+|PGlite[\s\S]{0,60}0\.\d+\.\d+|\^0\.3\.11`?,? (?:and|or) `?\^0\.5\.8|\^0\.5\.8`?,? (?:and|or) `?\^0\.6\.0|0\.5\.x and 0\.6\.x/,
+    why: "a DEPENDENCY's version, not ours. @electric-sql/pglite is supported on ^0.3.11, "
+      + '^0.5.8 and ^0.6.0, and the runtime refuses anything else with pglite_unsupported_version.',
   },
   {
     match: /`0\.3\.0` through `0\.5\.3`|0\.3\.0.{0,12}through/,

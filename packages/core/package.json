@@ -125,7 +125,7 @@
     }
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.3.11 || ^0.5.8",
+    "@electric-sql/pglite": "^0.3.11 || ^0.5.8 || ^0.6.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.23.1",

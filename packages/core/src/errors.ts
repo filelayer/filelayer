@@ -186,8 +186,8 @@ export const ERROR_CODES = {
   },
   pglite_unsupported_version: {
     status: 500,
-    meaning: 'createTestDb() or Filelayer.quickstart() found an @electric-sql/pglite outside the range this library supports, ^0.3.11 or ^0.5.8.',
-    fix: 'Install a supported version: npm install --save-dev @electric-sql/pglite@^0.3.11 (0.5.8 and later 0.5.x work too). Production code does not need PGlite at all; pass your own pg.Pool to new Filelayer().',
+    meaning: 'createTestDb() or Filelayer.quickstart() found an @electric-sql/pglite outside the range this library supports, ^0.3.11, ^0.5.8 or ^0.6.0.',
+    fix: 'Install a supported version: npm install --save-dev @electric-sql/pglite@^0.3.11 (0.5.8 and later 0.5.x, and 0.6.x, work too). Production code does not need PGlite at all; pass your own pg.Pool to new Filelayer().',
   },
   storage_cannot_list: {
     status: 500,

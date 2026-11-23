@@ -21,8 +21,8 @@ library is entitled to know what has already moved underneath it.
 
 ## [Unreleased]
 
-A patch release with one authorization fix. No schema change (still version
-16) and no change to the API.
+A patch release with one authorization fix and support for PGlite 0.6. No
+schema change (still version 16) and no change to the API.
 
 ### Fixed (security) — holders of one group grant could revoke each other's links
 
@@ -63,6 +63,26 @@ the fix found it. Asserted in `test/regression.test.ts`.
 had to restrict revocation to a link's creator in its own code. Asserted for
 both `org` and `role` subjects, and for a chain below one, in
 `test/regression.test.ts`.
+
+### Fixed — `quickstart()` refused PGlite 0.6, npm's new `latest`
+
+**What happened.** `@electric-sql/pglite` 0.6.0 was released on 23 November
+2026 and became npm's `latest`. 0.36.0 supported `^0.3.11 || ^0.5.8`, so a
+project that installed PGlite with no version got 0.6.0, and
+`Filelayer.quickstart()` and `createTestDb()` stopped with
+`pglite_unsupported_version`. The documented command, which pins `^0.3.11`,
+was not affected. Production code, which passes its own `pg.Pool`, never loads
+PGlite and was not affected either.
+
+**Now.** The supported range is `^0.3.11 || ^0.5.8 || ^0.6.0`, in
+`devDependencies` and in the check that runs when PGlite loads. The whole suite
+passes on 0.6.0, with no failure and no test skipped that runs on 0.3.x. As
+on 0.5.x, a script that uses `quickstart()` ends with `await fl.close()`, or it
+waits about 10 s on exit. Asserted in `test/pglite-range.test.ts`.
+
+**In CI**, an upstream release outside the range now fails one job of its own,
+"upstream release outside supported range", instead of the install and
+lifecycle jobs; those install the newest release inside the range.
 
 ---
 

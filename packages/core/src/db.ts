@@ -62,6 +62,7 @@
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { FilelayerError } from './errors.ts';
+import { pgliteSupported } from './pglite-range.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -575,27 +576,6 @@ const PGLITE = '@electric-sql/pglite';
  */
 const PGLITE_INSTALL = 'npm install --save-dev "@electric-sql/pglite@^0.3.11"';
 
-/**
- * THE SUPPORTED RANGE, CHECKED WHEN PGLITE IS LOADED, NOT AT INSTALL:
- * `^0.3.11 || ^0.5.8`, the same range `devDependencies` declares.
- *
- * Until 0.35.4 it was `^0.3.11` as an optional `peerDependencies` entry. npm
- * treats an optional peer that IS installed as a constraint, so a project that
- * already had PGlite's `latest` (0.5.x) could not add this package: ERESOLVE,
- * no tree at all, at the first contact. Production installs never need PGlite,
- * so the peer entry protected nobody. It is gone; the whole suite passes on
- * 0.5.8 and on 0.5.16, and CI runs it on PGlite's latest; and the range is
- * enforced here, at the one moment it matters, with an error that names the
- * command that fixes it. 0.4.x is outside it: never tested.
- */
-function pgliteSupported(version: string): boolean {
-  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
-  if (!m) return false;
-  const [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  if (major !== 0) return false;
-  return (minor === 3 && patch >= 11) || (minor === 5 && patch >= 8);
-}
-
 /** The installed PGlite's version, read from its own package.json. */
 function installedPgliteVersion(): string | null {
   try {
@@ -633,7 +613,7 @@ function isModuleNotFound(err: unknown, spec: string): boolean {
  * thing it is NOT is multi-process, which matters for exactly one test; see
  * test/security.test.ts, "atomic download cap", for what that weakens.
  *
- * REQUIRES `@electric-sql/pglite` ^0.3.11 or ^0.5.8, which you install yourself. Production code
+ * REQUIRES `@electric-sql/pglite` ^0.3.11, ^0.5.8 or ^0.6.0, which you install yourself. Production code
  * does not need it: hand `new Filelayer(...)` your own `pg.Pool`, or anything
  * else that satisfies `Queryable`, and this function is never reached.
  */
@@ -670,7 +650,7 @@ async function importPglite(): Promise<{
         `\n` +
         `  ${PGLITE_INSTALL}\n` +
         `\n` +
-        `@filelayer/core supports ${PGLITE} ^0.3.11 and ^0.5.8; npm's latest is\n` +
+        `@filelayer/core supports ${PGLITE} ^0.3.11, ^0.5.8 and ^0.6.0; npm's latest is\n` +
         `inside that, so the command needs no version.\n` +
         `\n` +
         `It is not a dependency of @filelayer/core, on purpose: it is an\n` +
@@ -696,7 +676,7 @@ function unsupported(version: string): FilelayerError {
   const e = new FilelayerError('pglite_unsupported_version', `installed ${PGLITE} ${version}`);
   e.message =
     `pglite_unsupported_version: ${PGLITE} ${version} is installed, and @filelayer/core ` +
-    `supports ^0.3.11 and ^0.5.8.\n\n  ${PGLITE_INSTALL}\n\n${e.fix}`;
+    `supports ^0.3.11, ^0.5.8 and ^0.6.0.\n\n  ${PGLITE_INSTALL}\n\n${e.fix}`;
   return e;
 }
 
