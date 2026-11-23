@@ -148,12 +148,12 @@ Filelayer                 ONE authorization function answers every request
                           the audit event, written in the decision's own
                           transaction so the log cannot disagree with it
    ───────────────────────────────────────────────────────────────────────
-your Postgres             13 tables: 9 for files, permissions, shares and
-your bucket               the audit chain, and 4 for the schema version and
-                          the usage report. Filelayer owns the schema, you
-                          own the database. Bytes go to S3, R2, B2 or a
-                          directory behind one adapter; storage is
-                          replaceable
+your Postgres             13 tables: 9 for tenants, files, permissions,
+your bucket               shares, the audit chain and job runs, and 4 for
+                          the schema version and the usage report.
+                          Filelayer owns the schema, you own the database.
+                          Bytes go to S3, R2, B2 or a directory behind one
+                          adapter; storage is replaceable
 ```
 
 Filelayer sits between the two things you already run. It brings no database and
@@ -162,7 +162,10 @@ no storage of its own, and **zero runtime dependencies**.
 **It is authorization middleware, not row-level security.** It decides for calls
 made through it, in your process. The schema additionally refuses cross-tenant
 grants, cross-project identities and delegation that amplifies authority from
-*every* writer, including a `psql` session; those are constraints and triggers.
+every writer that connects as an ordinary role, a `psql` session included;
+those are constraints and triggers. A superuser, or a role granted SET on
+[`session_replication_role`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE), can switch triggers and foreign-key checks off for its own session, and
+the table's owner can disable a trigger with [`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html).
 But there is no RLS policy in `schema.sql`, and a direct `SELECT` against these
 tables is filtered by nothing. Filelayer composes with database-level
 enforcement; it does not replace it.
@@ -214,7 +217,7 @@ engine, not by convention, and each has tests named after it.
 |---|---|---|
 | **P1** | Deny by default | There is no `public` boolean anywhere in the schema. Public delivery is an explicit, revocable, auditable grant row; there is no flag to leave on by accident. **This is a property of the schema, not of your object store: Filelayer cannot make your bucket private, and a public bucket bypasses everything on this page.** That is the one configuration step it cannot do for you: [QUICKSTART §7](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md). |
 | **P2** | No ambient authority | Knowing an object key, a URL or a file id grants nothing. Storage location is never an input to a decision. |
-| **P3** | Cross-tenant grants are structurally impossible to write | A grant's `org_id` must equal its file's `org_id`, enforced by the composite foreign key `FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id)`. No writer, including a migration or a `psql` session, can create a grant pointing at another tenant's file. This is a write-side integrity constraint, not a read filter: it makes the *row* unrepresentable. Reads are scoped by the engine, not by the database. |
+| **P3** | Cross-tenant grants are structurally impossible to write | A grant's `org_id` must equal its file's `org_id`, enforced by the composite foreign key `FOREIGN KEY (file_id, org_id) REFERENCES file (id, org_id)`. No writer that connects as an ordinary role, including a migration or a `psql` session, can create a grant pointing at another tenant's file; a superuser, or a role granted SET on `session_replication_role`, can switch foreign-key checks off for its own session, since PostgreSQL implements them as triggers. This is a write-side integrity constraint, not a read filter: it makes the *row* unrepresentable. Reads are scoped by the engine, not by the database. |
 | **P4** | A URL never outlives its permission | Every signed URL embeds a grant id and is re-validated on **every** request, transitively through the whole delegation chain. Revocation beats a live URL. |
 | **P5** | Every decision is audited, including denials | Hash-chained per tenant. Probes that cannot be attributed to a tenant go to a system chain rather than being dropped. The log answers in *your* identifiers (`marco`, `contract.pdf`, `acme`) alongside the internal ones, so "who accessed this?" needs no SQL of yours. |
 

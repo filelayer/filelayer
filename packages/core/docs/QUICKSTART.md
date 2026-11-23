@@ -377,14 +377,15 @@ await fl.shares.list(fileId, { as: 'ceo' });   // what have we shared, with whom
 
 ### Delegation
 
-If you give someone `share`, what they hand on can never exceed what they hold —
+If you give someone `share`, what they hand on can never exceed what they hold:
 not in capability, not in lifetime, not in remaining download budget. That is
 enforced by the authorization engine *and* again by a database trigger, so it
-binds a migration or a psql session too, unless that session stops triggers from
-firing, which takes a superuser, a role granted `session_replication_role`, or
-the table's owner ([PostgreSQL](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE)). Revoking a grant kills everything ever
-delegated from it, at any depth, with **no cascading write** — liveness is
-evaluated over the ancestor chain.
+binds a migration or a psql session too, unless triggers are kept from firing: a
+superuser, or a role granted SET on [`session_replication_role`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE), can do that for its own session, and
+the table's owner can disable the trigger with [`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html), for every session until it
+is enabled again. Revoking a grant kills everything ever delegated from it, at
+any depth, with **no cascading write**: liveness is evaluated over the ancestor
+chain.
 
 Nor can what they hand on reach **more people** than they can. Someone whose own
 authority came from a grant may pass it to a named user or as a share link, and
@@ -609,7 +610,7 @@ everywhere else. An id this project has never seen is a `404` and the attempt is
 recorded -- never a silent downgrade to anonymous, which would turn a typo in a
 session lookup into a read of every published file. It is recorded as a
 `file.access` denial with reason `unknown_actor` and the id that was tried, and
-it goes to the project's system chain, not the organization's: attributing it to
+it goes to the system chain, not the organization's: attributing it to
 an organization would mean resolving which organization owns the file before
 authorizing anyone, which would tell a stranger whose file an id is. See [`SEMANTICS.md`](../SEMANTICS.md), section 9.
 

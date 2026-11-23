@@ -396,9 +396,9 @@ If no, stop here.
 the recursive liveness function, the attenuation trigger with its `UPDATE OF`
 list, chain-wide budget consumption and the two bounds are in its schema rather
 than in application code, so they bind a migration and a psql session as well
-as the library, unless that session stops triggers from firing, which takes a
-superuser, a role granted `session_replication_role`, or the table's owner
-([PostgreSQL](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE)).
+as the library, unless triggers are kept from firing: a superuser, or a role
+granted SET on [`session_replication_role`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE), can do that for its own session, and the table's owner can
+disable the trigger with [`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html), for every session until it is enabled again.
 
 <!-- doccheck-setup
 import { Filelayer } from '@filelayer/core';

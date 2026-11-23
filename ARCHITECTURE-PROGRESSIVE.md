@@ -389,8 +389,9 @@ that flatters nobody here and is left in place rather than corrected away.
 > something right*. It says nothing about how strong the enforcement is once
 > they have. **Fewer decisions and stronger enforcement are different axes, and
 > Postgres RLS wins the second one.** RLS is evaluated inside the database, so
-> it binds every client — including code paths that never touch the
-> application. Filelayer is middleware: it decides for calls made through it,
+> it binds every client that connects as an ordinary role, including code
+> paths that never touch the application (superusers, roles with `BYPASSRLS`
+> and, without `FORCE ROW LEVEL SECURITY`, the table's owner skip it). Filelayer is middleware: it decides for calls made through it,
 > and `schema.sql` ships no RLS policy, so a direct `SELECT` is not filtered by
 > anything.
 >

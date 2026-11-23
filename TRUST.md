@@ -65,8 +65,8 @@ mistakes people actually make:
   returns a file the point check would deny, that is a leak, and the suite fails.
 - **A calibration control.** The adversarial suite is also run against
   `filelayer-prerebuild`: the example application as it was before its delivery
-  and authorization were rebuilt, on the current library, known to be
-  vulnerable. It scores 3 breaches there and 0 here. A suite that only ever passes proves nothing about itself.
+  and authorization were rebuilt, using the same library underneath, known to
+  be vulnerable. It scores 3 breaches there and 0 here. A suite that only ever passes proves nothing about itself.
 
 ## What runs against a real object store, and what still does not
 
@@ -246,9 +246,10 @@ If you want to try it, the honest framing is: a design that has been attacked on
 purpose and has not met production. Reasonable ways to engage, roughly in order of exposure:
 
 - **Read the schema.** `schema.sql` states eight security properties. Some are
-  write-side integrity constraints that bind every writer — take the composite
-  foreign key that makes a cross-tenant grant row impossible to insert, even
-  from `psql`. Others, including all read authorization, are enforced in
+  write-side integrity constraints that bind every writer connecting as an
+  ordinary role: take the composite foreign key that makes a cross-tenant grant
+  row impossible to insert, even from `psql`. A superuser, or a role granted SET
+  on [`session_replication_role`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-SESSION-REPLICATION-ROLE), can switch foreign-key checks off for its own session. Others, including all read authorization, are enforced in
   `authz.ts` and therefore only for calls made through the library: there is no
   RLS policy in `schema.sql`, and a direct `SELECT` is not filtered. Take also
   the rule that a signed URL is re-validated on every request instead of being a
