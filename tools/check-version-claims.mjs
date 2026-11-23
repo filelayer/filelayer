@@ -942,12 +942,6 @@ const VERSION_SWEEP_EXCEPTIONS = [
     why: 'a RANGE in the security policy’s advisory table. The first endpoint has no dating '
       + 'word in front of it because `through` sits between the two.',
   },
-  {
-    match: /identified against version 0\.8\.0 in October 2026/,
-    why: 'a HISTORICAL statement in a dated blog article (blog/404-not-403-when-someone-loses-access.md), '
-      + 'written by its author: the date follows the version instead of preceding it. It matches '
-      + 'SEMANTICS.md §12, measured against 0.8.0 on 3 October 2026.',
-  },
 ];
 
 /**
