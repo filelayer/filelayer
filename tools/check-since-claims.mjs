@@ -117,7 +117,7 @@ const CLAIMS = [
     note: 'put() refuses an unknown org, in llms.txt.',
   },
   {
-    match: 'of that org (or it is the default workspace). Since 0.36.0 an org that does not',
+    match: '(or it is the default org, `__filelayer_workspace__`). Since 0.36.0 an org that does not',
     probe: { kind: 'ships', file: 'dist/simple.js', text: '{ id: await this.ids.requireOrg(opts.org), created: false }' },
     note: 'put() refuses an unknown org, in the integration skill.',
   },
