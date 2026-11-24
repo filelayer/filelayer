@@ -342,8 +342,8 @@ await fl.ids.ensureActor('user_123');               // creates if absent; idempo
 const { id: clipId } = await fl.files.put(bytes, { public: true, name: 'clip.bin' });
 
 // In a route this is `req.headers.range`. A header it cannot use returns null,
-// which means &quot;serve the whole object&quot; -- never an error. RFC 9110 requires a
-// malformed `Range` to be IGNORED, not rejected.
+// which means &quot;serve the whole object&quot; -- never an error. RFC 9110 lets a server
+// ignore a malformed `Range` (section 14.2), and Filelayer does.
 const range = parseRangeHeader('bytes=0-3');
 
 const delivery = await fl.readStream({ actorId: null }, clipId, {
@@ -488,7 +488,7 @@ const report = await auditIntegration({
 
 console.log(formatAuditReport(report));
 if (!report.ok) process.exit(1);</code></pre>
-<p>What it checks: the owner can read their own file; a stranger cannot, and is refused <strong>404 rather than 403</strong>, because a 403 tells them the file exists; an anonymous caller cannot; an id your application has never seen <strong>denies rather than degrading to anonymous</strong>; <code>nosniff</code> and <code>attachment</code> are on the bytes; the response is not publicly cacheable; byte ranges are answered correctly, including the invalid range that must be ignored and the unsatisfiable one that must carry the size; and revocation lands on the <strong>next request</strong>.</p>
+<p>What it checks: the owner can read their own file; a stranger cannot, and is refused <strong>404 rather than 403</strong>, because a 403 tells them the file exists; an anonymous caller cannot; an id your application has never seen <strong>denies rather than degrading to anonymous</strong>; <code>nosniff</code> and <code>attachment</code> are on the bytes; the response is not publicly cacheable; byte ranges are answered correctly, including the invalid range that is ignored and the unsatisfiable one that must carry the size; and revocation lands on the <strong>next request</strong>.</p>
 <p><strong>What a pass means.</strong> The properties held for the requests it made. It is not a security audit, it does not read your code, and it cannot find a hole in a path it was not told about. <strong>A failure is real</strong>: it is a request that got an answer it should not have, and every check prints what it did so you can argue with the verdict.</p>
 <p>The harness itself is checked the only way a harness can be: against a deliberately broken application. Eleven variants, each with exactly one property wrong, each of which the matching check must catch. See <code>test/audit-integration.test.ts</code> in the tarball.</p>
 <hr>

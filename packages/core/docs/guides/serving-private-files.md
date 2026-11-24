@@ -114,26 +114,31 @@ know, at the only moment it could not act on it.
 is not an error — a last-position past the end is satisfiable, and the response
 covers to the end.
 
-### The five that look like `416` and are not
+### Five ranges that get `200` here, and the one that gets `416`
 
 `416 Range Not Satisfiable` is the status everyone reaches for when a range
-cannot be served as asked. It is almost always wrong, because RFC 9110 says an
-**invalid** range must be *ignored* — answer `200` with the whole
-representation — and reserves `416` for a range that parsed cleanly and cannot
-be satisfied by *this particular object*.
+cannot be served as asked. RFC 9110 leaves more room than that, and the answer
+depends on what is wrong with the range. [Section 14.2](https://www.rfc-editor.org/rfc/rfc9110#section-14.2) says a
+server MAY ignore the `Range` header and answer `200` with the whole
+representation; an origin server MUST ignore a range unit it does not
+understand; and a server that supports ranges MAY ignore or reject an invalid
+ranges-specifier. `416` is for a range set that is valid and cannot be
+satisfied ([Section 15.5.17](https://www.rfc-editor.org/rfc/rfc9110#section-15.5.17)), which for bytes means no
+range starts inside the object and no suffix has a non-zero length
+([Section 14.1.2](https://www.rfc-editor.org/rfc/rfc9110#section-14.1.2)).
 
 Measured, same object:
 
 | Range header | status | why |
 |---|---|---|
-| `bytes=9-4` | **200** | last-position before first-position: invalid, so ignored |
-| `bytes=-0` | **200** | a suffix of zero asks for nothing |
-| `bytes=abc` | **200** | unparseable |
-| `items=0-4` | **200** | a unit that is not `bytes` |
-| `bytes=0-4,10-14` | **200** | multiple ranges — see below |
-| `bytes=99-120` | **416** | parsed cleanly, past the end of a 26-byte object, with `Content-Range: bytes */26` |
+| `bytes=9-4` | **200** | invalid (last-pos before first-pos), which a server may ignore or reject; Filelayer ignores it |
+| `bytes=-0` | **200** | valid but unsatisfiable, because a suffix needs a non-zero length, so `416` would be correct too; ignoring `Range` is also allowed, and Filelayer does |
+| `bytes=abc` | **200** | invalid, which a server may ignore or reject; Filelayer ignores it |
+| `items=0-4` | **200** | a unit that is not `bytes`, which an origin server must ignore |
+| `bytes=0-4,10-14` | **200** | valid: two ranges; Filelayer ignores them rather than answer one, see below |
+| `bytes=99-120` | **416** | valid and unsatisfiable: it starts past the end of a 26-byte object; sent with `Content-Range: bytes */26` |
 
-Only the last one is a `416`, and note what it carries: `bytes */26` tells the
+Only the last one is a `416` here, and note what it carries: `bytes */26` tells the
 client the actual size, which is the information it needs to ask a better
 question. A `416` without it is a dead end.
 

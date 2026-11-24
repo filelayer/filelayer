@@ -683,8 +683,8 @@ import { parseRangeHeader, toStreamResponse } from '@filelayer/core';
 const { id: clipId } = await fl.files.put(bytes, { public: true, name: 'clip.bin' });
 
 // In a route this is `req.headers.range`. A header it cannot use returns null,
-// which means "serve the whole object" -- never an error. RFC 9110 requires a
-// malformed `Range` to be IGNORED, not rejected.
+// which means "serve the whole object" -- never an error. RFC 9110 lets a server
+// ignore a malformed `Range` (section 14.2), and Filelayer does.
 const range = parseRangeHeader('bytes=0-3');
 
 const delivery = await fl.readStream({ actorId: null }, clipId, {
@@ -1034,7 +1034,7 @@ refused **404 rather than 403**, because a 403 tells them the file exists; an
 anonymous caller cannot; an id your application has never seen **denies rather
 than degrading to anonymous**; `nosniff` and `attachment` are on the bytes; the
 response is not publicly cacheable; byte ranges are answered correctly,
-including the invalid range that must be ignored and the unsatisfiable one that
+including the invalid range that is ignored and the unsatisfiable one that
 must carry the size; and revocation lands on the **next request**.
 
 **What a pass means.** The properties held for the requests it made. It is not

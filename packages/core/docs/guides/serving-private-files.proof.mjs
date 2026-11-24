@@ -14,12 +14,13 @@
  *      that came back. Twenty-six distinguishable bytes, so an off-by-one is
  *      visible rather than plausible.
  *
- *   2. THE FIVE CASES THAT LOOK LIKE 416 AND ARE NOT. This is the part worth
- *      running: every one of them is a range the server cannot serve as asked,
- *      and in every one of them 416 is the wrong answer. RFC 9110 says an
- *      unparseable or invalid range MUST BE IGNORED -- answer 200 with the
- *      whole representation -- and reserves 416 for a range that parsed
- *      cleanly and cannot be satisfied by THIS object.
+ *   2. FIVE RANGES ANSWERED 200, AND THE ONE ANSWERED 416. RFC 9110 14.2: a
+ *      server MAY ignore Range; an origin server MUST ignore a unit it does not
+ *      understand; a server MAY ignore or reject an invalid ranges-specifier.
+ *      bytes=-0 is valid and unsatisfiable (14.1.2: a suffix needs a non-zero
+ *      length), so 416 would be allowed there too; bytes=0-4,10-14 is valid.
+ *      Filelayer ignores all five, which every one of those rules permits, and
+ *      sends 416 only for a valid range that starts past the end.
  *
  *   3. Revocation on the proxy path, measured mid-stream: the reader is
  *      seeking through the file, access is withdrawn, and the next range
@@ -27,7 +28,8 @@
  *      and it is the entire reason to pay for proxying.
  *
  * Nothing here is Filelayer-specific except the import. The statuses are
- * RFC 9110's and the table is what any correct implementation must produce.
+ * ones RFC 9110 permits; for some of these ranges another status would be
+ * correct too, and the comments say which.
  */
 
 import { createServer } from 'node:http';
@@ -136,17 +138,16 @@ for (const [raw, expect] of [
 }
 
 // -----------------------------------------------------------------------------
-console.log('\n2 · THE FIVE CASES THAT LOOK LIKE 416 AND ARE NOT');
-console.log('   Every one is a range the server will not serve as asked.');
-console.log('   416 is wrong in all five, and in four of them the parser never');
-console.log('   even reaches the object: an invalid range is IGNORED.');
+console.log('\n2 · FIVE RANGES ANSWERED 200, AS RFC 9110 14.2 PERMITS');
+console.log('   A server may ignore Range, must ignore an unknown unit, and may');
+console.log('   ignore or reject an invalid ranges-specifier. Filelayer ignores.');
 header();
 
 for (const [raw, why, expect] of [
-  ['bytes=9-4', 'last-pos before first-pos: invalid, so ignored', { status: 200, body: ALPHABET }],
-  ['bytes=-0', 'a suffix of zero asks for nothing', { status: 200, body: ALPHABET }],
-  ['bytes=abc', 'unparseable', { status: 200, body: ALPHABET }],
-  ['items=0-4', 'a unit that is not bytes', { status: 200, body: ALPHABET }],
+  ['bytes=9-4', 'invalid: may be ignored or rejected; ignored', { status: 200, body: ALPHABET }],
+  ['bytes=-0', 'valid, unsatisfiable: 416 allowed; ignored', { status: 200, body: ALPHABET }],
+  ['bytes=abc', 'invalid: may be ignored or rejected; ignored', { status: 200, body: ALPHABET }],
+  ['items=0-4', 'unknown unit: must be ignored', { status: 200, body: ALPHABET }],
   // The one that is genuinely two questions. Answering the first under a 206
   // is the trap: the status code says nothing about having answered one of
   // two, so the client stitches the reply in at the wrong offset.
@@ -160,7 +161,7 @@ for (const [raw, why, expect] of [
   check(`${raw} parses to null`, parseRangeHeader(raw), null);
 }
 
-console.log('\n   And the one case that IS a 416 -- parsed cleanly, cannot be satisfied:');
+console.log('\n   And the one answered 416 -- valid, and starts past the end:');
 header();
 const past = await get('bytes=99-120');
 show('bytes=99-120', past);

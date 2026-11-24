@@ -396,8 +396,9 @@ export async function GET(req: Request) {
 Both parse `Range`, which matters more than it sounds: a `<video>` element will
 not let the user scrub until a range request is answered, and a PDF reader asks
 for the end of the file first. An **invalid** range is answered `200` with the
-whole representation, as RFC 9110 requires, and only a range that parsed
-cleanly and cannot be satisfied gets `416` with `Content-Range: bytes */<size>`.
+whole representation, which RFC 9110 allows (a server may ignore `Range`), and
+a range that parsed cleanly and cannot be satisfied gets `416` with
+`Content-Range: bytes */<size>`.
 `Accept-Ranges: bytes` goes on the plain `200` as well, because that is how a
 client learns it may seek at all.
 

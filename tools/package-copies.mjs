@@ -285,8 +285,8 @@ export const COPIES = [
     file: 'docs/guides/serving-private-files.md',
     why:
       'the fifth guide: a presigned redirect cannot be revoked before its TTL, ' +
-      'and the moment you proxy instead, Range is yours -- including the four ' +
-      'cases that look like a 416 and must be answered 200.',
+      'and the moment you proxy instead, Range is yours -- including which ranges ' +
+      'RFC 9110 lets you ignore with a 200 and which one gets a 416.',
     versionStamp: null,
   },
   {

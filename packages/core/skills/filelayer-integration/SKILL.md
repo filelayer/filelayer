@@ -229,9 +229,9 @@ authentication, the client address, caching, and what the route must not do.
 Video, audio and PDFs need two things the defaults do not give them, and both
 have a failure mode that looks like a corrupt file rather than a configuration
 choice. Read [`references/range-and-media.md`](references/range-and-media.md)
-before writing that route — it is short, and it has the table of which ranges
-must be answered `200` rather than `416`, which is the mistake a hand-written
-route makes every time.
+before writing that route. It is short, and it has the table of which ranges
+RFC 9110 lets you answer `200` and which one gets `416`; answering `416` to every
+range you cannot use is the mistake a hand-written route makes every time.
 
 ## 6. Prove it, against their application
 
