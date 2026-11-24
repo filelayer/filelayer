@@ -32,7 +32,8 @@ and code as an org that does not exist (reason `unknown_org`). It was
 `forbidden` (403). `files.list({ org })` on an org that does not exist now
 returns an empty page, as it does for an org the caller cannot read; it threw
 `not_found`. So the answer alone no longer says whether an org id exists, which
-closes `LIMITATIONS.md` entry 18 (the list is seventeen entries again).
+closes `LIMITATIONS.md` entry 18. Entry 18 is now the one difference left:
+sharing with an org tells the sharer whether it exists in the project (below).
 
 The true reason is still on the error as `reason`, which is for you and never
 for your caller, and in the audit log: the `put` refusal is now recorded, as an
@@ -42,8 +43,16 @@ reason `unknown_org`. A bad `cursor` or `limit` is refused alike for a missing
 org and a real one, so the arguments are not a second way to ask.
 
 `orgs.audit`, `orgs.verifyAudit`, `orgs.setRole` and `orgs.removeMember`
-already answered both cases with the same `404`. `test/org-existence.test.ts`
-asserts all of it.
+already answered both cases with the same `404`. `shares.create({ withOrg })`
+answers an org in another project, or a deleted one, exactly as one that does
+not exist; an org in the same project is a valid subject and gets the grant,
+which is the one difference left and is `LIMITATIONS.md` entry 18.
+`test/org-existence.test.ts` asserts all of it.
+
+`reason` is for your server's log and is never shown to the end user: shown,
+it says again whether the org exists. `MIGRATIONS.md`, `SEMANTICS.md` §2,
+`llms.txt` and the integration skill now say so; the examples already answer
+with `code` alone.
 
 ### Documented — revoke decides on a direct read of `file_grant`
 

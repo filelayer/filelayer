@@ -238,6 +238,17 @@ Each one is current as of
    (`errors_not_measured`, `unshare_not_recorded`). See
    [docs/USAGE-REPORT.md](docs/USAGE-REPORT.md).
 
+18. **Sharing with an org tells the sharer whether that org exists in the
+   project.** `shares.create(file, { withOrg })` answers an org that does not
+   exist with `404 not_found` (reason `unknown_org`), and creates the grant for
+   an org that exists in the same project, because a grant to another org in
+   the project is the feature. An org in another project, or a deleted one,
+   answers exactly as one that does not exist (`test/org-existence.test.ts`).
+   So someone allowed to share a file can learn which org ids exist in your
+   project. If your org ids are guessable (sequential, or a customer's name),
+   decide the subject org in your own route, from your own data, rather than
+   from what the user typed.
+
 ---
 
 ## Why this is a separate file

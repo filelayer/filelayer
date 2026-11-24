@@ -1375,8 +1375,12 @@ member revoke a colleague's link, do it as an admin or owner.
 The schema is still version 16 and there is no SQL to apply. Until `0.37.0`
 a caller could tell an org id that exists from one that does not by the answer
 alone (it was `LIMITATIONS.md` entry 18). Both pairs below now get the same
-answer; the true reason is still on the error as `reason`, for you and never
-for your caller, and in the audit log.
+answer; the true reason is still on the error as `reason` and in the audit log.
+
+`reason` is for your server's log, never for the end user. Shown to them, in a
+response body, a page or an error toast, it says again whether the org exists,
+and the change below is undone. Answer the caller with `code` (or `status`)
+alone, as the shipped HTTP routes and the examples do.
 
 #### What you may have to change, if you catch `403` from `files.put`
 

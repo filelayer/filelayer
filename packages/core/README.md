@@ -273,7 +273,7 @@ table, including the rows that are zero, is on
 
 ## The five that make people decline
 
-The complete list is [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) -- seventeen
+The complete list is [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) -- eighteen
 entries, each with its reasoning, shipped in the npm tarball so an install has
 it on disk. These five are the ones that should make you close the tab if they
 apply to you:
@@ -480,7 +480,7 @@ application owns the migration runner, which is the position
 ## Documents
 
 - [`docs/QUICKSTART.md`](https://github.com/filelayer/filelayer/blob/main/docs/QUICKSTART.md): install → first file → the advanced capabilities
-- [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md): the complete list of what this does not do, seventeen entries with their reasoning
+- [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md): the complete list of what this does not do, eighteen entries with their reasoning
 - [`ROADMAP.md`](https://github.com/filelayer/filelayer/blob/main/ROADMAP.md): the nine things an outside evaluator said would change its answer, eight of them done, and what is deliberately not coming
 - [`docs/guides/`](https://github.com/filelayer/filelayer/blob/main/docs/guides/README.md): nine answers to questions people actually ask, useful whether or not you use this library; the code in them is executed in CI
 - [`SEMANTICS.md`](https://github.com/filelayer/filelayer/blob/main/packages/core/SEMANTICS.md): the exact behaviour of every edge: liveness, delegation, deletion, the audit chain

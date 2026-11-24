@@ -170,8 +170,10 @@ In a **named org**, `fl.files.put({ org: 'acme', owner: 'newcomer' })` throws
 of that org (or it is the default org, `__filelayer_workspace__`). An org that
 does not exist yet is `not_found` too, with reason `unknown_org`: create it
 first with `fl.orgs.create(org, { owner })`. Since 0.37.0 the two answers are
-the same 404 so that a stranger cannot tell which org ids exist; read
-`err.reason` (never send it to the caller) or the audit log to tell them apart.
+the same 404 so that a stranger cannot tell which org ids exist. Read
+`err.reason` or the audit log to tell them apart, in your server's log only:
+never show `reason` to the end user, in a response body, a page or a toast,
+because it reveals again whether the org exists. Answer with `err.code`.
 
 This bites on the first upload of a real integration, where the org already
 exists and a user who has never uploaded before is doing it. The error says

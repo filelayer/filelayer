@@ -115,3 +115,37 @@ test('list: bad arguments are refused alike, whether the org exists or not', asy
     await fl.close();
   }
 });
+
+// shares.create({ withOrg }) names an org as the SUBJECT of a grant, and a
+// grant to an org that exists in the caller's project is the feature (a
+// cross-org grant inside one project). What must not be visible is an org the
+// caller cannot point a grant at: one in another project, which the schema
+// refuses (composite foreign key), and one that was deleted. Those answer
+// exactly as an org that never existed.
+test('shares.create withOrg: an org in another project, or deleted, answers like one that does not exist', async () => {
+  const { createTestDb } = await import('../src/db.ts');
+  const { MemoryStorage } = await import('../src/storage.ts');
+  const { db } = await createTestDb();
+  const a = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://x' });
+  const other = (await a.createProject('other', 'Other')).id;
+  const b = new Filelayer(db, new MemoryStorage(), { baseUrl: 'http://x', projectId: other });
+  try {
+    await a.orgs.create('home', { owner: 'alice' });
+    const file = await a.files.put(utf8('doc'), { org: 'home', owner: 'alice', name: 'doc.txt' });
+    await b.orgs.create('elsewhere', { owner: 'bob' });
+    await a.orgs.create('gone', { owner: 'alice' });
+    await a.softDeleteOrg((await a.ids.orgId('gone'))!);
+
+    const ask = (org: string) => refusal(a.shares.create(file.id, { as: 'alice', withOrg: org }));
+    const ghost = await ask('ghost');
+    assert.deepEqual(
+      { status: ghost?.status, code: ghost?.code, message: ghost?.message },
+      { status: 404, code: 'not_found', message: 'not_found' },
+    );
+    assert.deepEqual(await ask('elsewhere'), ghost, 'an org in another project');
+    assert.deepEqual(await ask('gone'), ghost, 'a deleted org');
+  } finally {
+    await a.close();
+    await b.close();
+  }
+});

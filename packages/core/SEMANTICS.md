@@ -110,8 +110,13 @@ The same holds one level up, for org ids, since 0.37.0. `files.put()` into an
 org the owner is not a member of and into an org that does not exist are both
 `404 not_found`; `files.list()` on an org that does not exist and on one the
 caller cannot read are both an empty page. `reason` (`no_membership`,
-`unknown_org`) tells them apart for the developer and in the audit log, never
-in the answer a caller sees.
+`unknown_org`) tells them apart for the developer and in the audit log. It is
+for the server's log and is never shown to the end user: shown, it says again
+whether the org exists. `shares.create({ withOrg })` answers an org in another
+project, or a deleted one, exactly as one that does not exist; an org in the
+caller's own project is a valid subject, so naming it creates the grant
+(`LIMITATIONS.md` entry 18). `orgs.create` of a name that is taken answers
+`org_exists`, which is inherent: the name is the thing being claimed.
 
 ---
 
