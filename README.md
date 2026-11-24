@@ -15,12 +15,16 @@ Per-file permissions, links you can take back, and an audit trail of every
 allowed and denied access, for the files your users upload. A Node library on
 your own Postgres and your own S3 or R2 bucket.
 
-A first file in an organization, and a refusal, in twelve lines:
+A first file in an organization, and a refusal, in fourteen lines:
 
 ```bash
 npm install @filelayer/core
 npm install --save-dev "@electric-sql/pglite@^0.3.11"
 ```
+
+The command pins PGlite's 0.3 line; 0.5 and 0.6 work too, and the
+`await fl.close()` at the end of the block lets the process exit at once with
+any of them.
 
 ```ts
 import { Filelayer } from '@filelayer/core';
@@ -34,11 +38,14 @@ const { id } = await fl.files.put(new TextEncoder().encode('Q3 plan'), {
   org: 'acme', owner: 'alice', visibility: 'org', name: 'q3.txt',
 });
 
-await fl.files.get(id, { as: 'bob' });                            // a member of acme: allowed
+const { body } = await fl.files.get(id, { as: 'bob' });           // a member of acme: allowed
+console.log(new TextDecoder().decode(body));                      // 'Q3 plan'
 await fl.files.get(id, { as: 'eve' }).catch((e) => console.log(e.status, e.code)); // 404 not_found
 
-const [refusal] = await fl.orgs.audit('acme', { as: 'alice', decision: 'deny' });
+const [refusal] = await fl.orgs.audit('acme', { as: 'alice', decision: 'deny' }); // oldest first
 console.log(refusal.summary);   // '<time> eve file.read deny:no_membership q3.txt @acme'
+
+await fl.close();                                                 // lets the process exit at once
 ```
 
 To run it: in an empty directory, `npm init -y`, the two installs above, save
