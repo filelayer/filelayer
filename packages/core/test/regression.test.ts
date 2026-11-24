@@ -1509,3 +1509,64 @@ describe('2026-11-11: put() into an org nobody created is refused, and creates n
     assert.equal(Number(rows[0]!.n), 1);
   });
 });
+
+// =============================================================================
+// Revoke reads file_grant directly, and decides on what it reads
+// =============================================================================
+// SEMANTICS §3 said no direct read of `file_grant` authorizes anything. Revoke
+// is the exception, found by the check after lote 1 (2026-11-24):
+// `authorizeRevoke()` decides with `grantSubject()` and `issuedOnChainBelow()`,
+// and `revoke()` finds the grant with a plain SELECT. That is deliberate. A
+// revoke only sets `revoked_at`, so acting on a dead grant gives no one access;
+// and the caller's own authority over the file still comes from `live_grant`
+// through `decideFile()`. These tests pin that choice: a dead grant can be
+// revoked by whoever could revoke it alive, and by no one else.
+
+describe('revoke decides on a direct read of file_grant, live or dead', () => {
+  async function deadLink(w: World) {
+    const contractor = await w.actor('dead-contractor');
+    const parent = await w.fl.share(P(w.owner), w.file.id, {
+      subject: { type: 'actor', actorId: contractor },
+      capabilities: ['read', 'share'],
+    });
+    const link = await w.fl.share(P(contractor), w.file.id, { subject: { type: 'link' } });
+    // Revoking the parent kills the link without writing to it (liveness is
+    // derived): the link's own revoked_at stays null.
+    await w.fl.revoke(P(w.owner), parent.grantId);
+    await rejects(() => w.fl.redeem(link.secret!), 404);
+    return { contractor, link };
+  }
+  const revokedAt = async (w: World, grantId: string) =>
+    (await w.db.query<{ revoked_at: string | null }>(`SELECT revoked_at FROM file_grant WHERE id = $1`, [grantId]))
+      .rows[0]!.revoked_at;
+
+  it('the owner revokes a grant that is already dead, and it is recorded as an allow', async () => {
+    const w = await world();
+    const { link } = await deadLink(w);
+    assert.equal(await revokedAt(w, link.grantId), null);
+    await w.fl.revoke(P(w.owner), link.grantId);
+    assert.notEqual(await revokedAt(w, link.grantId), null);
+    const log = await w.fl.store.listAudit(w.org, {});
+    assert.ok(log.some((e) => e.action === 'grant.revoke' && e.decision === 'allow' && e.grantId === link.grantId));
+  });
+
+  it('a holder renounces a grant naming them after it was revoked, and nothing changes', async () => {
+    const w = await world();
+    const carl = await w.actor('dead-carl');
+    const toCarl = await w.fl.share(P(w.owner), w.file.id, { subject: { type: 'actor', actorId: carl } });
+    await w.fl.revoke(P(w.owner), toCarl.grantId);
+    const first = await revokedAt(w, toCarl.grantId);
+    await w.fl.revoke(P(carl), toCarl.grantId);
+    assert.deepEqual(await revokedAt(w, toCarl.grantId), first, 'revoked_at is not moved');
+  });
+
+  it('a dead grant is no easier to revoke: a stranger, or its own issuer after losing share, gets 404', async () => {
+    const w = await world();
+    const { contractor, link } = await deadLink(w);
+    const stranger = await w.actor('dead-stranger', 'member');
+    await rejects(() => w.fl.revoke(P(stranger), link.grantId), 404);
+    // The contractor issued the link but no longer holds share on the file.
+    await rejects(() => w.fl.revoke(P(contractor), link.grantId), 404);
+    assert.equal(await revokedAt(w, link.grantId), null, 'nothing was written');
+  });
+});

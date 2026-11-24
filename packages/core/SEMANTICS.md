@@ -120,12 +120,22 @@ A grant is **live** iff **it and every one of its ancestors** satisfies all of:
 | **scope** | its file, org, project, **subject**, **subject org** or **issuer** is deleted |
 
 Evaluated by one predicate, `grant_is_live()`. Every grant lookup the library
-uses to authorize reads through it (`live_grant`). The library also reads
-`file_grant` directly, and none of those reads authorizes access: they only
-explain a refusal, attribute a link secret, list grants, or repeat an
-idempotent share. A query written against `file_grant` directly, from `psql` or
-anywhere else, is not filtered: read authorization lives in the library, not in
-the database.
+uses to give access reads through it (`live_grant`). The library also reads
+`file_grant` directly. Most of those reads decide nothing: they explain a
+refusal, attribute a link secret, list grants, or repeat an idempotent share.
+
+**Revoke is the one direct read that decides.** `revoke()` finds the grant with
+a plain `SELECT` on `file_grant`, and `authorizeRevoke()` decides with
+`grantSubject()` and `issuedOnChainBelow()`, which read it the same way. It
+needs no `live_grant` because a revoke only sets `revoked_at`: acting on a dead
+grant gives no one access. The caller's own authority over the file still comes
+from `live_grant`, through the same decision as every other operation. So a
+dead grant can be revoked by whoever could revoke it alive, and by no one else,
+and revoking it again leaves `revoked_at` where it was
+(`test/regression.test.ts`, "revoke decides on a direct read of file_grant").
+
+A query written against `file_grant` directly, from `psql` or anywhere else, is
+not filtered: authorization lives in the library, not in the database.
 
 Liveness is **derived, never cascaded**. Revoking a grant or deleting a scope
 writes nothing to the grants below it; they simply stop being live. This is why
