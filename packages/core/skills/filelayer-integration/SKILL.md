@@ -5,7 +5,7 @@ description: "Add user-file infrastructure to a SaaS application with @filelayer
 
 # Adding user files to somebody else's SaaS
 
-> This copy describes `@filelayer/core` version 0.36.1. It ships inside the
+> This copy describes `@filelayer/core` version 0.37.0. It ships inside the
 > package, so the intended way to get it is to copy it out of your own
 > `node_modules` rather than from a repository: a skill taken from `main`
 > describes whatever is newest, which may be API your installed version does
@@ -166,15 +166,17 @@ stream.
 ### The trap that stops the first upload working
 
 In a **named org**, `fl.files.put({ org: 'acme', owner: 'newcomer' })` throws
-`forbidden` with reason `no_membership` unless the owner is already a member
-of that org (or it is the default org, `__filelayer_workspace__`). Since 0.36.0 an org that does not
-exist yet is `not_found` with reason `unknown_org`: create it first with
-`fl.orgs.create(org, { owner })`.
+`not_found` with reason `no_membership` unless the owner is already a member
+of that org (or it is the default org, `__filelayer_workspace__`). An org that
+does not exist yet is `not_found` too, with reason `unknown_org`: create it
+first with `fl.orgs.create(org, { owner })`. Since 0.37.0 the two answers are
+the same 404 so that a stranger cannot tell which org ids exist; read
+`err.reason` (never send it to the caller) or the audit log to tell them apart.
 
 This bites on the first upload of a real integration, where the org already
 exists and a user who has never uploaded before is doing it. The error says
-`forbidden` and the obvious conclusion is that the authorization model is
-broken, which it is not.
+`not_found` and the obvious conclusion is that the org is missing, which it is
+not: the user is.
 
 It was a deliberate fix: before it, one byte into somebody else's tenant added
 the uploader as a member of it, which is read access to every `visibility:

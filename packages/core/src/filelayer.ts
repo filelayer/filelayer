@@ -62,8 +62,6 @@ import {
   DEFAULT_PROJECT_ID,
   isUuid,
   toCapabilities,
-  LIST_DEFAULT_LIMIT,
-  LIST_MAX_LIMIT,
   type AuditFilter,
   type AuditChainResult,
   type AuditCheckpoint,
@@ -100,6 +98,7 @@ import {
   type StreamedDelivery,
 } from './delivery.ts';
 import { FilelayerError } from './errors.ts';
+import { decodeCursor, encodeCursor, listLimit } from './list-options.ts';
 
 // Declared in `errors.ts` so that `delivery.ts` can classify errors without
 // importing this module (which imports `delivery.ts`). Re-exported here because
@@ -2064,13 +2063,7 @@ export class Filelayer {
       throw new FilelayerError('link_principal_cannot_list', 'link_principal_cannot_list');
     }
     const capability = opts.capability ?? 'read';
-    // `Math.max(1, ...)` silently clamped `limit: 0` UP to one row -- neither
-    // the zero the caller asked for nor the default they would have got by
-    // omitting it. Refuse instead of guessing which one they meant.
-    if (opts.limit !== undefined && (!Number.isSafeInteger(opts.limit) || opts.limit < 1)) {
-      throw new FilelayerError('invalid_argument', 'limit_must_be_a_positive_integer');
-    }
-    const limit = Math.max(1, Math.min(opts.limit ?? LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT));
+    const limit = listLimit(opts.limit);
 
     const { files, hasMore } = await authorizeList(this.store, principal, orgId, {
       capability,
@@ -3920,28 +3913,6 @@ function secondsFromNow(seconds: number | undefined, now: number, field: string)
     throw new FilelayerError('invalid_argument', `${field}_not_positive`);
   }
   return new Date(now + seconds * 1000);
-}
-
-function encodeCursor(createdAt: Date, id: string): string {
-  return Buffer.from(`${createdAt.toISOString()}|${id}`, 'utf8').toString('base64url');
-}
-
-function decodeCursor(cursor: string | null | undefined): { createdAt: Date; id: string } | null {
-  if (cursor === undefined || cursor === null || cursor === '') return null;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(cursor, 'base64url').toString('utf8');
-  } catch {
-    throw new FilelayerError('bad_cursor');
-  }
-  const sep = decoded.lastIndexOf('|');
-  if (sep < 0) throw new FilelayerError('bad_cursor');
-  const createdAt = new Date(decoded.slice(0, sep));
-  const id = decoded.slice(sep + 1);
-  if (Number.isNaN(createdAt.getTime()) || !isUuid(id)) {
-    throw new FilelayerError('bad_cursor');
-  }
-  return { createdAt, id };
 }
 
 /**

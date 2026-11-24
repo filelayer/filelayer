@@ -19,6 +19,44 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [0.37.0] — 2026-11-26
+
+A minor release because two answers change. No schema change (still version
+16). Upgrading: `MIGRATIONS.md`, "`0.36.1` → `0.37.0`".
+
+### Changed — a stranger can no longer tell which org ids exist
+
+`files.put({ org, owner })` with an owner who is not a member of an org that
+exists now throws `not_found` (404) with reason `no_membership`, the same status
+and code as an org that does not exist (reason `unknown_org`). It was
+`forbidden` (403). `files.list({ org })` on an org that does not exist now
+returns an empty page, as it does for an org the caller cannot read; it threw
+`not_found`. So the answer alone no longer says whether an org id exists, which
+closes `LIMITATIONS.md` entry 18 (the list is seventeen entries again).
+
+The true reason is still on the error as `reason`, which is for you and never
+for your caller, and in the audit log: the `put` refusal is now recorded, as an
+`org.access` deny with reason `no_membership` on that org's chain, where before
+it wrote nothing; the missing org on `list` is still an `org.access` deny with
+reason `unknown_org`. A bad `cursor` or `limit` is refused alike for a missing
+org and a real one, so the arguments are not a second way to ask.
+
+`orgs.audit`, `orgs.verifyAudit`, `orgs.setRole` and `orgs.removeMember`
+already answered both cases with the same `404`. `test/org-existence.test.ts`
+asserts all of it.
+
+### Documented — revoke decides on a direct read of `file_grant`
+
+`SEMANTICS.md` §3 said no direct read of `file_grant` authorizes anything.
+Revoke does: it finds the grant with a plain `SELECT`, and the decision reads
+the grant's subject and its chain of issuers the same way. It needs no
+`live_grant` because a revoke only sets `revoked_at`, so acting on a dead grant
+gives no one access, and the caller's own authority over the file still comes
+from `live_grant`. The section now says so, and three tests pin it: a dead
+grant can be revoked by whoever could revoke it alive, and by no one else.
+
+---
+
 ## [0.36.1] — 2026-11-24
 
 A patch release with one authorization fix and support for PGlite 0.6. No

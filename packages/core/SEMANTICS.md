@@ -106,6 +106,13 @@ and 2 are indistinguishable to the caller (everything is `404`), so the
 statuses that are *not* 404 (`410 Gone`, `409 retention_hold`) are only ever
 reachable by someone who already proved they may perform the operation.
 
+The same holds one level up, for org ids, since 0.37.0. `files.put()` into an
+org the owner is not a member of and into an org that does not exist are both
+`404 not_found`; `files.list()` on an org that does not exist and on one the
+caller cannot read are both an empty page. `reason` (`no_membership`,
+`unknown_org`) tells them apart for the developer and in the audit log, never
+in the answer a caller sees.
+
 ---
 
 ## 3. Grant liveness

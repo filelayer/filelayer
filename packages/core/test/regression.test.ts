@@ -842,7 +842,8 @@ describe('2026-10-02: the facade is never more permissive than the engine', () =
       org: 'acme', owner: 'ceo', visibility: 'org',
     });
 
-    await rejects(() => fl.files.put(bytes('x'), { org: 'acme', owner: 'mallory' }), 403);
+    // 404, not 403, since 0.37.0: a 403 told a stranger the org exists (D081).
+    await rejects(() => fl.files.put(bytes('x'), { org: 'acme', owner: 'mallory' }), 404);
     await rejects(() => fl.files.get(memo.id, { as: 'mallory' }), 404);
 
     // The tenant's own people are unaffected.

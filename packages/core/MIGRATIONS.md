@@ -1370,6 +1370,37 @@ file's org, or the file's owner, revokes any grant on the file, the group grant
 included. If your application lets a
 member revoke a colleague's link, do it as an admin or owner.
 
+### `0.36.1` → `0.37.0`: no schema change, and two answers that no longer tell an org exists
+
+The schema is still version 16 and there is no SQL to apply. Until `0.37.0`
+a caller could tell an org id that exists from one that does not by the answer
+alone (it was `LIMITATIONS.md` entry 18). Both pairs below now get the same
+answer; the true reason is still on the error as `reason`, for you and never
+for your caller, and in the audit log.
+
+#### What you may have to change, if you catch `403` from `files.put`
+
+`files.put({ org, owner })` into an org that exists, with an owner who is not a
+member of it, now throws `not_found` (404) with reason `no_membership`, the
+same status and code as an org that does not exist (reason `unknown_org`).
+Before `0.37.0` it was `forbidden` (403). It is also recorded now, as an
+`org.access` deny on that org's chain; before, it wrote nothing.
+
+Code that branched on `status === 403` or `code === 'forbidden'` to say "add
+this user to the org first" should branch on `err.reason === 'no_membership'`.
+The fix is unchanged: `orgs.setRole(org, user, role, { as: admin })` before the
+first upload.
+
+#### What you may have to change, if you catch `404` from `files.list`
+
+`files.list({ org })` on an org that does not exist now returns an empty page,
+`{ files: [], nextCursor: null }`, as it does for an org the caller cannot
+read. Before `0.37.0` it threw `not_found` with reason `unknown_org`. The miss
+is still an `org.access` deny with reason `unknown_org` in the audit log, and
+a bad `cursor` or `limit` is still refused, the same way for both. A listing
+that relied on the throw to report a mistyped org should look the org up with
+`fl.ids.orgId(org)`, which returns `null` for one that does not exist.
+
 ---
 
 ## 4. What is not covered here

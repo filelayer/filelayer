@@ -129,12 +129,13 @@ describe('fl.files.list(): the listing screen, in your id space', () => {
   });
 
   it('does NOT create a tenant somebody mistyped', async () => {
-    // `requireOrg`, not the get-or-create `org()`. A listing that provisioned a
+    // `findOrg`, not the get-or-create `org()`. A listing that provisioned a
     // tenant as a side effect of a typo would be a write on a read path, and
-    // would make the next typo look like it worked.
+    // would make the next typo look like it worked. Since 0.37.0 the typo is
+    // an empty page, the answer for an org the caller cannot read (D081).
     const { fl } = await world();
     await fl.files.put(bytes('a'), { owner: 'alice' });
-    await rejects(() => fl.files.list({ as: 'alice', org: 'acmee' }), 404);
+    assert.deepEqual(await fl.files.list({ as: 'alice', org: 'acmee' }), { files: [], nextCursor: null });
     assert.equal(await fl.ids.orgId('acmee'), null, 'the typo created a tenant');
   });
 

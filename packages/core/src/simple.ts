@@ -63,6 +63,7 @@ import {
   type ShareSubject,
 } from './filelayer.ts';
 import { DEFAULT_PROJECT_ID } from './store.ts';
+import { decodeCursor, listLimit } from './list-options.ts';
 import type { Capability, FileVisibility, OrgRole, Principal } from './authz.ts';
 
 /**
@@ -394,9 +395,19 @@ class Identities {
   async requireOrg(externalId: string): Promise<string> {
     const id = await this.findOrg(externalId);
     if (id) return id;
-    // See `resolveActorOrDeny`: an org-name sweep was equally invisible, and
-    // the org cannot be charged for the event because the org is what could
-    // not be resolved.
+    await this.recordUnknownOrg(externalId);
+    throw new FilelayerError('not_found', 'unknown_org');
+  }
+
+  /**
+   * The audit half of a miss, for a caller that answers it some other way:
+   * `files.list()` answers a missing org with an empty page (since 0.37.0).
+   *
+   * See `resolveActorOrDeny`: an org-name sweep was equally invisible, and
+   * the org cannot be charged for the event because the org is what could
+   * not be resolved.
+   */
+  async recordUnknownOrg(externalId: string): Promise<void> {
     await this.fl.store.audit({
       orgId: null,
       action: 'org.access',
@@ -406,7 +417,6 @@ class Identities {
       fileId: null,
       context: { org: String(externalId).slice(0, 128) },
     });
-    throw new FilelayerError('not_found', 'unknown_org');
   }
 
   async findActor(externalId: string): Promise<string | null> {
@@ -540,8 +550,23 @@ export class FilesApi {
         isDefaultWorkspace ||
         resolved.created ||
         (await this.fl.store.getMembership(orgId, ownerId)) !== null;
+      // NOT IN THE ORG IS ANSWERED AS NOT THERE, since 0.37.0 (D081). Until
+      // then this was `403 forbidden` while a missing org was `404 not_found`,
+      // so the status told a stranger which org ids exist (LIMITATIONS.md
+      // entry 18). The same 404 for both; the true reason stays on the error
+      // for the developer and goes on the org's own chain, where its admins
+      // see that somebody tried to write into it.
       if (!mayJoin) {
-        throw new FilelayerError('forbidden', 'no_membership');
+        await this.fl.store.audit({
+          orgId,
+          action: 'org.access',
+          decision: 'deny',
+          reason: 'no_membership',
+          actorId: ownerId,
+          fileId: null,
+          context: { operation: 'files.put' },
+        });
+        throw new FilelayerError('not_found', 'no_membership');
       }
       await this.ids.membership(orgId, ownerId, 'member');
     } else {
@@ -691,9 +716,23 @@ export class FilesApi {
     } = {},
   ): Promise<FileListPage> {
     const principal = await this.principal(opts);
-    // `requireOrg`, not `org()`: a listing must not CREATE a tenant as a side
-    // effect of somebody mistyping one. The miss denies, and is recorded.
-    const orgId = await this.ids.requireOrg(opts.org ?? DEFAULT_WORKSPACE);
+    // `findOrg`, not `org()`: a listing must not CREATE a tenant as a side
+    // effect of somebody mistyping one.
+    //
+    // A MISSING ORG IS AN EMPTY PAGE, since 0.37.0 (D081), because an org
+    // the caller cannot read is one: until then the first was `404
+    // unknown_org`, which told a stranger the second exists. The miss is
+    // still recorded. The arguments are checked exactly as the listing checks
+    // them, or a bad cursor would be refused on a real org and accepted on a
+    // missing one.
+    const external = opts.org ?? DEFAULT_WORKSPACE;
+    const orgId = await this.ids.findOrg(external);
+    if (orgId === null) {
+      listLimit(opts.limit);
+      decodeCursor(opts.cursor);
+      await this.ids.recordUnknownOrg(external);
+      return { files: [], nextCursor: null };
+    }
     return this.fl.listFiles(principal, orgId, {
       ...(opts.capability ? { capability: opts.capability } : {}),
       ...(opts.limit !== undefined ? { limit: opts.limit } : {}),

@@ -116,10 +116,19 @@ const CLAIMS = [
     probe: { kind: 'ships', file: 'dist/simple.js', text: '{ id: await this.ids.requireOrg(opts.org), created: false }' },
     note: 'put() refuses an unknown org, in llms.txt.',
   },
+  // -------------------------------------------------------------------------
+  // 0.37.0: a non-member's put is the same 404 as a missing org (D081). The
+  // probe is the throw that makes it true; 0.36.1 threw `forbidden` there.
+  // -------------------------------------------------------------------------
   {
-    match: '(or it is the default org, `__filelayer_workspace__`). Since 0.36.0 an org that does not',
-    probe: { kind: 'ships', file: 'dist/simple.js', text: '{ id: await this.ids.requireOrg(opts.org), created: false }' },
-    note: 'put() refuses an unknown org, in the integration skill.',
+    match: 'first with `fl.orgs.create(org, { owner })`. Since 0.37.0 the two answers are',
+    probe: { kind: 'ships', file: 'dist/simple.js', text: "throw new FilelayerError('not_found', 'no_membership')" },
+    note: 'put() answers a non-member like a missing org, in the integration skill.',
+  },
+  {
+    match: 'The same holds one level up, for org ids, since 0.37.0.',
+    probe: { kind: 'ships', file: 'dist/simple.js', text: "throw new FilelayerError('not_found', 'no_membership')" },
+    note: 'put() answers a non-member like a missing org, in SEMANTICS.',
   },
   {
     match: 'before it starts: since 0.36.0 the server checks them at startup and exits',

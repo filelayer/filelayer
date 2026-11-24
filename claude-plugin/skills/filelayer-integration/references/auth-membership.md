@@ -9,8 +9,8 @@ Three rules, whichever provider you use:
 
 1. **Mirror membership on the provider's membership events**, never on upload.
    `put({ org, owner })` into an organization that already exists refuses a
-   user who is not a member (403 `forbidden`, with reason `no_membership`), and
-   it is right to.
+   user who is not a member (404 `not_found`, with reason `no_membership`, the
+   same answer as an organization that does not exist), and it is right to.
 2. **Map roles explicitly, and map anything unknown to `viewer`.** A role your
    app invented later should not become `admin` by accident.
 3. **The organization comes from the session.** Never from a form field, a query
