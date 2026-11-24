@@ -19,7 +19,7 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
-## [0.37.0] — 2026-11-26
+## [0.37.0] — 2026-11-25
 
 A minor release because two answers change. No schema change (still version
 16). Upgrading: `MIGRATIONS.md`, "`0.36.1` → `0.37.0`".
