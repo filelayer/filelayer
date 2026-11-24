@@ -19,7 +19,7 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
-## [0.36.1] — 2026-11-23
+## [0.36.1] — 2026-11-24
 
 A patch release with one authorization fix and support for PGlite 0.6. No
 schema change (still version 16) and no change to the API.
@@ -88,8 +88,9 @@ lifecycle jobs; those install the newest release inside the range.
 
 `files.put()` answers `404` for an org that does not exist and `403
 no_membership` for one the caller is not in; `files.list()` answers `404` for
-the first and an empty list for the second. That has been so since the
-methods took an org, and it contradicts what `src/errors.ts` says about those
+the first and an empty list for the second. For `put()` that has been so
+since 0.36.0, when it stopped creating unknown orgs; for `list()`, since it
+took an org. It contradicts what `src/errors.ts` says about those
 reasons. It is now `LIMITATIONS.md` entry 18, with
 `test/org-existence.test.ts` asserting the behaviour as it is. The next minor
 release is planned to answer both cases alike.

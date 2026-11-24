@@ -11,7 +11,7 @@
  * pglite_unsupported_version, and the CI jobs that installed `latest` went red
  * among our own failures, with nothing saying the cause was upstream.
  *
- * This is the one place that asks npm for `latest`. The CI job that runs it is
+ * This is the one place that fails on npm's `latest`. The CI job that runs it is
  * named "upstream release outside supported range", so when it fails the name
  * says what happened: an upstream release, not a regression of ours. The other
  * jobs install the newest version INSIDE the declared range and stay green.

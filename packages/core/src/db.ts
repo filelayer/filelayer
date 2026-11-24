@@ -650,8 +650,7 @@ async function importPglite(): Promise<{
         `\n` +
         `  ${PGLITE_INSTALL}\n` +
         `\n` +
-        `@filelayer/core supports ${PGLITE} ^0.3.11, ^0.5.8 and ^0.6.0; npm's latest is\n` +
-        `inside that, so the command needs no version.\n` +
+        `@filelayer/core supports ${PGLITE} ^0.3.11, ^0.5.8 and ^0.6.0.\n` +
         `\n` +
         `It is not a dependency of @filelayer/core, on purpose: it is an\n` +
         `embedded WASM PostgreSQL used by createTestDb() and Filelayer.quickstart()\n` +

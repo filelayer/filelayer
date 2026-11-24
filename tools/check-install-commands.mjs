@@ -39,7 +39,12 @@
  *                  compare, and it is deliberately two-directional: widening the
  *                  peer range without touching the docs fails here, and pinning
  *                  the docs somewhere the peer range does not admit fails here.
- *                  No network, no registry, no install.
+ *                  A single constraint may name one line of the declared union;
+ *                  a written union must admit exactly what the declared one
+ *                  does, read whole up to its closing quote. A range held in a
+ *                  shell variable passes only when an earlier line of the same
+ *                  file sets it with `node -p` from that field of
+ *                  packages/core/package.json. No network, no registry, no install.
  *
  *   3. VERBATIM.   The files a first user actually reads -- the README, the
  *                  quickstart, and the error message in `src/db.ts` -- each
@@ -203,6 +208,25 @@ const COMMAND_BREAK = /[;&|`]/;
  */
 const NOT_AN_ARGUMENT = /[(),!?:*]|\.\.|\.$/;
 
+const reEscape = (x) => x.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/**
+ * True when one of `lines` sets shell variable `name` to the range
+ * packages/core/package.json declares for `pkg` in `field`, read with
+ * `node -p`: `NAME="$(node -p "require('<...>/packages/core/package.json')
+ * .devDependencies['<pkg>']")"`. The path must end in packages/core/package.json
+ * and the field must be the policy's own; reading another field, or another
+ * manifest, is not the declared range.
+ */
+export function assignedFromManifest(lines, name, pkg, field) {
+  const re = new RegExp(
+    `(?:^|[\\s;])${reEscape(name)}="?\\$\\(node -p ["']require\\(` +
+      `[^)]*packages/core/package\\.json['"]?\\)` +
+      `\\.${reEscape(field)}\\[['"]${reEscape(pkg)}['"]\\]["']\\)`,
+  );
+  return lines.some((l) => re.test(l));
+}
+
 /**
  * Every install command in `text` that names `pkg`.
  *
@@ -213,7 +237,7 @@ const NOT_AN_ARGUMENT = /[(),!?:*]|\.\.|\.$/;
  * the same command be recognised inside a fenced block, inside backticks in a
  * sentence, and inside a JavaScript string literal.
  */
-export function findInstallCommands(text, pkg) {
+export function findInstallCommands(text, pkg, { rangeFrom = 'devDependencies' } = {}) {
   const out = [];
   const lines = String(text).split('\n');
   lines.forEach((line, i) => {
@@ -241,13 +265,28 @@ export function findInstallCommands(text, pkg) {
         .filter(Boolean);
       if (flags.some((t) => NOT_AN_ARGUMENT.test(t))) continue;
 
-      const m = /^@([^\s"'`]+)/.exec(after);
-      const range = m ? m[1] : null;
+      // The range runs to the closing quote when the spec is quoted, because a
+      // union (`"pkg@^0.3.11 || ^0.5.8"`) has spaces in it; reading it up to
+      // the first space would check its first part only. Unquoted, a space ends it.
+      const quote = line[at - 1] === '"' || line[at - 1] === "'" ? line[at - 1] : null;
+      let range = null;
+      if (after.startsWith('@')) {
+        const end = quote ? after.indexOf(quote) : -1;
+        range = end > 0 ? after.slice(1, end).trim() : (/^@([^\s"'`]+)/.exec(after)?.[1] ?? null);
+      }
       const spec = range ? `"${pkg}@${range}"` : pkg;
+
+      // A range that is a shell variable (`"pkg@$RANGE"`) is only as good as
+      // what was put in it. It counts as the declared range when, and only
+      // when, an earlier line of the same file assigns that variable from the
+      // manifest's own field with `node -p`. Anything else stays unevaluable.
+      const variable = range ? /^\$\{?([A-Za-z_]\w*)\}?$/.exec(range)?.[1] : null;
+      const fromManifest = variable ? assignedFromManifest(lines.slice(0, i), variable, pkg, rangeFrom) : false;
 
       out.push({
         line: i + 1,
         range,
+        ...(variable ? { variable, fromManifest } : {}),
         command: [verb[0].replace(/\s+/g, ' '), ...flags, spec].join(' '),
       });
     }
@@ -265,10 +304,14 @@ export function findInstallCommands(text, pkg) {
  */
 export function classify(found, declaredRange, { bareOk = false } = {}) {
   if (found.range === null) return bareOk ? 'ok' : 'unpinned';
+  if (found.variable) return found.fromManifest ? 'ok' : 'unparseable-range';
   if (!rangeIntervals(found.range)) return 'unparseable-range';
-  // A written constraint must admit only versions the declared range admits.
-  // From 0.35.4 the declared range is a union, so a command may pin one of its
-  // lines (`^0.5.8`) and still be right.
+  // A written union claims to be the declared range, so it must be exactly
+  // that: a part too many, a part in a gap and a part missing all fail.
+  if (found.range.includes('||')) return rangeEquivalent(found.range, declaredRange) ? 'ok' : 'wrong-range';
+  // A single constraint must admit only versions the declared range admits.
+  // The declared range is a union, so a command may pin one of its lines
+  // (`^0.3.11`) and still be right.
   return rangeSubset(found.range, declaredRange) ? 'ok' : 'wrong-range';
 }
 
@@ -287,6 +330,7 @@ export function runNegativeControl(pkg, declaredRange, { bareOk = false } = {}) 
     return { failures: [`the declared range "${declaredRange}" is not one this check can parse`], checked: 0 };
   }
   const interval = { min: intervals[0].min, max: intervals[intervals.length - 1].max };
+  const parts = String(declaredRange).split('||').map((x) => x.trim());
   // The first version the declared range does NOT admit above it, as a caret
   // range: for `^0.3.11 || ^0.5.8` that is `^0.6.0`.
   const above = '^' + interval.max.join('.');
@@ -330,9 +374,41 @@ export function runNegativeControl(pkg, declaredRange, { bareOk = false } = {}) 
     ...(below ? [{ name: 'pinned below the declared range', text: `npm install -D "${P}@${below}"`, expect: 'wrong-range' }] : []),
     ...(gap ? [{ name: 'pinned to the untested line between the two', text: `npm install -D "${P}@${gap}"`, expect: 'wrong-range' }] : []),
     { name: 'pinned to a dist-tag, not a version', text: `npm install -D "${P}@latest"`, expect: 'unparseable-range' },
+    // The declared union written out, wrong in each of the three ways it can
+    // be. Before 0.36.1 the detector read a quoted union up to its first space,
+    // so all three passed as their first part.
+    { name: 'a union with a part too many', text: `npm install -D "${P}@${declaredRange} || ${above}"`, expect: 'wrong-range' },
+    ...(gap ? [{ name: 'a union with a part in the gap', text: `npm install -D "${P}@${declaredRange} || ${gap}"`, expect: 'wrong-range' }] : []),
+    ...(parts.length >= 3
+      ? [{ name: 'a union with a part missing', text: `npm install -D "${P}@${parts.slice(0, -1).join(' || ')}"`, expect: 'wrong-range' }]
+      : []),
+    { name: 'a union in single quotes, a part too many', text: `npm install -D '${P}@${declaredRange} || ${above}'`, expect: 'wrong-range' },
+    // A range held in a shell variable: right only when the variable was read
+    // from the manifest's own field.
+    {
+      name: 'a variable read from the manifest',
+      text: `RANGE="$(node -p "require('./packages/core/package.json').devDependencies['${P}']")"\nnpm install -D "${P}@$RANGE"`,
+      expect: 'ok',
+    },
+    { name: 'a variable nobody set', text: `npm install -D "${P}@$RANGE"`, expect: 'unparseable-range' },
+    {
+      name: 'a variable read from another field',
+      text: `RANGE="$(node -p "require('./packages/core/package.json').peerDependencies['${P}']")"\nnpm install -D "${P}@$RANGE"`,
+      expect: 'unparseable-range',
+    },
+    {
+      name: 'a variable read from another manifest',
+      text: `RANGE="$(node -p "require('./package.json').devDependencies['${P}']")"\nnpm install -D "${P}@$RANGE"`,
+      expect: 'unparseable-range',
+    },
+    {
+      name: 'a variable set only after the command',
+      text: `npm install -D "${P}@$RANGE"\nRANGE="$(node -p "require('./packages/core/package.json').devDependencies['${P}']")"`,
+      expect: 'unparseable-range',
+    },
     // The correct command, in the shapes it is written in.
     { name: 'the corrected command', text: `npm install --save-dev "${P}@${declaredRange}"`, expect: 'ok' },
-    { name: 'the corrected command, unquoted', text: `npm install --save-dev ${P}@${declaredRange}`, expect: 'ok' },
+    { name: 'the corrected command, unquoted', text: `npm install --save-dev ${P}@${declaredRange.split(' ')[0]}`, expect: 'ok' },
   ];
 
   const failures = [];

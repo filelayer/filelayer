@@ -11,7 +11,7 @@
  * already had PGlite's `latest` (0.5.x) could not add this package: ERESOLVE,
  * no tree at all, at the first contact. Production installs never need PGlite,
  * so the peer entry protected nobody. It is gone; the whole suite passes on
- * 0.5.8 and on 0.5.16, and CI runs it on PGlite's latest; and the range is
+ * 0.5.8 and on 0.5.16, and CI runs it on the newest release inside the range; and the range is
  * enforced here, at the one moment it matters, with an error that names the
  * command that fixes it. 0.4.x is outside it: never tested. 0.6.0, released on
  * 23 November 2026, is inside it from 0.36.1: the whole suite passes on it.

@@ -71,7 +71,7 @@ Four details in there are load-bearing:
 - **PGlite is the only thing installed.** It runs PostgreSQL in-process, so the
   suite needs no server. npm's `latest` is a 0.6.x release; the library
   supports `^0.3.11`, `^0.5.8` and `^0.6.0`, and CI runs the suite on the 0.3
-  line and on PGlite's latest.
+  line and on the newest release inside the range.
 
 ## What you should see
 
@@ -89,15 +89,15 @@ and a terminal gets ticks and timings as well. The numbers are the same. Only
 the reporter changed, and CI reads both, because reading one of them is how this
 gate first reported a passing run as a failure.
 
-The thirty-five skips are four groups. As root there is a thirty-sixth:
+The thirty-eight skips are five groups. As root there is a thirty-ninth:
 mode bits do not bind root, so `test/fs-storage.test.ts` cannot stage an
 unreadable directory, and its check that an unreadable store is not reported
 as empty skips and says why. It is skipped rather than passed, because a pass
 would claim a refusal nobody observed.
 
-**One** is `test/mcp-server.test.ts`, which launches the MCP server as a client would and needs a real PostgreSQL, because that server builds a `pg.Pool` and PGlite is not a server. CI runs it against a real one in a job that FAILS if it skips there.
+**Two** are `test/mcp-server.test.ts`, which launches the MCP server as a client would and needs a real PostgreSQL, because that server builds a `pg.Pool` and PGlite is not a server. CI runs them against a real one in a job that FAILS if they skip there.
 
-**Nine** are `test/mcp.test.ts`, which needs the two optional peer
+**Ten** are `test/mcp.test.ts`, which needs the two optional peer
 dependencies of `@filelayer/core/mcp`. They are optional precisely so that an
 ordinary install does not pull them in, so in this run they are absent and the
 file skips itself test by test rather than failing to load. To run them here:
@@ -106,6 +106,11 @@ file skips itself test by test rather than failing to load. To run them here:
 npm install --no-save @modelcontextprotocol/sdk zod
 node --test 'test/mcp.test.ts'
 ```
+
+**One** is the check in `test/pglite-range.test.ts` that the runtime check and
+`devDependencies` declare the same PGlite range. It needs the package's own
+`package.json`, and this procedure writes its own in its place, so the check
+skips and says so. Every CI job that runs the suite from the repository runs it.
 
 The remaining **twenty-five** are two suites that need two real database
 connections: `test/contention.test.ts` stages races between them, and
@@ -131,13 +136,14 @@ The table above is for the procedure on this page: the published tarball, with
 PGlite as the only thing installed. `npm test` in a clone of the repository
 runs the same tests in a different environment, because a clone installs our
 development dependencies, so fewer of them skip. Measured on Linux as a normal
-user, 2 November 2026, two of the four skip groups above stop skipping and the
-other two do not:
+user, 23 November 2026, three of the five skip groups above stop skipping and
+the other two do not:
 
-- **The two MCP groups run, ten tests in all.** The nine in `test/mcp.test.ts` find
-  `@modelcontextprotocol/sdk` and `zod`, and the launch test in
-  `test/mcp-server.test.ts` finds `pg` and `embedded-postgres` and starts an
-  embedded PostgreSQL by itself. That leaves twenty-five skipped.
+- **The two MCP groups and the range check run, thirteen tests in all.** The
+  ten in `test/mcp.test.ts` find `@modelcontextprotocol/sdk` and `zod`, the two
+  launch tests in `test/mcp-server.test.ts` find `pg` and `embedded-postgres`
+  and start an embedded PostgreSQL by themselves, and the range check finds the
+  package's own `package.json`. That leaves twenty-five skipped.
 - **The other two groups, the twenty-five contention and audit-retention
   tests, still skip, exactly as from the tarball.** They are opt-in: they skip
   unless `FILELAYER_TEST_CONTENTION=1` or `FILELAYER_TEST_DATABASE_URL` is
