@@ -23,7 +23,9 @@
  *   5. adversarial/run.mjs --published: 26 attacks against every implementation
  *      that can be executed. Writes adversarial/RESULTS.md.
  *   6. ttff/measure.mjs --print: install to first stored file, from the npm
- *      registry. This is the one step that needs the network beyond npm ci.
+ *      registry, the median of 5 cold runs (each from an empty directory and
+ *      an empty npm cache). This is the one step that needs the network beyond
+ *      npm ci, and its `npm install` phases are mostly the network.
  *
  * No account, no credential and no environment variable is needed. Nothing here
  * talks to a cloud service: the Supabase implementation runs on PGlite with the
@@ -138,6 +140,10 @@ const report = [
   section(adversarial, '## The ', '## Tallies over every').replace(/^## /gm, '### '),
   '',
   '## Time to first file',
+  '',
+  'The median of 5 cold runs, each from an empty directory and an empty npm cache, on the machine named',
+  'in the output. The two `npm install` phases are mostly the registry and the network, so they move',
+  'from run to run and from network to network; the run of the program itself moves least.',
   '',
   fence(ttff),
   '',

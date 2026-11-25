@@ -4,6 +4,14 @@
  *
  *     node benchmark/ttff/measure.mjs            # writes RESULTS.md
  *     node benchmark/ttff/measure.mjs --print    # measure, print, write nothing
+ *     node benchmark/ttff/measure.mjs --runs 9   # more runs (default 5)
+ *
+ * MEDIAN OF N COLD RUNS, since 2026-11-25. One run is one draw from a network:
+ * the 0.37.0 run read 6.5 s where 0.36.0 read 4.6, and nearly all of the gap
+ * was `npm install` (1.4 s against 2.9 s), which is the registry and the
+ * network, not the package. Each run starts from a new empty directory and an
+ * empty npm cache; every phase and the total are reported as the median over
+ * the runs, with the slowest and fastest total beside it.
  *
  * -----------------------------------------------------------------------------
  * WHY THIS IS A MEASUREMENT AND NOT A BOAST
@@ -50,12 +58,18 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpus, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PRINT_ONLY = process.argv.includes('--print');
+const runsAt = process.argv.indexOf('--runs');
+const RUNS = runsAt > 0 ? Number(process.argv[runsAt + 1]) : 5;
+if (!Number.isSafeInteger(RUNS) || RUNS < 1) {
+  console.error('ttff: --runs takes a positive integer.');
+  process.exit(2);
+}
 
 /**
  * THE STEPS, as the quickstart gives them.
@@ -102,9 +116,9 @@ const ASSEMBLED = [
   'await fl.close();',
 ].join('\n');
 
-const seconds = (ms) => Math.round(ms / 100) / 10;
+const seconds = (ms) => (Math.round(ms / 100) / 10).toFixed(1);
 
-const dir = mkdtempSync(join(tmpdir(), 'filelayer-ttff-'));
+let dir = '';
 
 // A COLD CACHE, or the headline number is somebody's warm laptop.
 //
@@ -113,7 +127,7 @@ const dir = mkdtempSync(join(tmpdir(), 'filelayer-ttff-'));
 // stranger's machine does not. Every npm call below gets a cache directory
 // that is created empty and deleted with the rest of the temporary tree, so
 // the number is the one a first-time reader gets.
-const CACHE = join(dir, '.npm-cache');
+let CACHE = '';
 
 // THE LABEL IS THE COMMAND, not a second copy of it.
 //
@@ -143,64 +157,86 @@ const npm = (args, note = '') => {
     process.exit(1);
   }
   const ms = Date.now() - t0;
-  console.log(`  ${label.padEnd(52)} ${String(seconds(ms)).padStart(6)}s`);
+  if (VERBOSE) console.log(`  ${label.padEnd(52)} ${String(seconds(ms)).padStart(6)}s`);
   return ms;
 };
+let VERBOSE = false;
+const median = (xs) => {
+  const a = [...xs].sort((x, y) => x - y);
+  return a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2;
+};
 
-console.log('time to first file, from the registry\n');
+console.log(`time to first file, from the registry: median of ${RUNS} cold run(s)\n`);
 
-npm(['init', '-y'], '   (not counted: scaffolding)');
+const runs = [];
+let version = '';
+for (let i = 0; i < RUNS; i++) {
+  dir = mkdtempSync(join(tmpdir(), 'filelayer-ttff-'));
+  CACHE = join(dir, '.npm-cache');
 
-const tInstall = npm(['install', '@filelayer/core']);
-// The quickstart's command, version included (see README).
-const tPglite = npm(['install', '--save-dev', '@electric-sql/pglite@^0.3.11']);
+  const tInit = npm(['init', '-y']);
 
-// --- rule 2: the program is the page's, not mine -----------------------------
+  const tInstall = npm(['install', '@filelayer/core']);
+  // The quickstart's command, version included (see README).
+  const tPglite = npm(['install', '--save-dev', '@electric-sql/pglite@^0.3.11']);
 
-const installed = join(dir, 'node_modules', '@filelayer', 'core');
-const version = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')).version;
-const page = readFileSync(join(installed, 'docs', 'QUICKSTART.md'), 'utf8');
+  // --- rule 2: the program is the page's, not mine -----------------------------
 
-const missing = PROGRAM.filter((p) => !page.includes(p.quote));
-if (missing.length) {
-  console.error(
-    '\nttff: these lines are not in the QUICKSTART.md that shipped in the tarball:\n' +
-      missing.map((m) => `  ${m.quote}`).join('\n') +
-      '\n\nThe page changed. Either the measurement is stale or the page broke its own\n' +
-      'first example; this script will not quietly measure a program nobody is told\n' +
-      'to write.',
-  );
-  process.exit(1);
+  const installed = join(dir, 'node_modules', '@filelayer', 'core');
+  version = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')).version;
+  const page = readFileSync(join(installed, 'docs', 'QUICKSTART.md'), 'utf8');
+
+  const missing = PROGRAM.filter((p) => !page.includes(p.quote));
+  if (missing.length) {
+    console.error(
+      '\nttff: these lines are not in the QUICKSTART.md that shipped in the tarball:\n' +
+        missing.map((m) => `  ${m.quote}`).join('\n') +
+        '\n\nThe page changed. Either the measurement is stale or the page broke its own\n' +
+        'first example; this script will not quietly measure a program nobody is told\n' +
+        'to write.',
+    );
+    process.exit(1);
+  }
+
+  writeFileSync(join(dir, 'app.ts'), `${ASSEMBLED}\n`);
+
+  // --- the run -----------------------------------------------------------------
+
+  const t0 = Date.now();
+  const run = spawnSync(process.execPath, ['--experimental-strip-types', 'app.ts'], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  const tRun = Date.now() - t0;
+
+  if (run.status !== 0 || !/TTFF_OK /.test(run.stdout)) {
+    console.error(`\nttff: the program did not store a file.\n\n${run.stderr || run.stdout}`);
+    process.exit(1);
+  }
+  runs.push({ tInit, tInstall, tPglite, tRun, total: tInstall + tPglite + tRun });
+  rmSync(dir, { recursive: true, force: true });
+  console.log(`  run ${i + 1} of ${RUNS}: ${seconds(tInstall + tPglite + tRun)}s`);
 }
+
+const med = (k) => median(runs.map((r) => r[k]));
+const [tInit, tInstall, tPglite, tRun, total] = ['tInit', 'tInstall', 'tPglite', 'tRun', 'total'].map(med);
+const totals = runs.map((r) => r.total);
+const shownStep = (label, ms) => console.log(`  ${label.padEnd(52)} ${String(seconds(ms)).padStart(6)}s`);
+console.log('');
+shownStep(shown(['init', '-y']) + '   (not counted: scaffolding)', tInit);
+shownStep(shown(['install', '@filelayer/core']), tInstall);
+shownStep(shown(['install', '--save-dev', '@electric-sql/pglite@^0.3.11']), tPglite);
 console.log(`  ${'every program line found in the shipped page'.padEnd(52)} ${String(PROGRAM.length).padStart(6)}`);
-
-writeFileSync(join(dir, 'app.ts'), `${ASSEMBLED}\n`);
-
-// --- the run -----------------------------------------------------------------
-
-const t0 = Date.now();
-const run = spawnSync(process.execPath, ['--experimental-strip-types', 'app.ts'], {
-  cwd: dir,
-  encoding: 'utf8',
-});
-const tRun = Date.now() - t0;
-
-if (run.status !== 0 || !/TTFF_OK /.test(run.stdout)) {
-  console.error(`\nttff: the program did not store a file.\n\n${run.stderr || run.stdout}`);
-  process.exit(1);
-}
-console.log(`  ${'node --experimental-strip-types app.ts'.padEnd(52)} ${String(seconds(tRun)).padStart(6)}s`);
-
-const total = tInstall + tPglite + tRun;
+shownStep('node --experimental-strip-types app.ts', tRun);
 const humanSteps = STEPS.filter((s) => s.human).length;
 const loc = ASSEMBLED.split('\n').filter((l) => l.trim() && !l.startsWith('if (') && !l.startsWith('console.')).length;
 
 console.log(`\n  ${'TOTAL, install to stored byte'.padEnd(52)} ${String(seconds(total)).padStart(6)}s`);
+console.log(`  ${'runs (median shown), fastest and slowest total'.padEnd(52)} ${String(RUNS).padStart(6)}   ${seconds(Math.min(...totals))}s to ${seconds(Math.max(...totals))}s`);
+console.log(`  ${'machine'.padEnd(52)} ${process.platform}-${process.arch}, ${cpus().length} CPU, Node ${process.version}`);
 console.log(`  ${'steps requiring a human'.padEnd(52)} ${String(humanSteps).padStart(6)}`);
 console.log(`  ${'lines of application code'.padEnd(52)} ${String(loc).padStart(6)}`);
 console.log(`  ${'accounts, credentials, dashboards'.padEnd(52)} ${String(0).padStart(6)}`);
-
-rmSync(dir, { recursive: true, force: true });
 
 if (PRINT_ONLY) process.exit(0);
 
@@ -208,7 +244,9 @@ const today = new Date().toISOString().slice(0, 10);
 const results = `# Time to first file
 
 **Measured ${today}** against \`@filelayer/core@${version}\` **installed from the npm
-registry**, not from this checkout. Re-run it:
+registry**, not from this checkout: the median of ${RUNS} cold runs (each from an
+empty directory and an empty npm cache) on ${process.platform}-${process.arch},
+${cpus().length} CPU, Node ${process.version}. Re-run it:
 
 \`\`\`bash
 node benchmark/ttff/measure.mjs
@@ -221,7 +259,7 @@ node benchmark/ttff/measure.mjs
 | \`npm install @filelayer/core\`, cold cache | ${seconds(tInstall)}s |
 | \`npm install --save-dev "@electric-sql/pglite@^0.3.11"\` | ${seconds(tPglite)}s |
 | first run, including starting an embedded PostgreSQL | ${seconds(tRun)}s |
-| **total, install to stored byte** | **${seconds(total)}s** |
+| **total, install to stored byte** | **${seconds(total)}s** (fastest ${seconds(Math.min(...totals))}s, slowest ${seconds(Math.max(...totals))}s) |
 | lines of application code | ${loc} |
 | **steps requiring a human** | **${humanSteps}** |
 | accounts, API keys, dashboards or browser steps | **0** |

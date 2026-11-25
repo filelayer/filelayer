@@ -215,8 +215,11 @@ Independent attacks are welcome, as an issue or a pull request.
 From `npm install` to the first stored file, using the program printed in the
 quickstart that ships in the package: 4 lines of application code, no step that
 needs a person, and no account, credential or dashboard. It takes a few
-seconds on a laptop: on the machine that generated these results it took 6.5
-seconds, and the time depends on the machine and the network.
+seconds on a laptop: on the machine that generated these results it took 5.2
+seconds, the median of 5 cold runs (linux-x64, 2 CPU, an empty npm cache each
+time). About half of that is the two `npm install` steps (2.4 seconds), which
+depend on the network more than on the package; the first run of the program
+took 2.7 seconds.
 
 ## Where the alternatives are better
 

@@ -250,16 +250,28 @@ the bytes itself or redirects to a signed URL.
 
 ## Time to first file
 
+The median of 5 cold runs, each from an empty directory and an empty npm cache, on the machine named
+in the output. The two `npm install` phases are mostly the registry and the network, so they move
+from run to run and from network to network; the run of the program itself moves least.
+
 ```
-time to first file, from the registry
+time to first file, from the registry: median of 5 cold run(s)
 
-  npm init -y   (not counted: scaffolding)                1.1s
-  npm install @filelayer/core                             2.9s
-  npm install --save-dev "@electric-sql/pglite@^0.3.11"    1.1s
+  run 1 of 5: 5.3s
+  run 2 of 5: 5.2s
+  run 3 of 5: 5.1s
+  run 4 of 5: 4.9s
+  run 5 of 5: 5.2s
+
+  npm init -y   (not counted: scaffolding)                0.4s
+  npm install @filelayer/core                             1.2s
+  npm install --save-dev "@electric-sql/pglite@^0.3.11"    1.2s
   every program line found in the shipped page              4
-  node --experimental-strip-types app.ts                  2.5s
+  node --experimental-strip-types app.ts                  2.7s
 
-  TOTAL, install to stored byte                           6.5s
+  TOTAL, install to stored byte                           5.2s
+  runs (median shown), fastest and slowest total            5   4.9s to 5.3s
+  machine                                              linux-x64, 2 CPU, Node v22.23.4
   steps requiring a human                                   0
   lines of application code                                 5
   accounts, credentials, dashboards                         0
