@@ -185,10 +185,34 @@ for (const [name, call] of pairs) {
 test('list: a capability that is not one is refused alike, as invalid_argument', async () => {
   const fl = await world();
   try {
-    const acme = await refusal(fl.files.list({ org: 'acme', as: 'mallory', capability: 'bogus' as never }));
-    const ghost = await refusal(fl.files.list({ org: 'ghost', as: 'mallory', capability: 'bogus' as never }));
-    assert.equal(acme?.code, 'invalid_argument', 'a FilelayerError, not a raw Postgres error');
-    assert.deepEqual(ghost, acme);
+    // '' and the other falsy values too: a truthiness test on one path made
+    // them the default `read` there and an error on the other (review of 7c1135f).
+    for (const bad of ['bogus', '', null, 0, false]) {
+      const acme = await refusal(fl.files.list({ org: 'acme', as: 'mallory', capability: bad as never }));
+      const ghost = await refusal(fl.files.list({ org: 'ghost', as: 'mallory', capability: bad as never }));
+      assert.equal(acme?.code, 'invalid_argument', `${JSON.stringify(bad)}: a FilelayerError, not a raw Postgres error`);
+      assert.deepEqual(ghost, acme, JSON.stringify(bad));
+    }
+  } finally {
+    await fl.close();
+  }
+});
+
+test('shares.create withOrg: a minRole that is not a role is refused alike, as invalid_argument', async () => {
+  const fl = await world();
+  try {
+    const file = await fl.files.put(utf8('mine'), { org: 'mallory-co', owner: 'mallory', name: 'm.txt' });
+    const ask = (org: string) => refusal(fl.shares.create(file.id, { as: 'mallory', withOrg: org, minRole: 'god' as never }));
+    const acme = await ask('acme');
+    assert.equal(acme?.code, 'invalid_argument', 'not a raw Postgres error carrying the INSERT');
+    assert.deepEqual(await ask('ghost'), acme);
+    // And in core, for a role subject.
+    const malloryId = (await fl.ids.actorId('mallory'))!;
+    const acmeId = (await fl.ids.orgId('acme'))!;
+    const core = await refusal(
+      fl.share({ actorId: malloryId }, file.id, { subject: { type: 'role', orgId: acmeId, minRole: 'god' as never } }),
+    );
+    assert.equal(core?.code, 'invalid_argument');
   } finally {
     await fl.close();
   }
@@ -231,10 +255,46 @@ test("a non-member's refused put is on that org's chain, and on no other", async
 test('orgs.audit: filters that cannot match are refused, not sent to Postgres', async () => {
   const fl = await world();
   try {
-    for (const bad of [{ file: 'not-a-uuid' }, { since: new Date('nope') }, { decision: 'bogus' as never }]) {
+    for (const bad of [
+      { file: 'not-a-uuid' },
+      { since: new Date('nope') },
+      { until: new Date('nope') },
+      { since: 'yesterday' as never },
+      { until: {} as never },
+      { decision: 'bogus' as never },
+    ]) {
       const r = await refusal(fl.orgs.audit('acme', { as: 'alice', ...bad }));
-      assert.equal(r?.code, 'invalid_argument', JSON.stringify(Object.keys(bad)));
+      assert.equal(r?.code, 'invalid_argument', JSON.stringify(bad));
     }
+    // Core: `actorId` is an internal id, checked the same way.
+    const aliceId = (await fl.ids.actorId('alice'))!;
+    const acmeId = (await fl.ids.orgId('acme'))!;
+    const core = await refusal(fl.auditLog({ actorId: aliceId }, acmeId, { actorId: 'not-a-uuid' }));
+    assert.equal(core?.code, 'invalid_argument');
+  } finally {
+    await fl.close();
+  }
+});
+
+test('orgs.audit: since and until given as an ISO string or epoch milliseconds still work', async () => {
+  const fl = await world();
+  try {
+    const all = await fl.orgs.audit('acme', { as: 'alice' });
+    assert.ok(all.length > 0);
+    const past = Date.now() - 3_600_000;
+    const future = Date.now() + 3_600_000;
+    for (const bounds of [
+      { since: new Date(past).toISOString(), until: new Date(future).toISOString() },
+      { since: past, until: future },
+      { since: '2000-01-01' },
+    ]) {
+      // At least every earlier row: each read is itself recorded, so later
+      // reads see more.
+      const rows = await fl.orgs.audit('acme', { as: 'alice', ...(bounds as object) });
+      assert.ok(rows.length >= all.length, JSON.stringify(bounds));
+    }
+    const none = await fl.orgs.audit('acme', { as: 'alice', until: '2000-01-01' as never });
+    assert.equal(none.length, 0);
   } finally {
     await fl.close();
   }

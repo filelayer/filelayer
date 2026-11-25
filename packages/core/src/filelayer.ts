@@ -2672,6 +2672,9 @@ export class Filelayer {
       // foreign-key violation that would confirm the id exists somewhere. An
       // org in another project, an org that does not exist, and a malformed id
       // are one answer -- the same symmetry the file paths keep.
+      // The role first, before the org is resolved, so a bad one is the same
+      // `invalid_argument` whether the org exists or not (0.37.0).
+      if (input.subject.type === 'role') oneOf('minRole', input.subject.minRole, ORG_ROLES);
       subjectOrgId = await this.#resolveSubjectOrg(tx, input.subject.orgId);
       if (input.subject.type === 'role') subjectMinRole = input.subject.minRole;
     }

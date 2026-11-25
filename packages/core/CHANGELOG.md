@@ -44,7 +44,8 @@ it says again whether the org exists. `MIGRATIONS.md`, `SEMANTICS.md` §2,
 
 Arguments are checked before the org is looked up, so a bad one is the same
 error either way: `orgs.setRole` checks the role first, `orgs.audit` and
-`orgs.verifyAudit` check `as` first, and `files.list` checks `capability`,
+`orgs.verifyAudit` check `as` first, `shares.create` checks `minRole` first,
+and `files.list` checks `capability` (any value given, falsy ones included),
 `limit` and `cursor` on both paths. A refused `put` no longer registers the
 owner it named, so a later `files.list({ as })` cannot tell the two orgs apart
 either. `test/org-existence.test.ts` sets an org that exists beside one that
@@ -57,14 +58,23 @@ What a stranger can still learn is `LIMITATIONS.md` entry 18:
 when the org exists; and a refusal for an org that exists takes longer than one
 for an org that does not.
 
-### Fixed: three arguments that reached Postgres unchecked
+### Fixed: arguments that reached Postgres unchecked
 
 `files.list({ capability })` outside the four capabilities came back as a raw
-Postgres error (22P02) carrying the query text and internal ids. It is now
-`invalid_argument`. So are an `orgs.audit` / `auditLog` filter with a `file` or
-`actorId` that is not an id from this API, or a `since` / `until` that is not a
-valid `Date` (raw 22P02 or 22007 before), and a `decision` other than `allow`
-or `deny`, which matched nothing and so read as "no such event".
+Postgres error carrying the query text and internal ids; so did
+`shares.create({ withOrg, minRole })` with a `minRole` that is not a role,
+whose error also held the target org's internal id. Both are now
+`invalid_argument`, checked before the org is looked up. So are an
+`orgs.audit` / `auditLog` filter with a `file` or `actorId` that is not an id
+from this API (a raw error before), and a `decision` other than `allow` or
+`deny`, which matched nothing and so read as "no such event".
+
+`since` and `until` take a `Date`, as typed. A string or number that Postgres
+used to parse is still accepted when `new Date()` reads it as a valid time
+(an ISO string, epoch milliseconds), and is normalised. Postgres-only words
+(`'yesterday'`, `'now'`), which used to work against the database server's
+clock, are now `invalid_argument`, as are invalid dates, `null` and objects.
+`MIGRATIONS.md` lists each case.
 
 ### Documented: revoke decides on a direct read of `file_grant`
 

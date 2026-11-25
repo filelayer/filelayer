@@ -1411,11 +1411,24 @@ These were bugs and are now `invalid_argument` (400). Code that sends a typed
 call does not meet them.
 
 - `files.list({ capability })` outside `read`, `write`, `delete`, `share`: it
-  was a raw Postgres error.
+  was a raw Postgres error. That includes `''`, `null`, `0` and `false`, which
+  the facade used to treat as "no capability" (`read`) and now refuses: leave
+  the field out for `read`.
+- `shares.create({ withOrg, minRole })` (and `share()` with a `role` subject)
+  with a `minRole` outside `viewer`, `member`, `admin`, `owner`: a raw Postgres
+  error before. An empty `minRole: ''` is refused too; leave it out for an
+  org-wide grant.
 - An `orgs.audit` (or `auditLog`) filter whose `file` or `actorId` is not an id
-  from this API, or whose `since` / `until` is not a valid `Date`: raw Postgres
-  errors before. A `decision` other than `allow` or `deny`: it matched nothing,
-  and now is refused.
+  from this API: a raw Postgres error before. A `decision` other than `allow`
+  or `deny`: it matched nothing, and now is refused.
+- `since` / `until`. A `Date` works as before. So does a string or a number
+  that `new Date()` reads as a valid time (`'2026-01-01'`, an ISO timestamp,
+  epoch milliseconds), which Postgres used to parse and the library now
+  normalises. Refused: anything `new Date()` cannot read, including
+  Postgres-only words such as `'yesterday'` or `'now'`, which used to work and
+  meant the database server's clock and time zone; pass a `Date` instead. An
+  invalid `Date` object, `null` or an object is refused too (before: a raw
+  error, or, for `null`, no rows).
 - `orgs.setRole` checks the role, and `orgs.audit` / `orgs.verifyAudit` check
   `as`, before looking the org up, so these come back as `invalid_argument`
   even for an org that does not exist (they were `404` there).

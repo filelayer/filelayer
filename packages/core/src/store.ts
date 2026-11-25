@@ -2079,6 +2079,25 @@ export interface AuditFilter {
   limit?: number;
 }
 
+
+/**
+ * A `since` / `until` bound as a `Date`. Typed as a `Date`, but an untyped
+ * caller passing `req.query.since` straight through sent a string or a number,
+ * which Postgres parsed: so a `Date`, or a string or number that `new Date()`
+ * reads as a valid time, is accepted and normalised (0.37.0). Anything else is
+ * `invalid_argument`, including Postgres-only words such as `'yesterday'`,
+ * which `new Date()` cannot read and which meant the server's clock and zone.
+ */
+function auditBound(field: 'since' | 'until', value: unknown): Date | undefined {
+  if (value === undefined) return undefined;
+  const date =
+    value instanceof Date ? value : typeof value === 'string' || typeof value === 'number' ? new Date(value) : null;
+  if (date === null || Number.isNaN(date.getTime())) {
+    throw new FilelayerError('invalid_argument', `${field} must be a Date, or an ISO string or epoch milliseconds.`);
+  }
+  return date;
+}
+
 /**
  * The WHERE clauses for an audit read, written once so the plain and the
  * resolved reader cannot drift apart in what they filter on.
@@ -2094,9 +2113,9 @@ function auditFilterClauses(
 ): string[] {
   const clauses = [`${prefix}org_id IS NOT DISTINCT FROM $${orgParam}`];
   // CHECKED HERE, since 0.37.0, because each of these reached SQL as given: a
-  // non-uuid `fileId` and an unparseable `since`/`until` came back as raw
-  // Postgres errors (22P02, 22007) carrying the query text, and a misspelled
-  // `decision` matched nothing, which in an audit read says "no such event".
+  // non-uuid `fileId` or `actorId` came back as a raw Postgres error carrying
+  // the query text, and a misspelled `decision` matched nothing, which in an
+  // audit read says "no such event".
   if (filter.decision && filter.decision !== 'allow' && filter.decision !== 'deny') {
     throw new FilelayerError('invalid_argument', 'decision must be one of allow, deny.');
   }
@@ -2106,11 +2125,8 @@ function auditFilterClauses(
   if (filter.actorId && !isUuid(filter.actorId)) {
     throw new FilelayerError('invalid_argument', 'actorId must be an actor id from this API.');
   }
-  for (const [field, value] of [['since', filter.since], ['until', filter.until]] as const) {
-    if (value !== undefined && !(value instanceof Date && !Number.isNaN(value.getTime()))) {
-      throw new FilelayerError('invalid_argument', `${field} must be a valid Date.`);
-    }
-  }
+  const since = auditBound('since', filter.since);
+  const until = auditBound('until', filter.until);
   if (filter.decision) {
     params.push(filter.decision);
     clauses.push(`${prefix}decision = $${params.length}`);
@@ -2131,12 +2147,12 @@ function auditFilterClauses(
   // half-open. The parameters are passed as Date objects and the driver sends
   // them as timestamptz, so no string formatting is involved and no client
   // timezone can reinterpret them.
-  if (filter.since !== undefined) {
-    params.push(filter.since);
+  if (since !== undefined) {
+    params.push(since);
     clauses.push(`${prefix}occurred_at >= $${params.length}`);
   }
-  if (filter.until !== undefined) {
-    params.push(filter.until);
+  if (until !== undefined) {
+    params.push(until);
     clauses.push(`${prefix}occurred_at < $${params.length}`);
   }
   return clauses;

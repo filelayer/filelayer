@@ -251,13 +251,25 @@ Each one is current as of
      later `files.list({ as })` is an empty page for a registered user and
      `404 not_found`, with reason `unknown_actor`, for one never seen.
    - The answer is the same; the time it takes is not. A refusal for an org
-     that exists does more work (median `put` 4.98 ms against 2.58 ms on
-     PGlite, in-process), which repeated requests can measure.
+     that exists does more work, about 1.5 to 5 times as long depending on the
+     call (`put` least, `list` most), measured in-process on PGlite by the
+     cold reviews of 0.37.0. Repeated requests can measure it.
 
    If your org ids are guessable (sequential, or a customer's name), decide
    the subject org and the target user in your own route, from your own data,
    rather than from what the user typed.
-
+19. **Some malformed arguments still escape as errors that are not
+   `FilelayerError`.** A typed call does not send them, but an untyped one can:
+   a string with a NUL byte as an id, name or metadata value (a raw Postgres
+   error whose `query` and `params` carry the SQL text and the project's
+   internal id), an object where a string id is expected, an `expiresIn` too
+   large to be a date (`RangeError`), or a non-string link secret or password
+   (`TypeError`). None of them tells a stranger anything about an org, and the
+   delivery routes already answer such requests with `404`. Until one guard
+   turns every such error into `invalid_argument` (planned for the next patch release), do not
+   pass request input to the library untyped, and do not return a caught
+   error's fields to the caller: log them, and answer with its `code` when it
+   is a `FilelayerError` and a plain 500 when it is not.
 ---
 
 ## Why this is a separate file

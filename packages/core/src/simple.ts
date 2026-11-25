@@ -747,7 +747,10 @@ export class FilesApi {
       return { files: [], nextCursor: null };
     }
     return this.fl.listFiles(principal, orgId, {
-      ...(opts.capability ? { capability: opts.capability } : {}),
+      // `!== undefined`, not truthiness: `''`, `null`, `0` and `false` are
+      // checked (and refused) here as on the missing-org path above, rather
+      // than quietly becoming the default `read` on this path only.
+      ...(opts.capability !== undefined ? { capability: opts.capability } : {}),
       ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
       ...(opts.cursor !== undefined ? { cursor: opts.cursor } : {}),
     });
@@ -1179,6 +1182,10 @@ export class SharesApi {
     if (opts.minRole && !opts.withOrg) {
       throw new FilelayerError('ambiguous_subject', 'minRole_without_withOrg');
     }
+    // Checked before the org is looked up (0.37.0): a role outside the four
+    // reached SQL as `org_role` and came back as a raw Postgres error carrying
+    // the INSERT and internal ids, and only for an org that exists.
+    if (opts.minRole !== undefined) oneOf('minRole', opts.minRole, ORG_ROLES);
     const subject: ShareSubject = opts.withUser
       ? { type: 'actor', actorId: await this.ids.actor(opts.withUser) }
       : opts.withOrg
