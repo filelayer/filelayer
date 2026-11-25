@@ -107,7 +107,7 @@ non-zero failure count, which the first version did not.
 
 Kept current, and complete, in
 [`LIMITATIONS.md`](https://github.com/filelayer/filelayer/blob/main/LIMITATIONS.md) —
-seventeen entries, which ship in the npm tarball. The ones most likely to
+eighteen entries, which ship in the npm tarball. The ones most likely to
 matter:
 
 - Byte delivery proxies through your application by default, so there is no CDN

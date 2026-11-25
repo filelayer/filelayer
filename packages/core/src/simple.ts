@@ -63,7 +63,7 @@ import {
   type ShareSubject,
 } from './filelayer.ts';
 import { DEFAULT_PROJECT_ID } from './store.ts';
-import { decodeCursor, listLimit } from './list-options.ts';
+import { ORG_ROLES, decodeCursor, listCapability, listLimit, oneOf } from './argument-checks.ts';
 import type { Capability, FileVisibility, OrgRole, Principal } from './authz.ts';
 
 /**
@@ -531,7 +531,13 @@ export class FilesApi {
     // asserting the identity exists in their system; we are not inventing it.
     let ownerId: string;
     if (opts.owner !== undefined) {
-      ownerId = await this.ids.actor(opts.owner);
+      // REGISTERED ONLY ONCE THE PUT MAY PROCEED, since 0.37.0. Registering
+      // first meant a refused put into an org that exists left the owner
+      // registered and one into a missing org did not, and `files.list({ as })`
+      // then told the two apart (an empty page against `404 unknown_actor`).
+      // An owner never registered is not a member of a named org, so the
+      // membership check can read it with `findActor`.
+      const known = await this.ids.findActor(opts.owner);
       // JOINING IS NOT THE SAME AS BEING REGISTERED.
       //
       // In the DEFAULT org, auto-join is the design: a tier-1/tier-2
@@ -549,7 +555,7 @@ export class FilesApi {
       const mayJoin =
         isDefaultWorkspace ||
         resolved.created ||
-        (await this.fl.store.getMembership(orgId, ownerId)) !== null;
+        (known !== null && (await this.fl.store.getMembership(orgId, known)) !== null);
       // NOT IN THE ORG IS ANSWERED AS NOT THERE, since 0.37.0 (D081). Until
       // then this was `403 forbidden` while a missing org was `404 not_found`,
       // so the status told a stranger which org ids exist (LIMITATIONS.md
@@ -562,12 +568,15 @@ export class FilesApi {
           action: 'org.access',
           decision: 'deny',
           reason: 'no_membership',
-          actorId: ownerId,
+          actorId: known,
           fileId: null,
-          context: { operation: 'files.put' },
+          // The owner's own id, so a refusal of somebody never registered
+          // still says who it was.
+          context: { operation: 'files.put', owner: String(opts.owner).slice(0, 128) },
         });
         throw new FilelayerError('not_found', 'no_membership');
       }
+      ownerId = known ?? (await this.ids.actor(opts.owner));
       await this.ids.membership(orgId, ownerId, 'member');
     } else {
       ownerId = system;
@@ -707,7 +716,10 @@ export class FilesApi {
    */
   async list(
     opts: AsOption & {
-      /** Your own tenant id. Defaults to the workspace. Must already exist. */
+      /**
+       * Your own tenant id. Defaults to the workspace. An org that does not exist
+       * lists as an empty page, the answer for one the caller cannot read.
+       */
       org?: string;
       /** Which capability the caller must hold. Default `read`. */
       capability?: Capability;
@@ -728,6 +740,7 @@ export class FilesApi {
     const external = opts.org ?? DEFAULT_WORKSPACE;
     const orgId = await this.ids.findOrg(external);
     if (orgId === null) {
+      listCapability(opts.capability);
       listLimit(opts.limit);
       decodeCursor(opts.cursor);
       await this.ids.recordUnknownOrg(external);
@@ -979,6 +992,10 @@ export class OrgsApi {
     role: OrgRole,
     opts: { as: string },
   ): Promise<void> {
+    // The role is checked BEFORE the org is looked up, so a bad one is the
+    // same `invalid_argument` whether the org exists or not (0.37.0).
+    // `addMember` checks it again; this one is for the order.
+    oneOf('role', role, ORG_ROLES);
     const { orgId, actorId, principal } = await this.trio(org, user, requireAs('orgs.setRole', opts));
     await this.fl.addMember(principal, orgId, actorId, role);
   }
@@ -1026,8 +1043,11 @@ export class OrgsApi {
       until?: Date;
     },
   ) {
+    // `as` is checked BEFORE the org is looked up, so a call without one is
+    // the same `invalid_argument` whether the org exists or not (0.37.0).
+    const as = requireAs('orgs.audit', opts);
     const orgId = await this.requireOrg(org);
-    const principal = await this.requirePrincipal(requireAs('orgs.audit', opts), opts);
+    const principal = await this.requirePrincipal(as, opts);
     let actorId: string | undefined;
     if (opts.user !== undefined) {
       const found = await this.ids.findActorIncludingDeleted(opts.user);
@@ -1052,8 +1072,9 @@ export class OrgsApi {
   }
 
   async verifyAudit(org: string, opts: AsOption & { as: string }) {
+    const as = requireAs('orgs.verifyAudit', opts); // before the lookup, as in `audit`
     const orgId = await this.requireOrg(org);
-    return this.fl.verifyAuditChain(await this.requirePrincipal(requireAs('orgs.verifyAudit', opts), opts), orgId);
+    return this.fl.verifyAuditChain(await this.requirePrincipal(as, opts), orgId);
   }
 
   private async trio(org: string, user: string, as: string) {

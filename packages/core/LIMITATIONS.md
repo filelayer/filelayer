@@ -237,17 +237,26 @@ Each one is current as of
    inside `share_revoke`. Both say so in the report's `notes`
    (`errors_not_measured`, `unshare_not_recorded`). See
    [docs/USAGE-REPORT.md](docs/USAGE-REPORT.md).
+18. **A caller can still learn, in three narrow ways, whether an org id
+   exists.** The answer to a stranger is the same for an org that exists and
+   one that does not (since 0.37.0, `test/org-existence.test.ts`), except:
+   - `shares.create(file, { withOrg })` creates the grant for an org in the
+     same project and answers `404 not_found` for one that does not exist,
+     because a grant to another org in the project is the feature. An org in
+     another project, or a deleted one, answers like a missing one. So someone
+     allowed to share a file can learn which org ids exist in your project.
+   - `orgs.setRole` and `orgs.removeMember` register the target user they name
+     before the call is authorized, and only when the org exists. A caller who
+     chooses both that target and a later `as` can tell the two apart: the
+     later `files.list({ as })` is an empty page for a registered user and
+     `404 not_found`, with reason `unknown_actor`, for one never seen.
+   - The answer is the same; the time it takes is not. A refusal for an org
+     that exists does more work (median `put` 4.98 ms against 2.58 ms on
+     PGlite, in-process), which repeated requests can measure.
 
-18. **Sharing with an org tells the sharer whether that org exists in the
-   project.** `shares.create(file, { withOrg })` answers an org that does not
-   exist with `404 not_found` (reason `unknown_org`), and creates the grant for
-   an org that exists in the same project, because a grant to another org in
-   the project is the feature. An org in another project, or a deleted one,
-   answers exactly as one that does not exist (`test/org-existence.test.ts`).
-   So someone allowed to share a file can learn which org ids exist in your
-   project. If your org ids are guessable (sequential, or a customer's name),
-   decide the subject org in your own route, from your own data, rather than
-   from what the user typed.
+   If your org ids are guessable (sequential, or a customer's name), decide
+   the subject org and the target user in your own route, from your own data,
+   rather than from what the user typed.
 
 ---
 

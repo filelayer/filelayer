@@ -24,37 +24,49 @@ library is entitled to know what has already moved underneath it.
 A minor release because two answers change. No schema change (still version
 16). Upgrading: `MIGRATIONS.md`, "`0.36.1` → `0.37.0`".
 
-### Changed — a stranger can no longer tell which org ids exist
+### Changed: what a stranger's answer says about an org id
 
 `files.put({ org, owner })` with an owner who is not a member of an org that
 exists now throws `not_found` (404) with reason `no_membership`, the same status
 and code as an org that does not exist (reason `unknown_org`). It was
 `forbidden` (403). `files.list({ org })` on an org that does not exist now
 returns an empty page, as it does for an org the caller cannot read; it threw
-`not_found`. So the answer alone no longer says whether an org id exists, which
-closes `LIMITATIONS.md` entry 18. Entry 18 is now the one difference left:
-sharing with an org tells the sharer whether it exists in the project (below).
+`not_found`. That closes the old `LIMITATIONS.md` entry 18.
 
-The true reason is still on the error as `reason`, which is for you and never
-for your caller, and in the audit log: the `put` refusal is now recorded, as an
-`org.access` deny with reason `no_membership` on that org's chain, where before
-it wrote nothing; the missing org on `list` is still an `org.access` deny with
-reason `unknown_org`. A bad `cursor` or `limit` is refused alike for a missing
-org and a real one, so the arguments are not a second way to ask.
-
-`orgs.audit`, `orgs.verifyAudit`, `orgs.setRole` and `orgs.removeMember`
-already answered both cases with the same `404`. `shares.create({ withOrg })`
-answers an org in another project, or a deleted one, exactly as one that does
-not exist; an org in the same project is a valid subject and gets the grant,
-which is the one difference left and is `LIMITATIONS.md` entry 18.
-`test/org-existence.test.ts` asserts all of it.
-
+The true reason is still on the error as `reason` and in the audit log. The
+`put` refusal is now recorded, as an `org.access` deny with reason
+`no_membership` on that org's chain, where before it wrote nothing; the missing
+org on `list` is still an `org.access` deny with reason `unknown_org`.
 `reason` is for your server's log and is never shown to the end user: shown,
 it says again whether the org exists. `MIGRATIONS.md`, `SEMANTICS.md` §2,
-`llms.txt` and the integration skill now say so; the examples already answer
-with `code` alone.
+`llms.txt` and the integration skill say so; the examples already answer with
+`code` alone.
 
-### Documented — revoke decides on a direct read of `file_grant`
+Arguments are checked before the org is looked up, so a bad one is the same
+error either way: `orgs.setRole` checks the role first, `orgs.audit` and
+`orgs.verifyAudit` check `as` first, and `files.list` checks `capability`,
+`limit` and `cursor` on both paths. A refused `put` no longer registers the
+owner it named, so a later `files.list({ as })` cannot tell the two orgs apart
+either. `test/org-existence.test.ts` sets an org that exists beside one that
+does not for `put`, `list` and every `orgs.*` method.
+
+What a stranger can still learn is `LIMITATIONS.md` entry 18:
+`shares.create({ withOrg })` creates the grant for an org in the same project
+(an org in another project, or a deleted one, answers like a missing one);
+`orgs.setRole` and `orgs.removeMember` register the target user they name only
+when the org exists; and a refusal for an org that exists takes longer than one
+for an org that does not.
+
+### Fixed: three arguments that reached Postgres unchecked
+
+`files.list({ capability })` outside the four capabilities came back as a raw
+Postgres error (22P02) carrying the query text and internal ids. It is now
+`invalid_argument`. So are an `orgs.audit` / `auditLog` filter with a `file` or
+`actorId` that is not an id from this API, or a `since` / `until` that is not a
+valid `Date` (raw 22P02 or 22007 before), and a `decision` other than `allow`
+or `deny`, which matched nothing and so read as "no such event".
+
+### Documented: revoke decides on a direct read of `file_grant`
 
 `SEMANTICS.md` §3 said no direct read of `file_grant` authorizes anything.
 Revoke does: it finds the grant with a plain `SELECT`, and the decision reads

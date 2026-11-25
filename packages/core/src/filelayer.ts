@@ -98,7 +98,7 @@ import {
   type StreamedDelivery,
 } from './delivery.ts';
 import { FilelayerError } from './errors.ts';
-import { decodeCursor, encodeCursor, listLimit } from './list-options.ts';
+import { CAPABILITIES, ORG_ROLES, VISIBILITIES, decodeCursor, encodeCursor, listCapability, listLimit, oneOf } from './argument-checks.ts';
 
 // Declared in `errors.ts` so that `delivery.ts` can classify errors without
 // importing this module (which imports `delivery.ts`). Re-exported here because
@@ -2062,7 +2062,7 @@ export class Filelayer {
     if (principal.linkSecret !== undefined) {
       throw new FilelayerError('link_principal_cannot_list', 'link_principal_cannot_list');
     }
-    const capability = opts.capability ?? 'read';
+    const capability = listCapability(opts.capability);
     const limit = listLimit(opts.limit);
 
     const { files, hasMore } = await authorizeList(this.store, principal, orgId, {
@@ -4024,21 +4024,3 @@ function checkConstructorArguments(db: unknown, storage: unknown, opts: unknown)
 // Enumerated arguments
 // -----------------------------------------------------------------------------
 
-const ORG_ROLES = ['viewer', 'member', 'admin', 'owner'] as const satisfies readonly OrgRole[];
-const VISIBILITIES = ['private', 'org'] as const satisfies readonly FileVisibility[];
-const CAPABILITIES = ['read', 'write', 'delete', 'share'] as const satisfies readonly Capability[];
-
-/**
- * An enumerated argument outside its set is `invalid_argument` naming the
- * field and the values, since 0.36.0. Before, `role: 'editor'` or
- * `visibility: 'public'` reached the schema's CHECK constraint and came back
- * as a raw SQLSTATE, or (where the engine compared before inserting) as a
- * denial that read like a permission problem.
- */
-function oneOf<T extends string>(field: string, value: unknown, allowed: readonly T[]): T {
-  if (typeof value === 'string' && (allowed as readonly string[]).includes(value)) return value as T;
-  throw new FilelayerError('invalid_argument',
-    `${field} must be one of ${allowed.join(', ')}, got ` +
-      `${typeof value === 'string' ? JSON.stringify(value.slice(0, 40)) : typeof value}.`,
-  );
-}

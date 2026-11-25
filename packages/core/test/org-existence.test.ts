@@ -149,3 +149,93 @@ test('shares.create withOrg: an org in another project, or deleted, answers like
     await b.close();
   }
 });
+
+// -----------------------------------------------------------------------------
+// The orgs.* methods, with arguments a typed call would not send. A check that
+// ran only on the path for a real org answered `invalid_argument` there and
+// `404` on a missing one (cold review of e0c6bb4, B1). Each pair must match.
+// -----------------------------------------------------------------------------
+
+const pairs: Array<[string, (fl: Filelayer, org: string) => Promise<unknown>]> = [
+  ['orgs.setRole with a role that is not one', (fl, org) => fl.orgs.setRole(org, 'bob', 'god' as never, { as: 'mallory' })],
+  ['orgs.setRole with no role', (fl, org) => fl.orgs.setRole(org, 'bob', undefined as never, { as: 'mallory' })],
+  ['orgs.setRole as a stranger', (fl, org) => fl.orgs.setRole(org, 'bob', 'admin', { as: 'mallory' })],
+  ['orgs.removeMember as a stranger', (fl, org) => fl.orgs.removeMember(org, 'alice', { as: 'mallory' })],
+  ['orgs.removeMember with no as', (fl, org) => fl.orgs.removeMember(org, 'alice', {} as never)],
+  ['orgs.audit with no as', (fl, org) => fl.orgs.audit(org, {} as never)],
+  ['orgs.audit as a stranger', (fl, org) => fl.orgs.audit(org, { as: 'mallory' })],
+  ['orgs.verifyAudit with no as', (fl, org) => fl.orgs.verifyAudit(org, {} as never)],
+  ['orgs.verifyAudit as a stranger', (fl, org) => fl.orgs.verifyAudit(org, { as: 'mallory' })],
+];
+for (const [name, call] of pairs) {
+  test(`${name}: the same answer for an org that exists and one that does not`, async () => {
+    const fl = await world();
+    try {
+      const strip = (r: Awaited<ReturnType<typeof refusal>>) => (r ? { ...r, reason: undefined } : r);
+      const acme = await refusal(call(fl, 'acme'));
+      const ghost = await refusal(call(fl, 'ghost'));
+      assert.ok(acme, 'refused on the org that exists');
+      assert.deepEqual(strip(ghost), strip(acme));
+    } finally {
+      await fl.close();
+    }
+  });
+}
+
+test('list: a capability that is not one is refused alike, as invalid_argument', async () => {
+  const fl = await world();
+  try {
+    const acme = await refusal(fl.files.list({ org: 'acme', as: 'mallory', capability: 'bogus' as never }));
+    const ghost = await refusal(fl.files.list({ org: 'ghost', as: 'mallory', capability: 'bogus' as never }));
+    assert.equal(acme?.code, 'invalid_argument', 'a FilelayerError, not a raw Postgres error');
+    assert.deepEqual(ghost, acme);
+  } finally {
+    await fl.close();
+  }
+});
+
+test('a refused put registers nobody, so a later list({ as }) cannot tell the orgs apart', async () => {
+  const fl = await world();
+  try {
+    await refusal(fl.files.put(utf8('x'), { org: 'acme', owner: 'new-1', name: 'x.txt' }));
+    await refusal(fl.files.put(utf8('x'), { org: 'ghost', owner: 'new-2', name: 'x.txt' }));
+    const one = await refusal(fl.files.list({ as: 'new-1' }));
+    const two = await refusal(fl.files.list({ as: 'new-2' }));
+    assert.equal(one?.status, 404);
+    assert.deepEqual(one, two);
+  } finally {
+    await fl.close();
+  }
+});
+
+test("a non-member's refused put is on that org's chain, and on no other", async () => {
+  const fl = await world();
+  try {
+    const db = (fl as unknown as { store: { db: Queryable } }).store.db;
+    const acmeId = (await fl.ids.orgId('acme'))!;
+    const count = async () =>
+      (
+        await db.query<{ org_id: string | null; n: string }>(
+          `SELECT org_id, count(*)::text AS n FROM audit_event
+            WHERE action = 'org.access' AND reason = 'no_membership' GROUP BY org_id`,
+        )
+      ).rows;
+    assert.deepEqual(await count(), []);
+    await refusal(fl.files.put(utf8('x'), { org: 'acme', owner: 'mallory', name: 'x.txt' }));
+    assert.deepEqual(await count(), [{ org_id: acmeId, n: '1' }]);
+  } finally {
+    await fl.close();
+  }
+});
+
+test('orgs.audit: filters that cannot match are refused, not sent to Postgres', async () => {
+  const fl = await world();
+  try {
+    for (const bad of [{ file: 'not-a-uuid' }, { since: new Date('nope') }, { decision: 'bogus' as never }]) {
+      const r = await refusal(fl.orgs.audit('acme', { as: 'alice', ...bad }));
+      assert.equal(r?.code, 'invalid_argument', JSON.stringify(Object.keys(bad)));
+    }
+  } finally {
+    await fl.close();
+  }
+});

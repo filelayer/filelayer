@@ -1405,6 +1405,25 @@ a bad `cursor` or `limit` is still refused, the same way for both. A listing
 that relied on the throw to report a mistyped org should look the org up with
 `fl.ids.orgId(org)`, which returns `null` for one that does not exist.
 
+#### Arguments that are now refused rather than passed on
+
+These were bugs and are now `invalid_argument` (400). Code that sends a typed
+call does not meet them.
+
+- `files.list({ capability })` outside `read`, `write`, `delete`, `share`: it
+  was a raw Postgres error.
+- An `orgs.audit` (or `auditLog`) filter whose `file` or `actorId` is not an id
+  from this API, or whose `since` / `until` is not a valid `Date`: raw Postgres
+  errors before. A `decision` other than `allow` or `deny`: it matched nothing,
+  and now is refused.
+- `orgs.setRole` checks the role, and `orgs.audit` / `orgs.verifyAudit` check
+  `as`, before looking the org up, so these come back as `invalid_argument`
+  even for an org that does not exist (they were `404` there).
+
+A `files.put` refused with `no_membership` no longer registers the owner it
+named. If you relied on a failed upload to create the user, call
+`fl.ids.actor(user)` or add them with `orgs.setRole` first.
+
 ---
 
 ## 4. What is not covered here

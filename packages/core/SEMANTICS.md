@@ -116,7 +116,12 @@ whether the org exists. `shares.create({ withOrg })` answers an org in another
 project, or a deleted one, exactly as one that does not exist; an org in the
 caller's own project is a valid subject, so naming it creates the grant
 (`LIMITATIONS.md` entry 18). `orgs.create` of a name that is taken answers
-`org_exists`, which is inherent: the name is the thing being claimed.
+`org_exists`, which is inherent: the name is the thing being claimed. And
+`files.put({ org })` with no `owner` is the server acting as itself, so it
+succeeds on an org that exists and is `404 not_found` on one that does not, by
+design: this section is about what a caller named by `owner` or `as` learns,
+not about calls only your server makes. What remains visible is
+`LIMITATIONS.md` entry 18.
 
 ---
 

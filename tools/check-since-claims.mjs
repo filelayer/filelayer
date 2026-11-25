@@ -126,6 +126,11 @@ const CLAIMS = [
     note: 'put() answers a non-member like a missing org, in the integration skill.',
   },
   {
+    match: 'one that does not (since 0.37.0, `test/org-existence.test.ts`), except:',
+    probe: { kind: 'ships', file: 'dist/simple.js', text: "throw new FilelayerError('not_found', 'no_membership')" },
+    note: 'LIMITATIONS 18: the same answer for an org that exists and one that does not.',
+  },
+  {
     match: 'The same holds one level up, for org ids, since 0.37.0.',
     probe: { kind: 'ships', file: 'dist/simple.js', text: "throw new FilelayerError('not_found', 'no_membership')" },
     note: 'put() answers a non-member like a missing org, in SEMANTICS.',

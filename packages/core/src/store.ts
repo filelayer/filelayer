@@ -2093,6 +2093,24 @@ function auditFilterClauses(
   params: unknown[],
 ): string[] {
   const clauses = [`${prefix}org_id IS NOT DISTINCT FROM $${orgParam}`];
+  // CHECKED HERE, since 0.37.0, because each of these reached SQL as given: a
+  // non-uuid `fileId` and an unparseable `since`/`until` came back as raw
+  // Postgres errors (22P02, 22007) carrying the query text, and a misspelled
+  // `decision` matched nothing, which in an audit read says "no such event".
+  if (filter.decision && filter.decision !== 'allow' && filter.decision !== 'deny') {
+    throw new FilelayerError('invalid_argument', 'decision must be one of allow, deny.');
+  }
+  if (filter.fileId && !isUuid(filter.fileId)) {
+    throw new FilelayerError('invalid_argument', 'file must be a file id from this API.');
+  }
+  if (filter.actorId && !isUuid(filter.actorId)) {
+    throw new FilelayerError('invalid_argument', 'actorId must be an actor id from this API.');
+  }
+  for (const [field, value] of [['since', filter.since], ['until', filter.until]] as const) {
+    if (value !== undefined && !(value instanceof Date && !Number.isNaN(value.getTime()))) {
+      throw new FilelayerError('invalid_argument', `${field} must be a valid Date.`);
+    }
+  }
   if (filter.decision) {
     params.push(filter.decision);
     clauses.push(`${prefix}decision = $${params.length}`);
