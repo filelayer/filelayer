@@ -19,6 +19,42 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [0.37.1] — 2026-11-26
+
+A patch release. No schema change (still version 16). Upgrading:
+`MIGRATIONS.md`, "`0.37.0` → `0.37.1`".
+
+### Fixed: malformed arguments leave as `invalid_argument`
+
+A NUL byte in a name, an id or a metadata value, an object where a string
+goes, a value Postgres cannot read as its column type (SQLSTATE class 22), an
+`expiresIn` too large to be a date, and a non-string link secret or password
+came back as a raw Postgres error carrying the SQL text and internal ids in
+`query` and `params`, or as a bare `RangeError` or `TypeError`. One guard,
+around every public async method of `Filelayer` and of `fl.files`, `fl.orgs`,
+`fl.shares` and `fl.ids`, now turns each of them into `invalid_argument` with a
+reason that names the kind of value and nothing else. `test/input-guard.test.ts`
+has one row per entry point that takes text (31 rows); 29 of them failed on
+0.37.0. `fl.store` is not wrapped, which is `LIMITATIONS.md` entry 19 now.
+
+### Fixed: a refused `orgs.setRole` or `orgs.removeMember` registers nobody
+
+The target user was registered before the change was authorized, and only when
+the org existed, so a later `files.list({ as })` told an org that exists from
+one that does not. The target is now registered after authorization, in the
+same transaction, under the id the audit event names. That closes the second
+bullet of `LIMITATIONS.md` entry 18; what remains there is `withOrg` in the
+same project and the timing difference.
+
+### Changed: `reason` is not enumerable and not in `toJSON()`
+
+`FilelayerError.reason` still reads as before, but it is no longer an
+enumerable own property, and `toJSON()` returns `{ name, status, code,
+message }`. So `res.json(err)` and `{ ...err }` no longer send `reason`, which
+says whether an org exists, to the caller.
+
+---
+
 ## [0.37.0] — 2026-11-25
 
 A minor release because two answers change. No schema change (still version

@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "0.3.16",
-    "@filelayer/core": "0.37.0"
+    "@filelayer/core": "0.37.1"
   }
 }

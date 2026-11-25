@@ -6,7 +6,7 @@ because a limitations list that lives only in a README gets trimmed for length
 and the trimming is always in our favour.
 
 Each one is current as of
-`0.37.0`; where a limitation has been lifted since an earlier release, the
+`0.37.1`; where a limitation has been lifted since an earlier release, the
 [changelog](https://github.com/filelayer/filelayer/blob/main/packages/core/CHANGELOG.md) says so.
 
 1. **`Range` is answered, with three documented edges.** The shipped routes
@@ -237,39 +237,37 @@ Each one is current as of
    inside `share_revoke`. Both say so in the report's `notes`
    (`errors_not_measured`, `unshare_not_recorded`). See
    [docs/USAGE-REPORT.md](docs/USAGE-REPORT.md).
-18. **A caller can still learn, in three narrow ways, whether an org id
+18. **A caller can still learn, in two narrow ways, whether an org id
    exists.** The answer to a stranger is the same for an org that exists and
-   one that does not (since 0.37.0, `test/org-existence.test.ts`), except:
+   one that does not (since 0.37.0, `test/org-existence.test.ts`), and a
+   refused `orgs.setRole` or `orgs.removeMember` registers nobody either way
+   (since 0.37.1), except:
    - `shares.create(file, { withOrg })` creates the grant for an org in the
      same project and answers `404 not_found` for one that does not exist,
      because a grant to another org in the project is the feature. An org in
      another project, or a deleted one, answers like a missing one. So someone
      allowed to share a file can learn which org ids exist in your project.
-   - `orgs.setRole` and `orgs.removeMember` register the target user they name
-     before the call is authorized, and only when the org exists. A caller who
-     chooses both that target and a later `as` can tell the two apart: the
-     later `files.list({ as })` is an empty page for a registered user and
-     `404 not_found`, with reason `unknown_actor`, for one never seen.
    - The answer is the same; the time it takes is not. A refusal for an org
      that exists does more work, about 1.5 to 5 times as long depending on the
      call (`put` least, `list` most), measured in-process on PGlite by the
      cold reviews of 0.37.0. Repeated requests can measure it.
 
    If your org ids are guessable (sequential, or a customer's name), decide
-   the subject org and the target user in your own route, from your own data,
-   rather than from what the user typed.
-19. **Some malformed arguments still escape as errors that are not
-   `FilelayerError`.** A typed call does not send them, but an untyped one can:
-   a string with a NUL byte as an id, name or metadata value (a raw Postgres
-   error whose `query` and `params` carry the SQL text and the project's
-   internal id), an object where a string id is expected, an `expiresIn` too
-   large to be a date (`RangeError`), or a non-string link secret or password
-   (`TypeError`). None of them tells a stranger anything about an org, and the
-   delivery routes already answer such requests with `404`. Until one guard
-   turns every such error into `invalid_argument` (planned for the next patch release), do not
-   pass request input to the library untyped, and do not return a caught
-   error's fields to the caller: log them, and answer with its `code` when it
-   is a `FilelayerError` and a plain 500 when it is not.
+   the subject org in your own route, from your own data, rather than from
+   what the user typed.
+19. **Calls straight to `fl.store` are not guarded against malformed input.**
+   Since 0.37.1 every public async method of `Filelayer` and of `fl.files`,
+   `fl.orgs`, `fl.shares` and `fl.ids` turns a malformed argument (a NUL byte,
+   an object where a string goes, a value Postgres cannot read as its column
+   type, a duration too large to be a date, a non-string secret) into
+   `invalid_argument` with no SQL text and no internal id
+   (`test/input-guard.test.ts`). `fl.store`, the storage layer under that API,
+   is not wrapped: a raw Postgres error from it still carries the statement in
+   `query` and its parameters in `params`. Do not pass request input to
+   `fl.store` directly, and do not return a caught error's fields to the
+   caller: log them, and answer with `code` when it is a `FilelayerError` and a
+   plain 500 when it is not.
+
 ---
 
 ## Why this is a separate file

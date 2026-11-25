@@ -231,8 +231,15 @@ export function isErrorCode(code: string): code is ErrorCode {
 export class FilelayerError extends Error {
   readonly status: number;
   readonly code: ErrorCode;
-  /** Internal deny reason. Logged, never serialized to an untrusted caller. */
-  readonly reason: DenyReason | string | undefined;
+  /**
+   * Internal deny reason. Logged, never serialized to an untrusted caller.
+   *
+   * NOT ENUMERABLE, since 0.37.1, and left out of `toJSON()`. `reason` is what
+   * tells `no_membership` from `unknown_org`, so an application that answered
+   * with `res.json(err)` or `{ ...err }` sent the caller exactly the
+   * difference the 404 hides. It is still a plain property to read.
+   */
+  declare readonly reason: DenyReason | string | undefined;
   /**
    * Response headers this error REQUIRES. Not decoration, and not a general
    * extension point.
@@ -269,7 +276,7 @@ export class FilelayerError extends Error {
     this.name = 'FilelayerError';
     this.status = ERROR_CODES[code].status;
     this.code = code;
-    this.reason = reason;
+    Object.defineProperty(this, 'reason', { value: reason, enumerable: false, writable: false, configurable: true });
     this.headers = headers;
     // THE REASON IS IN THE STACK, NOT IN THE MESSAGE, since 0.36.0. A first user
     // who logged the error saw `FilelayerError: not_found` and nothing about
@@ -285,6 +292,14 @@ export class FilelayerError extends Error {
       const head = `${this.name}: ${code} (${reason})`;
       this.stack = nl === -1 ? head : head + this.stack.slice(nl);
     }
+  }
+
+  /**
+   * What `JSON.stringify(err)` and `res.json(err)` send: the public answer
+   * only. No `reason`, no `headers`, no stack.
+   */
+  toJSON(): { name: string; status: number; code: ErrorCode; message: string } {
+    return { name: this.name, status: this.status, code: this.code, message: this.message };
   }
 
   /** What the code means, from the catalogue (`errors.json`). */

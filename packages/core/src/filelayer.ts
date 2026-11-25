@@ -98,7 +98,8 @@ import {
   type StreamedDelivery,
 } from './delivery.ts';
 import { FilelayerError } from './errors.ts';
-import { CAPABILITIES, ORG_ROLES, VISIBILITIES, decodeCursor, encodeCursor, listCapability, listLimit, oneOf } from './argument-checks.ts';
+import { CAPABILITIES, ORG_ROLES, VISIBILITIES, decodeCursor, encodeCursor, guardInputErrors, listCapability, listLimit, oneOf } from './argument-checks.ts';
+import { MEMBERSHIP_BY_EXTERNAL_ID } from './facade-keys.ts';
 
 // Declared in `errors.ts` so that `delivery.ts` can classify errors without
 // importing this module (which imports `delivery.ts`). Re-exported here because
@@ -1026,6 +1027,58 @@ export class Filelayer {
         orgId,
         actorId,
       ]);
+    });
+  }
+
+  /**
+   * `addMember` / `removeMember` by the target's EXTERNAL id, for the facade.
+   * See `MEMBERSHIP_BY_EXTERNAL_ID` for why: the target is registered only
+   * once the change is authorized, inside the same transaction, so a refused
+   * call leaves no trace that differs between an org that exists and one that
+   * does not. A target not seen before is authorized under the id it will get
+   * (generated here), so the audit event names the row that is then created.
+   */
+  async [MEMBERSHIP_BY_EXTERNAL_ID](
+    principal: Principal,
+    orgId: string,
+    externalId: string,
+    role: OrgRole | null,
+  ): Promise<void> {
+    if (role !== null) oneOf('role', role, ORG_ROLES);
+    if (typeof externalId !== 'string' || externalId === '') {
+      throw new FilelayerError('invalid_argument', 'user must be a non-empty string.');
+    }
+    await this.#transaction(async (tx, store) => {
+      await lockOrgForMembershipChange(tx, orgId);
+      const found = await tx.query<{ id: string; deleted_at: string | null }>(
+        `SELECT id, deleted_at FROM actor
+          WHERE external_id = $1 AND project_id = coalesce($2::uuid, '${DEFAULT_PROJECT_ID}'::uuid)`,
+        [externalId, this.projectId],
+      );
+      const existing = found.rows[0];
+      if (existing?.deleted_at) throw new FilelayerError('not_found', 'deleted_actor');
+      let actorId = existing?.id ?? randomUUID();
+      const decision = await authorizeMembershipChange(store, principal, orgId, actorId, role);
+      this.#raise(decision);
+      if (!existing) {
+        const { rows } = await tx.query<{ id: string }>(
+          `INSERT INTO actor (id, project_id, external_id)
+           VALUES ($1, coalesce($3::uuid, '${DEFAULT_PROJECT_ID}'::uuid), $2)
+           ON CONFLICT (project_id, external_id) DO UPDATE SET external_id = EXCLUDED.external_id
+           RETURNING id`,
+          [actorId, externalId, this.projectId],
+        );
+        actorId = rows[0]!.id; // a concurrent registration wins; use its row
+      }
+      if (role !== null) {
+        await tx.query(
+          `INSERT INTO membership (org_id, actor_id, role) VALUES ($1,$2,$3)
+           ON CONFLICT (org_id, actor_id) DO UPDATE SET role = EXCLUDED.role`,
+          [orgId, actorId, role],
+        );
+      } else {
+        await tx.query(`DELETE FROM membership WHERE org_id = $1 AND actor_id = $2`, [orgId, actorId]);
+      }
     });
   }
 
@@ -3724,6 +3777,11 @@ export class Filelayer {
     throw new FilelayerError(pub.code, decision.reason);
   }
 }
+
+// Every public async method, and the async statics (`quickstart`, ...): an
+// input error leaves as `invalid_argument` (see `inputError`).
+guardInputErrors(Filelayer.prototype);
+guardInputErrors(Filelayer);
 
 /**
  * A file's full record from its id, with NO principal.

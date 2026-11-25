@@ -112,7 +112,11 @@ org the owner is not a member of and into an org that does not exist are both
 caller cannot read are both an empty page. `reason` (`no_membership`,
 `unknown_org`) tells them apart for the developer and in the audit log. It is
 for the server's log and is never shown to the end user: shown, it says again
-whether the org exists. `shares.create({ withOrg })` answers an org in another
+whether the org exists. Since 0.37.1 it is not an enumerable property and
+`toJSON()` leaves it out, so `res.json(err)` or `{ ...err }` does not send it;
+reading `err.reason` still works. A refused `orgs.setRole` or
+`orgs.removeMember` registers the target user for neither org, also since
+0.37.1. `shares.create({ withOrg })` answers an org in another
 project, or a deleted one, exactly as one that does not exist; an org in the
 caller's own project is a valid subject, so naming it creates the grant
 (`LIMITATIONS.md` entry 18). `orgs.create` of a name that is taken answers

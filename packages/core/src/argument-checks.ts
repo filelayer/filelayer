@@ -79,3 +79,78 @@ export function decodeCursor(cursor: string | null | undefined): { createdAt: Da
   }
   return { createdAt, id };
 }
+
+// -----------------------------------------------------------------------------
+// THE INPUT GUARD, since 0.37.1 (LIMITATIONS 19 until then).
+// -----------------------------------------------------------------------------
+//
+// A few malformed arguments got past every check and failed further down: a
+// NUL byte in a name or an id (Postgres 22021), a value Postgres cannot read as
+// its column type (22P02, 22P05, 22007, 22008 and the rest of class 22), an
+// object where a string id goes (PGlite's "Invalid input for string type"), an
+// `expiresIn` too large to be a date (`RangeError: Invalid time value`), or a
+// non-string secret reaching a hash (`TypeError` `ERR_INVALID_ARG_TYPE`).
+// What came back was not a FilelayerError, and the Postgres ones carried the
+// SQL text and its parameters, the project's internal id among them, in
+// enumerable `query` and `params` fields.
+//
+// One function turns all of them into `invalid_argument` with a fixed reason
+// that names the kind of value, never the statement or its parameters, and
+// `guardInputErrors()` puts it around every public async method of the core
+// class and the facade, once, so a method added later is covered without
+// anyone remembering to.
+
+const SQLSTATE_REASON: Record<string, string> = {
+  '22021': 'a string contains a NUL byte or is not valid UTF-8.',
+  '22P05': 'a value contains a character the database cannot store (such as a NUL byte).',
+  '22P02': 'a value is not in the form its field takes (an id, a number, a date).',
+  '22007': 'a date or time is not in a form the database reads.',
+  '22008': 'a date or time is out of range.',
+  '22003': 'a number is out of range.',
+  '22001': 'a string is longer than its field allows.',
+};
+
+/** The input error, or `err` itself when it is not one. Never adds the cause. */
+export function inputError(err: unknown): unknown {
+  if (err instanceof FilelayerError || err === null || typeof err !== 'object') return err;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === 'string' && /^22[0-9A-Z]{3}$/.test(code)) {
+    return new FilelayerError('invalid_argument', SQLSTATE_REASON[code] ?? `a value was refused by the database (SQLSTATE ${code}).`);
+  }
+  const message = err instanceof Error ? err.message : '';
+  if (err instanceof Error && /^Invalid input for (string|uuid|.*) type/i.test(message)) {
+    return new FilelayerError('invalid_argument', 'a value is not of the type its field takes (an object where a string goes).');
+  }
+  if (err instanceof RangeError && message === 'Invalid time value') {
+    return new FilelayerError('invalid_argument', 'a time or a duration is out of range.');
+  }
+  if (err instanceof TypeError && code === 'ERR_INVALID_ARG_TYPE') {
+    return new FilelayerError('invalid_argument', 'a value is not of the type its field takes (a string was expected).');
+  }
+  return err;
+}
+
+/**
+ * Wraps every own async method of `proto` (string- and symbol-keyed) so an
+ * input error leaves as `invalid_argument`. Sync methods and getters are left
+ * alone, so nothing that returned a value starts returning a promise.
+ */
+export function guardInputErrors(proto: object): void {
+  for (const key of Reflect.ownKeys(proto)) {
+    if (key === 'constructor') continue;
+    const d = Object.getOwnPropertyDescriptor(proto, key);
+    const fn = d?.value;
+    if (typeof fn !== 'function' || fn.constructor?.name !== 'AsyncFunction') continue;
+    const guarded = async function (this: unknown, ...args: unknown[]) {
+      try {
+        return await fn.apply(this, args);
+      } catch (err) {
+        throw inputError(err);
+      }
+    };
+    // The same name and arity as the method it wraps: callers and tests read both.
+    Object.defineProperty(guarded, 'name', { value: fn.name });
+    Object.defineProperty(guarded, 'length', { value: fn.length });
+    Object.defineProperty(proto, key, { ...d, value: guarded });
+  }
+}

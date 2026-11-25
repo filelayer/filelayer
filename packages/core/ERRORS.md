@@ -212,4 +212,4 @@ The configured storage adapter cannot sign an upload.
 
 ---
 
-31 codes. Generated for `0.37.0`.
+31 codes. Generated for `0.37.1`.

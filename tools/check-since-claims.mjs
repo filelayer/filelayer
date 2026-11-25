@@ -126,9 +126,27 @@ const CLAIMS = [
     note: 'put() answers a non-member like a missing org, in the integration skill.',
   },
   {
-    match: 'one that does not (since 0.37.0, `test/org-existence.test.ts`), except:',
+    match: 'one that does not (since 0.37.0, `test/org-existence.test.ts`), and a',
     probe: { kind: 'ships', file: 'dist/simple.js', text: "throw new FilelayerError('not_found', 'no_membership')" },
     note: 'LIMITATIONS 18: the same answer for an org that exists and one that does not.',
+  },
+  // -------------------------------------------------------------------------
+  // 0.37.1: the input guard and the membership change by external id.
+  // -------------------------------------------------------------------------
+  {
+    match: '   (since 0.37.1), except:',
+    probe: { kind: 'ships', file: 'dist/facade-keys.js', text: "Symbol('filelayer.membershipByExternalId')" },
+    note: 'LIMITATIONS 18: setRole/removeMember register the target only once authorized.',
+  },
+  {
+    match: 'whether the org exists. Since 0.37.1 it is not an enumerable property and',
+    probe: { kind: 'ships', file: 'dist/errors.js', text: 'enumerable: false' },
+    note: 'SEMANTICS 2: FilelayerError.reason is not enumerable and not in toJSON().',
+  },
+  {
+    match: 'Since 0.37.1 every public async method of `Filelayer` and of `fl.files`,',
+    probe: { kind: 'ships', file: 'dist/argument-checks.js', text: 'export function guardInputErrors' },
+    note: 'LIMITATIONS 19: the input guard around the core and the facade.',
   },
   {
     match: 'The same holds one level up, for org ids, since 0.37.0.',

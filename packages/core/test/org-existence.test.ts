@@ -299,3 +299,38 @@ test('orgs.audit: since and until given as an ISO string or epoch milliseconds s
     await fl.close();
   }
 });
+
+test('orgs.setRole and removeMember refused: the target is registered for neither org', async () => {
+  const fl = await world();
+  try {
+    await refusal(fl.orgs.setRole('acme', 'tgt-1', 'admin', { as: 'mallory' }));
+    await refusal(fl.orgs.setRole('ghost', 'tgt-2', 'admin', { as: 'mallory' }));
+    await refusal(fl.orgs.removeMember('acme', 'tgt-3', { as: 'mallory' }));
+    await refusal(fl.orgs.removeMember('ghost', 'tgt-4', { as: 'mallory' }));
+    const later = await Promise.all(['tgt-1', 'tgt-2', 'tgt-3', 'tgt-4'].map((u) => refusal(fl.files.list({ as: u }))));
+    assert.equal(later[0]?.status, 404, 'never registered: unknown_actor');
+    for (const r of later) assert.deepEqual(r, later[0]);
+    for (const u of ['tgt-1', 'tgt-2', 'tgt-3', 'tgt-4']) assert.equal(await fl.ids.actorId(u), null, u);
+  } finally {
+    await fl.close();
+  }
+});
+
+test('orgs.setRole authorized: a new target is registered, joins, and the audit names that row', async () => {
+  const fl = await world();
+  try {
+    await fl.orgs.setRole('acme', 'newbie', 'member', { as: 'alice' });
+    const id = await fl.ids.actorId('newbie');
+    assert.ok(id);
+    const page = await fl.files.list({ org: 'acme', as: 'newbie' });
+    assert.ok(Array.isArray(page.files));
+    const db = (fl as unknown as { store: { db: Queryable } }).store.db;
+    const { rows } = await db.query<{ target: string }>(
+      `SELECT context->>'targetActorId' AS target FROM audit_event
+        WHERE action = 'member.add' AND decision = 'allow' AND context->>'toRole' = 'member'`,
+    );
+    assert.equal(rows[0]?.target, id);
+  } finally {
+    await fl.close();
+  }
+});

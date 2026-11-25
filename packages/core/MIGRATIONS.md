@@ -1437,6 +1437,39 @@ A `files.put` refused with `no_membership` no longer registers the owner it
 named. If you relied on a failed upload to create the user, call
 `fl.ids.actor(user)` or add them with `orgs.setRole` first.
 
+### `0.37.0` → `0.37.1`: no schema change; malformed input is `invalid_argument`, and `reason` stays on your side
+
+The schema is still version 16 and there is no SQL to apply.
+
+#### `reason` is no longer enumerable, and `toJSON()` leaves it out
+
+`err.reason` reads as before. It is no longer an enumerable own property, and
+`FilelayerError` has a `toJSON()` that returns `{ name, status, code, message }`.
+So `res.json(err)`, `JSON.stringify(err)` and `{ ...err }` no longer carry
+`reason` (or `headers`) to the caller, where it would say again whether an org
+exists. `reason` is for your server's log. If you serialized the error
+on purpose to log it, log `err.reason` explicitly.
+
+#### Malformed arguments are `invalid_argument`
+
+A NUL byte in a name, an id or a metadata value, an object where a string
+goes, a value Postgres cannot read as its column type, an `expiresIn` too large
+to be a date, and a non-string link secret or password used to come back as a
+raw Postgres error (with the SQL text and internal ids in `query` and
+`params`), a `RangeError` or a `TypeError`. From every public async method of
+`Filelayer` and of `fl.files`, `fl.orgs`, `fl.shares` and `fl.ids` they are
+now `invalid_argument` (400), with a reason that names the kind of value and
+nothing else. Code that caught those raw errors by `code` (`'22021'`, `'22P02'`)
+should catch `invalid_argument`. `fl.store` is not wrapped (`LIMITATIONS.md`
+entry 19).
+
+#### A refused `orgs.setRole` or `orgs.removeMember` registers nobody
+
+The target user is registered only once the change is authorized, in the same
+transaction. Before, the target was registered first, so a refused call left
+the user registered (and only when the org existed). If you relied on that to
+create users, call `fl.ids.ensureActor(user)` first.
+
 ---
 
 ## 4. What is not covered here

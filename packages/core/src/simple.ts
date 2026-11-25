@@ -63,7 +63,8 @@ import {
   type ShareSubject,
 } from './filelayer.ts';
 import { DEFAULT_PROJECT_ID } from './store.ts';
-import { ORG_ROLES, decodeCursor, listCapability, listLimit, oneOf } from './argument-checks.ts';
+import { ORG_ROLES, decodeCursor, guardInputErrors, listCapability, listLimit, oneOf } from './argument-checks.ts';
+import { MEMBERSHIP_BY_EXTERNAL_ID } from './facade-keys.ts';
 import type { Capability, FileVisibility, OrgRole, Principal } from './authz.ts';
 
 /**
@@ -999,13 +1000,13 @@ export class OrgsApi {
     // same `invalid_argument` whether the org exists or not (0.37.0).
     // `addMember` checks it again; this one is for the order.
     oneOf('role', role, ORG_ROLES);
-    const { orgId, actorId, principal } = await this.trio(org, user, requireAs('orgs.setRole', opts));
-    await this.fl.addMember(principal, orgId, actorId, role);
+    const { orgId, principal } = await this.pair(org, requireAs('orgs.setRole', opts));
+    await this.fl[MEMBERSHIP_BY_EXTERNAL_ID](principal, orgId, user, role);
   }
 
   async removeMember(org: string, user: string, opts: { as: string }): Promise<void> {
-    const { orgId, actorId, principal } = await this.trio(org, user, requireAs('orgs.removeMember', opts));
-    await this.fl.removeMember(principal, orgId, actorId);
+    const { orgId, principal } = await this.pair(org, requireAs('orgs.removeMember', opts));
+    await this.fl[MEMBERSHIP_BY_EXTERNAL_ID](principal, orgId, user, null);
   }
 
   /**
@@ -1080,11 +1081,14 @@ export class OrgsApi {
     return this.fl.verifyAuditChain(await this.requirePrincipal(as, opts), orgId);
   }
 
-  private async trio(org: string, user: string, as: string) {
+  /**
+   * The org and the caller. The TARGET is not resolved here any more (0.37.1):
+   * the core registers it, if it is new, only once the change is authorized.
+   */
+  private async pair(org: string, as: string) {
     const orgId = await this.requireOrg(org);
-    const actorId = await this.ids.actor(user); // the TARGET may be new
-    const principal = await this.requirePrincipal(as); // the CALLER may not
-    return { orgId, actorId, principal };
+    const principal = await this.requirePrincipal(as); // the CALLER may not be new
+    return { orgId, principal };
   }
 
   private async requireOrg(externalId: string): Promise<string> {
@@ -1270,3 +1274,7 @@ export class SharesApi {
     return this.ids.requireOrg(externalId);
   }
 }
+
+// Every public async method of the facade: an input error leaves as
+// `invalid_argument` (see `inputError` in argument-checks.ts).
+for (const api of [FilesApi, IdsApi, OrgsApi, SharesApi]) guardInputErrors(api.prototype);
