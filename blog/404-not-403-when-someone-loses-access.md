@@ -1,6 +1,6 @@
 ---
 title: "404, Not 403: What Happens When Someone Loses Access to a File?"
-date: 2026-11-30
+date: 2026-11-25
 authorNote: "Jorge Urios maintains Filelayer, an open-source Node library for user files in SaaS apps (per-file permissions, revocable links, audit log)."
 ---
 
