@@ -240,6 +240,21 @@ export function sniffContentType(body: Uint8Array): string {
 // Identity resolution
 // -----------------------------------------------------------------------------
 
+
+/**
+ * An external id about to reach a lookup must be a string with no NUL byte
+ * (0.37.1). Postgres refused a NUL (22021) and the guard maps that, but an
+ * object was taken as text by PGlite 0.6 (its `toString()`), so `{}` silently
+ * named the org "[object Object]". The type is checked here, once, for every
+ * lookup by external id; an empty string still just finds nothing.
+ */
+function checkIdText(field: string, value: unknown): void {
+  if (typeof value !== 'string' || value.includes('\u0000')) {
+    throw new FilelayerError('invalid_argument', `${field} must be a string with no NUL byte.`);
+  }
+}
+
+
 /** The subset of `Filelayer` this facade drives. Declared to keep the import graph one-way. */
 type Core = Filelayer;
 
@@ -275,6 +290,7 @@ class Identities {
     externalId: string,
     opts: { name?: string; ownerActorId?: string } = {},
   ): Promise<{ id: string; created: boolean }> {
+    checkIdText('org', externalId);
     // `xmax = 0` is true only on the INSERT arm of an upsert, which is the one
     // bit this function was missing. Without it there is no way to tell "I made
     // this tenant" from "this tenant already belonged to someone", and the
@@ -311,6 +327,7 @@ class Identities {
    * making by accident.
    */
   async actor(externalId: string): Promise<string> {
+    checkIdText('id', externalId);
     const { rows } = await this.fl.store.db.query<{ id: string; deleted_at: string | null }>(
       `INSERT INTO actor (project_id, external_id) VALUES ($2, $1)
          ON CONFLICT (project_id, external_id) DO UPDATE SET external_id = EXCLUDED.external_id
@@ -330,6 +347,7 @@ class Identities {
    * what separates it from `org()` above.
    */
   async findOrg(externalId: string): Promise<string | null> {
+    checkIdText('id', externalId);
     const { rows } = await this.fl.store.db.query<{ id: string }>(
       `SELECT o.id FROM org o
          JOIN project p ON p.id = o.project_id
@@ -374,6 +392,7 @@ class Identities {
    * one that bypasses a deletion check so that nobody reaches for it by accident.
    */
   async findActorIncludingDeleted(externalId: string): Promise<string | null> {
+    checkIdText('id', externalId);
     const { rows } = await this.fl.store.db.query<{ id: string }>(
       `SELECT a.id FROM actor a
          JOIN project p ON p.id = a.project_id
@@ -421,6 +440,7 @@ class Identities {
   }
 
   async findActor(externalId: string): Promise<string | null> {
+    checkIdText('id', externalId);
     const { rows } = await this.fl.store.db.query<{ id: string }>(
       `SELECT id FROM actor
         WHERE external_id = $1 AND project_id = $2 AND deleted_at IS NULL`,
