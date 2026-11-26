@@ -1453,15 +1453,31 @@ on purpose to log it, log `err.reason` explicitly.
 #### Malformed arguments are `invalid_argument`
 
 A NUL byte in a name, an id or a metadata value, an object where a string
-goes, a value Postgres cannot read as its column type, an `expiresIn` too large
-to be a date, and a non-string link secret or password used to come back as a
-raw Postgres error (with the SQL text and internal ids in `query` and
-`params`), a `RangeError` or a `TypeError`. From every public async method of
-`Filelayer` and of `fl.files`, `fl.orgs`, `fl.shares` and `fl.ids` they are
-now `invalid_argument` (400), with a reason that names the kind of value and
-nothing else. Code that caught those raw errors by `code` (`'22021'`, `'22P02'`)
-should catch `invalid_argument`. `fl.store` is not wrapped (`LIMITATIONS.md`
-entry 19).
+goes, or a value Postgres cannot read as its column type used to come back as a
+raw Postgres error, with the SQL text and internal ids in `query` and `params`.
+From every public method declared `async` on `Filelayer` and on `fl.files`,
+`fl.orgs`, `fl.shares` and `fl.ids`, such a database error is now
+`invalid_argument` (400) with a reason that names the kind of value and nothing
+else. The original error is `err.cause`: not enumerable and not in `toJSON()`,
+for your server log only, like `reason`. Code that caught the raw errors by
+`code` (`'22021'`, `'22P02'`) should catch `invalid_argument`. The lower
+layers the package exports are not wrapped (`LIMITATIONS.md` entry 19).
+
+Two errors that were not database errors are now checked where they arise, and
+are `invalid_argument` too: an `expiresIn` too large to be a date (it was a
+`RangeError`), and a link secret or a password that is not a string (a
+`TypeError`). Any other `RangeError` or `TypeError`, for example from your own
+`StorageAdapter`, is left as it is: it is not the caller's argument.
+
+`orgs.setRole`, `orgs.removeMember` and `orgs.audit` check the user they name,
+and every method checks `as`, before they look the org up: a non-empty string
+with no NUL byte. So does `files.put` for `owner`. An authorized
+`orgs.setRole(org, '', role)` used to register a user with an empty id and give
+it the role; it is now `invalid_argument`.
+
+`new Filelayer(db, storage, { projectId })` with a `projectId` that is not a
+uuid now throws at construction. Before, every later call failed with a raw
+Postgres error.
 
 #### A refused `orgs.setRole` or `orgs.removeMember` registers nobody
 

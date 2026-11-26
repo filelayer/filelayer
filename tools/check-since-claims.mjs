@@ -144,7 +144,7 @@ const CLAIMS = [
     note: 'SEMANTICS 2: FilelayerError.reason is not enumerable and not in toJSON().',
   },
   {
-    match: 'Since 0.37.1 every public async method of `Filelayer` and of `fl.files`,',
+    match: 'input.** Since 0.37.1 every public method declared `async` on `Filelayer`',
     probe: { kind: 'ships', file: 'dist/argument-checks.js', text: 'export function guardInputErrors' },
     note: 'LIMITATIONS 19: the input guard around the core and the facade.',
   },

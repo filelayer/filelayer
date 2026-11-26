@@ -27,22 +27,36 @@ A patch release. No schema change (still version 16). Upgrading:
 ### Fixed: malformed arguments leave as `invalid_argument`
 
 A NUL byte in a name, an id or a metadata value, an object where a string
-goes, a value Postgres cannot read as its column type (SQLSTATE class 22), an
-`expiresIn` too large to be a date, and a non-string link secret or password
+goes, or a value Postgres cannot read as its column type (SQLSTATE class 22)
 came back as a raw Postgres error carrying the SQL text and internal ids in
-`query` and `params`, or as a bare `RangeError` or `TypeError`. One guard,
-around every public async method of `Filelayer` and of `fl.files`, `fl.orgs`,
-`fl.shares` and `fl.ids`, now turns each of them into `invalid_argument` with a
-reason that names the kind of value and nothing else. `test/input-guard.test.ts`
-has one row per entry point that takes text (31 rows); 29 of them failed on
-0.37.0. `fl.store` is not wrapped, which is `LIMITATIONS.md` entry 19 now.
+`query` and `params`. One guard, around every public method declared `async` on
+`Filelayer` and on `fl.files`, `fl.orgs`, `fl.shares` and `fl.ids`, now turns
+such a database error into `invalid_argument` with a reason that names the kind
+of value and nothing else; the original is kept as `err.cause`, not enumerable
+and not in `toJSON()`, for the server log. An `expiresIn` too large to be a
+date (`RangeError`) and a link secret or password that is not a string
+(`TypeError`) are checked where they arise instead: any other `RangeError` or
+`TypeError`, such as one from a custom `StorageAdapter`, is not the caller's
+argument and is left alone. A `projectId` that is not a uuid, which made every
+call fail with 22P02, is refused by the constructor. `test/input-guard.test.ts`
+has one row per public entry point that takes text, the core class's methods
+included, each asserting the code it must refuse with. The lower layers the
+package exports are not wrapped: `LIMITATIONS.md` entry 19 names them.
+
+The ids a call takes are checked before the org is looked up: `as` everywhere,
+the target of `orgs.setRole`, `orgs.removeMember` and the `user` filter of
+`orgs.audit`, and the `owner` of `files.put` must each be a non-empty string
+with no NUL byte. Checked only after the lookup, a malformed one was a 400 for
+an org that exists and a 404 for one that does not.
 
 ### Fixed: a refused `orgs.setRole` or `orgs.removeMember` registers nobody
 
 The target user was registered before the change was authorized, and only when
 the org existed, so a later `files.list({ as })` told an org that exists from
 one that does not. The target is now registered after authorization, in the
-same transaction, under the id the audit event names. That closes the second
+same transaction, under the id the audit event names. If a concurrent call
+registers the same user first, the attempt is rolled back, audit included, and
+run once more, so no event names a row that does not exist. That closes the second
 bullet of `LIMITATIONS.md` entry 18; what remains there is `withOrg` in the
 same project and the timing difference.
 

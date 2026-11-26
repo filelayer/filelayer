@@ -255,18 +255,20 @@ Each one is current as of
    If your org ids are guessable (sequential, or a customer's name), decide
    the subject org in your own route, from your own data, rather than from
    what the user typed.
-19. **Calls straight to `fl.store` are not guarded against malformed input.**
-   Since 0.37.1 every public async method of `Filelayer` and of `fl.files`,
-   `fl.orgs`, `fl.shares` and `fl.ids` turns a malformed argument (a NUL byte,
-   an object where a string goes, a value Postgres cannot read as its column
-   type, a duration too large to be a date, a non-string secret) into
-   `invalid_argument` with no SQL text and no internal id
-   (`test/input-guard.test.ts`). `fl.store`, the storage layer under that API,
-   is not wrapped: a raw Postgres error from it still carries the statement in
-   `query` and its parameters in `params`. Do not pass request input to
-   `fl.store` directly, and do not return a caught error's fields to the
-   caller: log them, and answer with `code` when it is a `FilelayerError` and a
-   plain 500 when it is not.
+19. **The lower layers the package exports are not guarded against malformed
+   input.** Since 0.37.1 every public method declared `async` on `Filelayer`
+   and on `fl.files`, `fl.orgs`, `fl.shares` and `fl.ids` turns a database
+   error caused by a malformed argument (a NUL byte, an object where a string
+   goes, a value Postgres cannot read as its column type) into
+   `invalid_argument` with no SQL text and no internal id, keeping the original
+   as `err.cause` for the server log (`test/input-guard.test.ts`). These
+   exports sit under that API and are not wrapped: `PostgresStore` (and
+   `fl.store`), `auditReader`, `readAuditLog`, `verifyAuditChain`,
+   `readAuditCheckpoints`, `buildUsageReport` and `withTransaction`. A raw
+   Postgres error from them still carries the statement in `query` and its
+   parameters in `params`. Do not pass request input to them directly, and do
+   not return a caught error's fields to the caller: log them, and answer with
+   `code` when it is a `FilelayerError` and a plain 500 when it is not.
 
 ---
 

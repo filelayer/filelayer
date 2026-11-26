@@ -86,19 +86,34 @@ export function decodeCursor(cursor: string | null | undefined): { createdAt: Da
 //
 // A few malformed arguments got past every check and failed further down: a
 // NUL byte in a name or an id (Postgres 22021), a value Postgres cannot read as
-// its column type (22P02, 22P05, 22007, 22008 and the rest of class 22), an
-// object where a string id goes (PGlite's "Invalid input for string type"), an
-// `expiresIn` too large to be a date (`RangeError: Invalid time value`), or a
-// non-string secret reaching a hash (`TypeError` `ERR_INVALID_ARG_TYPE`).
-// What came back was not a FilelayerError, and the Postgres ones carried the
-// SQL text and its parameters, the project's internal id among them, in
-// enumerable `query` and `params` fields.
+// its column type (22P02, 22P05, 22007, 22008 and the rest of class 22), or an
+// object where a string goes (PGlite's "Invalid input for string type"). What
+// came back was not a FilelayerError, and it carried the SQL text and its
+// parameters, the project's internal id among them, in enumerable `query` and
+// `params` fields.
 //
-// One function turns all of them into `invalid_argument` with a fixed reason
-// that names the kind of value, never the statement or its parameters, and
-// `guardInputErrors()` puts it around every public async method of the core
-// class and the facade, once, so a method added later is covered without
-// anyone remembering to.
+// Only DATABASE errors are mapped. A RangeError or TypeError is not: it can as
+// well come from a custom StorageAdapter or a bug, and reporting that as the
+// caller's bad argument would hide a server fault behind a 400. The two such
+// errors input could cause (an `expiresIn` too large to be a date, a
+// non-string secret or password) are now checked where they are used.
+// The one server-side cause of class 22 found, a `projectId` that is not a
+// uuid, is refused by the constructor.
+//
+// The original error stays available to the operator as `err.cause`: not
+// enumerable and not in `toJSON()`, like `reason`, so it reaches a server log
+// that asks for it (and Node's `util.inspect`), never a response body.
+//
+// `guardInputErrors()` puts `inputError` around every public method declared
+// `async` on the core class and the facade, once. It covers a method added
+// later only if that method is declared `async`: an async generator, a plain
+// method that returns a promise, an arrow-function property or a subclass
+// override is not wrapped.
+//
+// Inside a `#transaction` callback a FilelayerError means "a decided outcome,
+// commit it". The guard runs outside the callback, on the public method's
+// result, so a raw database error inside a transaction still rolls it back
+// before it is converted. Nothing in a callback should call `inputError`.
 
 const SQLSTATE_REASON: Record<string, string> = {
   '22021': 'a string contains a NUL byte or is not valid UTF-8.',
@@ -110,24 +125,33 @@ const SQLSTATE_REASON: Record<string, string> = {
   '22001': 'a string is longer than its field allows.',
 };
 
-/** The input error, or `err` itself when it is not one. Never adds the cause. */
+/** The input error, or `err` itself when it is not one. */
 export function inputError(err: unknown): unknown {
   if (err instanceof FilelayerError || err === null || typeof err !== 'object') return err;
   const code = (err as { code?: unknown }).code;
+  let mapped: FilelayerError | null = null;
   if (typeof code === 'string' && /^22[0-9A-Z]{3}$/.test(code)) {
-    return new FilelayerError('invalid_argument', SQLSTATE_REASON[code] ?? `a value was refused by the database (SQLSTATE ${code}).`);
+    mapped = new FilelayerError('invalid_argument', SQLSTATE_REASON[code] ?? `a value was refused by the database (SQLSTATE ${code}).`);
+  } else if (err instanceof Error && /^Invalid input for (string|text|uuid|json|jsonb) type\b/.test(err.message)) {
+    mapped = new FilelayerError('invalid_argument', 'a value is not of the type its field takes (an object where a string goes).');
   }
-  const message = err instanceof Error ? err.message : '';
-  if (err instanceof Error && /^Invalid input for (string|uuid|.*) type/i.test(message)) {
-    return new FilelayerError('invalid_argument', 'a value is not of the type its field takes (an object where a string goes).');
+  if (mapped === null) return err;
+  Object.defineProperty(mapped, 'cause', { value: err, enumerable: false, writable: false, configurable: true });
+  return mapped;
+}
+
+/**
+ * An external id (a user, an owner, an org, an `as`): a non-empty string with
+ * no NUL byte. The facade checks every one a call takes BEFORE it looks the org
+ * up (0.37.1), so a malformed id is the same `invalid_argument` whether the org
+ * exists or not; checked only on the path that runs for a real org, it was a
+ * 400 there and a 404 on a missing one.
+ */
+export function checkExternalId(field: string, value: unknown): string {
+  if (typeof value !== 'string' || value === '' || value.includes('\u0000')) {
+    throw new FilelayerError('invalid_argument', `${field} must be a non-empty string with no NUL byte.`);
   }
-  if (err instanceof RangeError && message === 'Invalid time value') {
-    return new FilelayerError('invalid_argument', 'a time or a duration is out of range.');
-  }
-  if (err instanceof TypeError && code === 'ERR_INVALID_ARG_TYPE') {
-    return new FilelayerError('invalid_argument', 'a value is not of the type its field takes (a string was expected).');
-  }
-  return err;
+  return value;
 }
 
 /**

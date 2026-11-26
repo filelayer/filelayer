@@ -98,7 +98,7 @@ import {
   type StreamedDelivery,
 } from './delivery.ts';
 import { FilelayerError } from './errors.ts';
-import { CAPABILITIES, ORG_ROLES, VISIBILITIES, decodeCursor, encodeCursor, guardInputErrors, listCapability, listLimit, oneOf } from './argument-checks.ts';
+import { CAPABILITIES, ORG_ROLES, VISIBILITIES, checkExternalId, decodeCursor, encodeCursor, guardInputErrors, listCapability, listLimit, oneOf } from './argument-checks.ts';
 import { MEMBERSHIP_BY_EXTERNAL_ID } from './facade-keys.ts';
 
 // Declared in `errors.ts` so that `delivery.ts` can classify errors without
@@ -582,6 +582,13 @@ export class Filelayer {
     if (typeof storage.provider !== 'string' || storage.provider.length === 0) {
       throw new Error('storage adapter must declare a non-empty `provider`');
     }
+    // A project id that is not a uuid made every later call fail with Postgres
+    // 22P02, which the input guard (0.37.1) would report as the CALLER's bad
+    // argument, on every call, for a mistake in the server's configuration.
+    // Refused here, once, as what it is.
+    if (opts.projectId !== undefined && opts.projectId !== null && !isUuid(opts.projectId)) {
+      throw new Error('projectId must be a project id (a uuid, as createProject() returns), or omitted for the default project');
+    }
     this.store = new PostgresStore(db, {
       ...(opts.projectId !== undefined ? { projectId: opts.projectId } : {}),
     });
@@ -1045,9 +1052,29 @@ export class Filelayer {
     role: OrgRole | null,
   ): Promise<void> {
     if (role !== null) oneOf('role', role, ORG_ROLES);
-    if (typeof externalId !== 'string' || externalId === '') {
-      throw new FilelayerError('invalid_argument', 'user must be a non-empty string.');
+    checkExternalId('user', externalId);
+    // Twice at most. The first attempt can lose a race: the target, unseen when
+    // it was looked up, is registered by somebody else before our INSERT. The
+    // audit event already names the id we generated, so going on with the
+    // other row would leave an event naming a row that never exists. The
+    // attempt is abandoned instead (rolled back, audit included) and run again,
+    // and the second one finds the row the other caller made.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.#membershipByExternalId(principal, orgId, externalId, role);
+        return;
+      } catch (err) {
+        if (!(err instanceof LostRegistrationRace) || attempt > 0) throw err;
+      }
     }
+  }
+
+  async #membershipByExternalId(
+    principal: Principal,
+    orgId: string,
+    externalId: string,
+    role: OrgRole | null,
+  ): Promise<void> {
     await this.#transaction(async (tx, store) => {
       await lockOrgForMembershipChange(tx, orgId);
       const found = await tx.query<{ id: string; deleted_at: string | null }>(
@@ -1057,18 +1084,19 @@ export class Filelayer {
       );
       const existing = found.rows[0];
       if (existing?.deleted_at) throw new FilelayerError('not_found', 'deleted_actor');
-      let actorId = existing?.id ?? randomUUID();
+      const actorId = existing?.id ?? randomUUID();
       const decision = await authorizeMembershipChange(store, principal, orgId, actorId, role);
       this.#raise(decision);
       if (!existing) {
         const { rows } = await tx.query<{ id: string }>(
           `INSERT INTO actor (id, project_id, external_id)
            VALUES ($1, coalesce($3::uuid, '${DEFAULT_PROJECT_ID}'::uuid), $2)
-           ON CONFLICT (project_id, external_id) DO UPDATE SET external_id = EXCLUDED.external_id
+           ON CONFLICT (project_id, external_id) DO NOTHING
            RETURNING id`,
           [actorId, externalId, this.projectId],
         );
-        actorId = rows[0]!.id; // a concurrent registration wins; use its row
+        // Not a FilelayerError, so #transaction rolls back rather than commits.
+        if (rows.length === 0) throw new LostRegistrationRace();
       }
       if (role !== null) {
         await tx.query(
@@ -1081,6 +1109,7 @@ export class Filelayer {
       }
     });
   }
+
 
   // ---------------------------------------------------------------------------
   // Files
@@ -2732,6 +2761,9 @@ export class Filelayer {
       if (input.subject.type === 'role') subjectMinRole = input.subject.minRole;
     }
 
+    if (input.password !== undefined && typeof input.password !== 'string') {
+      throw new FilelayerError('invalid_argument', 'password must be a string.');
+    }
     const passwordHash = input.password ? await this.store.hashPassword(input.password) : null;
 
     // DOUBLE-SUBMIT PROTECTION, and it is deliberately not called idempotency.
@@ -3426,6 +3458,12 @@ export class Filelayer {
       range?: RangeSpec;
     } = {},
   ): Promise<StreamedDelivery & { file: FileRecord; remainingDownloads: number | null }> {
+    // Types checked here, not left to the hash: a non-string reached
+    // `createHash().update()` and came back as a TypeError (0.37.1).
+    if (typeof linkSecret !== 'string') throw new FilelayerError('invalid_argument', 'link secret must be a string.');
+    if (opts.password !== undefined && typeof opts.password !== 'string') {
+      throw new FilelayerError('invalid_argument', 'password must be a string.');
+    }
     const principal: Principal = {
       actorId: null,
       linkSecret,
@@ -3778,10 +3816,10 @@ export class Filelayer {
   }
 }
 
-// Every public async method, and the async statics (`quickstart`, ...): an
-// input error leaves as `invalid_argument` (see `inputError`).
+// Every public async method: a database error caused by the input leaves as
+// `invalid_argument` (see `inputError`). The one async static, `quickstart`,
+// takes no value that reaches a query, so it is not wrapped.
 guardInputErrors(Filelayer.prototype);
-guardInputErrors(Filelayer);
 
 /**
  * A file's full record from its id, with NO principal.
@@ -3860,6 +3898,9 @@ export interface FileListPage {
  * within your own authorized set and nowhere else. It is validated on the way
  * in so that a malformed one is a 400 rather than a silently-ignored filter.
  */
+/** See `[MEMBERSHIP_BY_EXTERNAL_ID]`: the attempt that lost the race is retried once. */
+class LostRegistrationRace extends Error {}
+
 /**
  * Seconds-from-now, where asking for a bound and getting none is an ERROR.
  *
@@ -3973,7 +4014,11 @@ function secondsFromNow(seconds: number | undefined, now: number, field: string)
   if (seconds <= 0) {
     throw new FilelayerError('invalid_argument', `${field}_not_positive`);
   }
-  return new Date(now + seconds * 1000);
+  const at = new Date(now + seconds * 1000);
+  // `expiresIn: 1e20` is finite and positive and still not a date: it used to
+  // surface later as `RangeError: Invalid time value` (0.37.1).
+  if (Number.isNaN(at.getTime())) throw new FilelayerError('invalid_argument', `${field}_out_of_range`);
+  return at;
 }
 
 /**

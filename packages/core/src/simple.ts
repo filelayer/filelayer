@@ -63,7 +63,7 @@ import {
   type ShareSubject,
 } from './filelayer.ts';
 import { DEFAULT_PROJECT_ID } from './store.ts';
-import { ORG_ROLES, decodeCursor, guardInputErrors, listCapability, listLimit, oneOf } from './argument-checks.ts';
+import { ORG_ROLES, checkExternalId, decodeCursor, guardInputErrors, listCapability, listLimit, oneOf } from './argument-checks.ts';
 import { MEMBERSHIP_BY_EXTERNAL_ID } from './facade-keys.ts';
 import type { Capability, FileVisibility, OrgRole, Principal } from './authz.ts';
 
@@ -466,7 +466,9 @@ class Identities {
  */
 function requireAs(method: string, opts: unknown): string {
   const as = opts !== null && typeof opts === 'object' ? (opts as { as?: unknown }).as : undefined;
-  if (typeof as === 'string' && as.length > 0) return as;
+  // No NUL either (0.37.1): `as` is checked before the org is looked up, and a
+  // NUL reaching the actor lookup was a 400 for an org that exists only.
+  if (typeof as === 'string' && as.length > 0 && !as.includes('\u0000')) return as;
   throw new FilelayerError('invalid_argument',
     `${method} needs { as: <the acting user's id> }` +
       (opts === undefined ? ', and no options object was passed.' : `, got as: ${typeof as}.`),
@@ -493,6 +495,10 @@ export class FilesApi {
    * TIER 4: `+ expiresIn / retainFor / metadata`
    */
   async put(body: Uint8Array, opts: PutOptions = {}): Promise<PutResult> {
+    // The owner before the org is looked up (0.37.1): a malformed one reaching
+    // the actor lookup was a 400 for an org that exists and a 404 for a
+    // missing one.
+    if (opts.owner !== undefined) checkExternalId('owner', opts.owner);
     // A string body is the common slip (`put('hello')`), and it failed as a raw
     // TypeError somewhere in sniffing or storage. Since 0.36.0 it is named.
     if (!(body instanceof Uint8Array)) {
@@ -1000,11 +1006,16 @@ export class OrgsApi {
     // same `invalid_argument` whether the org exists or not (0.37.0).
     // `addMember` checks it again; this one is for the order.
     oneOf('role', role, ORG_ROLES);
+    // The target the same way, before the org (0.37.1, cold review of f55e585):
+    // checked only in the core, after the lookup, it was a 400 for an org that
+    // exists and a 404 for one that does not.
+    checkExternalId('user', user);
     const { orgId, principal } = await this.pair(org, requireAs('orgs.setRole', opts));
     await this.fl[MEMBERSHIP_BY_EXTERNAL_ID](principal, orgId, user, role);
   }
 
   async removeMember(org: string, user: string, opts: { as: string }): Promise<void> {
+    checkExternalId('user', user); // before the org, as in setRole
     const { orgId, principal } = await this.pair(org, requireAs('orgs.removeMember', opts));
     await this.fl[MEMBERSHIP_BY_EXTERNAL_ID](principal, orgId, user, null);
   }
@@ -1050,6 +1061,7 @@ export class OrgsApi {
     // `as` is checked BEFORE the org is looked up, so a call without one is
     // the same `invalid_argument` whether the org exists or not (0.37.0).
     const as = requireAs('orgs.audit', opts);
+    if (opts.user !== undefined) checkExternalId('user', opts.user); // before the org, as `as`
     const orgId = await this.requireOrg(org);
     const principal = await this.requirePrincipal(as, opts);
     let actorId: string | undefined;

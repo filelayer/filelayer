@@ -166,6 +166,19 @@ const pairs: Array<[string, (fl: Filelayer, org: string) => Promise<unknown>]> =
   ['orgs.audit as a stranger', (fl, org) => fl.orgs.audit(org, { as: 'mallory' })],
   ['orgs.verifyAudit with no as', (fl, org) => fl.orgs.verifyAudit(org, {} as never)],
   ['orgs.verifyAudit as a stranger', (fl, org) => fl.orgs.verifyAudit(org, { as: 'mallory' })],
+  // The target and the caller's own id, malformed (cold review of f55e585,
+  // blocker 1): checked only after the org lookup, they were a 400 for an org
+  // that exists and a 404 for one that does not.
+  ['orgs.setRole with an empty target', (fl, org) => fl.orgs.setRole(org, '', 'admin', { as: 'mallory' })],
+  ['orgs.setRole with a NUL in the target', (fl, org) => fl.orgs.setRole(org, 'a\u0000b', 'admin', { as: 'mallory' })],
+  ['orgs.setRole with a number as the target', (fl, org) => fl.orgs.setRole(org, 5 as never, 'admin', { as: 'mallory' })],
+  ['orgs.setRole with a NUL in as', (fl, org) => fl.orgs.setRole(org, 'bob', 'admin', { as: 'a\u0000b' })],
+  ['orgs.removeMember with an empty target', (fl, org) => fl.orgs.removeMember(org, '', { as: 'mallory' })],
+  ['orgs.removeMember with a NUL in the target', (fl, org) => fl.orgs.removeMember(org, 'a\u0000b', { as: 'mallory' })],
+  ['orgs.audit with a NUL in the user filter', (fl, org) => fl.orgs.audit(org, { as: 'mallory', user: 'a\u0000b' })],
+  ['orgs.audit with a NUL in as', (fl, org) => fl.orgs.audit(org, { as: 'a\u0000b' })],
+  ['files.put with a NUL in the owner', (fl, org) => fl.files.put(utf8('x'), { org, owner: 'a\u0000b', name: 'x' })],
+  ['files.put with an empty owner', (fl, org) => fl.files.put(utf8('x'), { org, owner: '', name: 'x' })],
 ];
 for (const [name, call] of pairs) {
   test(`${name}: the same answer for an org that exists and one that does not`, async () => {
