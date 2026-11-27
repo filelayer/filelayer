@@ -106,7 +106,7 @@ export const ERROR_CODES = {
     status: 403,
     meaning:
       'The caller has standing on the resource and may not do this particular thing. Narrower than it looks: it is used where a 404 would be less useful and leaks nothing, such as delegating more authority than you hold.',
-    fix: '`reason` names the refusal for your logs.',
+    fix: '`reason` names the refusal for your logs. With reason `grant_capability_amplification`, a share asked for a capability that the grant the caller shares through does not carry. Capabilities are not combined across grants: a link carries `read`, so a grant with `share` and without `read` cannot create one. Put `read` and `share` in the same grant.',
   },
   not_found: {
     status: 404,

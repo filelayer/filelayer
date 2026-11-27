@@ -258,7 +258,7 @@ build when a public surface and the run disagree:
 
 | | |
 |---|---|
-| The suite | **861 tests across 170 suites**, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17 |
+| The suite | **864 tests across 171 suites**, every commit. Most run on PGlite (PostgreSQL 17 compiled to WebAssembly); the concurrency, audit retention and MCP server suites run against a real PostgreSQL 17 |
 | Concurrency | **8 tests** on a real PostgreSQL with two backends: races staged, not reasoned about. Three carry a control that removes the protection and asserts the bad outcome *does* happen |
 | Adversarial | **26 attacks, 0 breaches.** Also run against `filelayer-prerebuild`, the example application before its delivery and authorization were rebuilt, known to be vulnerable, which scores 3. A suite that only ever passes proves nothing about itself |
 | Live object storage | **12 tests against live Cloudflare R2 and 12 against live AWS S3, every commit**, plus a thirteenth each on the nightly run: an 11 MB multipart upload reassembled byte-exactly. R2 is S3-compatible, not S3, which is why both run |
@@ -410,6 +410,46 @@ URL; it requires a storage adapter that can sign, and it refuses with
 `redirect_not_acknowledged` until the configuration says so out loud.
 [`docs/guides/serving-private-files.md`](https://github.com/filelayer/filelayer/blob/main/docs/guides/serving-private-files.md)
 is the measured comparison of the two.
+
+### Roles, and who may share a file
+
+Four roles, fixed. This is the whole table:
+
+| Role | Own files | Others' files, `visibility: 'private'` | Others' files, `visibility: 'org'` | Manage members | Read audit |
+|---|---|---|---|---|---|
+| `viewer` | read | none | read | no | no |
+| `member` | read, write, delete, share | none | read | no | no |
+| `admin` | full | full | full | yes | yes |
+| `owner` | full | full | full | yes | yes |
+
+So `visibility: 'org'` lets every member READ a file and lets nobody but its
+uploader and the org's admins SHARE it. A member who calls `shares.create()` on
+a colleague's file gets `404 not_found` (reason `insufficient_role`). If your
+product lets any member share any file of the org, say so at upload, with one
+grant to the org:
+
+<!-- doccheck-setup
+await fl.orgs.setRole('acme', 'alice', 'member', { as: 'user_123' });
+await fl.orgs.setRole('acme', 'bob', 'member', { as: 'user_123' });
+-->
+
+```ts
+const { id } = await fl.files.put(bytes, { org: 'acme', owner: 'alice', visibility: 'org', name: 'q3.txt' });
+await fl.shares.create(id, {
+  as: 'alice',                          // the uploader, who holds `share`
+  withOrg: 'acme',                      // the file's own org
+  minRole: 'member',                    // members and above; viewers stay read-only
+  capabilities: ['read', 'share'],      // both, in ONE grant
+});
+
+await fl.shares.create(id, { as: 'bob', expiresIn: 3600 });   // bob, a member, can now share alice's file
+```
+
+Capabilities are not combined across grants. A link carries `read`, so the
+grant a member shares through must hold `read` and `share` together: a grant
+with `share` alone answers `403 forbidden` (reason
+`grant_capability_amplification`) when the member tries, even if the member can
+read the file some other way.
 
 ### Everything else, one page per thing
 

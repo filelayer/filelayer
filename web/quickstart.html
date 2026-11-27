@@ -52,7 +52,7 @@
     "name": "Filelayer",
     "alternateName": "@filelayer/core",
     "codeRepository": "https://github.com/filelayer/filelayer",
-    "softwareVersion": "0.37.1"
+    "softwareVersion": "0.37.2"
   },
   "author": {
     "@type": "Organization",
@@ -176,6 +176,17 @@ await fl.files.put(handbook, { org: 'acme', owner: 'ceo', visibility: 'org' }); 
 <tr><td><code>owner</code></td><td>full</td><td>full</td><td>full</td><td>yes</td><td>yes</td></tr></tbody>
 </table></div>
 <p><code>visibility</code> defaults to <code>'private'</code>: owner and org admins only. The failure mode of that default is &quot;somebody has to ask for access&quot;. The failure mode of the other one is a disclosure.</p>
+<p><strong>A member cannot share a colleague's file, even an org-visible one.</strong> The table says <code>read</code> in that cell and means it: <code>shares.create()</code> there is <code>404 not_found</code> (reason <code>insufficient_role</code>). If your product lets any member share any file of the org, say so at upload, with one grant to the org:</p>
+<pre><code class="lang-ts">const { id } = await fl.files.put(bytes, { org: 'acme', owner: 'alice', visibility: 'org', name: 'q3.txt' });
+await fl.shares.create(id, {
+  as: 'alice',                          // the uploader, who holds `share`
+  withOrg: 'acme',                      // the file's own org
+  minRole: 'member',                    // members and above; viewers stay read-only
+  capabilities: ['read', 'share'],      // both, in ONE grant
+});
+
+await fl.shares.create(id, { as: 'bob', expiresIn: 3600 });   // bob, a member, can now share alice's file</code></pre>
+<p>Capabilities are not combined across grants. A link carries <code>read</code>, so the grant a member shares through must hold <code>read</code> and <code>share</code> together: a grant with <code>share</code> alone answers <code>403 forbidden</code> (reason <code>grant_capability_amplification</code>) when the member tries.</p>
 <p>Org admins and owners retain access to <code>private</code> files. That is deliberate — retention, deletion and legal hold are their responsibility, and a control the accountable party cannot exercise is not a control. If you need to exclude the operator, you need envelope encryption, which Filelayer does not provide.</p>
 <h3 id="as-is-required-on-membership-changes"><code>as</code> is required on membership changes</h3>
 <pre><code class="lang-ts">await fl.orgs.setRole('acme', 'x', 'admin', { as: 'ceo' });   // authorized</code></pre>
@@ -548,7 +559,7 @@ catch (e) {
     <a href="/trust">Should you depend on this?</a>
   </p>
   <p class="fine">
-    Filelayer 0.37.1, alpha. Apache-2.0, with a patent grant.
+    Filelayer 0.37.2, alpha. Apache-2.0, with a patent grant.
     Copyright 2026 Technology Pro Bono S.L.
   </p>
 </footer>

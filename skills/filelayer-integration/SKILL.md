@@ -5,7 +5,7 @@ description: "Add user-file infrastructure to a SaaS application with @filelayer
 
 # Adding user files to somebody else's SaaS
 
-> This copy describes `@filelayer/core` version 0.37.1. It ships inside the
+> This copy describes `@filelayer/core` version 0.37.2. It ships inside the
 > package, so the intended way to get it is to copy it out of your own
 > `node_modules` rather than from a repository: a skill taken from `main`
 > describes whatever is newest, which may be API your installed version does
@@ -197,6 +197,47 @@ Wire that to the event that makes somebody a member in their system, not to
 the upload. For Better Auth's organization plugin and for Clerk, the hooks, the
 role mapping and the rule that the organization comes from the session are in
 [`references/auth-membership.md`](references/auth-membership.md).
+
+### The trap that stops a member sharing a colleague's file
+
+Roles are fixed, and `visibility: 'org'` gives members `read`, not `share`:
+
+| Role | Own files | Others' files, `visibility: 'private'` | Others' files, `visibility: 'org'` | Manage members | Read audit |
+|---|---|---|---|---|---|
+| `viewer` | read | none | read | no | no |
+| `member` | read, write, delete, share | none | read | no | no |
+| `admin` | full | full | full | yes | yes |
+| `owner` | full | full | full | yes | yes |
+
+A member who calls `fl.shares.create()` on a file somebody else uploaded gets
+`not_found` with reason `insufficient_role`. Ask what their product allows. If
+any member may share any file of the org, grant it at upload, from the
+uploader, to the file's own org:
+
+```ts
+const { id } = await fl.files.put(bytes, { org: 'acme', owner: 'alice', visibility: 'org', name: 'q3.txt' });
+await fl.shares.create(id, {
+  as: 'alice',                          // the uploader, who holds `share`
+  withOrg: 'acme',                      // the file's own org
+  minRole: 'member',                    // members and above; viewers stay read-only
+  capabilities: ['read', 'share'],      // both, in ONE grant
+});
+
+await fl.shares.create(id, { as: 'bob', expiresIn: 3600 });   // bob, a member, can now share alice's file
+```
+
+Two ways this goes wrong, both seen in agent-built integrations:
+
+- **Calling the library as the org's owner, or as one service identity, on the
+  member's behalf.** It works, and the audit trail then says the owner shared
+  every file. Call it as the person who acted.
+- **Splitting the grant**, `['read']` for viewers and `['share']` for members.
+  Capabilities are not combined across grants: a link carries `read`, and a
+  grant with `share` alone cannot delegate it. The member gets `forbidden` with
+  reason `grant_capability_amplification`. Keep `read` and `share` in one grant.
+
+Test the case itself: a member shares a file ANOTHER member uploaded. A test
+where the member shares their own upload passes without the grant.
 
 ### A grant id is not a person's access
 

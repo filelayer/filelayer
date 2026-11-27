@@ -19,6 +19,45 @@ library is entitled to know what has already moved underneath it.
 
 ---
 
+## [0.37.2] — 2026-11-27
+
+Documentation and three tests. No behaviour change and no schema change (still
+version 16); nothing to do when upgrading.
+
+### Documented: who may share a file in an org, and how to let members share any of them
+
+A member can share only the files they uploaded. On a colleague's file, even
+one with `visibility: 'org'`, a member has `read` and `shares.create()` is
+`404 not_found` (reason `insufficient_role`). That was written in one table in
+`docs/QUICKSTART.md` and nowhere an agent reads first. A pilot of 26 November
+2026 had coding agents build the same service with this library: both
+runs of one model read the README, `llms.txt`, the integration skill and the
+source, did not open the quickstart, and shipped an app where a member could
+not share a colleague's document.
+
+The README, `llms.txt`, the integration skill and the quickstart now carry the
+role table and the way to allow it, one grant from the uploader to the file's
+own org at upload:
+`shares.create(id, { as, withOrg, minRole: 'member', capabilities: ['read', 'share'] })`.
+They also say what not to do instead: call the library as an owner or a service
+identity on the member's behalf, which makes the audit trail name the wrong
+person.
+
+### Documented: capabilities are not combined across grants
+
+A share is delegated from one grant and carries only what that grant carries.
+A link carries `read`, so a grant with `share` and without `read` cannot create
+one: `403 forbidden`, reason `grant_capability_amplification`. The same four
+documents say so, and `ERRORS.md` (and `errors.json`, and `err.fix`) now
+explains that reason under `forbidden`. The catalogue text of `forbidden` is
+the only line of `src/` this release changes.
+
+`test/member-shares.test.ts` holds the three cases: refused by default, allowed
+by the grant with viewers still refused and the trail naming the member who
+shared, and the split grant refused.
+
+---
+
 ## [0.37.1] — 2026-11-26
 
 A patch release. No schema change (still version 16). Upgrading:

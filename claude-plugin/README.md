@@ -9,7 +9,7 @@ access, on the application's own Postgres and S3 or R2 bucket.
 The skill first decides whether a library is the right answer at all, then
 finds what the project already has, mounts the routes that match its runtime,
 and checks the result with `auditIntegration()`. It describes
-`@filelayer/core` 0.37.1; if your installed version differs, copy the skill
+`@filelayer/core` 0.37.2; if your installed version differs, copy the skill
 from `node_modules/@filelayer/core/skills/` instead.
 
 The skill, the library and its MCP server run on your own machines and

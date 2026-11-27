@@ -84,7 +84,7 @@ This share link has a password and none, or a wrong one, was supplied.
 
 The caller has standing on the resource and may not do this particular thing. Narrower than it looks: it is used where a 404 would be less useful and leaks nothing, such as delegating more authority than you hold.
 
-**Fix.** `reason` names the refusal for your logs.
+**Fix.** `reason` names the refusal for your logs. With reason `grant_capability_amplification`, a share asked for a capability that the grant the caller shares through does not carry. Capabilities are not combined across grants: a link carries `read`, so a grant with `share` and without `read` cannot create one. Put `read` and `share` in the same grant.
 
 ### `not_found` — 404
 
@@ -212,4 +212,4 @@ The configured storage adapter cannot sign an upload.
 
 ---
 
-31 codes. Generated for `0.37.1`.
+31 codes. Generated for `0.37.2`.

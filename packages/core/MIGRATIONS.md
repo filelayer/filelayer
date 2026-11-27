@@ -1486,6 +1486,12 @@ transaction. Before, the target was registered first, so a refused call left
 the user registered (and only when the org existed). If you relied on that to
 create users, call `fl.ids.ensureActor(user)` first.
 
+### `0.37.1` → `0.37.2`: nothing to do
+
+Documentation and tests only. The schema is still version 16, and no answer,
+status or default changes. The one line of `src/` that differs is the catalogue
+text of `forbidden`, which `err.fix` and `errors.json` return.
+
 ---
 
 ## 4. What is not covered here

@@ -245,6 +245,33 @@ Four roles, fixed, no custom roles. This is the entire table:
 mode of that default is "somebody has to ask for access". The failure mode of
 the other one is a disclosure.
 
+**A member cannot share a colleague's file, even an org-visible one.** The
+table says `read` in that cell and means it: `shares.create()` there is
+`404 not_found` (reason `insufficient_role`). If your product lets any member
+share any file of the org, say so at upload, with one grant to the org:
+
+<!-- doccheck-setup
+await fl.orgs.setRole('acme', 'alice', 'member', { as: 'ceo' });
+await fl.orgs.setRole('acme', 'bob', 'member', { as: 'ceo' });
+-->
+
+```ts
+const { id } = await fl.files.put(bytes, { org: 'acme', owner: 'alice', visibility: 'org', name: 'q3.txt' });
+await fl.shares.create(id, {
+  as: 'alice',                          // the uploader, who holds `share`
+  withOrg: 'acme',                      // the file's own org
+  minRole: 'member',                    // members and above; viewers stay read-only
+  capabilities: ['read', 'share'],      // both, in ONE grant
+});
+
+await fl.shares.create(id, { as: 'bob', expiresIn: 3600 });   // bob, a member, can now share alice's file
+```
+
+Capabilities are not combined across grants. A link carries `read`, so the
+grant a member shares through must hold `read` and `share` together: a grant
+with `share` alone answers `403 forbidden` (reason
+`grant_capability_amplification`) when the member tries.
+
 Org admins and owners retain access to `private` files. That is deliberate —
 retention, deletion and legal hold are their responsibility, and a control the
 accountable party cannot exercise is not a control. If you need to exclude the
