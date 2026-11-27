@@ -81,7 +81,7 @@ Four details in there are load-bearing:
 | pass | 826 | 825 |
 | fail | **0** | **0** |
 | skipped | 38 | 39 |
-| suites | 171 | 171 |
+| suites | 170 | 170 |
 
 The lines will look different depending on your Node version and whether you are
 piping the output: Node 22 writes `# tests 864`, Node 24 writes `ℹ tests 864`,

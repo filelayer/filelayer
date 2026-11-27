@@ -15,7 +15,7 @@ node benchmark/count-decisions.mjs # security-sensitive decisions (§4.3)
 npm run example:tier1              # / :tier2 / :tier3 / :vault — all four run
 ```
 
-**Test status.** `npm test` is **864 / 864 passing** across 171 suites:
+**Test status.** `npm test` is **864 / 864 passing** across 170 suites:
 
 | Suite | Tests |
 |---|---|
