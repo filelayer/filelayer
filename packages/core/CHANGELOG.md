@@ -21,7 +21,7 @@ library is entitled to know what has already moved underneath it.
 
 ## [0.37.2] — 2026-11-27
 
-Documentation and three tests. No behaviour change and no schema change (still
+Documentation and seven tests. No behaviour change and no schema change (still
 version 16); nothing to do when upgrading.
 
 ### Documented: who may share a file in an org, and how to let members share any of them
@@ -43,18 +43,37 @@ They also say what not to do instead: call the library as an owner or a service
 identity on the member's behalf, which makes the audit trail name the wrong
 person.
 
-### Documented: capabilities are not combined across grants
+For files uploaded earlier, an admin or owner of the org can issue the same
+grant, and the documents say that too.
 
-A share is delegated from one grant and carries only what that grant carries.
-A link carries `read`, so a grant with `share` and without `read` cannot create
-one: `403 forbidden`, reason `grant_capability_amplification`. The same four
-documents say so, and `ERRORS.md` (and `errors.json`, and `err.fix`) now
+### Documented: what that grant hands every member
+
+With it every member can create links with no expiry and no download limit
+unless the call sets them, give `read` and `share` to any user of the project,
+in the org or not, who can share on, and what a member issued keeps working
+after the member leaves the org. `expiresIn` on the org grant bounds everything
+issued under it; `maxDownloads` there is one budget shared by all of it;
+revoking the org grant stops all of it. The four documents say so next to the
+recipe.
+
+### Documented: a share is delegated from one grant
+
+The grant used is the first the caller holds that carries `share`: the caller's
+own grants before grants to an org, oldest first. A link carries `read`, so if
+that grant has `share` and not `read` the answer is `403 forbidden`, reason
+`grant_capability_amplification`, even with a correct org grant in place. This
+is current behaviour, fails closed, and is described as such, not as a
+contract. The same four documents say so, and `ERRORS.md` (and `errors.json`, and `err.fix`) now
 explains that reason under `forbidden`. The catalogue text of `forbidden` is
 the only line of `src/` this release changes.
 
-`test/member-shares.test.ts` holds the three cases: refused by default, allowed
-by the grant with viewers still refused and the trail naming the member who
-shared, and the split grant refused.
+`test/member-shares.test.ts` holds the cases: refused by default; allowed by
+the grant, with viewers still refused and the trail naming the member who
+shared; the member's link is a child of the org grant; the split grant refused;
+a grant with `share` alone to the member, or an older one to the org, refused
+with the org grant in place; an admin issuing the grant on an existing file;
+and what the grant hands out and how `expiresIn`, `maxDownloads` and revocation
+on it bound that.
 
 ---
 

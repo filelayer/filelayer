@@ -93,3 +93,141 @@ test('capabilities are not combined across grants: share without read cannot cre
     await fl.close();
   }
 });
+
+test('the link a member creates through the recipe is a child of the org grant', async () => {
+  const { fl, put } = await world();
+  try {
+    const f = await put('q3.txt');
+    const orgGrant = await fl.shares.create(f.id, {
+      as: 'alice',
+      withOrg: 'acme',
+      minRole: 'member',
+      capabilities: ['read', 'share'],
+    });
+    const link = await fl.shares.create(f.id, { as: 'bob', expiresIn: 60 });
+    assert.equal(link.parentGrantId, orgGrant.grantId);
+    // Admins and owners are "member and above" too, and do not need the grant: they share by role.
+    assert.equal((await fl.shares.create(f.id, { as: 'olga', expiresIn: 60 })).parentGrantId, null);
+  } finally {
+    await fl.close();
+  }
+});
+
+test('a grant of the member\'s own, or an older one to the org, with share and no read still refuses with the org grant in place', async () => {
+  const { fl, put } = await world();
+  try {
+    const f = await put('q3.txt');
+    // First, and so older: a grant to bob himself with `share` alone.
+    await fl.shares.create(f.id, { as: 'alice', withUser: 'bob', capabilities: ['share'] });
+    // Then the correct org grant.
+    await fl.shares.create(f.id, { as: 'alice', withOrg: 'acme', minRole: 'member', capabilities: ['read', 'share'] });
+    assert.deepEqual(await refusal(fl.shares.create(f.id, { as: 'bob', expiresIn: 60 })), {
+      status: 403,
+      code: 'forbidden',
+      reason: 'grant_capability_amplification',
+    });
+    // Removing the older grant is the fix: the org grant then supplies both.
+    await fl.shares.unshare(f.id, { as: 'alice', user: 'bob' });
+    assert.ok((await fl.shares.create(f.id, { as: 'bob', expiresIn: 60 })).secret);
+
+    // The member's own grants come before grants to an org whatever their age:
+    // the same grant issued AFTER the org grant refuses the same way.
+    await fl.shares.create(f.id, { as: 'alice', withUser: 'bob', capabilities: ['share'] });
+    assert.equal((await refusal(fl.shares.create(f.id, { as: 'bob', expiresIn: 60 })))?.reason, 'grant_capability_amplification');
+
+    // Between two grants to the org, the older one is used.
+    const g = await put('older-org-grant.txt');
+    await fl.shares.create(g.id, { as: 'alice', withOrg: 'acme', capabilities: ['share'] });
+    await fl.shares.create(g.id, { as: 'alice', withOrg: 'acme', minRole: 'member', capabilities: ['read', 'share'] });
+    assert.equal((await refusal(fl.shares.create(g.id, { as: 'bob', expiresIn: 60 })))?.reason, 'grant_capability_amplification');
+    const h = await put('newer-org-grant.txt');
+    await fl.shares.create(h.id, { as: 'alice', withOrg: 'acme', minRole: 'member', capabilities: ['read', 'share'] });
+    await fl.shares.create(h.id, { as: 'alice', withOrg: 'acme', capabilities: ['share'] });
+    assert.ok((await fl.shares.create(h.id, { as: 'bob', expiresIn: 60 })).secret);
+  } finally {
+    await fl.close();
+  }
+});
+
+test('files uploaded before the recipe: an admin issues the org grant, nobody acts as the uploader', async () => {
+  const { fl, put } = await world();
+  try {
+    const f = await put('old.txt');
+    const orgGrant = await fl.shares.create(f.id, {
+      as: 'olga',
+      withOrg: 'acme',
+      minRole: 'member',
+      capabilities: ['read', 'share'],
+    });
+    assert.equal(orgGrant.parentGrantId, null, 'issued on the admin\'s role, not delegated');
+    assert.ok((await fl.shares.create(f.id, { as: 'bob', expiresIn: 60 })).secret);
+  } finally {
+    await fl.close();
+  }
+});
+
+test('what the recipe hands every member, and how the org grant bounds it', async () => {
+  const { fl, put } = await world();
+  try {
+    // Unbounded org grant: a member's link has no expiry and no cap unless the member sets one,
+    // a member can pass read and share to somebody outside the org, and that person can share on.
+    const open = await put('open.txt');
+    await fl.shares.create(open.id, { as: 'alice', withOrg: 'acme', minRole: 'member', capabilities: ['read', 'share'] });
+    const forever = await fl.shares.create(open.id, { as: 'bob' });
+    assert.equal(forever.expiresAt, null);
+    assert.equal(forever.maxDownloads, null);
+    await fl.shares.create(open.id, { as: 'bob', withUser: 'outsider', capabilities: ['read', 'share'] });
+    const onward = await fl.shares.create(open.id, { as: 'outsider' });
+    assert.ok(onward.secret, 'somebody who is not in the org shares on');
+
+    // What bob issued outlives his membership.
+    await fl.orgs.removeMember('acme', 'bob', { as: 'olga' });
+    assert.equal(new TextDecoder().decode((await fl.shares.redeem(forever.secret!)).body), 'open.txt');
+    assert.equal(new TextDecoder().decode((await fl.shares.redeem(onward.secret!)).body), 'open.txt');
+
+    // Bounded org grant: every child, however deep, ends when the org grant ends.
+    const bounded = await put('bounded.txt');
+    const parent = await fl.shares.create(bounded.id, {
+      as: 'alice',
+      withOrg: 'acme',
+      minRole: 'member',
+      capabilities: ['read', 'share'],
+      expiresIn: 3600,
+    });
+    await fl.orgs.setRole('acme', 'carol', 'member', { as: 'olga' });
+    const capped = await fl.shares.create(bounded.id, { as: 'carol' });
+    assert.ok(capped.expiresAt && parent.expiresAt);
+    assert.ok(new Date(capped.expiresAt!).getTime() <= new Date(parent.expiresAt!).getTime());
+    const longer = await fl.shares.create(bounded.id, { as: 'carol', expiresIn: 86400 });
+    assert.ok(new Date(longer.expiresAt!).getTime() <= new Date(parent.expiresAt!).getTime());
+
+    // Revoking the org grant stops what came from it.
+    await fl.shares.redeem(capped.secret!);
+    await fl.shares.revoke(parent.grantId, { as: 'alice' });
+    assert.equal((await refusal(fl.shares.redeem(capped.secret!)))?.status, 404);
+
+    // maxDownloads on the org grant is one budget for everything under it.
+    const budget = await put('budget.txt');
+    await fl.shares.create(budget.id, {
+      as: 'alice',
+      withOrg: 'acme',
+      minRole: 'member',
+      capabilities: ['read', 'share'],
+      maxDownloads: 2,
+    });
+    const one = await fl.shares.create(budget.id, { as: 'carol' });
+    const two = await fl.shares.create(budget.id, { as: 'carol', maxDownloads: 100 });
+    assert.equal(two.maxDownloads, 2);
+    await fl.shares.redeem(one.secret!);
+    await fl.shares.redeem(two.secret!);
+    assert.equal((await refusal(fl.shares.redeem(one.secret!)))?.status, 404);
+
+    // withOrg is not held to the file's own org: another org of the project gets the file.
+    await fl.orgs.create('globex', { owner: 'gina' });
+    const other = await put('other-org.txt');
+    await fl.shares.create(other.id, { as: 'alice', withOrg: 'globex', capabilities: ['read'] });
+    assert.equal((await fl.files.get(other.id, { as: 'gina' })).name, 'other-org.txt');
+  } finally {
+    await fl.close();
+  }
+});

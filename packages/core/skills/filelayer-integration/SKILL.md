@@ -229,12 +229,34 @@ await fl.shares.create(id, { as: 'bob', expiresIn: 3600 });   // bob, a member, 
 Two ways this goes wrong, both seen in agent-built integrations:
 
 - **Calling the library as the org's owner, or as one service identity, on the
-  member's behalf.** It works, and the audit trail then says the owner shared
-  every file. Call it as the person who acted.
+  member's behalf.** Do not. The audit trail then says the owner shared every
+  file, and the tests still pass. Call it as the person who acted. For files
+  uploaded before the grant existed, an admin or owner of the org issues the
+  same grant (`as:` that admin), once per file.
 - **Splitting the grant**, `['read']` for viewers and `['share']` for members.
-  Capabilities are not combined across grants: a link carries `read`, and a
-  grant with `share` alone cannot delegate it. The member gets `forbidden` with
-  reason `grant_capability_amplification`. Keep `read` and `share` in one grant.
+  A share is delegated from ONE grant, the first the caller holds that carries
+  `share` (their own grants before grants to an org, oldest first). A link
+  carries `read`, and a grant with `share` alone cannot delegate it: the member
+  gets `forbidden` with reason `grant_capability_amplification`, even with a
+  correct org grant in place. Keep `read` and `share` in one grant and leave no
+  grant to the member, and no older grant to the org, with `share` alone. This
+  is current behaviour and fails closed, not a promise.
+
+Tell the user what this grant hands every member before you ship it:
+
+- links with no expiry and no download limit unless the call sets them, so set
+  `expiresIn` in the share endpoint and never take it from the client;
+- `read` and `share` for any user of the project, in the org or not, who can
+  share on down to the delegation depth limit;
+- what a member issued keeps working after the member leaves the org.
+
+`expiresIn` on the org grant bounds all of it: nothing issued under it, at any
+depth, outlives it, and the grant ends then too, so issue it again.
+`maxDownloads` there is ONE budget shared by everything issued under it.
+Revoking the org grant stops every link and grant that came from it.
+`minRole: 'member'` also matches admins and owners, who share by role anyway,
+and `withOrg` should be the file's own org (another org of the project is
+accepted, and its members get the file).
 
 Test the case itself: a member shares a file ANOTHER member uploaded. A test
 where the member shares their own upload passes without the grant.

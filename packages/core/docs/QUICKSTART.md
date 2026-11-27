@@ -267,10 +267,37 @@ await fl.shares.create(id, {
 await fl.shares.create(id, { as: 'bob', expiresIn: 3600 });   // bob, a member, can now share alice's file
 ```
 
-Capabilities are not combined across grants. A link carries `read`, so the
-grant a member shares through must hold `read` and `share` together: a grant
-with `share` alone answers `403 forbidden` (reason
-`grant_capability_amplification`) when the member tries.
+A share is delegated from ONE grant the caller holds: the first that carries
+`share`, the caller's own grants before grants to an org, oldest first. A link
+carries `read`, so that one grant must hold `read` and `share` together. If it
+holds `share` alone the answer is `403 forbidden` (reason
+`grant_capability_amplification`), even when the member can read the file some
+other way and even when the org grant above exists. So keep `read` and `share`
+in one grant, and leave no grant to the member, and no older grant to the org,
+that has `share` without `read`. This is how delegation works today, and it
+fails closed; it is not a promise that capabilities will never be combined.
+
+`minRole: 'member'` also matches admins and owners, who share by role anyway.
+`withOrg` should name the file's own org: another org of your project is
+accepted, and its members get the file.
+
+**What this grant hands every member.** Read it before you ship the recipe:
+
+- Links to the file with no expiry and no download limit, unless the call sets
+  them. Set `expiresIn` in your own share endpoint; do not take it from the client.
+- `read` and `share` for any user of your project, in the org or not, who can
+  then share on, down to the delegation depth limit.
+- What a member issued keeps working after the member leaves the org.
+
+To bound all of it, put `expiresIn` on the org grant: nothing issued under it,
+at any depth, outlives it. The grant ends then too, so issue it again when you
+renew. `maxDownloads` on the org grant is ONE budget shared by everything
+issued under it. And revoking the org grant (`shares.revoke`) stops every link
+and grant that came from it.
+
+**Files uploaded before you adopted this.** An admin or owner of the org can
+issue the same grant on any file (`as:` that admin). Do that, once per file,
+instead of calling the library as the uploader.
 
 Org admins and owners retain access to `private` files. That is deliberate —
 retention, deletion and legal hold are their responsibility, and a control the
